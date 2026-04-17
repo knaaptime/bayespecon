@@ -1,0 +1,546 @@
+"""Spatial panel model classes analogous to MATLAB panel_g routines."""
+
+from __future__ import annotations
+
+import numpy as np
+import pymc as pm
+import pytensor.tensor as pt
+import xarray as xr
+
+from ..logdet import make_logdet_fn
+from .panel_base import SpatialPanelModel
+
+
+class OLSPanelFE(SpatialPanelModel):
+    """Bayesian pooled/fixed-effects panel regression.
+
+    Parameters
+    ----------
+    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
+    logdet_method
+        See :class:`~bayespreg.models.panel_base.SpatialPanelModel`.
+
+    Notes
+    -----
+    This class mirrors MATLAB ``ols_panel_FE_g`` behavior through the shared
+    :class:`~bayespreg.models.panel_base.SpatialPanelModel` transformation
+    pipeline.
+    """
+
+    def _build_pymc_model(self) -> pm.Model:
+        """Construct the PyMC model for pooled/FE panel regression.
+
+        Returns
+        -------
+        pymc.Model
+            Compiled probabilistic model object.
+        """
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        with pm.Model(coords=self._model_coords()) as model:
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            mu = pt.dot(self._X, beta)
+            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+        return model
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute fitted values at posterior mean coefficients.
+
+        Returns
+        -------
+        np.ndarray
+            Posterior-mean fitted values.
+        """
+        beta = self._posterior_mean("beta")
+        return self._X @ beta
+
+    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
+        """Compute direct/indirect/total effects for OLS panel model.
+
+        Returns
+        -------
+        dict
+            Direct, indirect, total effects and feature names.
+        """
+        beta = self._posterior_mean("beta")
+        return {
+            "direct": beta.copy(),
+            "indirect": np.zeros_like(beta),
+            "total": beta.copy(),
+            "feature_names": self._feature_names,
+        }
+
+
+class SARPanelFE(SpatialPanelModel):
+    """Bayesian spatial lag panel regression.
+
+    Parameters
+    ----------
+    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
+    logdet_method
+        See :class:`~bayespreg.models.panel_base.SpatialPanelModel`.
+
+    Notes
+    -----
+    This class mirrors MATLAB ``sar_panel_FE_g`` behavior under the common
+    panel transformation framework.
+    """
+
+    def _build_pymc_model(self) -> pm.Model:
+        """Construct the PyMC model for SAR panel regression.
+
+        Returns
+        -------
+        pymc.Model
+            Compiled probabilistic model object.
+        """
+        rho_lower = self.priors.get("rho_lower", -1.0)
+        rho_upper = self.priors.get("rho_upper", 1.0)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        logdet_fn = make_logdet_fn(
+            self._W_dense,
+            method=self.logdet_method,
+            rho_min=rho_lower,
+            rho_max=rho_upper,
+        )
+
+        with pm.Model(coords=self._model_coords()) as model:
+            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            mu = rho * self._Wy + pt.dot(self._X, beta)
+            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+            pm.Potential("jacobian", logdet_fn(rho))
+        return model
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute fitted values at posterior mean parameters.
+
+        Returns
+        -------
+        np.ndarray
+            Posterior-mean fitted values.
+        """
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        return rho * self._Wy + self._X @ beta
+
+    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
+        """Compute SAR panel direct/indirect/total effects.
+
+        Returns
+        -------
+        dict
+            Direct, indirect, total effects and feature names.
+        """
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        n = self._W_dense.shape[0]
+        S = np.linalg.inv(np.eye(n) - rho * self._W_dense)
+        direct = np.diag(S).mean() * beta
+        total = S.mean(axis=1).mean() * beta
+        indirect = total - direct
+        return {
+            "direct": direct,
+            "indirect": indirect,
+            "total": total,
+            "feature_names": self._feature_names,
+        }
+
+
+class SEMPanelFE(SpatialPanelModel):
+    """Bayesian spatial error panel regression.
+
+    Parameters
+    ----------
+    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
+    logdet_method
+        See :class:`~bayespreg.models.panel_base.SpatialPanelModel`.
+
+    Notes
+    -----
+    This class mirrors MATLAB ``sem_panel_FE_g`` behavior under the common
+    panel transformation framework.
+    """
+
+    def _build_pymc_model(self) -> pm.Model:
+        """Construct the PyMC model for SEM panel regression.
+
+        Returns
+        -------
+        pymc.Model
+            Compiled probabilistic model object.
+        """
+        lam_lower = self.priors.get("lam_lower", -1.0)
+        lam_upper = self.priors.get("lam_upper", 1.0)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        logdet_fn = make_logdet_fn(
+            self._W_dense,
+            method=self.logdet_method,
+            rho_min=lam_lower,
+            rho_max=lam_upper,
+        )
+
+        W_pt = pt.as_tensor_variable(self._W_dense)
+
+        with pm.Model(coords=self._model_coords()) as model:
+            lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+
+            resid = self._y - pt.dot(self._X, beta)
+            eps = resid - lam * pt.dot(W_pt, resid)
+            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+            pm.Potential("eps_loglik", logp_eps)
+            pm.Potential("jacobian", logdet_fn(lam))
+        return model
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        **sample_kwargs,
+    ):
+        """Sample posterior and attach pointwise log-likelihood for IC metrics."""
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            **sample_kwargs,
+        )
+
+        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
+            return idata
+
+        lam = idata.posterior["lam"].values
+        beta = idata.posterior["beta"].values
+        sigma = idata.posterior["sigma"].values
+
+        c, d = lam.shape
+        s = c * d
+        n = self._y.shape[0]
+        X = self._X
+        W = self._W_dense
+
+        lam_f = lam.reshape(s)
+        beta_f = beta.reshape(s, beta.shape[-1])
+        sigma_f = sigma.reshape(s)
+
+        resid = self._y[None, :] - beta_f @ X.T
+        eps = resid - lam_f[:, None] * (resid @ W.T)
+
+        ll = -0.5 * (
+            (eps / sigma_f[:, None]) ** 2
+            + np.log(2.0 * np.pi)
+            + 2.0 * np.log(sigma_f[:, None])
+        )
+
+        eye_n = np.eye(n)
+        jac = np.empty(s, dtype=float)
+        for i in range(s):
+            sign, logabsdet = np.linalg.slogdet(eye_n - lam_f[i] * W)
+            if sign == 0:
+                jac[i] = -np.inf
+            else:
+                jac[i] = logabsdet
+        ll = ll + jac[:, None] / n
+
+        ll = ll.reshape(c, d, n)
+        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"))
+
+        if "log_likelihood" in idata.groups():
+            idata.log_likelihood["obs"] = ll_da
+        else:
+            idata.add_groups({"log_likelihood": xr.Dataset({"obs": ll_da})})
+        return idata
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute fitted values at posterior mean coefficients.
+
+        Returns
+        -------
+        np.ndarray
+            Posterior-mean fitted values.
+        """
+        beta = self._posterior_mean("beta")
+        return self._X @ beta
+
+    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
+        """Compute SEM panel direct/indirect/total effects.
+
+        Returns
+        -------
+        dict
+            Direct, indirect, total effects and feature names.
+        """
+        beta = self._posterior_mean("beta")
+        return {
+            "direct": beta.copy(),
+            "indirect": np.zeros_like(beta),
+            "total": beta.copy(),
+            "feature_names": self._feature_names,
+        }
+
+
+class SDMPanelFE(SpatialPanelModel):
+    """Bayesian spatial Durbin panel regression.
+
+    Parameters
+    ----------
+    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
+    logdet_method
+        See :class:`~bayespreg.models.panel_base.SpatialPanelModel`.
+
+    Notes
+    -----
+    This class mirrors MATLAB ``sdm_panel_FE_g`` behavior by augmenting the
+    design matrix with spatially lagged regressors ``W X``.
+    """
+
+    def _beta_names(self) -> list[str]:
+        return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
+    def _build_pymc_model(self) -> pm.Model:
+        """Construct the PyMC model for SDM panel regression.
+
+        Returns
+        -------
+        pymc.Model
+            Compiled probabilistic model object.
+        """
+        Z = np.hstack([self._X, self._WX])
+
+        rho_lower = self.priors.get("rho_lower", -1.0)
+        rho_upper = self.priors.get("rho_upper", 1.0)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        logdet_fn = make_logdet_fn(
+            self._W_dense,
+            method=self.logdet_method,
+            rho_min=rho_lower,
+            rho_max=rho_upper,
+        )
+
+        with pm.Model(coords=self._model_coords()) as model:
+            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            mu = rho * self._Wy + pt.dot(Z, beta)
+            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+            pm.Potential("jacobian", logdet_fn(rho))
+        return model
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute fitted values at posterior mean parameters.
+
+        Returns
+        -------
+        np.ndarray
+            Posterior-mean fitted values.
+        """
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        Z = np.hstack([self._X, self._WX])
+        return rho * self._Wy + Z @ beta
+
+    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
+        """Compute SDM panel direct/indirect/total effects.
+
+        Returns
+        -------
+        dict
+            Direct, indirect, total effects and feature names.
+        """
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        k = self._X.shape[1]
+        kw = self._WX.shape[1]
+        beta1, beta2 = beta[:k], beta[k:k + kw]
+
+        n = self._W_dense.shape[0]
+        W = self._W_dense
+        M = np.linalg.inv(np.eye(n) - rho * W)
+
+        direct = np.array([
+            np.diag(M @ (beta1[j] * np.eye(n) + b2 * W)).mean()
+            for j, b2 in zip(self._wx_column_indices, beta2)
+        ])
+        total = np.array([
+            (M @ (beta1[j] * np.eye(n) + b2 * W)).mean()
+            for j, b2 in zip(self._wx_column_indices, beta2)
+        ])
+        indirect = total - direct
+
+        return {
+            "direct": direct,
+            "indirect": indirect,
+            "total": total,
+            "feature_names": self._wx_feature_names,
+        }
+
+
+class SDEMPanelFE(SpatialPanelModel):
+    """Bayesian spatial Durbin error panel regression.
+
+    Parameters
+    ----------
+    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
+    logdet_method
+        See :class:`~bayespreg.models.panel_base.SpatialPanelModel`.
+
+    Notes
+    -----
+    This class mirrors MATLAB ``sdem_panel_FE_g`` behavior using transformed
+    residual likelihood and Jacobian adjustment.
+    """
+
+    def _beta_names(self) -> list[str]:
+        return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
+    def _build_pymc_model(self) -> pm.Model:
+        """Construct the PyMC model for SDEM panel regression.
+
+        Returns
+        -------
+        pymc.Model
+            Compiled probabilistic model object.
+        """
+        Z = np.hstack([self._X, self._WX])
+
+        lam_lower = self.priors.get("lam_lower", -1.0)
+        lam_upper = self.priors.get("lam_upper", 1.0)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        logdet_fn = make_logdet_fn(
+            self._W_dense,
+            method=self.logdet_method,
+            rho_min=lam_lower,
+            rho_max=lam_upper,
+        )
+
+        W_pt = pt.as_tensor_variable(self._W_dense)
+
+        with pm.Model(coords=self._model_coords()) as model:
+            lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+
+            resid = self._y - pt.dot(Z, beta)
+            eps = resid - lam * pt.dot(W_pt, resid)
+            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+            pm.Potential("eps_loglik", logp_eps)
+            pm.Potential("jacobian", logdet_fn(lam))
+        return model
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        **sample_kwargs,
+    ):
+        """Sample posterior and attach pointwise log-likelihood for IC metrics."""
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            **sample_kwargs,
+        )
+
+        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
+            return idata
+
+        Z = np.hstack([self._X, self._WX])
+        lam = idata.posterior["lam"].values
+        beta = idata.posterior["beta"].values
+        sigma = idata.posterior["sigma"].values
+
+        c, d = lam.shape
+        s = c * d
+        n = self._y.shape[0]
+        W = self._W_dense
+
+        lam_f = lam.reshape(s)
+        beta_f = beta.reshape(s, beta.shape[-1])
+        sigma_f = sigma.reshape(s)
+
+        resid = self._y[None, :] - beta_f @ Z.T
+        eps = resid - lam_f[:, None] * (resid @ W.T)
+
+        ll = -0.5 * (
+            (eps / sigma_f[:, None]) ** 2
+            + np.log(2.0 * np.pi)
+            + 2.0 * np.log(sigma_f[:, None])
+        )
+
+        eye_n = np.eye(n)
+        jac = np.empty(s, dtype=float)
+        for i in range(s):
+            sign, logabsdet = np.linalg.slogdet(eye_n - lam_f[i] * W)
+            if sign == 0:
+                jac[i] = -np.inf
+            else:
+                jac[i] = logabsdet
+        ll = ll + jac[:, None] / n
+
+        ll = ll.reshape(c, d, n)
+        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"))
+
+        if "log_likelihood" in idata.groups():
+            idata.log_likelihood["obs"] = ll_da
+        else:
+            idata.add_groups({"log_likelihood": xr.Dataset({"obs": ll_da})})
+        return idata
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute fitted values at posterior mean coefficients.
+
+        Returns
+        -------
+        np.ndarray
+            Posterior-mean fitted values.
+        """
+        beta = self._posterior_mean("beta")
+        Z = np.hstack([self._X, self._WX])
+        return Z @ beta
+
+    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
+        """Compute SDEM panel direct/indirect/total effects.
+
+        Returns
+        -------
+        dict
+            Direct, indirect, total effects and feature names.
+        """
+        beta = self._posterior_mean("beta")
+        k = self._X.shape[1]
+        kw = self._WX.shape[1]
+        beta1, beta2 = beta[:k], beta[k:k + kw]
+        return {
+            "direct": beta1[self._wx_column_indices],
+            "indirect": beta2,
+            "total": beta1[self._wx_column_indices] + beta2,
+            "feature_names": self._wx_feature_names,
+        }

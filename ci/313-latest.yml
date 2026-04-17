@@ -1,0 +1,21 @@
+name: test
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - libpysal
+  - esda
+  - formulaic
+  - bambi
+  - pymc
+  - arviz
+  - spreg
+  - statsmodels
+  - geopandas
+  - geodatasets
+  - codecov
+  - coverage
+  - pytest
+  - pytest-cov
+  - pytest-mpl
+  - pytest-xdist

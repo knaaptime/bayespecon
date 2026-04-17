@@ -1,0 +1,15 @@
+name: bayespreg
+channels:
+  - conda-forge
+dependencies:
+  - libpysal
+  - esda
+  - formulaic
+  - bambi
+  - pymc
+  - arviz
+  - spreg
+  - statsmodels
+  - geopandas
+  - geodatasets
+  - lonboard

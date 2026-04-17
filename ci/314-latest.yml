@@ -1,0 +1,39 @@
+name: test
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - libpysal
+  - esda
+  - formulaic
+  - bambi
+  - pymc
+  - arviz
+  - spreg
+  - statsmodels
+  - geopandas
+  - geodatasets
+  - codecov
+  - coverage
+  - pytest
+  - pytest-cov
+  - pytest-mpl
+  - pytest-xdist
+  # docs
+  - numpydoc
+  - nbsphinx
+  - joblib
+  - astropy
+  - osmnx
+  - contextily
+  - myst-parser
+  - sphinx-autodoc2
+  - geodatasets
+  - lonboard
+  - watermark
+  - myst-nb
+  - sphinx
+  - sphinxcontrib-bibtex
+  - sphinx-autosummary-accessors
+  - sphinx-copybutton
+  - sphinx-immaterial
