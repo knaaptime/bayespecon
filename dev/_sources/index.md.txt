@@ -14,11 +14,11 @@ installation
 :maxdepth: 1
 
 Cross Sectional Models <user-guide/pedagogical_spatial_models>
-Comparing bayespreg vs spreg <user-guide/cross_sectional_spreg_comparison>
+Comparing bayespecon vs spreg <user-guide/cross_sectional_spreg_comparison>
 Panel Models <user-guide/pedagogical_panel_models>
 Nonlinear Models <user-guide/nonlinear_models>
 Nonlinear Panel Models <user-guide/nonlinear_panel_models>
-Recovering Parameters <user-guide/faithfulness_bayespreg>
+Recovering Parameters <user-guide/faithfulness_bayespecon>
 references
 ```
 
@@ -35,6 +35,6 @@ API reference <api>
 :caption: For contributors
 :maxdepth: 1
 
-GitHub <https://github.com/pysal/bayespreg>
-Changelog <https://github.com/pysal/bayespreg/releases>
+GitHub <https://github.com/pysal/bayespecon>
+Changelog <https://github.com/pysal/bayespecon/releases>
 ```

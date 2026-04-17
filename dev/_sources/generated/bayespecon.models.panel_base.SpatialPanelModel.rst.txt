@@ -1,0 +1,33 @@
+﻿bayespecon.models.panel\_base.SpatialPanelModel
+===============================================
+
+.. currentmodule:: bayespecon.models.panel_base
+
+.. autoclass:: SpatialPanelModel
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~SpatialPanelModel.__init__
+      ~SpatialPanelModel.autocorrelation_diagnostics
+      ~SpatialPanelModel.diagnostics
+      ~SpatialPanelModel.fit
+      ~SpatialPanelModel.fitted_values
+      ~SpatialPanelModel.heteroskedasticity_diagnostics
+      ~SpatialPanelModel.outlier_diagnostics
+      ~SpatialPanelModel.panel_diagnostics
+      ~SpatialPanelModel.regression_diagnostics
+      ~SpatialPanelModel.residuals
+      ~SpatialPanelModel.spatial_effects
+      ~SpatialPanelModel.summary
+   
+   
+
+   
+   
+   

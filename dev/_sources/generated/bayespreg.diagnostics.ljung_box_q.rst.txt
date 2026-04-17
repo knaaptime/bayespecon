@@ -1,6 +1,0 @@
-﻿bayespreg.diagnostics.ljung\_box\_q
-===================================
-
-.. currentmodule:: bayespreg.diagnostics
-
-.. autofunction:: ljung_box_q

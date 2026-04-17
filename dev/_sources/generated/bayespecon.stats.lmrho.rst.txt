@@ -1,0 +1,6 @@
+﻿bayespecon.stats.lmrho
+======================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: lmrho

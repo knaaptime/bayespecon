@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.rdiagnose\_like
+======================================
+
+.. currentmodule:: bayespecon.diagnostics
+
+.. autofunction:: rdiagnose_like

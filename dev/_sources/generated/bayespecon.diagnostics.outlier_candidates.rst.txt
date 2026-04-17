@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.outlier\_candidates
+==========================================
+
+.. currentmodule:: bayespecon.diagnostics
+
+.. autofunction:: outlier_candidates

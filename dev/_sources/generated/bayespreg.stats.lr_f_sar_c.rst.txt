@@ -1,6 +1,0 @@
-﻿bayespreg.stats.lr\_f\_sar\_c
-=============================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: lr_f_sar_c

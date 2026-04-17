@@ -1,0 +1,6 @@
+﻿bayespecon.stats.lr\_f\_err\_c
+==============================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: lr_f_err_c

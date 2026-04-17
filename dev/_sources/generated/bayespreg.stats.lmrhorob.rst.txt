@@ -1,6 +1,0 @@
-﻿bayespreg.stats.lmrhorob
-========================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: lmrhorob

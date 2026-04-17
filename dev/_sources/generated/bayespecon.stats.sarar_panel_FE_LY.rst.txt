@@ -1,0 +1,6 @@
+﻿bayespecon.stats.sarar\_panel\_FE\_LY
+=====================================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: sarar_panel_FE_LY

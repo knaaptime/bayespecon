@@ -1,6 +1,0 @@
-﻿bayespreg.stats.lmlag
-=====================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: lmlag

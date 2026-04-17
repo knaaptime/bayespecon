@@ -7,7 +7,7 @@
    "source": [
     "# Nonlinear Spatial Models\n",
     "\n",
-    "This guide demonstrates three nonlinear spatial models in `bayespreg` on synthetic data.\n",
+    "This guide demonstrates three nonlinear spatial models in `bayespecon` on synthetic data.\n",
     "\n",
     "## Spatial Probit\n",
     "\n",
@@ -44,7 +44,7 @@
     "import numpy as np\n",
     "from scipy.special import erf\n",
     "from libpysal.graph import Graph\n",
-    "from bayespreg import SpatialProbit, SARTobit, SEMTobit\n",
+    "from bayespecon import SpatialProbit, SARTobit, SEMTobit\n",
     "\n",
     "rng = np.random.default_rng(1234)\n",
     "\n",

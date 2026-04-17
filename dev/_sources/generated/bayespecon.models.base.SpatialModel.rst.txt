@@ -1,0 +1,32 @@
+﻿bayespecon.models.base.SpatialModel
+===================================
+
+.. currentmodule:: bayespecon.models.base
+
+.. autoclass:: SpatialModel
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~SpatialModel.__init__
+      ~SpatialModel.autocorrelation_diagnostics
+      ~SpatialModel.diagnostics
+      ~SpatialModel.fit
+      ~SpatialModel.fitted_values
+      ~SpatialModel.heteroskedasticity_diagnostics
+      ~SpatialModel.outlier_diagnostics
+      ~SpatialModel.regression_diagnostics
+      ~SpatialModel.residuals
+      ~SpatialModel.spatial_effects
+      ~SpatialModel.summary
+   
+   
+
+   
+   
+   

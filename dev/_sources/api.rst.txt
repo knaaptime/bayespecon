@@ -1,6 +1,6 @@
 .. _api_ref:
 
-.. currentmodule:: bayespreg
+.. currentmodule:: bayespecon
 
 API reference
 =============
@@ -10,7 +10,7 @@ API reference
 Base Classes
 ------------
 
-.. currentmodule:: bayespreg.models.base
+.. currentmodule:: bayespecon.models.base
 
 .. autosummary::
    :toctree: generated/
@@ -18,7 +18,7 @@ Base Classes
    SpatialModel
 
 
-.. currentmodule:: bayespreg.models.panel_base
+.. currentmodule:: bayespecon.models.panel_base
 
 .. autosummary::
    :toctree: generated/
@@ -29,7 +29,7 @@ Base Classes
 Cross Sectional Spatial Models
 --------------
 
-.. currentmodule:: bayespreg.models
+.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
@@ -44,7 +44,7 @@ Cross Sectional Spatial Models
 Panel Spatial Models
 -----------------------
 
-.. currentmodule:: bayespreg.models
+.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
@@ -59,7 +59,7 @@ Panel Spatial Models
 Panel Spatial Models (Random Effects)
 --------------------------------------
 
-.. currentmodule:: bayespreg.models
+.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
@@ -72,7 +72,7 @@ Panel Spatial Models (Random Effects)
 Panel Spatial Models (Tobit)
 -----------------------------
 
-.. currentmodule:: bayespreg.models
+.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
@@ -84,7 +84,7 @@ Panel Spatial Models (Tobit)
 Non-Linear Spatial Models
 ---------
 
-.. currentmodule:: bayespreg.models
+.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
@@ -98,7 +98,7 @@ Non-Linear Spatial Models
 Regression Diagnostics
 ----------------------
 
-.. currentmodule:: bayespreg.diagnostics
+.. currentmodule:: bayespecon.diagnostics
 
 .. autosummary::
    :toctree: generated/
@@ -115,7 +115,7 @@ Regression Diagnostics
 Spatial Stats Helpers
 ---------------------
 
-.. currentmodule:: bayespreg.stats
+.. currentmodule:: bayespecon.stats
 
 .. autosummary::
    :toctree: generated/

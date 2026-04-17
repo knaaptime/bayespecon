@@ -1,0 +1,6 @@
+﻿bayespecon.stats.trans\_tslow
+=============================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: trans_tslow

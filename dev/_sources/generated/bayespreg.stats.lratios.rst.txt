@@ -1,6 +1,0 @@
-﻿bayespreg.stats.lratios
-=======================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: lratios

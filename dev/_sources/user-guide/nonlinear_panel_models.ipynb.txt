@@ -26,7 +26,7 @@
    "source": [
     "import numpy as np\n",
     "from libpysal.graph import Graph\n",
-    "from bayespreg import SARPanelTobit, SEMPanelTobit\n",
+    "from bayespecon import SARPanelTobit, SEMPanelTobit\n",
     "\n",
     "rng = np.random.default_rng(42)\n",
     "\n",

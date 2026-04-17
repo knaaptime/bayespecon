@@ -1,0 +1,6 @@
+﻿bayespecon.stats.prt\_old
+=========================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: prt_old

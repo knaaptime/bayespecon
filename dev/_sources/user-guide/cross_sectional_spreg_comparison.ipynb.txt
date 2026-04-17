@@ -7,17 +7,17 @@
     "language": "markdown"
    },
    "source": [
-    "# Cross-Sectional Model Comparison: bayespreg vs spreg\n",
+    "# Cross-Sectional Model Comparison: bayespecon vs spreg\n",
     "\n",
-    "This notebook compares equivalent cross-sectional models between `bayespreg` and `spreg` on a real example dataset from the PySAL/spreg ecosystem.\n",
+    "This notebook compares equivalent cross-sectional models between `bayespecon` and `spreg` on a real example dataset from the PySAL/spreg ecosystem.\n",
     "\n",
     "Model mapping used:\n",
     "\n",
-    "- `SLX` (bayespreg) vs `spreg.OLS(slx_lags=1)`\n",
-    "- `SAR` (bayespreg) vs `spreg.GM_Lag`\n",
-    "- `SEM` (bayespreg) vs `spreg.GM_Error`\n",
-    "- `SDM` (bayespreg) vs `spreg.GM_Lag(slx_lags=1, w_lags=2)`\n",
-    "- `SDEM` (bayespreg) vs `spreg.GM_Error(slx_lags=1)`\n",
+    "- `SLX` (bayespecon) vs `spreg.OLS(slx_lags=1)`\n",
+    "- `SAR` (bayespecon) vs `spreg.GM_Lag`\n",
+    "- `SEM` (bayespecon) vs `spreg.GM_Error`\n",
+    "- `SDM` (bayespecon) vs `spreg.GM_Lag(slx_lags=1, w_lags=2)`\n",
+    "- `SDEM` (bayespecon) vs `spreg.GM_Error(slx_lags=1)`\n",
     "\n",
     "Dataset: **Columbus** neighborhood data from `libpysal.examples`."
    ]
@@ -39,7 +39,7 @@
     "from libpysal.graph import Graph\n",
     "\n",
     "from IPython.display import display\n",
-    "from bayespreg import SLX, SAR, SEM, SDM, SDEM"
+    "from bayespecon import SLX, SAR, SEM, SDM, SDEM"
    ]
   },
   {
@@ -61,9 +61,9 @@
      "name": "stderr",
      "output_type": "stream",
      "text": [
-      "/Users/knaaptime/miniforge3/envs/bayespreg/lib/python3.14/site-packages/libpysal/io/iohandlers/pyShpIO.py:247: FutureWarning: Objects based on the `Geometry` class will deprecated and removed in a future version of libpysal.\n",
+      "/Users/knaaptime/miniforge3/envs/bayespecon/lib/python3.14/site-packages/libpysal/io/iohandlers/pyShpIO.py:247: FutureWarning: Objects based on the `Geometry` class will deprecated and removed in a future version of libpysal.\n",
       "  shp = self.type(vertices)\n",
-      "/Users/knaaptime/miniforge3/envs/bayespreg/lib/python3.14/site-packages/libpysal/cg/shapes.py:1408: FutureWarning: Objects based on the `Geometry` class will deprecated and removed in a future version of libpysal.\n",
+      "/Users/knaaptime/miniforge3/envs/bayespecon/lib/python3.14/site-packages/libpysal/cg/shapes.py:1408: FutureWarning: Objects based on the `Geometry` class will deprecated and removed in a future version of libpysal.\n",
       "  self._part_rings = [Ring(vertices)]\n"
      ]
     },
@@ -220,7 +220,7 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "Finished fitting all bayespreg models.\n"
+      "Finished fitting all bayespecon models.\n"
      ]
     }
    ],
@@ -242,7 +242,7 @@
     "    \"SDEM\": SDEM(y=y_bayes, X=X_bayes, W=W_graph),\n",
     "}\n",
     "bayes_idata = {name: model.fit(**sample_kwargs) for name, model in bayes_models.items()}\n",
-    "print(\"Finished fitting all bayespreg models.\")"
+    "print(\"Finished fitting all bayespecon models.\")"
    ]
   },
   {
@@ -263,7 +263,7 @@
     "        names = [f\"param_{i}\" for i in range(len(betas))]\n",
     "    return pd.Series(betas, index=names, dtype=float)\n",
     "\n",
-    "def extract_bayespreg_params(model_name, model, idata):\n",
+    "def extract_bayespecon_params(model_name, model, idata):\n",
     "    out = {}\n",
     "    beta_mean = idata.posterior[\"beta\"].mean((\"chain\", \"draw\")).values\n",
     "    beta_names = model._beta_names() if model_name in {\"SLX\", \"SDM\", \"SDEM\"} else list(model._feature_names)\n",
@@ -284,10 +284,10 @@
     "rows = []\n",
     "for model_name in [\"SLX\", \"SAR\", \"SEM\", \"SDM\", \"SDEM\"]:\n",
     "    sp = extract_spreg_params(spreg_results[model_name])\n",
-    "    by = extract_bayespreg_params(model_name, bayes_models[model_name], bayes_idata[model_name])\n",
+    "    by = extract_bayespecon_params(model_name, bayes_models[model_name], bayes_idata[model_name])\n",
     "    common = sorted(set(sp.index).intersection(set(by.index)))\n",
     "    for param in common:\n",
-    "        rows.append({\"model\": model_name, \"parameter\": param, \"bayespreg_posterior_mean\": by[param], \"spreg_estimate\": sp[param], \"difference\": by[param] - sp[param]})\n",
+    "        rows.append({\"model\": model_name, \"parameter\": param, \"bayespecon_posterior_mean\": by[param], \"spreg_estimate\": sp[param], \"difference\": by[param] - sp[param]})\n",
     "\n",
     "comparison = pd.DataFrame(rows).sort_values([\"model\", \"parameter\"]).reset_index(drop=True)\n"
    ]
@@ -321,7 +321,7 @@
        "      <th></th>\n",
        "      <th>model</th>\n",
        "      <th>parameter</th>\n",
-       "      <th>bayespreg_posterior_mean</th>\n",
+       "      <th>bayespecon_posterior_mean</th>\n",
        "      <th>spreg_estimate</th>\n",
        "      <th>difference</th>\n",
        "    </tr>\n",
@@ -532,7 +532,7 @@
        "</div>"
       ],
       "text/plain": [
-       "   model parameter  bayespreg_posterior_mean  spreg_estimate  difference\n",
+       "   model parameter  bayespecon_posterior_mean  spreg_estimate  difference\n",
        "0    SAR  CONSTANT                 46.177695       43.963191    2.214505\n",
        "1    SAR     HOVAL                 -0.266630       -0.265793   -0.000837\n",
        "2    SAR       INC                 -1.061617       -1.009637   -0.051980\n",
@@ -575,7 +575,7 @@
     "language": "markdown"
    },
    "source": [
-    "`bayespreg` uses Bayesian inference, so exact equality with `spreg` point estimates is not expected. The comparison table is intended to confirm that equivalent model specifications produce directionally and numerically comparable coefficients on the same real dataset."
+    "`bayespecon` uses Bayesian inference, so exact equality with `spreg` point estimates is not expected. The comparison table is intended to confirm that equivalent model specifications produce directionally and numerically comparable coefficients on the same real dataset."
    ]
   },
   {
@@ -605,9 +605,9 @@
  ],
  "metadata": {
   "kernelspec": {
-   "display_name": "Python [conda env:bayespreg]",
+   "display_name": "Python [conda env:bayespecon]",
    "language": "python",
-   "name": "conda-env-bayespreg-py"
+   "name": "conda-env-bayespecon-py"
   },
   "language_info": {
    "codemirror_mode": {

@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.arch\_test
+=================================
+
+.. currentmodule:: bayespecon.diagnostics
+
+.. autofunction:: arch_test

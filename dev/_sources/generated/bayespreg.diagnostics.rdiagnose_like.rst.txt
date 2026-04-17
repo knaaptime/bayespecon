@@ -1,6 +1,0 @@
-﻿bayespreg.diagnostics.rdiagnose\_like
-=====================================
-
-.. currentmodule:: bayespreg.diagnostics
-
-.. autofunction:: rdiagnose_like

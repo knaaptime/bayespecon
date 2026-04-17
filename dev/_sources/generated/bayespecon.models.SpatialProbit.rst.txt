@@ -1,0 +1,26 @@
+﻿bayespecon.models.SpatialProbit
+===============================
+
+.. currentmodule:: bayespecon.models
+
+.. autoclass:: SpatialProbit
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~SpatialProbit.__init__
+      ~SpatialProbit.fit
+      ~SpatialProbit.fitted_probabilities
+      ~SpatialProbit.random_effects_mean
+      ~SpatialProbit.summary
+   
+   
+
+   
+   
+   

@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.pesaran\_cd\_test
+========================================
+
+.. currentmodule:: bayespecon.diagnostics
+
+.. autofunction:: pesaran_cd_test

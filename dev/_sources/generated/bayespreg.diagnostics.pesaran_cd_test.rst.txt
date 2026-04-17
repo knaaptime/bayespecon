@@ -1,6 +1,0 @@
-﻿bayespreg.diagnostics.pesaran\_cd\_test
-=======================================
-
-.. currentmodule:: bayespreg.diagnostics
-
-.. autofunction:: pesaran_cd_test

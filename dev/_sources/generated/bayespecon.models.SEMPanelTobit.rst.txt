@@ -1,0 +1,33 @@
+﻿bayespecon.models.SEMPanelTobit
+===============================
+
+.. currentmodule:: bayespecon.models
+
+.. autoclass:: SEMPanelTobit
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~SEMPanelTobit.__init__
+      ~SEMPanelTobit.autocorrelation_diagnostics
+      ~SEMPanelTobit.diagnostics
+      ~SEMPanelTobit.fit
+      ~SEMPanelTobit.fitted_values
+      ~SEMPanelTobit.heteroskedasticity_diagnostics
+      ~SEMPanelTobit.outlier_diagnostics
+      ~SEMPanelTobit.panel_diagnostics
+      ~SEMPanelTobit.regression_diagnostics
+      ~SEMPanelTobit.residuals
+      ~SEMPanelTobit.spatial_effects
+      ~SEMPanelTobit.summary
+   
+   
+
+   
+   
+   

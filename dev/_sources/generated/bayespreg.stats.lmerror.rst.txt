@@ -1,6 +1,0 @@
-﻿bayespreg.stats.lmerror
-=======================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: lmerror

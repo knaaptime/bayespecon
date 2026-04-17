@@ -1,0 +1,6 @@
+﻿bayespecon.stats.f2\_sempanel
+=============================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: f2_sempanel

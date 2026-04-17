@@ -1,0 +1,6 @@
+﻿bayespecon.stats.lr\_f\_sar\_c
+==============================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: lr_f_sar_c

@@ -1,0 +1,6 @@
+﻿bayespecon.stats.f\_sarar\_panel
+================================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: f_sarar_panel

@@ -1,6 +1,0 @@
-﻿bayespreg.stats.sar\_panel\_FE\_LY
-==================================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: sar_panel_FE_LY

@@ -1,6 +1,0 @@
-﻿bayespreg.stats.prt\_old
-========================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: prt_old

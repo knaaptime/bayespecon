@@ -1,0 +1,32 @@
+﻿bayespecon.models.SARTobit
+==========================
+
+.. currentmodule:: bayespecon.models
+
+.. autoclass:: SARTobit
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~SARTobit.__init__
+      ~SARTobit.autocorrelation_diagnostics
+      ~SARTobit.diagnostics
+      ~SARTobit.fit
+      ~SARTobit.fitted_values
+      ~SARTobit.heteroskedasticity_diagnostics
+      ~SARTobit.outlier_diagnostics
+      ~SARTobit.regression_diagnostics
+      ~SARTobit.residuals
+      ~SARTobit.spatial_effects
+      ~SARTobit.summary
+   
+   
+
+   
+   
+   

@@ -1,0 +1,6 @@
+﻿bayespecon.stats.lmlag
+======================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: lmlag

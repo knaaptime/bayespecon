@@ -1,0 +1,6 @@
+﻿bayespecon.stats.lmrhorob
+=========================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: lmrhorob

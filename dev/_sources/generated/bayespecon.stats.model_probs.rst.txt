@@ -1,0 +1,6 @@
+﻿bayespecon.stats.model\_probs
+=============================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: model_probs

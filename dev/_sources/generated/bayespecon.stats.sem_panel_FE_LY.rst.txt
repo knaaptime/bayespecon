@@ -1,0 +1,6 @@
+﻿bayespecon.stats.sem\_panel\_FE\_LY
+===================================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: sem_panel_FE_LY

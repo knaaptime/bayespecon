@@ -1,0 +1,6 @@
+﻿bayespecon.stats.walds
+======================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: walds

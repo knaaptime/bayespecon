@@ -1,6 +1,0 @@
-﻿bayespreg.stats.prt\_spat2
-==========================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: prt_spat2

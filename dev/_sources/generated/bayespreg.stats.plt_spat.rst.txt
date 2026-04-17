@@ -1,6 +1,0 @@
-﻿bayespreg.stats.plt\_spat
-=========================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: plt_spat

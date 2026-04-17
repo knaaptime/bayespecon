@@ -1,0 +1,6 @@
+﻿bayespecon.stats.lmerror
+========================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: lmerror

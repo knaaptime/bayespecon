@@ -1,6 +1,0 @@
-﻿bayespreg.stats.f2\_sempanel
-============================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: f2_sempanel

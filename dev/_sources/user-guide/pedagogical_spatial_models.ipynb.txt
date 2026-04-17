@@ -7,7 +7,7 @@
    "source": [
     "# Bayesian Spatial Models: A Pedagogical Walkthrough\n",
     "\n",
-    "This notebook demonstrates all five models currently implemented in `bayespreg`:\n",
+    "This notebook demonstrates all five models currently implemented in `bayespecon`:\n",
     "\n",
     "1. SLX\n",
     "2. SAR\n",
@@ -33,7 +33,7 @@
     "- **SDM**: $y = \\rho Wy + X\\beta + WX\\theta + \\epsilon$\n",
     "- **SDEM**: $y = X\\beta + WX\\theta + u$, $u = \\lambda Wu + \\epsilon$\n",
     "\n",
-    "In `bayespreg`, all models accept either:\n",
+    "In `bayespecon`, all models accept either:\n",
     "- formula mode: `model_class(formula=..., data=..., W=...)`, or\n",
     "- matrix mode: `model_class(y=..., X=..., W=...)`."
    ]
@@ -61,7 +61,7 @@
     "if str(repo_root) not in sys.path:\n",
     "    sys.path.insert(0, str(repo_root))\n",
     "\n",
-    "from bayespreg import SLX, SAR, SEM, SDM, SDEM\n",
+    "from bayespecon import SLX, SAR, SEM, SDM, SDEM\n",
     "\n",
     "az.style.use(\"arviz-white\")"
    ]
@@ -3240,9 +3240,9 @@
  ],
  "metadata": {
   "kernelspec": {
-   "display_name": "Python [conda env:bayespreg]",
+   "display_name": "Python [conda env:bayespecon]",
    "language": "python",
-   "name": "conda-env-bayespreg-py"
+   "name": "conda-env-bayespecon-py"
   },
   "language_info": {
    "codemirror_mode": {

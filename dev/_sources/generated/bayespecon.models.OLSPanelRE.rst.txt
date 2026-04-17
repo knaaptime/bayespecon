@@ -1,0 +1,33 @@
+﻿bayespecon.models.OLSPanelRE
+============================
+
+.. currentmodule:: bayespecon.models
+
+.. autoclass:: OLSPanelRE
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~OLSPanelRE.__init__
+      ~OLSPanelRE.autocorrelation_diagnostics
+      ~OLSPanelRE.diagnostics
+      ~OLSPanelRE.fit
+      ~OLSPanelRE.fitted_values
+      ~OLSPanelRE.heteroskedasticity_diagnostics
+      ~OLSPanelRE.outlier_diagnostics
+      ~OLSPanelRE.panel_diagnostics
+      ~OLSPanelRE.regression_diagnostics
+      ~OLSPanelRE.residuals
+      ~OLSPanelRE.spatial_effects
+      ~OLSPanelRE.summary
+   
+   
+
+   
+   
+   

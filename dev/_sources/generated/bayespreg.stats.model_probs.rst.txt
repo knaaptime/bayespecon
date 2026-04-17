@@ -1,6 +1,0 @@
-﻿bayespreg.stats.model\_probs
-============================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: model_probs

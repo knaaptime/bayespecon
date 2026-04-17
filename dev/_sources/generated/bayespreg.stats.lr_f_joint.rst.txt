@@ -1,6 +1,0 @@
-﻿bayespreg.stats.lr\_f\_joint
-============================
-
-.. currentmodule:: bayespreg.stats
-
-.. autofunction:: lr_f_joint

@@ -1,0 +1,6 @@
+﻿bayespecon.stats.prt\_fe
+========================
+
+.. currentmodule:: bayespecon.stats
+
+.. autofunction:: prt_fe
