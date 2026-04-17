@@ -4,6 +4,7 @@ channels:
 dependencies:
   - python=3.14
   - libpysal
+  - arviz < 1
   - esda
   - formulaic
   - bambi

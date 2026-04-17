@@ -12,4 +12,4 @@ dependencies:
   - statsmodels
   - geopandas
   - geodatasets
-  - lonboard
+  - arviz < 1
