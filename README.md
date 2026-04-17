@@ -79,7 +79,8 @@ $$y_i = \max(c,\, y^*_i)$$
 ### Non-Linear Panel Models
 
 #### SARPanelTobit
-spatial lag in the latent outcome: 
+
+spatial lag in the latent outcome:
 
 $y^*_t = \rho W y^*_t + X_t \beta + \varepsilon_t$  
 
@@ -87,4 +88,4 @@ $y^*_t = \rho W y^*_t + X_t \beta + \varepsilon_t$
 
 spatial lag in the disturbance:
 
-$y^*_t = X_t \beta + u_t$, $u_t = \lambda W u_t + \varepsilon_t$
+$y^*_t = X_t \beta + u_t,  u_t = \lambda W u_t + \varepsilon_t$
