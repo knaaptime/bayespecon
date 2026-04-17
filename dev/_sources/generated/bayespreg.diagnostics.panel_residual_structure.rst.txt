@@ -1,0 +1,6 @@
+﻿bayespreg.diagnostics.panel\_residual\_structure
+================================================
+
+.. currentmodule:: bayespreg.diagnostics
+
+.. autofunction:: panel_residual_structure

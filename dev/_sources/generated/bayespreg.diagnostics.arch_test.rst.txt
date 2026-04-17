@@ -1,0 +1,6 @@
+﻿bayespreg.diagnostics.arch\_test
+================================
+
+.. currentmodule:: bayespreg.diagnostics
+
+.. autofunction:: arch_test

@@ -1,0 +1,126 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "f1ed4569",
+   "metadata": {},
+   "source": [
+    "# Nonlinear Spatial Models\n",
+    "\n",
+    "This guide demonstrates three nonlinear spatial models in `bayespreg` on synthetic data.\n",
+    "\n",
+    "## Spatial Probit\n",
+    "\n",
+    "For binary outcomes $y_i \\in \\{0,1\\}$, latent utilities $y^*$ follow a spatial lag:\n",
+    "\n",
+    "$$y^* = \\rho W y^* + X\\beta + a + \\varepsilon, \\quad \\varepsilon \\sim \\mathcal{N}(0, I)$$\n",
+    "\n",
+    "where $a$ are region-level random effects and $y_i = \\mathbf{1}[y^*_i > 0]$.\n",
+    "\n",
+    "## SAR Tobit\n",
+    "\n",
+    "For censored outcomes, the spatial autoregressive Tobit specifies:\n",
+    "\n",
+    "$$y^* = \\rho W y^* + X\\beta + \\varepsilon, \\quad \\varepsilon \\sim \\mathcal{N}(0, \\sigma^2 I)$$\n",
+    "$$y_i = \\max(c,\\, y^*_i)$$\n",
+    "\n",
+    "where $c$ is the censoring threshold (default 0).\n",
+    "\n",
+    "## SEM Tobit\n",
+    "\n",
+    "The spatial error Tobit places spatial dependence in the disturbance:\n",
+    "\n",
+    "$$y^* = X\\beta + u, \\quad u = \\lambda W u + \\varepsilon, \\quad \\varepsilon \\sim \\mathcal{N}(0, \\sigma^2 I)$$\n",
+    "$$y_i = \\max(c,\\, y^*_i)$$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "99733980",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "from scipy.special import erf\n",
+    "from libpysal.graph import Graph\n",
+    "from bayespreg import SpatialProbit, SARTobit, SEMTobit\n",
+    "\n",
+    "rng = np.random.default_rng(1234)\n",
+    "\n",
+    "def make_line_W(n):\n",
+    "    W = np.zeros((n, n))\n",
+    "    for i in range(n):\n",
+    "        if i > 0:\n",
+    "            W[i, i - 1] = 1.0\n",
+    "        if i < n - 1:\n",
+    "            W[i, i + 1] = 1.0\n",
+    "    s = W.sum(axis=1, keepdims=True)\n",
+    "    return W / np.where(s == 0, 1, s)\n",
+    "\n",
+    "def W_to_graph(W):\n",
+    "    i, j = np.where(W != 0)\n",
+    "    return Graph.from_arrays(i, j, W[i, j].astype(float))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "7e246ef5",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# SpatialProbit\n",
+    "m, n_per_region = 8, 20\n",
+    "Wm = make_line_W(m)\n",
+    "Gm = W_to_graph(Wm)\n",
+    "rho, beta, sigma_a = 0.35, np.array([0.3, 1.0]), 0.8\n",
+    "a = np.linalg.solve(np.eye(m) - rho * Wm, sigma_a * rng.standard_normal(m))\n",
+    "region_ids = np.repeat(np.arange(m), n_per_region)\n",
+    "x1 = rng.standard_normal(m * n_per_region)\n",
+    "X = np.column_stack([np.ones_like(x1), x1])\n",
+    "eta = X @ beta + a[region_ids]\n",
+    "p = 0.5 * (1.0 + erf(eta / np.sqrt(2.0)))\n",
+    "y = rng.binomial(1, p).astype(float)\n",
+    "sp = SpatialProbit(y=y, X=X, W=Gm, region_ids=region_ids)\n",
+    "sp.fit(draws=300, tune=300, chains=2, random_seed=42, progressbar=False)\n",
+    "sp.summary(var_names=[\"rho\", \"beta\", \"sigma_a\"])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "d14c9adb",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# SARTobit and SEMTobit\n",
+    "n = 30\n",
+    "W = make_line_W(n)\n",
+    "G = W_to_graph(W)\n",
+    "X = np.column_stack([np.ones(n), rng.standard_normal(n)])\n",
+    "beta = np.array([1.0, 1.5])\n",
+    "sigma, rho, lam = 0.8, 0.4, 0.35\n",
+    "y_lat_sar = np.linalg.solve(np.eye(n) - rho * W, X @ beta + sigma * rng.standard_normal(n))\n",
+    "y_sar = np.maximum(0.0, y_lat_sar)\n",
+    "sar_tobit = SARTobit(y=y_sar, X=X, W=G, censoring=0.0)\n",
+    "sar_tobit.fit(draws=300, tune=300, chains=2, random_seed=42, progressbar=False)\n",
+    "\n",
+    "u_sem = np.linalg.solve(np.eye(n) - lam * W, sigma * rng.standard_normal(n))\n",
+    "y_lat_sem = X @ beta + u_sem\n",
+    "y_sem = np.maximum(0.0, y_lat_sem)\n",
+    "sem_tobit = SEMTobit(y=y_sem, X=X, W=G, censoring=0.0)\n",
+    "sem_tobit.fit(draws=300, tune=300, chains=2, random_seed=42, progressbar=False)\n",
+    "\n",
+    "sar_tobit.summary(var_names=[\"rho\", \"beta\", \"sigma\"]), sem_tobit.summary(var_names=[\"lam\", \"beta\", \"sigma\"])"
+   ]
+  }
+ ],
+ "metadata": {
+  "language_info": {
+   "name": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

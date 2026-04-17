@@ -1,0 +1,6 @@
+﻿bayespreg.stats.sem\_panel\_FE\_LY
+==================================
+
+.. currentmodule:: bayespreg.stats
+
+.. autofunction:: sem_panel_FE_LY

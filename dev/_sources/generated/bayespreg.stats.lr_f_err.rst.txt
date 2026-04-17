@@ -1,0 +1,6 @@
+﻿bayespreg.stats.lr\_f\_err
+==========================
+
+.. currentmodule:: bayespreg.stats
+
+.. autofunction:: lr_f_err

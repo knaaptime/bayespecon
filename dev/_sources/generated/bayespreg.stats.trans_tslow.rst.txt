@@ -1,0 +1,6 @@
+﻿bayespreg.stats.trans\_tslow
+============================
+
+.. currentmodule:: bayespreg.stats
+
+.. autofunction:: trans_tslow

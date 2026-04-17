@@ -1,0 +1,6 @@
+﻿bayespreg.stats.lmsar
+=====================
+
+.. currentmodule:: bayespreg.stats
+
+.. autofunction:: lmsar

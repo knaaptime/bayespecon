@@ -1,0 +1,6 @@
+﻿bayespreg.stats.walds
+=====================
+
+.. currentmodule:: bayespreg.stats
+
+.. autofunction:: walds

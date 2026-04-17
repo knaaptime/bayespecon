@@ -1,0 +1,6 @@
+﻿bayespreg.stats.lmrho
+=====================
+
+.. currentmodule:: bayespreg.stats
+
+.. autofunction:: lmrho

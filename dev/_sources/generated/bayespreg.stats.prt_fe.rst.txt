@@ -1,0 +1,6 @@
+﻿bayespreg.stats.prt\_fe
+=======================
+
+.. currentmodule:: bayespreg.stats
+
+.. autofunction:: prt_fe

@@ -1,0 +1,6 @@
+﻿bayespreg.stats.moran
+=====================
+
+.. currentmodule:: bayespreg.stats
+
+.. autofunction:: moran

@@ -1,0 +1,6 @@
+﻿bayespreg.diagnostics.outlier\_candidates
+=========================================
+
+.. currentmodule:: bayespreg.diagnostics
+
+.. autofunction:: outlier_candidates

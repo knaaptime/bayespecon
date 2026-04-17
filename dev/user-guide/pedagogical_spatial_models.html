@@ -1,0 +1,3608 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../installation.html">
+      
+      
+        <link rel="next" href="cross_sectional_spreg_comparison.html">
+      
+      
+      <link rel="icon" href="../_static/pysal_favicon.ico">
+    
+    
+      
+        <title>Bayesian Spatial Models: A Pedagogical Walkthrough - bayespreg</title>
+      
+    
+    
+      
+        
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+        <link rel="stylesheet" type="text/css" href="../_static/sphinx_immaterial_theme.74c816e3f9967dd6e.min.css?v=6cfe2491" />
+        <link rel="stylesheet" type="text/css" href="../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+        <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+        <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=93c5fc88" />
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#conceptual-roadmap" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../index.html" title="bayespreg" class="md-header__button md-logo" aria-label="bayespreg" data-md-component="logo">
+      <img src="../_static/pysal_logo.svg" alt="logo">
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            bayespreg
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Bayesian Spatial Models: A Pedagogical Walkthrough
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="red"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="red"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7M9 21v-1h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1m3-17a5 5 0 0 0-5 5c0 2.05 1.23 3.81 3 4.58V16h4v-2.42c1.77-.77 3-2.53 3-4.58a5 5 0 0 0-5-5"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pysal/bayespreg/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pysal/bayespreg
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../index.html" title="bayespreg" class="md-nav__button md-logo" aria-label="bayespreg" data-md-component="logo">
+      <img src="../_static/pysal_logo.svg" alt="logo">
+    </a>
+    bayespreg
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pysal/bayespreg/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pysal/bayespreg
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Home</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Installation</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>User Guide</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            <span>User Guide</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="#" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary">
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conceptual-roadmap" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Conceptual Roadmap</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#helper-functions" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Helper Functions</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#convergence-diagnostics-helper" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Convergence Diagnostics Helper</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slx-spatially-lagged-covariates-only" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>1) SLX:<wbr> Spatially Lagged Covariates Only</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sar-spatial-lag-of-outcome" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>2) SAR:<wbr> Spatial Lag of Outcome</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sem-spatial-correlation-in-errors" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>3) SEM:<wbr> Spatial Correlation in Errors</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sdm-sar-slx" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>4) SDM:<wbr> SAR + SLX</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sdem-slx-spatial-error" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>5) SDEM:<wbr> SLX + Spatial Error</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compare-spatial-parameters-across-models" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Compare Spatial Parameters Across Models</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-comparison-waic-and-loo" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Model Comparison:<wbr> WAIC and LOO</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#matlab-style-residual-diagnostics-per-model" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>MATLAB-<wbr>Style Residual Diagnostics <wbr>(Per Model)</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#matrix-mode-api-example-optional" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Matrix-<wbr>Mode API Example <wbr>(Optional)</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes-for-real-analyses" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Notes for Real Analyses</span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="cross_sectional_spreg_comparison.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Comparing bayespreg vs spreg</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="pedagogical_panel_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Panel Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="nonlinear_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Nonlinear Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="nonlinear_panel_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Nonlinear Panel Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="faithfulness_bayespreg.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Recovering Parameters</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../references.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>References</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>API</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            <span>API</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>API reference</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>For contributors</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            <span>For contributors</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/pysal/bayespreg" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Git<wbr>Hub</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/pysal/bayespreg/releases" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Changelog</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary">
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conceptual-roadmap" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Conceptual Roadmap</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#helper-functions" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Helper Functions</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#convergence-diagnostics-helper" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Convergence Diagnostics Helper</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slx-spatially-lagged-covariates-only" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>1) SLX:<wbr> Spatially Lagged Covariates Only</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sar-spatial-lag-of-outcome" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>2) SAR:<wbr> Spatial Lag of Outcome</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sem-spatial-correlation-in-errors" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>3) SEM:<wbr> Spatial Correlation in Errors</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sdm-sar-slx" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>4) SDM:<wbr> SAR + SLX</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sdem-slx-spatial-error" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>5) SDEM:<wbr> SLX + Spatial Error</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compare-spatial-parameters-across-models" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Compare Spatial Parameters Across Models</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-comparison-waic-and-loo" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Model Comparison:<wbr> WAIC and LOO</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#matlab-style-residual-diagnostics-per-model" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>MATLAB-<wbr>Style Residual Diagnostics <wbr>(Per Model)</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#matrix-mode-api-example-optional" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Matrix-<wbr>Mode API Example <wbr>(Optional)</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes-for-real-analyses" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Notes for Real Analyses</span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset" role="main">
+                
+                
+                  
+
+
+  
+    <a href="https://github.com/pysal/bayespreg/blob/main/docs/user-guide/pedagogical_spatial_models.ipynb" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.11.89-2 2-2m.12 13.5 3.74 3.74 1.42-1.41-2.33-2.33 2.33-2.33-1.42-1.41zm11.16 0-3.74-3.74-1.42 1.41 2.33 2.33-2.33 2.33 1.42 1.41z"/></svg>
+    </a>
+  
+  
+
+<h1 id="bayesian-spatial-models-a-pedagogical-walkthrough">Bayesian Spatial Models: A Pedagogical Walkthrough<a class="headerlink" href="#bayesian-spatial-models-a-pedagogical-walkthrough" title="Link to this heading">¶</a></h1>
+<p>This notebook demonstrates all five models currently implemented in <code class="docutils literal notranslate"><span class="pre">bayespreg</span></code>:</p>
+<ol class="arabic simple">
+<li><p>SLX</p></li>
+<li><p>SAR</p></li>
+<li><p>SEM</p></li>
+<li><p>SDM</p></li>
+<li><p>SDEM</p></li>
+</ol>
+<p>Each section explains the model idea, fits the model, and inspects posterior summaries and spatial effects.</p>
+<h2 id="conceptual-roadmap">Conceptual Roadmap<a class="headerlink" href="#conceptual-roadmap" title="Link to this heading">¶</a></h2>
+<p>Let <span class="math notranslate nohighlight">\(W\)</span> denote the spatial weights matrix and <span class="math notranslate nohighlight">\(WX\)</span> the spatial lag of covariates.</p>
+<ul class="simple">
+<li><p><strong>SLX</strong>: <span class="math notranslate nohighlight">\(y = X\beta + WX\theta + \epsilon\)</span></p></li>
+<li><p><strong>SAR</strong>: <span class="math notranslate nohighlight">\(y = \rho Wy + X\beta + \epsilon\)</span></p></li>
+<li><p><strong>SEM</strong>: <span class="math notranslate nohighlight">\(y = X\beta + u\)</span>, <span class="math notranslate nohighlight">\(u = \lambda Wu + \epsilon\)</span></p></li>
+<li><p><strong>SDM</strong>: <span class="math notranslate nohighlight">\(y = \rho Wy + X\beta + WX\theta + \epsilon\)</span></p></li>
+<li><p><strong>SDEM</strong>: <span class="math notranslate nohighlight">\(y = X\beta + WX\theta + u\)</span>, <span class="math notranslate nohighlight">\(u = \lambda Wu + \epsilon\)</span></p></li>
+</ul>
+<p>In <code class="docutils literal notranslate"><span class="pre">bayespreg</span></code>, all models accept either:</p>
+<ul class="simple">
+<li><p>formula mode: <code class="docutils literal notranslate"><span class="pre">model_class(formula=...,</span> <span class="pre">data=...,</span> <span class="pre">W=...)</span></code>, or</p></li>
+<li><p>matrix mode: <code class="docutils literal notranslate"><span class="pre">model_class(y=...,</span> <span class="pre">X=...,</span> <span class="pre">W=...)</span></code>.</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">arviz</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">az</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">geodatasets</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">display</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
+
+<span class="c1"># Ensure local package import works when running from notebooks/</span>
+<span class="n">repo_root</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span>
+<span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">:</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">))</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespreg</span><span class="w"> </span><span class="kn">import</span> <span class="n">SLX</span><span class="p">,</span> <span class="n">SAR</span><span class="p">,</span> <span class="n">SEM</span><span class="p">,</span> <span class="n">SDM</span><span class="p">,</span> <span class="n">SDEM</span>
+
+<span class="n">az</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s2">&quot;arviz-white&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Load sample spatial dataset</span>
+<span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="n">geodatasets</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">geoda</span><span class="o">.</span><span class="n">airbnb</span><span class="o">.</span><span class="n">url</span><span class="p">)</span>
+<span class="n">xcols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;poverty&quot;</span><span class="p">,</span> <span class="s2">&quot;rev_rating&quot;</span><span class="p">,</span> <span class="s2">&quot;num_spots&quot;</span><span class="p">,</span> <span class="s2">&quot;crowded&quot;</span><span class="p">]</span>
+<span class="n">ycol</span> <span class="o">=</span> <span class="s2">&quot;price_pp&quot;</span>
+<span class="n">gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">dropna</span><span class="p">(</span><span class="n">subset</span><span class="o">=</span><span class="n">xcols</span> <span class="o">+</span> <span class="p">[</span><span class="n">ycol</span><span class="p">])</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+<span class="c1"># Build contiguity graph (queen)</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">rook</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s1">&#39;r&#39;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Observations: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">gdf</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Predictors: </span><span class="si">{</span><span class="n">xcols</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Observations: 67
+Predictors: [&#39;poverty&#39;, &#39;rev_rating&#39;, &#39;num_spots&#39;, &#39;crowded&#39;]
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="helper-functions">Helper Functions<a class="headerlink" href="#helper-functions" title="Link to this heading">¶</a></h2>
+<p>To keep each model section focused, we use utility functions to:</p>
+<ul class="simple">
+<li><p>fit with consistent MCMC settings,</p></li>
+<li><p>print posterior summaries,</p></li>
+<li><p>tabulate direct/indirect/total effects.</p></li>
+</ul>
+<p>For a quick pedagogical run, we use small draw counts. Increase these for real inference.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">fit_and_report</span><span class="p">(</span><span class="n">model_cls</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">model_cls</span><span class="p">(</span>
+        <span class="n">formula</span><span class="o">=</span><span class="n">formula</span><span class="p">,</span>
+        <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+        <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+        <span class="n">logdet_method</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+        <span class="n">draws</span><span class="o">=</span><span class="n">draws</span><span class="p">,</span>
+        <span class="n">tune</span><span class="o">=</span><span class="n">tune</span><span class="p">,</span>
+        <span class="n">chains</span><span class="o">=</span><span class="n">chains</span><span class="p">,</span>
+        <span class="n">target_accept</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+        <span class="n">random_seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
+        <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">summary</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">effects</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">()</span>
+    <span class="n">effects_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+        <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;feature_names&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;direct&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;direct&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;indirect&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;indirect&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;total&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;total&quot;</span><span class="p">],</span>
+    <span class="p">})</span>
+
+    <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">idata</span><span class="p">,</span> <span class="n">summary</span><span class="p">,</span> <span class="n">effects_df</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="convergence-diagnostics-helper">Convergence Diagnostics Helper<a class="headerlink" href="#convergence-diagnostics-helper" title="Link to this heading">¶</a></h2>
+<p>For each fitted model, we will inspect:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">r_hat</span></code> (target close to 1.00)</p></li>
+<li><p>effective sample sizes (<code class="docutils literal notranslate"><span class="pre">ess_bulk</span></code>, <code class="docutils literal notranslate"><span class="pre">ess_tail</span></code>)</p></li>
+<li><p>trace plots for key parameters.</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">diagnostics_table</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">):</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;sd&quot;</span><span class="p">,</span> <span class="s2">&quot;ess_bulk&quot;</span><span class="p">,</span> <span class="s2">&quot;ess_tail&quot;</span><span class="p">,</span> <span class="s2">&quot;r_hat&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">az</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="n">var_names</span><span class="p">,</span> <span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)[</span><span class="n">cols</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">show_trace</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">,</span> <span class="n">title</span><span class="p">):</span>
+    <span class="n">az</span><span class="o">.</span><span class="n">plot_trace</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="n">var_names</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">1.02</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="slx-spatially-lagged-covariates-only">1) SLX: Spatially Lagged Covariates Only<a class="headerlink" href="#slx-spatially-lagged-covariates-only" title="Link to this heading">¶</a></h2>
+<p>Model:</p>
+<div class="math notranslate nohighlight">
+\[
+y = X\beta + WX\theta + \epsilon
+\]</div>
+<p>Interpretation:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">beta</span></code> captures local covariate effects.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">theta</span></code> captures neighbor-covariate spillovers.</p></li>
+<li><p>No spatial lag on <span class="math notranslate nohighlight">\(y\)</span>, so no autoregressive propagation through outcomes.</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">slx</span><span class="p">,</span> <span class="n">idata_slx</span><span class="p">,</span> <span class="n">summary_slx</span><span class="p">,</span> <span class="n">effects_slx</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+    <span class="n">SLX</span><span class="p">,</span>
+    <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
+    <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_slx</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_slx</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [beta, sigma]
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws total) took 30 seconds.
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>189.574</td>
+      <td>210.163</td>
+      <td>-167.015</td>
+      <td>627.688</td>
+      <td>8.939</td>
+      <td>6.045</td>
+      <td>552.011</td>
+      <td>683.690</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>-0.675</td>
+      <td>0.455</td>
+      <td>-1.527</td>
+      <td>0.168</td>
+      <td>0.015</td>
+      <td>0.010</td>
+      <td>946.699</td>
+      <td>1202.923</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>0.343</td>
+      <td>0.889</td>
+      <td>-1.261</td>
+      <td>2.019</td>
+      <td>0.030</td>
+      <td>0.022</td>
+      <td>858.478</td>
+      <td>995.480</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>0.021</td>
+      <td>0.030</td>
+      <td>-0.037</td>
+      <td>0.074</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>1059.799</td>
+      <td>938.293</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-1.030</td>
+      <td>1.165</td>
+      <td>-3.224</td>
+      <td>1.098</td>
+      <td>0.036</td>
+      <td>0.024</td>
+      <td>1025.749</td>
+      <td>1059.615</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>W*poverty</th>
+      <td>1.183</td>
+      <td>0.668</td>
+      <td>-0.014</td>
+      <td>2.446</td>
+      <td>0.028</td>
+      <td>0.018</td>
+      <td>598.411</td>
+      <td>832.256</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>W*rev_rating</th>
+      <td>-1.763</td>
+      <td>1.814</td>
+      <td>-5.026</td>
+      <td>1.749</td>
+      <td>0.072</td>
+      <td>0.048</td>
+      <td>639.098</td>
+      <td>768.137</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>W*num_spots</th>
+      <td>0.201</td>
+      <td>0.046</td>
+      <td>0.122</td>
+      <td>0.288</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>1041.499</td>
+      <td>1223.241</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>W*crowded</th>
+      <td>-1.435</td>
+      <td>1.572</td>
+      <td>-4.655</td>
+      <td>1.306</td>
+      <td>0.053</td>
+      <td>0.035</td>
+      <td>881.426</td>
+      <td>1109.505</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>23.648</td>
+      <td>2.047</td>
+      <td>20.086</td>
+      <td>27.515</td>
+      <td>0.062</td>
+      <td>0.052</td>
+      <td>1098.255</td>
+      <td>1117.649</td>
+      <td>1.001</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>poverty</td>
+      <td>-0.674834</td>
+      <td>0.017663</td>
+      <td>-0.657170</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>rev_rating</td>
+      <td>0.342909</td>
+      <td>-0.026313</td>
+      <td>0.316596</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>num_spots</td>
+      <td>0.020759</td>
+      <td>0.003002</td>
+      <td>0.023760</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>crowded</td>
+      <td>-1.029607</td>
+      <td>-0.021414</td>
+      <td>-1.051021</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">idata_slx</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_slx</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_slx</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SLX Trace: sigma&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>189.574</td>
+      <td>210.163</td>
+      <td>552.011</td>
+      <td>683.690</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>-0.675</td>
+      <td>0.455</td>
+      <td>946.699</td>
+      <td>1202.923</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>0.343</td>
+      <td>0.889</td>
+      <td>858.478</td>
+      <td>995.480</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>0.021</td>
+      <td>0.030</td>
+      <td>1059.799</td>
+      <td>938.293</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>-1.030</td>
+      <td>1.165</td>
+      <td>1025.749</td>
+      <td>1059.615</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>beta[W*poverty]</th>
+      <td>1.183</td>
+      <td>0.668</td>
+      <td>598.411</td>
+      <td>832.256</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>beta[W*rev_rating]</th>
+      <td>-1.763</td>
+      <td>1.814</td>
+      <td>639.098</td>
+      <td>768.137</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>beta[W*num_spots]</th>
+      <td>0.201</td>
+      <td>0.046</td>
+      <td>1041.499</td>
+      <td>1223.241</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[W*crowded]</th>
+      <td>-1.435</td>
+      <td>1.572</td>
+      <td>881.426</td>
+      <td>1109.505</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>23.648</td>
+      <td>2.047</td>
+      <td>1098.255</td>
+      <td>1117.649</td>
+      <td>1.001</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_5904/3308626596.py:12: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<img alt="../_images/558d7087033d9d52294271c49d39e96d8ad3909922bb8119d4fe408cb4a64ea6.png" src="../_images/558d7087033d9d52294271c49d39e96d8ad3909922bb8119d4fe408cb4a64ea6.png" />
+<img alt="../_images/c8859d42b2c74268cfbbbc90894d261e4cde9e8fb899bd630fa025972e9077df.png" src="../_images/c8859d42b2c74268cfbbbc90894d261e4cde9e8fb899bd630fa025972e9077df.png" />
+</div>
+</div>
+<h2 id="sar-spatial-lag-of-outcome">2) SAR: Spatial Lag of Outcome<a class="headerlink" href="#sar-spatial-lag-of-outcome" title="Link to this heading">¶</a></h2>
+<p>Model:</p>
+<div class="math notranslate nohighlight">
+\[
+y = \rho Wy + X\beta + \epsilon
+\]</div>
+<p>Interpretation:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(\rho\)</span> controls feedback from neighboring outcomes.</p></li>
+<li><p>Effects are amplified through <span class="math notranslate nohighlight">\((I - \rho W)^{-1}\)</span>, so direct and indirect impacts differ from raw <span class="math notranslate nohighlight">\(\beta\)</span>.</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sar</span><span class="p">,</span> <span class="n">idata_sar</span><span class="p">,</span> <span class="n">summary_sar</span><span class="p">,</span> <span class="n">effects_sar</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+    <span class="n">SAR</span><span class="p">,</span>
+    <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
+    <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_sar</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_sar</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [rho, beta, sigma]
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws total) took 20 seconds.
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>-43.650</td>
+      <td>78.768</td>
+      <td>-200.765</td>
+      <td>95.548</td>
+      <td>2.883</td>
+      <td>2.184</td>
+      <td>745.206</td>
+      <td>897.104</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>0.100</td>
+      <td>0.316</td>
+      <td>-0.488</td>
+      <td>0.677</td>
+      <td>0.010</td>
+      <td>0.009</td>
+      <td>1064.785</td>
+      <td>1027.666</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>0.913</td>
+      <td>0.825</td>
+      <td>-0.453</td>
+      <td>2.611</td>
+      <td>0.031</td>
+      <td>0.022</td>
+      <td>715.441</td>
+      <td>932.399</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>0.077</td>
+      <td>0.025</td>
+      <td>0.030</td>
+      <td>0.126</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>1296.118</td>
+      <td>1029.851</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-1.748</td>
+      <td>0.860</td>
+      <td>-3.493</td>
+      <td>-0.265</td>
+      <td>0.024</td>
+      <td>0.021</td>
+      <td>1290.005</td>
+      <td>1084.390</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>rho</th>
+      <td>0.439</td>
+      <td>0.140</td>
+      <td>0.170</td>
+      <td>0.694</td>
+      <td>0.004</td>
+      <td>0.004</td>
+      <td>1251.185</td>
+      <td>938.602</td>
+      <td>1.009</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>24.315</td>
+      <td>2.152</td>
+      <td>20.449</td>
+      <td>28.357</td>
+      <td>0.062</td>
+      <td>0.059</td>
+      <td>1193.522</td>
+      <td>1006.979</td>
+      <td>1.001</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>Intercept</td>
+      <td>-45.966610</td>
+      <td>44.806103</td>
+      <td>-1.160508</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>poverty</td>
+      <td>0.105276</td>
+      <td>-0.102618</td>
+      <td>0.002658</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>rev_rating</td>
+      <td>0.961842</td>
+      <td>-0.937558</td>
+      <td>0.024283</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>num_spots</td>
+      <td>0.080965</td>
+      <td>-0.078921</td>
+      <td>0.002044</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>crowded</td>
+      <td>-1.841092</td>
+      <td>1.794610</td>
+      <td>-0.046482</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SAR Trace: rho, sigma&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>rho</th>
+      <td>0.439</td>
+      <td>0.140</td>
+      <td>1251.185</td>
+      <td>938.602</td>
+      <td>1.009</td>
+    </tr>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>-43.650</td>
+      <td>78.768</td>
+      <td>745.206</td>
+      <td>897.104</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>0.100</td>
+      <td>0.316</td>
+      <td>1064.785</td>
+      <td>1027.666</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>0.913</td>
+      <td>0.825</td>
+      <td>715.441</td>
+      <td>932.399</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>0.077</td>
+      <td>0.025</td>
+      <td>1296.118</td>
+      <td>1029.851</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>-1.748</td>
+      <td>0.860</td>
+      <td>1290.005</td>
+      <td>1084.390</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>24.315</td>
+      <td>2.152</td>
+      <td>1193.522</td>
+      <td>1006.979</td>
+      <td>1.001</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_5904/3308626596.py:12: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<img alt="../_images/31d43f3221dea191e4065f3e8bd7885c9a43edf1cb1e71fa4f9f23bb652ad2b4.png" src="../_images/31d43f3221dea191e4065f3e8bd7885c9a43edf1cb1e71fa4f9f23bb652ad2b4.png" />
+<img alt="../_images/f251fe9164df641270d60646dd93baf17a8d76587b0e3070faa13c9cf6182431.png" src="../_images/f251fe9164df641270d60646dd93baf17a8d76587b0e3070faa13c9cf6182431.png" />
+</div>
+</div>
+<h2 id="sem-spatial-correlation-in-errors">3) SEM: Spatial Correlation in Errors<a class="headerlink" href="#sem-spatial-correlation-in-errors" title="Link to this heading">¶</a></h2>
+<p>Model:</p>
+<div class="math notranslate nohighlight">
+\[
+y = X\beta + u, \quad u = \lambda Wu + \epsilon
+\]</div>
+<p>Interpretation:</p>
+<ul class="simple">
+<li><p>Spatial dependence is moved to latent shocks rather than outcome feedback.</p></li>
+<li><p>Useful when omitted spatial factors induce correlated residuals.</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sem</span><span class="p">,</span> <span class="n">idata_sem</span><span class="p">,</span> <span class="n">summary_sem</span><span class="p">,</span> <span class="n">effects_sem</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+    <span class="n">SEM</span><span class="p">,</span>
+    <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
+    <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_sem</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_sem</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [lam, beta, sigma]
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws total) took 17 seconds.
+There were 8 divergences after tuning. Increase `target_accept` or reparameterize.
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>-25.898</td>
+      <td>78.761</td>
+      <td>-168.289</td>
+      <td>119.014</td>
+      <td>3.499</td>
+      <td>2.665</td>
+      <td>514.773</td>
+      <td>532.841</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>-0.130</td>
+      <td>0.443</td>
+      <td>-1.031</td>
+      <td>0.634</td>
+      <td>0.014</td>
+      <td>0.011</td>
+      <td>966.094</td>
+      <td>1214.679</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>1.111</td>
+      <td>0.839</td>
+      <td>-0.493</td>
+      <td>2.598</td>
+      <td>0.038</td>
+      <td>0.029</td>
+      <td>509.233</td>
+      <td>456.981</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>0.072</td>
+      <td>0.035</td>
+      <td>0.009</td>
+      <td>0.137</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>726.381</td>
+      <td>684.712</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-1.838</td>
+      <td>1.110</td>
+      <td>-3.860</td>
+      <td>0.278</td>
+      <td>0.032</td>
+      <td>0.028</td>
+      <td>1215.646</td>
+      <td>1076.667</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>lam</th>
+      <td>0.509</td>
+      <td>0.183</td>
+      <td>0.172</td>
+      <td>0.861</td>
+      <td>0.008</td>
+      <td>0.007</td>
+      <td>554.812</td>
+      <td>277.570</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>24.989</td>
+      <td>2.228</td>
+      <td>21.178</td>
+      <td>29.582</td>
+      <td>0.066</td>
+      <td>0.066</td>
+      <td>1162.391</td>
+      <td>996.848</td>
+      <td>1.003</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>Intercept</td>
+      <td>-25.897833</td>
+      <td>0.0</td>
+      <td>-25.897833</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>poverty</td>
+      <td>-0.129780</td>
+      <td>0.0</td>
+      <td>-0.129780</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>rev_rating</td>
+      <td>1.111085</td>
+      <td>0.0</td>
+      <td>1.111085</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>num_spots</td>
+      <td>0.071510</td>
+      <td>0.0</td>
+      <td>0.071510</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>crowded</td>
+      <td>-1.838412</td>
+      <td>0.0</td>
+      <td>-1.838412</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SEM Trace: lam, sigma&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>lam</th>
+      <td>0.509</td>
+      <td>0.183</td>
+      <td>554.812</td>
+      <td>277.570</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>-25.898</td>
+      <td>78.761</td>
+      <td>514.773</td>
+      <td>532.841</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>-0.130</td>
+      <td>0.443</td>
+      <td>966.094</td>
+      <td>1214.679</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>1.111</td>
+      <td>0.839</td>
+      <td>509.233</td>
+      <td>456.981</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>0.072</td>
+      <td>0.035</td>
+      <td>726.381</td>
+      <td>684.712</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>-1.838</td>
+      <td>1.110</td>
+      <td>1215.646</td>
+      <td>1076.667</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>24.989</td>
+      <td>2.228</td>
+      <td>1162.391</td>
+      <td>996.848</td>
+      <td>1.003</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_5904/3308626596.py:12: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<img alt="../_images/6a28908d2d5530f151732e007786974efcce66405f8efc7a4a22feabc786ab52.png" src="../_images/6a28908d2d5530f151732e007786974efcce66405f8efc7a4a22feabc786ab52.png" />
+</div>
+</div>
+<h2 id="sdm-sar-slx">4) SDM: SAR + SLX<a class="headerlink" href="#sdm-sar-slx" title="Link to this heading">¶</a></h2>
+<p>Model:</p>
+<div class="math notranslate nohighlight">
+\[
+y = \rho Wy + X\beta + WX\theta + \epsilon
+\]</div>
+<p>Interpretation:</p>
+<ul class="simple">
+<li><p>Includes both outcome feedback and neighbor-covariate channels.</p></li>
+<li><p>Often used as a flexible nesting model for SAR/SLX.</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdm</span><span class="p">,</span> <span class="n">idata_sdm</span><span class="p">,</span> <span class="n">summary_sdm</span><span class="p">,</span> <span class="n">effects_sdm</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+    <span class="n">SDM</span><span class="p">,</span>
+    <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
+    <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_sdm</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_sdm</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [rho, beta, sigma]
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws total) took 34 seconds.
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>192.602</td>
+      <td>197.311</td>
+      <td>-194.214</td>
+      <td>552.073</td>
+      <td>7.174</td>
+      <td>5.346</td>
+      <td>752.245</td>
+      <td>825.749</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>-0.691</td>
+      <td>0.431</td>
+      <td>-1.515</td>
+      <td>0.119</td>
+      <td>0.013</td>
+      <td>0.011</td>
+      <td>1083.248</td>
+      <td>1085.405</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>0.409</td>
+      <td>0.855</td>
+      <td>-1.095</td>
+      <td>2.154</td>
+      <td>0.025</td>
+      <td>0.022</td>
+      <td>1141.296</td>
+      <td>993.185</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>0.016</td>
+      <td>0.031</td>
+      <td>-0.043</td>
+      <td>0.072</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>1165.213</td>
+      <td>1244.267</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-1.035</td>
+      <td>1.144</td>
+      <td>-3.073</td>
+      <td>1.183</td>
+      <td>0.035</td>
+      <td>0.025</td>
+      <td>1082.196</td>
+      <td>1244.503</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>W*poverty</th>
+      <td>1.023</td>
+      <td>0.651</td>
+      <td>-0.209</td>
+      <td>2.210</td>
+      <td>0.022</td>
+      <td>0.014</td>
+      <td>871.928</td>
+      <td>1166.753</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>W*rev_rating</th>
+      <td>-2.006</td>
+      <td>1.767</td>
+      <td>-5.350</td>
+      <td>1.148</td>
+      <td>0.060</td>
+      <td>0.043</td>
+      <td>868.648</td>
+      <td>889.136</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>W*num_spots</th>
+      <td>0.166</td>
+      <td>0.050</td>
+      <td>0.074</td>
+      <td>0.261</td>
+      <td>0.002</td>
+      <td>0.001</td>
+      <td>872.363</td>
+      <td>1196.654</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>W*crowded</th>
+      <td>-0.934</td>
+      <td>1.706</td>
+      <td>-4.007</td>
+      <td>2.152</td>
+      <td>0.053</td>
+      <td>0.038</td>
+      <td>1040.296</td>
+      <td>1225.345</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>rho</th>
+      <td>0.239</td>
+      <td>0.162</td>
+      <td>-0.062</td>
+      <td>0.551</td>
+      <td>0.005</td>
+      <td>0.004</td>
+      <td>1275.488</td>
+      <td>1187.169</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>23.187</td>
+      <td>2.055</td>
+      <td>19.475</td>
+      <td>26.918</td>
+      <td>0.055</td>
+      <td>0.055</td>
+      <td>1392.929</td>
+      <td>1066.343</td>
+      <td>0.999</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>poverty</td>
+      <td>-0.641021</td>
+      <td>0.647537</td>
+      <td>0.006516</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>rev_rating</td>
+      <td>0.298605</td>
+      <td>-0.329950</td>
+      <td>-0.031344</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>num_spots</td>
+      <td>0.026245</td>
+      <td>-0.022664</td>
+      <td>0.003581</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>crowded</td>
+      <td>-1.103543</td>
+      <td>1.064896</td>
+      <td>-0.038647</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDM Trace: rho, sigma&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>rho</th>
+      <td>0.239</td>
+      <td>0.162</td>
+      <td>1275.488</td>
+      <td>1187.169</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>192.602</td>
+      <td>197.311</td>
+      <td>752.245</td>
+      <td>825.749</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>-0.691</td>
+      <td>0.431</td>
+      <td>1083.248</td>
+      <td>1085.405</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>0.409</td>
+      <td>0.855</td>
+      <td>1141.296</td>
+      <td>993.185</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>0.016</td>
+      <td>0.031</td>
+      <td>1165.213</td>
+      <td>1244.267</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>-1.035</td>
+      <td>1.144</td>
+      <td>1082.196</td>
+      <td>1244.503</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>beta[W*poverty]</th>
+      <td>1.023</td>
+      <td>0.651</td>
+      <td>871.928</td>
+      <td>1166.753</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[W*rev_rating]</th>
+      <td>-2.006</td>
+      <td>1.767</td>
+      <td>868.648</td>
+      <td>889.136</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[W*num_spots]</th>
+      <td>0.166</td>
+      <td>0.050</td>
+      <td>872.363</td>
+      <td>1196.654</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>beta[W*crowded]</th>
+      <td>-0.934</td>
+      <td>1.706</td>
+      <td>1040.296</td>
+      <td>1225.345</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>23.187</td>
+      <td>2.055</td>
+      <td>1392.929</td>
+      <td>1066.343</td>
+      <td>0.999</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_5904/3308626596.py:12: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<img alt="../_images/b2ee7f84966a3e21ede0215772833741ab12ef3daabf7eca6ecb927dcc1c972a.png" src="../_images/b2ee7f84966a3e21ede0215772833741ab12ef3daabf7eca6ecb927dcc1c972a.png" />
+<img alt="../_images/1dda762b5b7ba2dc1c3568abfefc253f82a23a651f1236880164677651d73dac.png" src="../_images/1dda762b5b7ba2dc1c3568abfefc253f82a23a651f1236880164677651d73dac.png" />
+</div>
+</div>
+<h2 id="sdem-slx-spatial-error">5) SDEM: SLX + Spatial Error<a class="headerlink" href="#sdem-slx-spatial-error" title="Link to this heading">¶</a></h2>
+<p>Model:</p>
+<div class="math notranslate nohighlight">
+\[
+y = X\beta + WX\theta + u, \quad u = \lambda Wu + \epsilon
+\]</div>
+<p>Interpretation:</p>
+<ul class="simple">
+<li><p>Neighbor covariates matter directly (through <span class="math notranslate nohighlight">\(WX\)</span>),</p></li>
+<li><p>and unmodeled shocks are spatially correlated (through <span class="math notranslate nohighlight">\(u\)</span>).</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdem</span><span class="p">,</span> <span class="n">idata_sdem</span><span class="p">,</span> <span class="n">summary_sdem</span><span class="p">,</span> <span class="n">effects_sdem</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+    <span class="n">SDEM</span><span class="p">,</span>
+    <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
+    <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_sdem</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_sdem</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [lam, beta, sigma]
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws total) took 32 seconds.
+There were 7 divergences after tuning. Increase `target_accept` or reparameterize.
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>251.883</td>
+      <td>228.824</td>
+      <td>-180.031</td>
+      <td>658.387</td>
+      <td>9.778</td>
+      <td>6.910</td>
+      <td>546.205</td>
+      <td>844.530</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>-0.657</td>
+      <td>0.438</td>
+      <td>-1.433</td>
+      <td>0.210</td>
+      <td>0.015</td>
+      <td>0.012</td>
+      <td>835.900</td>
+      <td>883.571</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>0.265</td>
+      <td>0.937</td>
+      <td>-1.330</td>
+      <td>2.182</td>
+      <td>0.032</td>
+      <td>0.021</td>
+      <td>876.250</td>
+      <td>883.847</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>0.027</td>
+      <td>0.030</td>
+      <td>-0.033</td>
+      <td>0.083</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>927.948</td>
+      <td>949.827</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-1.063</td>
+      <td>1.088</td>
+      <td>-3.217</td>
+      <td>0.872</td>
+      <td>0.032</td>
+      <td>0.026</td>
+      <td>1111.430</td>
+      <td>1233.770</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>W*poverty</th>
+      <td>0.992</td>
+      <td>0.705</td>
+      <td>-0.274</td>
+      <td>2.346</td>
+      <td>0.024</td>
+      <td>0.015</td>
+      <td>893.311</td>
+      <td>1119.110</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>W*rev_rating</th>
+      <td>-2.301</td>
+      <td>1.824</td>
+      <td>-5.747</td>
+      <td>0.993</td>
+      <td>0.073</td>
+      <td>0.053</td>
+      <td>619.426</td>
+      <td>882.506</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>W*num_spots</th>
+      <td>0.188</td>
+      <td>0.049</td>
+      <td>0.098</td>
+      <td>0.280</td>
+      <td>0.002</td>
+      <td>0.001</td>
+      <td>1040.867</td>
+      <td>917.251</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>W*crowded</th>
+      <td>-1.673</td>
+      <td>1.802</td>
+      <td>-5.170</td>
+      <td>1.602</td>
+      <td>0.050</td>
+      <td>0.045</td>
+      <td>1278.049</td>
+      <td>1071.784</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>lam</th>
+      <td>0.328</td>
+      <td>0.186</td>
+      <td>-0.013</td>
+      <td>0.687</td>
+      <td>0.006</td>
+      <td>0.005</td>
+      <td>862.536</td>
+      <td>911.323</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>23.236</td>
+      <td>1.981</td>
+      <td>19.514</td>
+      <td>26.774</td>
+      <td>0.051</td>
+      <td>0.051</td>
+      <td>1522.447</td>
+      <td>1240.825</td>
+      <td>1.003</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>poverty</td>
+      <td>-0.657320</td>
+      <td>0.992134</td>
+      <td>0.334814</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>rev_rating</td>
+      <td>0.264837</td>
+      <td>-2.300681</td>
+      <td>-2.035844</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>num_spots</td>
+      <td>0.027076</td>
+      <td>0.188380</td>
+      <td>0.215457</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>crowded</td>
+      <td>-1.062503</td>
+      <td>-1.672535</td>
+      <td>-2.735037</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sdem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sdem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDEM Trace: lam, sigma&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>lam</th>
+      <td>0.328</td>
+      <td>0.186</td>
+      <td>862.536</td>
+      <td>911.323</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>251.883</td>
+      <td>228.824</td>
+      <td>546.205</td>
+      <td>844.530</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>-0.657</td>
+      <td>0.438</td>
+      <td>835.900</td>
+      <td>883.571</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>0.265</td>
+      <td>0.937</td>
+      <td>876.250</td>
+      <td>883.847</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>0.027</td>
+      <td>0.030</td>
+      <td>927.948</td>
+      <td>949.827</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>-1.063</td>
+      <td>1.088</td>
+      <td>1111.430</td>
+      <td>1233.770</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>beta[W*poverty]</th>
+      <td>0.992</td>
+      <td>0.705</td>
+      <td>893.311</td>
+      <td>1119.110</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[W*rev_rating]</th>
+      <td>-2.301</td>
+      <td>1.824</td>
+      <td>619.426</td>
+      <td>882.506</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[W*num_spots]</th>
+      <td>0.188</td>
+      <td>0.049</td>
+      <td>1040.867</td>
+      <td>917.251</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>beta[W*crowded]</th>
+      <td>-1.673</td>
+      <td>1.802</td>
+      <td>1278.049</td>
+      <td>1071.784</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>23.236</td>
+      <td>1.981</td>
+      <td>1522.447</td>
+      <td>1240.825</td>
+      <td>1.003</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_5904/3308626596.py:12: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<img alt="../_images/fa55840ad1b87dab7a0bba13afbdd05f0a85b084ce52428bb0057750acb4962a.png" src="../_images/fa55840ad1b87dab7a0bba13afbdd05f0a85b084ce52428bb0057750acb4962a.png" />
+</div>
+</div>
+<h2 id="compare-spatial-parameters-across-models">Compare Spatial Parameters Across Models<a class="headerlink" href="#compare-spatial-parameters-across-models" title="Link to this heading">¶</a></h2>
+<p>This cell compares posterior means/intervals for the spatial scalar where present:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">rho</span></code> in SAR/SDM</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lam</span></code> in SEM/SDEM</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pull_scalar</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_name</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">var_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">idata</span><span class="o">.</span><span class="n">posterior</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">vals</span> <span class="o">=</span> <span class="n">idata</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="n">var_name</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;mean&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">vals</span><span class="p">)),</span>
+        <span class="s2">&quot;sd&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">vals</span><span class="p">)),</span>
+        <span class="s2">&quot;hdi_3%&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="mf">0.03</span><span class="p">)),</span>
+        <span class="s2">&quot;hdi_97%&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="mf">0.97</span><span class="p">)),</span>
+    <span class="p">}</span>
+
+<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span><span class="p">,</span> <span class="n">var</span> <span class="ow">in</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s2">&quot;SAR&quot;</span><span class="p">,</span> <span class="n">idata_sar</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;SEM&quot;</span><span class="p">,</span> <span class="n">idata_sem</span><span class="p">,</span> <span class="s2">&quot;lam&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;SDM&quot;</span><span class="p">,</span> <span class="n">idata_sdm</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;SDEM&quot;</span><span class="p">,</span> <span class="n">idata_sdem</span><span class="p">,</span> <span class="s2">&quot;lam&quot;</span><span class="p">),</span>
+<span class="p">]:</span>
+    <span class="n">stats</span> <span class="o">=</span> <span class="n">pull_scalar</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var</span><span class="p">)</span>
+    <span class="n">stats</span><span class="p">[</span><span class="s2">&quot;model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">name</span>
+    <span class="n">stats</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">var</span>
+    <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stats</span><span class="p">)</span>
+
+<span class="n">spatial_param_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)[[</span><span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="s2">&quot;parameter&quot;</span><span class="p">,</span> <span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;sd&quot;</span><span class="p">,</span> <span class="s2">&quot;hdi_3%&quot;</span><span class="p">,</span> <span class="s2">&quot;hdi_97%&quot;</span><span class="p">]]</span>
+<span class="n">display</span><span class="p">(</span><span class="n">spatial_param_table</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>model</th>
+      <th>parameter</th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>SAR</td>
+      <td>rho</td>
+      <td>0.438613</td>
+      <td>0.139854</td>
+      <td>0.165298</td>
+      <td>0.690116</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>SEM</td>
+      <td>lam</td>
+      <td>0.508609</td>
+      <td>0.183146</td>
+      <td>0.120760</td>
+      <td>0.822417</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>SDM</td>
+      <td>rho</td>
+      <td>0.239389</td>
+      <td>0.162165</td>
+      <td>-0.079836</td>
+      <td>0.535577</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>SDEM</td>
+      <td>lam</td>
+      <td>0.327971</td>
+      <td>0.186286</td>
+      <td>-0.028236</td>
+      <td>0.671812</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<h2 id="model-comparison-waic-and-loo">Model Comparison: WAIC and LOO<a class="headerlink" href="#model-comparison-waic-and-loo" title="Link to this heading">¶</a></h2>
+<p>We compare fitted models using information criteria from ArviZ.
+Lower values are better on these scales.</p>
+<p>Notes:</p>
+<ul class="simple">
+<li><p>These comparisons are only meaningful when models are fit to the same data.</p></li>
+<li><p>For robust results, increase <code class="docutils literal notranslate"><span class="pre">draws</span></code> and <code class="docutils literal notranslate"><span class="pre">tune</span></code> beyond this pedagogical setup.</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">idata_dict</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">idata_slx</span><span class="p">,</span>
+    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">idata_sar</span><span class="p">,</span>
+    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">idata_sem</span><span class="p">,</span>
+    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">idata_sdm</span><span class="p">,</span>
+    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">idata_sdem</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">waic_cmp</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">idata_dict</span><span class="p">,</span> <span class="n">ic</span><span class="o">=</span><span class="s2">&quot;waic&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;WAIC comparison&quot;</span><span class="p">)</span>
+    <span class="n">display</span><span class="p">(</span><span class="n">waic_cmp</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;WAIC comparison not available: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">loo_cmp</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">idata_dict</span><span class="p">,</span> <span class="n">ic</span><span class="o">=</span><span class="s2">&quot;loo&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;LOO comparison&quot;</span><span class="p">)</span>
+    <span class="n">display</span><span class="p">(</span><span class="n">loo_cmp</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;LOO comparison not available: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>WAIC comparison not available: Encountered error in ELPD computation of compare.
+LOO comparison not available: Encountered error in ELPD computation of compare.
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="matlab-style-residual-diagnostics-per-model">MATLAB-Style Residual Diagnostics (Per Model)<a class="headerlink" href="#matlab-style-residual-diagnostics-per-model" title="Link to this heading">¶</a></h2>
+<p>This section mirrors the MATLAB reference diagnostics module:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">rdiagnose</span></code>-style influence and outlier diagnostics</p></li>
+<li><p>Breusch-Pagan heteroskedasticity test (<code class="docutils literal notranslate"><span class="pre">bpagan</span></code>)</p></li>
+<li><p>ARCH test (<code class="docutils literal notranslate"><span class="pre">arch</span></code>)</p></li>
+<li><p>Ljung-Box residual autocorrelation test (<code class="docutils literal notranslate"><span class="pre">qstat2</span></code>)</p></li>
+</ul>
+<p>Interpretation quick guide:</p>
+<ul class="simple">
+<li><p>Smaller p-values for BPagan/ARCH/Ljung-Box suggest diagnostics concerns.</p></li>
+<li><p>Outlier counters are threshold-based candidate flags, not automatic exclusions.</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">slx</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">())</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+      <th>feature_names</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>-0.674834</td>
+      <td>0.017663</td>
+      <td>-0.657170</td>
+      <td>poverty</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>0.342909</td>
+      <td>-0.026313</td>
+      <td>0.316596</td>
+      <td>rev_rating</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>0.020759</td>
+      <td>0.003002</td>
+      <td>0.023760</td>
+      <td>num_spots</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>-1.029607</td>
+      <td>-0.021414</td>
+      <td>-1.051021</td>
+      <td>crowded</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">models</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">slx</span><span class="p">,</span>
+    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">sar</span><span class="p">,</span>
+    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">sem</span><span class="p">,</span>
+    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">sdm</span><span class="p">,</span>
+    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">sdem</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">het</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">heteroskedasticity_diagnostics</span><span class="p">(</span><span class="n">arch_lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
+        <span class="n">ac</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">autocorrelation_diagnostics</span><span class="p">(</span><span class="n">lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">outlier_diagnostics</span><span class="p">()</span>
+    
+        <span class="n">bp</span> <span class="o">=</span> <span class="n">het</span><span class="p">[</span><span class="s2">&quot;bpagan&quot;</span><span class="p">]</span>
+        <span class="n">arch</span> <span class="o">=</span> <span class="n">het</span><span class="p">[</span><span class="s2">&quot;arch&quot;</span><span class="p">]</span>
+    
+        <span class="c1"># Keep one compact row per model for quick pedagogical comparison.</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+            <span class="s2">&quot;bpagan_lm&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">bp</span><span class="p">[</span><span class="s2">&quot;lm&quot;</span><span class="p">]),</span>
+            <span class="s2">&quot;bpagan_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">bp</span><span class="p">[</span><span class="s2">&quot;prob&quot;</span><span class="p">]),</span>
+            <span class="s2">&quot;arch_lag4_stat&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">arch</span><span class="p">[</span><span class="s2">&quot;archstat&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="s2">&quot;arch_lag4_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">arch</span><span class="p">[</span><span class="s2">&quot;pval&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="s2">&quot;lb_lag4_q&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">ac</span><span class="p">[</span><span class="s2">&quot;qstat&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="s2">&quot;lb_lag4_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">ac</span><span class="p">[</span><span class="s2">&quot;pval&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="s2">&quot;n_leverage_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;leverage_idx&quot;</span><span class="p">])),</span>
+            <span class="s2">&quot;n_rstudent_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;rstudent_idx&quot;</span><span class="p">])),</span>
+            <span class="s2">&quot;n_dffit_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;dffit_idx&quot;</span><span class="p">])),</span>
+            <span class="s2">&quot;n_dfbeta_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;dfbeta_idx&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+        <span class="p">})</span>
+    <span class="k">except</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1"> failed&#39;</span><span class="p">)</span>
+
+<span class="n">diag_summary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diag_summary</span><span class="p">)</span>
+
+<span class="c1"># Optional deep dive for one model</span>
+<span class="n">example</span> <span class="o">=</span> <span class="s2">&quot;SAR&quot;</span>
+<span class="n">rd</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">example</span><span class="p">]</span><span class="o">.</span><span class="n">regression_diagnostics</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Detailed rdiagnose-style outputs available for </span><span class="si">{</span><span class="n">example</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">rd</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>SLX failed
+Detailed rdiagnose-style outputs available for SAR: [&#39;cookd&#39;, &#39;dfbeta&#39;, &#39;dffit&#39;, &#39;hatdi&#39;, &#39;meth&#39;, &#39;press&#39;, &#39;pstat&#39;, &#39;resid&#39;, &#39;rstud&#39;, &#39;stdr&#39;, &#39;stud&#39;]
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>model</th>
+      <th>bpagan_lm</th>
+      <th>bpagan_p</th>
+      <th>arch_lag4_stat</th>
+      <th>arch_lag4_p</th>
+      <th>lb_lag4_q</th>
+      <th>lb_lag4_p</th>
+      <th>n_leverage_flags</th>
+      <th>n_rstudent_flags</th>
+      <th>n_dffit_flags</th>
+      <th>n_dfbeta_flags</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>SAR</td>
+      <td>10.842871</td>
+      <td>0.028388</td>
+      <td>2.547293</td>
+      <td>0.636188</td>
+      <td>1.978660</td>
+      <td>0.739684</td>
+      <td>7</td>
+      <td>3</td>
+      <td>7</td>
+      <td>21</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>SDEM</td>
+      <td>13.708378</td>
+      <td>0.008286</td>
+      <td>3.292940</td>
+      <td>0.510052</td>
+      <td>2.691592</td>
+      <td>0.610687</td>
+      <td>7</td>
+      <td>4</td>
+      <td>7</td>
+      <td>20</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>SDM</td>
+      <td>14.266674</td>
+      <td>0.006491</td>
+      <td>3.425010</td>
+      <td>0.489372</td>
+      <td>1.952230</td>
+      <td>0.744545</td>
+      <td>7</td>
+      <td>4</td>
+      <td>6</td>
+      <td>18</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>SEM</td>
+      <td>6.600101</td>
+      <td>0.158592</td>
+      <td>2.178515</td>
+      <td>0.702964</td>
+      <td>3.142788</td>
+      <td>0.534221</td>
+      <td>7</td>
+      <td>4</td>
+      <td>4</td>
+      <td>23</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">sar</span><span class="o">.</span><span class="n">heteroskedasticity_diagnostics</span><span class="p">())</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>bpagan</th>
+      <th>arch</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>meth</th>
+      <td>bpagan</td>
+      <td>arch</td>
+    </tr>
+    <tr>
+      <th>lm</th>
+      <td>10.842871</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>dof</th>
+      <td>4</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>prob</th>
+      <td>0.028388</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>lags</th>
+      <td>NaN</td>
+      <td>[5]</td>
+    </tr>
+    <tr>
+      <th>archstat</th>
+      <td>NaN</td>
+      <td>[3.3149560571433225]</td>
+    </tr>
+    <tr>
+      <th>pval</th>
+      <td>NaN</td>
+      <td>[0.6515527071063235]</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<h2 id="matrix-mode-api-example-optional">Matrix-Mode API Example (Optional)<a class="headerlink" href="#matrix-mode-api-example-optional" title="Link to this heading">¶</a></h2>
+<p>The package also supports direct matrix inputs. This is useful if your design matrix is already engineered.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">y</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">ycol</span><span class="p">]</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">xcols</span><span class="p">]</span>
+
+<span class="n">sar_matrix</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
+<span class="n">idata_sar_matrix</span> <span class="o">=</span> <span class="n">sar_matrix</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">sar_matrix</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [rho, beta, sigma]
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+Sampling 2 chains for 200 tune and 200 draw iterations (400 + 400 draws total) took 7 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>poverty</th>
+      <td>0.046</td>
+      <td>0.281</td>
+      <td>-0.463</td>
+      <td>0.539</td>
+      <td>0.016</td>
+      <td>0.015</td>
+      <td>300.333</td>
+      <td>247.832</td>
+      <td>1.035</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>0.458</td>
+      <td>0.112</td>
+      <td>0.240</td>
+      <td>0.649</td>
+      <td>0.009</td>
+      <td>0.005</td>
+      <td>153.670</td>
+      <td>290.475</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>0.079</td>
+      <td>0.023</td>
+      <td>0.042</td>
+      <td>0.127</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>255.255</td>
+      <td>334.916</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-1.668</td>
+      <td>0.878</td>
+      <td>-3.134</td>
+      <td>0.151</td>
+      <td>0.057</td>
+      <td>0.043</td>
+      <td>244.280</td>
+      <td>252.719</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>rho</th>
+      <td>0.426</td>
+      <td>0.127</td>
+      <td>0.191</td>
+      <td>0.654</td>
+      <td>0.011</td>
+      <td>0.007</td>
+      <td>145.755</td>
+      <td>254.152</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>24.381</td>
+      <td>2.171</td>
+      <td>20.962</td>
+      <td>28.240</td>
+      <td>0.166</td>
+      <td>0.182</td>
+      <td>192.654</td>
+      <td>230.408</td>
+      <td>1.009</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<h2 id="notes-for-real-analyses">Notes for Real Analyses<a class="headerlink" href="#notes-for-real-analyses" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Increase <code class="docutils literal notranslate"><span class="pre">draws</span></code> and <code class="docutils literal notranslate"><span class="pre">tune</span></code> substantially (for example, 2000+ each).</p></li>
+<li><p>Inspect convergence diagnostics (<code class="docutils literal notranslate"><span class="pre">r_hat</span></code>, ESS, trace plots).</p></li>
+<li><p>Compare models with posterior predictive checks and information criteria.</p></li>
+<li><p>Consider prior sensitivity checks for spatial parameters (<code class="docutils literal notranslate"><span class="pre">rho</span></code>, <code class="docutils literal notranslate"><span class="pre">lam</span></code>).</p></li>
+</ul>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  
+  
+  <div class="md-footer-meta md-typeset">
+    
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-footer-copyright__highlight">
+        &#169; Copyright 2018-, pysal developers.
+        
+    </div>
+  
+    Created using
+    <a href="https://www.sphinx-doc.org/" target="_blank" rel="noopener">Sphinx</a>
+    8.2.3.
+     and
+    <a href="https://github.com/jbms/sphinx-immaterial/" target="_blank" rel="noopener">Sphinx-Immaterial</a>
+  
+</div>
+      
+    </div>
+    
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.sections", "navigation.top", "search.share", "search.suggest", "toc.follow", "toc.sticky", "content.code.copy", "content.action.edit"], "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike", "staticVersions": null, "versionPath": "https://pysal.org/bayespreg/versions.json"}}</script>
+    
+      
+        <script src="../_static/sphinx_immaterial_theme.32136f45f91ae6956.min.js?v=a7a9472a"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script id="MathJax-script" src="../_static/mathjax/tex-mml-chtml.js"></script>
+    
+  </body>
+</html>

@@ -1,0 +1,153 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "ebed7726",
+   "metadata": {},
+   "source": [
+    "# Nonlinear Spatial Panel Models\n",
+    "\n",
+    "This guide demonstrates `SARPanelTobit` and `SEMPanelTobit` on synthetic panel data.\n",
+    "\n",
+    "Both models handle **censored outcomes** observed for $N$ spatial units across $T$ time periods.\n",
+    "\n",
+    "- **SARPanelTobit** — spatial lag in the latent outcome: $y^*_t = \\rho W y^*_t + X_t \\beta + \\varepsilon_t$\n",
+    "- **SEMPanelTobit** — spatial lag in the disturbance: $y^*_t = X_t \\beta + u_t$, $u_t = \\lambda W u_t + \\varepsilon_t$\n",
+    "\n",
+    "Observed outcomes are censored at zero: $y_t = \\max(0, y^*_t)$."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "e800c0e8",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "from libpysal.graph import Graph\n",
+    "from bayespreg import SARPanelTobit, SEMPanelTobit\n",
+    "\n",
+    "rng = np.random.default_rng(42)\n",
+    "\n",
+    "# Panel dimensions: 3x3 rook grid, 10 time periods\n",
+    "N = 9\n",
+    "T = 10\n",
+    "side = 3\n",
+    "\n",
+    "# Build row-standardised rook-contiguity weights\n",
+    "W_dense = np.zeros((N, N))\n",
+    "for r in range(side):\n",
+    "    for c in range(side):\n",
+    "        i = r * side + c\n",
+    "        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:\n",
+    "            nr, nc = r + dr, c + dc\n",
+    "            if 0 <= nr < side and 0 <= nc < side:\n",
+    "                W_dense[i, nr * side + nc] = 1.0\n",
+    "row_sums = W_dense.sum(axis=1, keepdims=True)\n",
+    "W_dense /= np.where(row_sums == 0, 1, row_sums)\n",
+    "\n",
+    "# Convert to libpysal Graph\n",
+    "i_idx, j_idx = np.where(W_dense != 0)\n",
+    "W_graph = Graph.from_arrays(i_idx, j_idx, W_dense[i_idx, j_idx].astype(float))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "3e900472",
+   "metadata": {},
+   "source": [
+    "## SAR Panel Tobit\n",
+    "\n",
+    "Generate censored panel data from a spatial-lag process and fit `SARPanelTobit`."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "e4ba1a12",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "rho_true = 0.35\n",
+    "beta_true = np.array([1.0, 1.4])\n",
+    "sigma_true = 0.8\n",
+    "\n",
+    "A_inv = np.linalg.inv(np.eye(N) - rho_true * W_dense)\n",
+    "\n",
+    "y_list, X_list = [], []\n",
+    "for _ in range(T):\n",
+    "    Xt = np.column_stack([np.ones(N), rng.standard_normal(N)])\n",
+    "    eps = sigma_true * rng.standard_normal(N)\n",
+    "    y_lat = A_inv @ (Xt @ beta_true + eps)\n",
+    "    y_list.append(np.maximum(0.0, y_lat))\n",
+    "    X_list.append(Xt)\n",
+    "\n",
+    "y_sar = np.concatenate(y_list)\n",
+    "X_sar = np.vstack(X_list)\n",
+    "\n",
+    "print(f\"Censored fraction: {(y_sar == 0).mean():.2f}\")\n",
+    "\n",
+    "sar_model = SARPanelTobit(y=y_sar, X=X_sar, W=W_graph, N=N, T=T, censoring=0.0)\n",
+    "sar_idata = sar_model.fit(tune=500, draws=500, chains=2, random_seed=42, progressbar=False)\n",
+    "\n",
+    "rho_hat = float(sar_idata.posterior[\"rho\"].mean())\n",
+    "beta_hat = sar_idata.posterior[\"beta\"].mean((\"chain\", \"draw\")).values\n",
+    "print(f\"rho:   true={rho_true:.2f}  estimated={rho_hat:.3f}\")\n",
+    "for k, (bt, bh) in enumerate(zip(beta_true, beta_hat)):\n",
+    "    print(f\"beta[{k}]: true={bt:.2f}  estimated={bh:.3f}\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "281c9339",
+   "metadata": {},
+   "source": [
+    "## SEM Panel Tobit\n",
+    "\n",
+    "Generate censored panel data from a spatial-error process and fit `SEMPanelTobit`."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b4566b98",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "lam_true = 0.35\n",
+    "\n",
+    "B_inv = np.linalg.inv(np.eye(N) - lam_true * W_dense)\n",
+    "\n",
+    "y_list, X_list = [], []\n",
+    "for _ in range(T):\n",
+    "    Xt = np.column_stack([np.ones(N), rng.standard_normal(N)])\n",
+    "    u_t = B_inv @ (sigma_true * rng.standard_normal(N))\n",
+    "    y_lat = Xt @ beta_true + u_t\n",
+    "    y_list.append(np.maximum(0.0, y_lat))\n",
+    "    X_list.append(Xt)\n",
+    "\n",
+    "y_sem = np.concatenate(y_list)\n",
+    "X_sem = np.vstack(X_list)\n",
+    "\n",
+    "print(f\"Censored fraction: {(y_sem == 0).mean():.2f}\")\n",
+    "\n",
+    "sem_model = SEMPanelTobit(y=y_sem, X=X_sem, W=W_graph, N=N, T=T, censoring=0.0)\n",
+    "sem_idata = sem_model.fit(tune=500, draws=500, chains=2, random_seed=42, progressbar=False)\n",
+    "\n",
+    "lam_hat = float(sem_idata.posterior[\"lam\"].mean())\n",
+    "beta_hat = sem_idata.posterior[\"beta\"].mean((\"chain\", \"draw\")).values\n",
+    "print(f\"lam:   true={lam_true:.2f}  estimated={lam_hat:.3f}\")\n",
+    "for k, (bt, bh) in enumerate(zip(beta_true, beta_hat)):\n",
+    "    print(f\"beta[{k}]: true={bt:.2f}  estimated={bh:.3f}\")"
+   ]
+  }
+ ],
+ "metadata": {
+  "language_info": {
+   "name": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

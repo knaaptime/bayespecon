@@ -1,0 +1,3363 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="cross_sectional_spreg_comparison.html">
+      
+      
+        <link rel="next" href="nonlinear_models.html">
+      
+      
+      <link rel="icon" href="../_static/pysal_favicon.ico">
+    
+    
+      
+        <title>Bayesian Spatial Panel Models and Diagnostics - bayespreg</title>
+      
+    
+    
+      
+        
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+        <link rel="stylesheet" type="text/css" href="../_static/sphinx_immaterial_theme.74c816e3f9967dd6e.min.css?v=6cfe2491" />
+        <link rel="stylesheet" type="text/css" href="../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+        <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+        <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=93c5fc88" />
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#panel-model-equations" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../index.html" title="bayespreg" class="md-header__button md-logo" aria-label="bayespreg" data-md-component="logo">
+      <img src="../_static/pysal_logo.svg" alt="logo">
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            bayespreg
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Bayesian Spatial Panel Models and Diagnostics
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="red"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="red"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7M9 21v-1h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1m3-17a5 5 0 0 0-5 5c0 2.05 1.23 3.81 3 4.58V16h4v-2.42c1.77-.77 3-2.53 3-4.58a5 5 0 0 0-5-5"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pysal/bayespreg/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pysal/bayespreg
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../index.html" title="bayespreg" class="md-nav__button md-logo" aria-label="bayespreg" data-md-component="logo">
+      <img src="../_static/pysal_logo.svg" alt="logo">
+    </a>
+    bayespreg
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pysal/bayespreg/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pysal/bayespreg
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Home</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Installation</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>User Guide</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            <span>User Guide</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="pedagogical_spatial_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="cross_sectional_spreg_comparison.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Comparing bayespreg vs spreg</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    <span>Panel Models</span>
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="#" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Panel Models</span>
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary">
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#panel-model-equations" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Panel Model Equations</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-a-balanced-panel-dataset" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Build a Balanced Panel Dataset</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-helpers" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Shared Helpers</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-olspanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> OLSPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-sarpanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> SARPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-sempanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> SEMPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-sdmpanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> SDMPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-sdempanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> SDEMPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#matlab-style-diagnostics-across-panel-models" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>MATLAB-<wbr>Style Diagnostics Across Panel Models</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-comparison-waic-and-loo" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Model Comparison <wbr>(WAIC and LOO)</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Notes</span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="nonlinear_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Nonlinear Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="nonlinear_panel_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Nonlinear Panel Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="faithfulness_bayespreg.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Recovering Parameters</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../references.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>References</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>API</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            <span>API</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>API reference</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>For contributors</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            <span>For contributors</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/pysal/bayespreg" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Git<wbr>Hub</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/pysal/bayespreg/releases" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Changelog</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary">
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#panel-model-equations" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Panel Model Equations</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-a-balanced-panel-dataset" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Build a Balanced Panel Dataset</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-helpers" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Shared Helpers</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-olspanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> OLSPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-sarpanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> SARPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-sempanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> SEMPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-sdmpanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> SDMPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-sdempanelfe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Fit:<wbr> SDEMPanel<wbr>FE</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#matlab-style-diagnostics-across-panel-models" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>MATLAB-<wbr>Style Diagnostics Across Panel Models</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-comparison-waic-and-loo" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Model Comparison <wbr>(WAIC and LOO)</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Notes</span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset" role="main">
+                
+                
+                  
+
+
+  
+    <a href="https://github.com/pysal/bayespreg/blob/main/docs/user-guide/pedagogical_panel_models.ipynb" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.11.89-2 2-2m.12 13.5 3.74 3.74 1.42-1.41-2.33-2.33 2.33-2.33-1.42-1.41zm11.16 0-3.74-3.74-1.42 1.41 2.33 2.33-2.33 2.33 1.42 1.41z"/></svg>
+    </a>
+  
+  
+
+<h1 id="bayesian-spatial-panel-models-and-diagnostics">Bayesian Spatial Panel Models and Diagnostics<a class="headerlink" href="#bayesian-spatial-panel-models-and-diagnostics" title="Link to this heading">¶</a></h1>
+<p>This notebook demonstrates the panel-model classes in <code class="docutils literal notranslate"><span class="pre">bayespreg</span></code>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">OLSPanelFE</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SARPanelFE</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SEMPanelFE</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SDMPanelFE</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SDEMPanelFE</span></code></p></li>
+</ul>
+<p>It also demonstrates diagnostics inspired by the MATLAB reference code:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">rdiagnose</span></code>-style influence diagnostics</p></li>
+<li><p>Breusch-Pagan test</p></li>
+<li><p>ARCH test</p></li>
+<li><p>Ljung-Box Q test</p></li>
+<li><p>Panel-specific diagnostics (<code class="docutils literal notranslate"><span class="pre">panel_residual_structure</span></code>, <code class="docutils literal notranslate"><span class="pre">pesaran_cd_test</span></code>)</p></li>
+</ul>
+<h2 id="panel-model-equations">Panel Model Equations<a class="headerlink" href="#panel-model-equations" title="Link to this heading">¶</a></h2>
+<p>Let observations be stacked by time, then unit (panel_g convention).</p>
+<ul class="simple">
+<li><p>OLS panel: <span class="math notranslate nohighlight">\(y_{it} = x_{it}'\beta + a_i + \tau_t + \epsilon_{it}\)</span></p></li>
+<li><p>SAR panel: <span class="math notranslate nohighlight">\(y_{it} = \rho (Wy)_{it} + x_{it}'\beta + a_i + \tau_t + \epsilon_{it}\)</span></p></li>
+<li><p>SEM panel: <span class="math notranslate nohighlight">\(y_{it} = x_{it}'\beta + a_i + \tau_t + u_{it},\; u_{it}=\lambda (Wu)_{it}+\epsilon_{it}\)</span></p></li>
+<li><p>SDM panel: <span class="math notranslate nohighlight">\(y_{it} = \rho (Wy)_{it} + x_{it}'\beta + (Wx)_{it}'\theta + a_i + \tau_t + \epsilon_{it}\)</span></p></li>
+<li><p>SDEM panel: <span class="math notranslate nohighlight">\(y_{it} = x_{it}'\beta + (Wx)_{it}'\theta + a_i + \tau_t + u_{it},\; u_{it}=\lambda (Wu)_{it}+\epsilon_{it}\)</span></p></li>
+</ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">model</span></code> argument selects FE specification:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">0</span></code> pooled</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">1</span></code> unit FE</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">2</span></code> time FE</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">3</span></code> two-way FE</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">arviz</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">az</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">geodatasets</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">display</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
+
+<span class="n">repo_root</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span>
+<span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">:</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">))</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespreg</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">OLSPanelFE</span><span class="p">,</span>
+    <span class="n">SARPanelFE</span><span class="p">,</span>
+    <span class="n">SEMPanelFE</span><span class="p">,</span>
+    <span class="n">SDMPanelFE</span><span class="p">,</span>
+    <span class="n">SDEMPanelFE</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">az</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s2">&quot;arviz-white&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="build-a-balanced-panel-dataset">Build a Balanced Panel Dataset<a class="headerlink" href="#build-a-balanced-panel-dataset" title="Link to this heading">¶</a></h2>
+<p>The source data are cross-sectional (<code class="docutils literal notranslate"><span class="pre">geoda.airbnb</span></code>).
+For pedagogy, we synthesize a balanced panel by replicating units across time with small shocks and drift.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="n">geodatasets</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">geoda</span><span class="o">.</span><span class="n">airbnb</span><span class="o">.</span><span class="n">url</span><span class="p">)</span>
+<span class="n">xcols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;poverty&quot;</span><span class="p">,</span> <span class="s2">&quot;rev_rating&quot;</span><span class="p">,</span> <span class="s2">&quot;num_spots&quot;</span><span class="p">,</span> <span class="s2">&quot;crowded&quot;</span><span class="p">]</span>
+<span class="n">ycol</span> <span class="o">=</span> <span class="s2">&quot;price_pp&quot;</span>
+<span class="n">gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">dropna</span><span class="p">(</span><span class="n">subset</span><span class="o">=</span><span class="n">xcols</span> <span class="o">+</span> <span class="p">[</span><span class="n">ycol</span><span class="p">])</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">gdf</span><span class="p">)</span>
+<span class="n">T</span> <span class="o">=</span> <span class="mi">4</span>
+<span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">2026</span><span class="p">)</span>
+
+<span class="n">panel_parts</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">d</span><span class="p">[</span><span class="s2">&quot;unit&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+    <span class="n">d</span><span class="p">[</span><span class="s2">&quot;time&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">t</span>
+
+    <span class="c1"># Add mild temporal dynamics for demonstration.</span>
+    <span class="n">d</span><span class="p">[</span><span class="s2">&quot;price_pp&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">d</span><span class="p">[</span><span class="s2">&quot;price_pp&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="mf">0.03</span> <span class="o">*</span> <span class="n">t</span><span class="p">)</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">N</span><span class="p">)</span>
+    <span class="n">d</span><span class="p">[</span><span class="s2">&quot;rev_rating&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">d</span><span class="p">[</span><span class="s2">&quot;rev_rating&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.02</span> <span class="o">*</span> <span class="n">t</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">N</span><span class="p">)</span>
+
+    <span class="n">panel_parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+
+<span class="n">panel</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">panel_parts</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;unit&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">rook</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s1">&#39;r&#39;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Balanced panel: N=</span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2">, T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">, observations=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">panel</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">panel</span><span class="p">[[</span><span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;unit&quot;</span><span class="p">,</span> <span class="n">ycol</span><span class="p">]</span> <span class="o">+</span> <span class="n">xcols</span><span class="p">]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Balanced panel: N=67, T=4, observations=268
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>time</th>
+      <th>unit</th>
+      <th>price_pp</th>
+      <th>poverty</th>
+      <th>rev_rating</th>
+      <th>num_spots</th>
+      <th>crowded</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>0</td>
+      <td>0</td>
+      <td>77.523397</td>
+      <td>29.6</td>
+      <td>87.782920</td>
+      <td>38</td>
+      <td>1.8</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>0</td>
+      <td>1</td>
+      <td>53.967457</td>
+      <td>39.7</td>
+      <td>88.788162</td>
+      <td>20</td>
+      <td>1.3</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>0</td>
+      <td>2</td>
+      <td>82.482939</td>
+      <td>51.2</td>
+      <td>91.753393</td>
+      <td>6</td>
+      <td>3.2</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>0</td>
+      <td>3</td>
+      <td>120.649950</td>
+      <td>29.3</td>
+      <td>92.715184</td>
+      <td>30</td>
+      <td>3.3</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>0</td>
+      <td>4</td>
+      <td>78.502089</td>
+      <td>21.7</td>
+      <td>90.642275</td>
+      <td>39</td>
+      <td>2.4</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<h2 id="shared-helpers">Shared Helpers<a class="headerlink" href="#shared-helpers" title="Link to this heading">¶</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">fit_panel_model</span><span class="p">(</span><span class="n">model_cls</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">):</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">model_cls</span><span class="p">(</span>
+        <span class="n">formula</span><span class="o">=</span><span class="n">formula</span><span class="p">,</span>
+        <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
+        <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+        <span class="n">unit_col</span><span class="o">=</span><span class="s2">&quot;unit&quot;</span><span class="p">,</span>
+        <span class="n">time_col</span><span class="o">=</span><span class="s2">&quot;time&quot;</span><span class="p">,</span>
+        <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+        <span class="n">logdet_method</span><span class="o">=</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">idata</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+        <span class="n">draws</span><span class="o">=</span><span class="n">draws</span><span class="p">,</span>
+        <span class="n">tune</span><span class="o">=</span><span class="n">tune</span><span class="p">,</span>
+        <span class="n">chains</span><span class="o">=</span><span class="n">chains</span><span class="p">,</span>
+        <span class="n">target_accept</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+        <span class="n">random_seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
+        <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">idata_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;log_likelihood&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+    <span class="p">)</span>
+
+    <span class="n">summary</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">effects</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">()</span>
+    <span class="n">effects_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+        <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;feature_names&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;direct&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;direct&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;indirect&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;indirect&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;total&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;total&quot;</span><span class="p">],</span>
+    <span class="p">})</span>
+
+    <span class="k">return</span> <span class="n">m</span><span class="p">,</span> <span class="n">idata</span><span class="p">,</span> <span class="n">summary</span><span class="p">,</span> <span class="n">effects_df</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">diagnostics_table</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">):</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;sd&quot;</span><span class="p">,</span> <span class="s2">&quot;ess_bulk&quot;</span><span class="p">,</span> <span class="s2">&quot;ess_tail&quot;</span><span class="p">,</span> <span class="s2">&quot;r_hat&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">az</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="n">var_names</span><span class="p">,</span> <span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)[</span><span class="n">cols</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">show_trace</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">,</span> <span class="n">title</span><span class="p">):</span>
+    <span class="n">az</span><span class="o">.</span><span class="n">plot_trace</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="n">var_names</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">1.02</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="fit-olspanelfe">Fit: OLSPanelFE<a class="headerlink" href="#fit-olspanelfe" title="Link to this heading">¶</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">formula</span> <span class="o">=</span> <span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span>
+<span class="n">ols_panel</span><span class="p">,</span> <span class="n">idata_ols</span><span class="p">,</span> <span class="n">summary_ols</span><span class="p">,</span> <span class="n">effects_ols</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+    <span class="n">OLSPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_ols</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_ols</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_ols</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_ols</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;OLSPanelFE trace&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [beta, sigma]
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 7 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+/tmp/ipykernel_5432/2150201610.py:42: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>-5670.977</td>
+      <td>960099.690</td>
+      <td>-1703395.120</td>
+      <td>1803532.194</td>
+      <td>31322.359</td>
+      <td>37852.126</td>
+      <td>938.204</td>
+      <td>520.091</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>-62919.785</td>
+      <td>1072238.871</td>
+      <td>-1905191.036</td>
+      <td>2012564.485</td>
+      <td>39032.140</td>
+      <td>50408.849</td>
+      <td>748.713</td>
+      <td>407.760</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>-1.156</td>
+      <td>4.330</td>
+      <td>-9.555</td>
+      <td>6.298</td>
+      <td>0.154</td>
+      <td>0.204</td>
+      <td>811.003</td>
+      <td>494.757</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>18904.471</td>
+      <td>1001245.628</td>
+      <td>-1557455.553</td>
+      <td>1910776.723</td>
+      <td>38107.901</td>
+      <td>35033.528</td>
+      <td>691.651</td>
+      <td>486.616</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>36187.583</td>
+      <td>1076255.973</td>
+      <td>-1990044.344</td>
+      <td>1779029.983</td>
+      <td>40521.520</td>
+      <td>44341.689</td>
+      <td>718.730</td>
+      <td>458.121</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.352</td>
+      <td>0.061</td>
+      <td>1.239</td>
+      <td>1.463</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>720.537</td>
+      <td>470.176</td>
+      <td>1.007</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>Intercept</td>
+      <td>-5670.976841</td>
+      <td>0.0</td>
+      <td>-5670.976841</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>poverty</td>
+      <td>-62919.785060</td>
+      <td>0.0</td>
+      <td>-62919.785060</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>rev_rating</td>
+      <td>-1.156149</td>
+      <td>0.0</td>
+      <td>-1.156149</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>num_spots</td>
+      <td>18904.471316</td>
+      <td>0.0</td>
+      <td>18904.471316</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>crowded</td>
+      <td>36187.582828</td>
+      <td>0.0</td>
+      <td>36187.582828</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>-5670.977</td>
+      <td>960099.690</td>
+      <td>938.204</td>
+      <td>520.091</td>
+      <td>1.006</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>-62919.785</td>
+      <td>1072238.871</td>
+      <td>748.713</td>
+      <td>407.760</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>-1.156</td>
+      <td>4.330</td>
+      <td>811.003</td>
+      <td>494.757</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>18904.471</td>
+      <td>1001245.628</td>
+      <td>691.651</td>
+      <td>486.616</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>36187.583</td>
+      <td>1076255.973</td>
+      <td>718.730</td>
+      <td>458.121</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.352</td>
+      <td>0.061</td>
+      <td>720.537</td>
+      <td>470.176</td>
+      <td>1.007</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><img alt="../_images/3404fbd96b4edc4e7930f114bca0bb28e689834ed6c97380cb55c538728ac74f.png" src="../_images/3404fbd96b4edc4e7930f114bca0bb28e689834ed6c97380cb55c538728ac74f.png" />
+</div>
+</div>
+<h2 id="fit-sarpanelfe">Fit: SARPanelFE<a class="headerlink" href="#fit-sarpanelfe" title="Link to this heading">¶</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sar_panel</span><span class="p">,</span> <span class="n">idata_sar</span><span class="p">,</span> <span class="n">summary_sar</span><span class="p">,</span> <span class="n">effects_sar</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+    <span class="n">SARPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_sar</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_sar</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SARPanelFE trace&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 7 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+/tmp/ipykernel_5432/2150201610.py:42: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>-25011.482</td>
+      <td>1004037.122</td>
+      <td>-1736349.633</td>
+      <td>1854386.383</td>
+      <td>27272.117</td>
+      <td>45324.732</td>
+      <td>1389.493</td>
+      <td>392.380</td>
+      <td>1.009</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>60295.808</td>
+      <td>1034867.461</td>
+      <td>-1665441.221</td>
+      <td>2223731.664</td>
+      <td>26771.065</td>
+      <td>44109.389</td>
+      <td>1335.334</td>
+      <td>462.570</td>
+      <td>1.008</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>0.304</td>
+      <td>3.927</td>
+      <td>-6.796</td>
+      <td>7.608</td>
+      <td>0.100</td>
+      <td>0.174</td>
+      <td>1549.767</td>
+      <td>458.211</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>-41015.582</td>
+      <td>1019574.452</td>
+      <td>-1751417.575</td>
+      <td>2051924.818</td>
+      <td>30869.999</td>
+      <td>51806.702</td>
+      <td>1092.496</td>
+      <td>350.891</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-46900.661</td>
+      <td>951380.031</td>
+      <td>-1874167.362</td>
+      <td>1672553.614</td>
+      <td>26269.719</td>
+      <td>39068.725</td>
+      <td>1285.138</td>
+      <td>523.556</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>rho</th>
+      <td>0.553</td>
+      <td>0.059</td>
+      <td>0.440</td>
+      <td>0.655</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>1449.112</td>
+      <td>390.100</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.158</td>
+      <td>0.048</td>
+      <td>1.081</td>
+      <td>1.260</td>
+      <td>0.001</td>
+      <td>0.002</td>
+      <td>1147.758</td>
+      <td>421.019</td>
+      <td>1.003</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>Intercept</td>
+      <td>-27368.356295</td>
+      <td>27159.557147</td>
+      <td>-208.799148</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>poverty</td>
+      <td>65977.584932</td>
+      <td>-65474.227573</td>
+      <td>503.357358</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>rev_rating</td>
+      <td>0.333059</td>
+      <td>-0.330518</td>
+      <td>0.002541</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>num_spots</td>
+      <td>-44880.550333</td>
+      <td>44538.146844</td>
+      <td>-342.403489</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>crowded</td>
+      <td>-51320.190166</td>
+      <td>50928.657263</td>
+      <td>-391.532903</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>rho</th>
+      <td>0.553</td>
+      <td>0.059</td>
+      <td>1449.112</td>
+      <td>390.100</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>-25011.482</td>
+      <td>1004037.122</td>
+      <td>1389.493</td>
+      <td>392.380</td>
+      <td>1.009</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>60295.808</td>
+      <td>1034867.461</td>
+      <td>1335.334</td>
+      <td>462.570</td>
+      <td>1.008</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>0.304</td>
+      <td>3.927</td>
+      <td>1549.767</td>
+      <td>458.211</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>-41015.582</td>
+      <td>1019574.452</td>
+      <td>1092.496</td>
+      <td>350.891</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>-46900.661</td>
+      <td>951380.031</td>
+      <td>1285.138</td>
+      <td>523.556</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.158</td>
+      <td>0.048</td>
+      <td>1147.758</td>
+      <td>421.019</td>
+      <td>1.003</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><img alt="../_images/17f86a434204e9583f83f39a486d2c51db5da3069720cbfe02016ed9dcad1c02.png" src="../_images/17f86a434204e9583f83f39a486d2c51db5da3069720cbfe02016ed9dcad1c02.png" />
+</div>
+</div>
+<h2 id="fit-sempanelfe">Fit: SEMPanelFE<a class="headerlink" href="#fit-sempanelfe" title="Link to this heading">¶</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sem_panel</span><span class="p">,</span> <span class="n">idata_sem</span><span class="p">,</span> <span class="n">summary_sem</span><span class="p">,</span> <span class="n">effects_sem</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+    <span class="n">SEMPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_sem</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_sem</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SEMPanelFE trace&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [lam, beta, sigma]
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 8 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+/tmp/ipykernel_5432/2150201610.py:42: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>-22226.568</td>
+      <td>1018115.957</td>
+      <td>-1758249.099</td>
+      <td>2074184.258</td>
+      <td>31715.386</td>
+      <td>41855.427</td>
+      <td>1093.058</td>
+      <td>460.911</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>6083.036</td>
+      <td>958466.725</td>
+      <td>-1695227.567</td>
+      <td>1799693.576</td>
+      <td>33210.424</td>
+      <td>39708.098</td>
+      <td>822.856</td>
+      <td>480.173</td>
+      <td>1.010</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>1.092</td>
+      <td>3.910</td>
+      <td>-5.843</td>
+      <td>8.115</td>
+      <td>0.107</td>
+      <td>0.147</td>
+      <td>1358.324</td>
+      <td>435.994</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>-10950.424</td>
+      <td>1023050.961</td>
+      <td>-1863707.208</td>
+      <td>1893901.047</td>
+      <td>34322.638</td>
+      <td>48403.786</td>
+      <td>896.519</td>
+      <td>399.810</td>
+      <td>0.999</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>10895.982</td>
+      <td>941650.571</td>
+      <td>-1730762.745</td>
+      <td>1660065.632</td>
+      <td>29123.679</td>
+      <td>41798.045</td>
+      <td>1058.341</td>
+      <td>321.745</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>lam</th>
+      <td>0.549</td>
+      <td>0.056</td>
+      <td>0.451</td>
+      <td>0.658</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>1018.802</td>
+      <td>495.229</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.158</td>
+      <td>0.051</td>
+      <td>1.065</td>
+      <td>1.253</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>1000.510</td>
+      <td>429.063</td>
+      <td>1.002</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>Intercept</td>
+      <td>-22226.567935</td>
+      <td>0.0</td>
+      <td>-22226.567935</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>poverty</td>
+      <td>6083.036287</td>
+      <td>0.0</td>
+      <td>6083.036287</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>rev_rating</td>
+      <td>1.092035</td>
+      <td>0.0</td>
+      <td>1.092035</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>num_spots</td>
+      <td>-10950.423635</td>
+      <td>0.0</td>
+      <td>-10950.423635</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>crowded</td>
+      <td>10895.981932</td>
+      <td>0.0</td>
+      <td>10895.981932</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>lam</th>
+      <td>0.549</td>
+      <td>0.056</td>
+      <td>1018.802</td>
+      <td>495.229</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>-22226.568</td>
+      <td>1018115.957</td>
+      <td>1093.058</td>
+      <td>460.911</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>6083.036</td>
+      <td>958466.725</td>
+      <td>822.856</td>
+      <td>480.173</td>
+      <td>1.010</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>1.092</td>
+      <td>3.910</td>
+      <td>1358.324</td>
+      <td>435.994</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>-10950.424</td>
+      <td>1023050.961</td>
+      <td>896.519</td>
+      <td>399.810</td>
+      <td>0.999</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>10895.982</td>
+      <td>941650.571</td>
+      <td>1058.341</td>
+      <td>321.745</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.158</td>
+      <td>0.051</td>
+      <td>1000.510</td>
+      <td>429.063</td>
+      <td>1.002</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><img alt="../_images/bebeb388059c4d2391f568fd2ff10cad5512f7990750d742066acfb7d8d29155.png" src="../_images/bebeb388059c4d2391f568fd2ff10cad5512f7990750d742066acfb7d8d29155.png" />
+</div>
+</div>
+<h2 id="fit-sdmpanelfe">Fit: SDMPanelFE<a class="headerlink" href="#fit-sdmpanelfe" title="Link to this heading">¶</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdm_panel</span><span class="p">,</span> <span class="n">idata_sdm</span><span class="p">,</span> <span class="n">summary_sdm</span><span class="p">,</span> <span class="n">effects_sdm</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+    <span class="n">SDMPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_sdm</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_sdm</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDMPanelFE trace&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 7 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+/tmp/ipykernel_5432/2150201610.py:42: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>34735.353</td>
+      <td>982479.231</td>
+      <td>-1897464.398</td>
+      <td>1709407.645</td>
+      <td>27678.311</td>
+      <td>45301.611</td>
+      <td>1269.123</td>
+      <td>460.538</td>
+      <td>1.012</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>-10139.842</td>
+      <td>1013590.696</td>
+      <td>-1681083.408</td>
+      <td>2033900.306</td>
+      <td>24826.131</td>
+      <td>39737.887</td>
+      <td>1666.891</td>
+      <td>463.340</td>
+      <td>1.014</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>0.342</td>
+      <td>3.854</td>
+      <td>-7.137</td>
+      <td>6.975</td>
+      <td>0.108</td>
+      <td>0.169</td>
+      <td>1297.816</td>
+      <td>349.368</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>-22324.761</td>
+      <td>995605.364</td>
+      <td>-2254230.258</td>
+      <td>1714157.478</td>
+      <td>27731.128</td>
+      <td>52397.960</td>
+      <td>1304.756</td>
+      <td>371.291</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>12695.105</td>
+      <td>1015800.568</td>
+      <td>-2122095.782</td>
+      <td>1620524.890</td>
+      <td>31977.199</td>
+      <td>43140.835</td>
+      <td>1005.175</td>
+      <td>482.777</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>W*poverty</th>
+      <td>16531.033</td>
+      <td>936149.991</td>
+      <td>-1819480.931</td>
+      <td>1702880.432</td>
+      <td>26117.965</td>
+      <td>45549.148</td>
+      <td>1299.717</td>
+      <td>345.332</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>W*rev_rating</th>
+      <td>-4.906</td>
+      <td>7.228</td>
+      <td>-18.045</td>
+      <td>9.570</td>
+      <td>0.195</td>
+      <td>0.298</td>
+      <td>1396.595</td>
+      <td>411.337</td>
+      <td>0.998</td>
+    </tr>
+    <tr>
+      <th>W*num_spots</th>
+      <td>16935.438</td>
+      <td>998504.415</td>
+      <td>-1955440.268</td>
+      <td>1863778.985</td>
+      <td>29362.314</td>
+      <td>43219.885</td>
+      <td>1146.824</td>
+      <td>438.831</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>W*crowded</th>
+      <td>9761.605</td>
+      <td>1056148.907</td>
+      <td>-1762314.258</td>
+      <td>2250103.779</td>
+      <td>25868.520</td>
+      <td>60740.341</td>
+      <td>1666.891</td>
+      <td>348.598</td>
+      <td>0.999</td>
+    </tr>
+    <tr>
+      <th>rho</th>
+      <td>0.548</td>
+      <td>0.062</td>
+      <td>0.428</td>
+      <td>0.667</td>
+      <td>0.002</td>
+      <td>0.003</td>
+      <td>1281.747</td>
+      <td>384.191</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.160</td>
+      <td>0.054</td>
+      <td>1.062</td>
+      <td>1.255</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>1150.509</td>
+      <td>466.438</td>
+      <td>1.003</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>poverty</td>
+      <td>-8299.048584</td>
+      <td>8351.752239</td>
+      <td>52.703655</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>rev_rating</td>
+      <td>-0.448661</td>
+      <td>0.411028</td>
+      <td>-0.037633</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>num_spots</td>
+      <td>-21534.690655</td>
+      <td>21490.248702</td>
+      <td>-44.441953</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>crowded</td>
+      <td>15497.091197</td>
+      <td>-15311.906511</td>
+      <td>185.184686</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>rho</th>
+      <td>0.548</td>
+      <td>0.062</td>
+      <td>1281.747</td>
+      <td>384.191</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>34735.353</td>
+      <td>982479.231</td>
+      <td>1269.123</td>
+      <td>460.538</td>
+      <td>1.012</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>-10139.842</td>
+      <td>1013590.696</td>
+      <td>1666.891</td>
+      <td>463.340</td>
+      <td>1.014</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>0.342</td>
+      <td>3.854</td>
+      <td>1297.816</td>
+      <td>349.368</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>-22324.761</td>
+      <td>995605.364</td>
+      <td>1304.756</td>
+      <td>371.291</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>12695.105</td>
+      <td>1015800.568</td>
+      <td>1005.175</td>
+      <td>482.777</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[W*poverty]</th>
+      <td>16531.033</td>
+      <td>936149.991</td>
+      <td>1299.717</td>
+      <td>345.332</td>
+      <td>1.007</td>
+    </tr>
+    <tr>
+      <th>beta[W*rev_rating]</th>
+      <td>-4.906</td>
+      <td>7.228</td>
+      <td>1396.595</td>
+      <td>411.337</td>
+      <td>0.998</td>
+    </tr>
+    <tr>
+      <th>beta[W*num_spots]</th>
+      <td>16935.438</td>
+      <td>998504.415</td>
+      <td>1146.824</td>
+      <td>438.831</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>beta[W*crowded]</th>
+      <td>9761.605</td>
+      <td>1056148.907</td>
+      <td>1666.891</td>
+      <td>348.598</td>
+      <td>0.999</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.160</td>
+      <td>0.054</td>
+      <td>1150.509</td>
+      <td>466.438</td>
+      <td>1.003</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><img alt="../_images/89b1b5bd049ce4537dd307a99cce06f4507269998e5b2fe60104a71f4fecb2f2.png" src="../_images/89b1b5bd049ce4537dd307a99cce06f4507269998e5b2fe60104a71f4fecb2f2.png" />
+</div>
+</div>
+<h2 id="fit-sdempanelfe">Fit: SDEMPanelFE<a class="headerlink" href="#fit-sdempanelfe" title="Link to this heading">¶</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdem_panel</span><span class="p">,</span> <span class="n">idata_sdem</span><span class="p">,</span> <span class="n">summary_sdem</span><span class="p">,</span> <span class="n">effects_sdem</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+    <span class="n">SDEMPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
+<span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">summary_sdem</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">effects_sdem</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sdem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sdem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDEMPanelFE trace&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [lam, beta, sigma]
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 9 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+/tmp/ipykernel_5432/2150201610.py:42: UserWarning: The figure layout has changed to tight
+  plt.tight_layout()
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>25706.047</td>
+      <td>967986.588</td>
+      <td>-1735224.205</td>
+      <td>1798085.946</td>
+      <td>32173.742</td>
+      <td>36231.390</td>
+      <td>933.758</td>
+      <td>453.205</td>
+      <td>1.008</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>-18970.843</td>
+      <td>1004947.408</td>
+      <td>-1848016.937</td>
+      <td>1773301.944</td>
+      <td>26271.521</td>
+      <td>37383.345</td>
+      <td>1581.577</td>
+      <td>525.207</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>1.343</td>
+      <td>4.577</td>
+      <td>-7.781</td>
+      <td>9.156</td>
+      <td>0.179</td>
+      <td>0.163</td>
+      <td>649.270</td>
+      <td>489.628</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>13786.498</td>
+      <td>916081.706</td>
+      <td>-1827739.904</td>
+      <td>1765797.738</td>
+      <td>29836.327</td>
+      <td>45452.002</td>
+      <td>940.895</td>
+      <td>361.025</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-8618.624</td>
+      <td>1027065.938</td>
+      <td>-1957979.570</td>
+      <td>2013482.387</td>
+      <td>28733.788</td>
+      <td>43978.786</td>
+      <td>1270.826</td>
+      <td>460.413</td>
+      <td>0.998</td>
+    </tr>
+    <tr>
+      <th>W*poverty</th>
+      <td>-36341.692</td>
+      <td>959004.405</td>
+      <td>-1788505.867</td>
+      <td>1745295.994</td>
+      <td>30129.393</td>
+      <td>46393.783</td>
+      <td>1002.465</td>
+      <td>429.545</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>W*rev_rating</th>
+      <td>0.686</td>
+      <td>10.578</td>
+      <td>-19.486</td>
+      <td>19.953</td>
+      <td>0.356</td>
+      <td>0.354</td>
+      <td>874.490</td>
+      <td>549.809</td>
+      <td>0.998</td>
+    </tr>
+    <tr>
+      <th>W*num_spots</th>
+      <td>-19453.058</td>
+      <td>964586.385</td>
+      <td>-1700581.717</td>
+      <td>1884612.886</td>
+      <td>25545.178</td>
+      <td>49615.946</td>
+      <td>1309.140</td>
+      <td>385.589</td>
+      <td>1.008</td>
+    </tr>
+    <tr>
+      <th>W*crowded</th>
+      <td>33162.763</td>
+      <td>1026605.307</td>
+      <td>-2131106.295</td>
+      <td>1861686.351</td>
+      <td>28332.988</td>
+      <td>63144.233</td>
+      <td>1394.816</td>
+      <td>338.669</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>lam</th>
+      <td>0.554</td>
+      <td>0.062</td>
+      <td>0.439</td>
+      <td>0.672</td>
+      <td>0.002</td>
+      <td>0.003</td>
+      <td>1365.176</td>
+      <td>443.330</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.164</td>
+      <td>0.050</td>
+      <td>1.066</td>
+      <td>1.257</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>1066.558</td>
+      <td>563.451</td>
+      <td>0.999</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>feature</th>
+      <th>direct</th>
+      <th>indirect</th>
+      <th>total</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>poverty</td>
+      <td>-18970.842908</td>
+      <td>-36341.692241</td>
+      <td>-55312.535149</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>rev_rating</td>
+      <td>1.343308</td>
+      <td>0.685712</td>
+      <td>2.029020</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>num_spots</td>
+      <td>13786.498126</td>
+      <td>-19453.058109</td>
+      <td>-5666.559984</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>crowded</td>
+      <td>-8618.624414</td>
+      <td>33162.763297</td>
+      <td>24544.138883</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>lam</th>
+      <td>0.554</td>
+      <td>0.062</td>
+      <td>1365.176</td>
+      <td>443.330</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[Intercept]</th>
+      <td>25706.047</td>
+      <td>967986.588</td>
+      <td>933.758</td>
+      <td>453.205</td>
+      <td>1.008</td>
+    </tr>
+    <tr>
+      <th>beta[poverty]</th>
+      <td>-18970.843</td>
+      <td>1004947.408</td>
+      <td>1581.577</td>
+      <td>525.207</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>1.343</td>
+      <td>4.577</td>
+      <td>649.270</td>
+      <td>489.628</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>13786.498</td>
+      <td>916081.706</td>
+      <td>940.895</td>
+      <td>361.025</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>-8618.624</td>
+      <td>1027065.938</td>
+      <td>1270.826</td>
+      <td>460.413</td>
+      <td>0.998</td>
+    </tr>
+    <tr>
+      <th>beta[W*poverty]</th>
+      <td>-36341.692</td>
+      <td>959004.405</td>
+      <td>1002.465</td>
+      <td>429.545</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>beta[W*rev_rating]</th>
+      <td>0.686</td>
+      <td>10.578</td>
+      <td>874.490</td>
+      <td>549.809</td>
+      <td>0.998</td>
+    </tr>
+    <tr>
+      <th>beta[W*num_spots]</th>
+      <td>-19453.058</td>
+      <td>964586.385</td>
+      <td>1309.140</td>
+      <td>385.589</td>
+      <td>1.008</td>
+    </tr>
+    <tr>
+      <th>beta[W*crowded]</th>
+      <td>33162.763</td>
+      <td>1026605.307</td>
+      <td>1394.816</td>
+      <td>338.669</td>
+      <td>1.004</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.164</td>
+      <td>0.050</td>
+      <td>1066.558</td>
+      <td>563.451</td>
+      <td>0.999</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><img alt="../_images/5b5d9f864a50e359eecea51488ec4f8e35200edd6d10036ae26b497fba977ce6.png" src="../_images/5b5d9f864a50e359eecea51488ec4f8e35200edd6d10036ae26b497fba977ce6.png" />
+</div>
+</div>
+<h2 id="matlab-style-diagnostics-across-panel-models">MATLAB-Style Diagnostics Across Panel Models<a class="headerlink" href="#matlab-style-diagnostics-across-panel-models" title="Link to this heading">¶</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">panel_models</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;OLSPanelFE&quot;</span><span class="p">:</span> <span class="n">ols_panel</span><span class="p">,</span>
+    <span class="s2">&quot;SARPanelFE&quot;</span><span class="p">:</span> <span class="n">sar_panel</span><span class="p">,</span>
+    <span class="s2">&quot;SEMPanelFE&quot;</span><span class="p">:</span> <span class="n">sem_panel</span><span class="p">,</span>
+    <span class="s2">&quot;SDMPanelFE&quot;</span><span class="p">:</span> <span class="n">sdm_panel</span><span class="p">,</span>
+    <span class="s2">&quot;SDEMPanelFE&quot;</span><span class="p">:</span> <span class="n">sdem_panel</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">panel_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">het</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">heteroskedasticity_diagnostics</span><span class="p">(</span><span class="n">arch_lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
+    <span class="n">ac</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">autocorrelation_diagnostics</span><span class="p">(</span><span class="n">lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">outlier_diagnostics</span><span class="p">()</span>
+    <span class="n">pdiag</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">panel_diagnostics</span><span class="p">()</span>
+
+    <span class="n">bp</span> <span class="o">=</span> <span class="n">het</span><span class="p">[</span><span class="s2">&quot;bpagan&quot;</span><span class="p">]</span>
+    <span class="n">arch</span> <span class="o">=</span> <span class="n">het</span><span class="p">[</span><span class="s2">&quot;arch&quot;</span><span class="p">]</span>
+    <span class="n">cd</span> <span class="o">=</span> <span class="n">pdiag</span><span class="p">[</span><span class="s2">&quot;pesaran_cd&quot;</span><span class="p">]</span>
+
+    <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+        <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+        <span class="s2">&quot;bpagan_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">bp</span><span class="p">[</span><span class="s2">&quot;prob&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;arch_lag4_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">arch</span><span class="p">[</span><span class="s2">&quot;pval&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+        <span class="s2">&quot;lb_lag4_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">ac</span><span class="p">[</span><span class="s2">&quot;pval&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span>
+        <span class="s2">&quot;pesaran_cd&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">cd</span><span class="p">[</span><span class="s2">&quot;cd&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;pesaran_cd_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">cd</span><span class="p">[</span><span class="s2">&quot;pval&quot;</span><span class="p">]),</span>
+        <span class="s2">&quot;n_leverage_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;leverage_idx&quot;</span><span class="p">])),</span>
+        <span class="s2">&quot;n_rstudent_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;rstudent_idx&quot;</span><span class="p">])),</span>
+        <span class="s2">&quot;n_dffit_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;dffit_idx&quot;</span><span class="p">])),</span>
+        <span class="s2">&quot;n_dfbeta_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;dfbeta_idx&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+    <span class="p">})</span>
+
+<span class="n">diag_panel_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diag_panel_table</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespreg/diagnostics.py:105: RuntimeWarning: invalid value encountered in sqrt
+  denom = np.sqrt(np.outer(one_minus_h, diag_xtxi))
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespreg/diagnostics.py:105: RuntimeWarning: invalid value encountered in sqrt
+  denom = np.sqrt(np.outer(one_minus_h, diag_xtxi))
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespreg/diagnostics.py:105: RuntimeWarning: invalid value encountered in sqrt
+  denom = np.sqrt(np.outer(one_minus_h, diag_xtxi))
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespreg/diagnostics.py:105: RuntimeWarning: invalid value encountered in sqrt
+  denom = np.sqrt(np.outer(one_minus_h, diag_xtxi))
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespreg/diagnostics.py:105: RuntimeWarning: invalid value encountered in sqrt
+  denom = np.sqrt(np.outer(one_minus_h, diag_xtxi))
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>model</th>
+      <th>bpagan_p</th>
+      <th>arch_lag4_p</th>
+      <th>lb_lag4_p</th>
+      <th>pesaran_cd</th>
+      <th>pesaran_cd_p</th>
+      <th>n_leverage_flags</th>
+      <th>n_rstudent_flags</th>
+      <th>n_dffit_flags</th>
+      <th>n_dfbeta_flags</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>OLSPanelFE</td>
+      <td>0.892474</td>
+      <td>2.408214e-07</td>
+      <td>0.000935</td>
+      <td>-1.217879</td>
+      <td>0.223270</td>
+      <td>0</td>
+      <td>15</td>
+      <td>3</td>
+      <td>21</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>SARPanelFE</td>
+      <td>0.907184</td>
+      <td>2.850601e-02</td>
+      <td>0.000446</td>
+      <td>-1.197287</td>
+      <td>0.231195</td>
+      <td>0</td>
+      <td>12</td>
+      <td>3</td>
+      <td>22</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>SDEMPanelFE</td>
+      <td>0.851996</td>
+      <td>4.939600e-07</td>
+      <td>0.001004</td>
+      <td>-1.198133</td>
+      <td>0.230865</td>
+      <td>0</td>
+      <td>15</td>
+      <td>3</td>
+      <td>20</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>SDMPanelFE</td>
+      <td>0.887501</td>
+      <td>3.505785e-02</td>
+      <td>0.000288</td>
+      <td>-1.181109</td>
+      <td>0.237559</td>
+      <td>0</td>
+      <td>12</td>
+      <td>3</td>
+      <td>22</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>SEMPanelFE</td>
+      <td>0.854140</td>
+      <td>5.136455e-07</td>
+      <td>0.000961</td>
+      <td>-1.201419</td>
+      <td>0.229589</td>
+      <td>0</td>
+      <td>15</td>
+      <td>3</td>
+      <td>20</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<h2 id="model-comparison-waic-and-loo">Model Comparison (WAIC and LOO)<a class="headerlink" href="#model-comparison-waic-and-loo" title="Link to this heading">¶</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">idata_dict</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;OLSPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_ols</span><span class="p">,</span>
+    <span class="s2">&quot;SARPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_sar</span><span class="p">,</span>
+    <span class="s2">&quot;SEMPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_sem</span><span class="p">,</span>
+    <span class="s2">&quot;SDMPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_sdm</span><span class="p">,</span>
+    <span class="s2">&quot;SDEMPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_sdem</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">):</span>
+    <span class="k">if</span> <span class="s2">&quot;log_likelihood&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">idata</span><span class="o">.</span><span class="n">groups</span><span class="p">():</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">idata</span><span class="o">.</span><span class="n">log_likelihood</span><span class="o">.</span><span class="n">data_vars</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mi">0</span>
+
+
+<span class="n">valid_for_compare</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">idata</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">)}</span>
+<span class="n">missing_loglik</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">)]</span>
+
+<span class="k">if</span> <span class="n">missing_loglik</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Skipped (no log_likelihood group):&quot;</span><span class="p">,</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">missing_loglik</span><span class="p">))</span>
+
+<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">valid_for_compare</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Need at least two models with valid log_likelihood for WAIC/LOO compare.&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">ic</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;waic&quot;</span><span class="p">,</span> <span class="s2">&quot;loo&quot;</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">cmp</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">valid_for_compare</span><span class="p">,</span> <span class="n">ic</span><span class="o">=</span><span class="n">ic</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;BB-pseudo-BMA&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison&quot;</span><span class="p">)</span>
+            <span class="n">display</span><span class="p">(</span><span class="n">cmp</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison not available: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Always provide per-model IC attempts so the cell remains informative.</span>
+<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">}</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">waic_res</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">waic</span><span class="p">(</span><span class="n">idata</span><span class="p">)</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">waic_res</span><span class="o">.</span><span class="n">elpd_waic</span><span class="p">)</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">waic_res</span><span class="o">.</span><span class="n">p_waic</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;waic_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">loo_res</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">loo</span><span class="p">(</span><span class="n">idata</span><span class="p">)</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">loo_res</span><span class="o">.</span><span class="n">elpd_loo</span><span class="p">)</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">loo_res</span><span class="o">.</span><span class="n">p_loo</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;loo_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+
+<span class="n">ic_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">ic_table</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>WAIC comparison
+LOO comparison
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>rank</th>
+      <th>elpd_waic</th>
+      <th>p_waic</th>
+      <th>elpd_diff</th>
+      <th>weight</th>
+      <th>se</th>
+      <th>dse</th>
+      <th>warning</th>
+      <th>scale</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>SARPanelFE</th>
+      <td>0</td>
+      <td>-420.354804</td>
+      <td>2.864248</td>
+      <td>0.000000</td>
+      <td>7.751145e-01</td>
+      <td>11.257954</td>
+      <td>0.000000</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SDMPanelFE</th>
+      <td>1</td>
+      <td>-421.665009</td>
+      <td>4.139467</td>
+      <td>1.310205</td>
+      <td>2.248720e-01</td>
+      <td>11.340230</td>
+      <td>0.644043</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SEMPanelFE</th>
+      <td>2</td>
+      <td>-431.577311</td>
+      <td>2.996494</td>
+      <td>11.222507</td>
+      <td>1.045848e-05</td>
+      <td>11.321599</td>
+      <td>0.273069</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SDEMPanelFE</th>
+      <td>3</td>
+      <td>-432.814095</td>
+      <td>4.066460</td>
+      <td>12.459291</td>
+      <td>3.083210e-06</td>
+      <td>11.214556</td>
+      <td>0.296896</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>OLSPanelFE</th>
+      <td>4</td>
+      <td>-461.456743</td>
+      <td>2.802304</td>
+      <td>41.101939</td>
+      <td>1.713963e-12</td>
+      <td>15.033845</td>
+      <td>7.606851</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>rank</th>
+      <th>elpd_loo</th>
+      <th>p_loo</th>
+      <th>elpd_diff</th>
+      <th>weight</th>
+      <th>se</th>
+      <th>dse</th>
+      <th>warning</th>
+      <th>scale</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>SARPanelFE</th>
+      <td>0</td>
+      <td>-420.369359</td>
+      <td>2.878803</td>
+      <td>0.000000</td>
+      <td>7.663366e-01</td>
+      <td>11.671631</td>
+      <td>0.000000</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SDMPanelFE</th>
+      <td>1</td>
+      <td>-421.698026</td>
+      <td>4.172483</td>
+      <td>1.328667</td>
+      <td>2.336499e-01</td>
+      <td>11.767261</td>
+      <td>0.645379</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SEMPanelFE</th>
+      <td>2</td>
+      <td>-431.592275</td>
+      <td>3.011459</td>
+      <td>11.222916</td>
+      <td>1.046449e-05</td>
+      <td>11.739778</td>
+      <td>0.272344</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SDEMPanelFE</th>
+      <td>3</td>
+      <td>-432.840207</td>
+      <td>4.092572</td>
+      <td>12.470848</td>
+      <td>3.040610e-06</td>
+      <td>11.622171</td>
+      <td>0.296746</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>OLSPanelFE</th>
+      <td>4</td>
+      <td>-461.476913</td>
+      <td>2.822474</td>
+      <td>41.107554</td>
+      <td>8.641871e-13</td>
+      <td>15.470077</td>
+      <td>7.608803</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+  </tbody>
+</table>
+</div></div><div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>model</th>
+      <th>elpd_waic</th>
+      <th>p_waic</th>
+      <th>elpd_loo</th>
+      <th>p_loo</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>OLSPanelFE</td>
+      <td>-461.456743</td>
+      <td>2.802304</td>
+      <td>-461.476913</td>
+      <td>2.822474</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>SARPanelFE</td>
+      <td>-420.354804</td>
+      <td>2.864248</td>
+      <td>-420.369359</td>
+      <td>2.878803</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>SDEMPanelFE</td>
+      <td>-432.814095</td>
+      <td>4.066460</td>
+      <td>-432.840207</td>
+      <td>4.092572</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>SDMPanelFE</td>
+      <td>-421.665009</td>
+      <td>4.139467</td>
+      <td>-421.698026</td>
+      <td>4.172483</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>SEMPanelFE</td>
+      <td>-431.577311</td>
+      <td>2.996494</td>
+      <td>-431.592275</td>
+      <td>3.011459</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<h2 id="notes">Notes<a class="headerlink" href="#notes" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>This notebook uses modest draw counts for speed. For real analyses, increase <code class="docutils literal notranslate"><span class="pre">draws</span></code> and <code class="docutils literal notranslate"><span class="pre">tune</span></code>.</p></li>
+<li><p>If you see divergences or tree-depth warnings, increase <code class="docutils literal notranslate"><span class="pre">target_accept</span></code> (for example 0.95-0.99).</p></li>
+<li><p>For production inference, validate sensitivity to FE specification (<code class="docutils literal notranslate"><span class="pre">model=0/1/2/3</span></code>) and priors.</p></li>
+</ul>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  
+  
+  <div class="md-footer-meta md-typeset">
+    
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-footer-copyright__highlight">
+        &#169; Copyright 2018-, pysal developers.
+        
+    </div>
+  
+    Created using
+    <a href="https://www.sphinx-doc.org/" target="_blank" rel="noopener">Sphinx</a>
+    8.2.3.
+     and
+    <a href="https://github.com/jbms/sphinx-immaterial/" target="_blank" rel="noopener">Sphinx-Immaterial</a>
+  
+</div>
+      
+    </div>
+    
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.sections", "navigation.top", "search.share", "search.suggest", "toc.follow", "toc.sticky", "content.code.copy", "content.action.edit"], "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike", "staticVersions": null, "versionPath": "https://pysal.org/bayespreg/versions.json"}}</script>
+    
+      
+        <script src="../_static/sphinx_immaterial_theme.32136f45f91ae6956.min.js?v=a7a9472a"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script id="MathJax-script" src="../_static/mathjax/tex-mml-chtml.js"></script>
+    
+  </body>
+</html>
