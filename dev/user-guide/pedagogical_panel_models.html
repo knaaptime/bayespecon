@@ -1380,7 +1380,7 @@ Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [beta, sigma]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 7 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-/tmp/ipykernel_5514/2150201610.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_5490/2150201610.py:42: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -1646,9 +1646,10 @@ We recommend running at least 4 chains for robust computation of convergence dia
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 7 seconds.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 8 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-/tmp/ipykernel_5514/2150201610.py:42: UserWarning: The figure layout has changed to tight
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+/tmp/ipykernel_5490/2150201610.py:42: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -1684,87 +1685,87 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>-25011.482</td>
-      <td>1004037.122</td>
-      <td>-1736349.633</td>
-      <td>1854386.383</td>
-      <td>27272.117</td>
-      <td>45324.732</td>
-      <td>1389.493</td>
-      <td>392.380</td>
-      <td>1.009</td>
+      <td>26533.932</td>
+      <td>971073.226</td>
+      <td>-1614784.439</td>
+      <td>2078361.999</td>
+      <td>34112.125</td>
+      <td>48699.072</td>
+      <td>861.026</td>
+      <td>395.024</td>
+      <td>1.004</td>
     </tr>
     <tr>
       <th>poverty</th>
-      <td>60295.808</td>
-      <td>1034867.461</td>
-      <td>-1665441.221</td>
-      <td>2223731.664</td>
-      <td>26771.065</td>
-      <td>44109.389</td>
-      <td>1335.334</td>
-      <td>462.570</td>
-      <td>1.008</td>
-    </tr>
-    <tr>
-      <th>rev_rating</th>
-      <td>0.304</td>
-      <td>3.927</td>
-      <td>-6.796</td>
-      <td>7.608</td>
-      <td>0.100</td>
-      <td>0.174</td>
-      <td>1549.767</td>
-      <td>458.211</td>
-      <td>1.004</td>
-    </tr>
-    <tr>
-      <th>num_spots</th>
-      <td>-41015.582</td>
-      <td>1019574.452</td>
-      <td>-1751417.575</td>
-      <td>2051924.818</td>
-      <td>30869.999</td>
-      <td>51806.702</td>
-      <td>1092.496</td>
-      <td>350.891</td>
-      <td>1.004</td>
-    </tr>
-    <tr>
-      <th>crowded</th>
-      <td>-46900.661</td>
-      <td>951380.031</td>
-      <td>-1874167.362</td>
-      <td>1672553.614</td>
-      <td>26269.719</td>
-      <td>39068.725</td>
-      <td>1285.138</td>
-      <td>523.556</td>
+      <td>-42078.457</td>
+      <td>987415.404</td>
+      <td>-2181357.890</td>
+      <td>1664157.435</td>
+      <td>26752.370</td>
+      <td>36728.911</td>
+      <td>1375.662</td>
+      <td>481.478</td>
       <td>1.000</td>
     </tr>
     <tr>
+      <th>rev_rating</th>
+      <td>0.228</td>
+      <td>3.959</td>
+      <td>-7.363</td>
+      <td>7.007</td>
+      <td>0.109</td>
+      <td>0.173</td>
+      <td>1286.667</td>
+      <td>518.640</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>2501.309</td>
+      <td>1025125.000</td>
+      <td>-1890249.269</td>
+      <td>1946706.091</td>
+      <td>28546.718</td>
+      <td>51444.264</td>
+      <td>1289.764</td>
+      <td>466.524</td>
+      <td>1.012</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>18462.709</td>
+      <td>998242.933</td>
+      <td>-1894987.011</td>
+      <td>1771491.884</td>
+      <td>34132.519</td>
+      <td>40204.590</td>
+      <td>864.946</td>
+      <td>494.662</td>
+      <td>0.997</td>
+    </tr>
+    <tr>
       <th>rho</th>
-      <td>0.553</td>
-      <td>0.059</td>
-      <td>0.440</td>
-      <td>0.655</td>
+      <td>0.552</td>
+      <td>0.056</td>
+      <td>0.446</td>
+      <td>0.656</td>
       <td>0.002</td>
       <td>0.002</td>
-      <td>1449.112</td>
-      <td>390.100</td>
-      <td>1.001</td>
+      <td>915.927</td>
+      <td>447.752</td>
+      <td>1.002</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.158</td>
-      <td>0.048</td>
-      <td>1.081</td>
-      <td>1.260</td>
-      <td>0.001</td>
+      <td>1.156</td>
+      <td>0.049</td>
+      <td>1.069</td>
+      <td>1.248</td>
       <td>0.002</td>
-      <td>1147.758</td>
-      <td>421.019</td>
-      <td>1.003</td>
+      <td>0.002</td>
+      <td>867.791</td>
+      <td>371.617</td>
+      <td>1.010</td>
     </tr>
   </tbody>
 </table>
@@ -1796,37 +1797,37 @@ We recommend running at least 4 chains for robust computation of convergence dia
     <tr>
       <th>0</th>
       <td>Intercept</td>
-      <td>-27368.356295</td>
-      <td>-28589.815386</td>
-      <td>-55958.171682</td>
+      <td>29017.839658</td>
+      <td>30162.250022</td>
+      <td>59180.089679</td>
     </tr>
     <tr>
       <th>1</th>
       <td>poverty</td>
-      <td>65977.584932</td>
-      <td>68922.187086</td>
-      <td>134899.772018</td>
+      <td>-46017.526299</td>
+      <td>-47832.373119</td>
+      <td>-93849.899419</td>
     </tr>
     <tr>
       <th>2</th>
       <td>rev_rating</td>
-      <td>0.333059</td>
-      <td>0.347923</td>
-      <td>0.680982</td>
+      <td>0.249196</td>
+      <td>0.259024</td>
+      <td>0.508221</td>
     </tr>
     <tr>
       <th>3</th>
       <td>num_spots</td>
-      <td>-44880.550333</td>
-      <td>-46883.584626</td>
-      <td>-91764.134960</td>
+      <td>2735.462807</td>
+      <td>2843.344442</td>
+      <td>5578.807249</td>
     </tr>
     <tr>
       <th>4</th>
       <td>crowded</td>
-      <td>-51320.190166</td>
-      <td>-53610.627785</td>
-      <td>-104930.817951</td>
+      <td>20191.048985</td>
+      <td>20987.346917</td>
+      <td>41178.395902</td>
     </tr>
   </tbody>
 </table>
@@ -1858,63 +1859,63 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>rho</th>
-      <td>0.553</td>
-      <td>0.059</td>
-      <td>1449.112</td>
-      <td>390.100</td>
-      <td>1.001</td>
+      <td>0.552</td>
+      <td>0.056</td>
+      <td>915.927</td>
+      <td>447.752</td>
+      <td>1.002</td>
     </tr>
     <tr>
       <th>beta[Intercept]</th>
-      <td>-25011.482</td>
-      <td>1004037.122</td>
-      <td>1389.493</td>
-      <td>392.380</td>
-      <td>1.009</td>
+      <td>26533.932</td>
+      <td>971073.226</td>
+      <td>861.026</td>
+      <td>395.024</td>
+      <td>1.004</td>
     </tr>
     <tr>
       <th>beta[poverty]</th>
-      <td>60295.808</td>
-      <td>1034867.461</td>
-      <td>1335.334</td>
-      <td>462.570</td>
-      <td>1.008</td>
-    </tr>
-    <tr>
-      <th>beta[rev_rating]</th>
-      <td>0.304</td>
-      <td>3.927</td>
-      <td>1549.767</td>
-      <td>458.211</td>
-      <td>1.004</td>
-    </tr>
-    <tr>
-      <th>beta[num_spots]</th>
-      <td>-41015.582</td>
-      <td>1019574.452</td>
-      <td>1092.496</td>
-      <td>350.891</td>
-      <td>1.004</td>
-    </tr>
-    <tr>
-      <th>beta[crowded]</th>
-      <td>-46900.661</td>
-      <td>951380.031</td>
-      <td>1285.138</td>
-      <td>523.556</td>
+      <td>-42078.457</td>
+      <td>987415.404</td>
+      <td>1375.662</td>
+      <td>481.478</td>
       <td>1.000</td>
     </tr>
     <tr>
+      <th>beta[rev_rating]</th>
+      <td>0.228</td>
+      <td>3.959</td>
+      <td>1286.667</td>
+      <td>518.640</td>
+      <td>1.005</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>2501.309</td>
+      <td>1025125.000</td>
+      <td>1289.764</td>
+      <td>466.524</td>
+      <td>1.012</td>
+    </tr>
+    <tr>
+      <th>beta[crowded]</th>
+      <td>18462.709</td>
+      <td>998242.933</td>
+      <td>864.946</td>
+      <td>494.662</td>
+      <td>0.997</td>
+    </tr>
+    <tr>
       <th>sigma</th>
-      <td>1.158</td>
-      <td>0.048</td>
-      <td>1147.758</td>
-      <td>421.019</td>
-      <td>1.003</td>
+      <td>1.156</td>
+      <td>0.049</td>
+      <td>867.791</td>
+      <td>371.617</td>
+      <td>1.010</td>
     </tr>
   </tbody>
 </table>
-</div></div><img alt="../_images/17f86a434204e9583f83f39a486d2c51db5da3069720cbfe02016ed9dcad1c02.png" src="../_images/17f86a434204e9583f83f39a486d2c51db5da3069720cbfe02016ed9dcad1c02.png" />
+</div></div><img alt="../_images/862fb92ea3aa23a03624adac6fe14a1ac5cd9efccacffec551d2b5ae683af9dc.png" src="../_images/862fb92ea3aa23a03624adac6fe14a1ac5cd9efccacffec551d2b5ae683af9dc.png" />
 </div>
 </div>
 <h2 id="fit-sempanelfe">Fit: SEMPanelFE<a class="headerlink" href="#fit-sempanelfe" title="Link to this heading">¶</a></h2>
@@ -1934,9 +1935,10 @@ We recommend running at least 4 chains for robust computation of convergence dia
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [lam, beta, sigma]
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 8 seconds.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 9 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-/tmp/ipykernel_5514/2150201610.py:42: UserWarning: The figure layout has changed to tight
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+/tmp/ipykernel_5490/2150201610.py:42: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -1972,87 +1974,87 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>-22226.568</td>
-      <td>1018115.957</td>
-      <td>-1758249.099</td>
-      <td>2074184.258</td>
-      <td>31715.386</td>
-      <td>41855.427</td>
-      <td>1093.058</td>
-      <td>460.911</td>
-      <td>1.001</td>
-    </tr>
-    <tr>
-      <th>poverty</th>
-      <td>6083.036</td>
-      <td>958466.725</td>
-      <td>-1695227.567</td>
-      <td>1799693.576</td>
-      <td>33210.424</td>
-      <td>39708.098</td>
-      <td>822.856</td>
-      <td>480.173</td>
-      <td>1.010</td>
-    </tr>
-    <tr>
-      <th>rev_rating</th>
-      <td>1.092</td>
-      <td>3.910</td>
-      <td>-5.843</td>
-      <td>8.115</td>
-      <td>0.107</td>
-      <td>0.147</td>
-      <td>1358.324</td>
-      <td>435.994</td>
-      <td>1.002</td>
-    </tr>
-    <tr>
-      <th>num_spots</th>
-      <td>-10950.424</td>
-      <td>1023050.961</td>
-      <td>-1863707.208</td>
-      <td>1893901.047</td>
-      <td>34322.638</td>
-      <td>48403.786</td>
-      <td>896.519</td>
-      <td>399.810</td>
+      <td>-37305.570</td>
+      <td>1064481.412</td>
+      <td>-2147914.094</td>
+      <td>1866192.290</td>
+      <td>31620.978</td>
+      <td>61009.584</td>
+      <td>1114.907</td>
+      <td>304.939</td>
       <td>0.999</td>
     </tr>
     <tr>
-      <th>crowded</th>
-      <td>10895.982</td>
-      <td>941650.571</td>
-      <td>-1730762.745</td>
-      <td>1660065.632</td>
-      <td>29123.679</td>
-      <td>41798.045</td>
-      <td>1058.341</td>
-      <td>321.745</td>
-      <td>1.002</td>
+      <th>poverty</th>
+      <td>10195.614</td>
+      <td>1026693.363</td>
+      <td>-1930295.088</td>
+      <td>1801341.631</td>
+      <td>36635.352</td>
+      <td>43544.213</td>
+      <td>807.555</td>
+      <td>469.399</td>
+      <td>1.018</td>
     </tr>
     <tr>
-      <th>lam</th>
-      <td>0.549</td>
-      <td>0.056</td>
-      <td>0.451</td>
-      <td>0.658</td>
-      <td>0.002</td>
-      <td>0.002</td>
-      <td>1018.802</td>
-      <td>495.229</td>
+      <th>rev_rating</th>
+      <td>1.154</td>
+      <td>3.781</td>
+      <td>-6.171</td>
+      <td>7.578</td>
+      <td>0.124</td>
+      <td>0.192</td>
+      <td>947.508</td>
+      <td>329.656</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>-9285.799</td>
+      <td>1051793.567</td>
+      <td>-2022583.012</td>
+      <td>1876096.081</td>
+      <td>30498.096</td>
+      <td>40324.043</td>
+      <td>1220.361</td>
+      <td>440.900</td>
       <td>1.001</td>
     </tr>
     <tr>
+      <th>crowded</th>
+      <td>43540.709</td>
+      <td>1013748.528</td>
+      <td>-1658230.502</td>
+      <td>2241238.263</td>
+      <td>33695.655</td>
+      <td>46693.618</td>
+      <td>883.034</td>
+      <td>368.968</td>
+      <td>1.003</td>
+    </tr>
+    <tr>
+      <th>lam</th>
+      <td>0.553</td>
+      <td>0.060</td>
+      <td>0.438</td>
+      <td>0.663</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>920.213</td>
+      <td>480.994</td>
+      <td>1.008</td>
+    </tr>
+    <tr>
       <th>sigma</th>
-      <td>1.158</td>
-      <td>0.051</td>
-      <td>1.065</td>
-      <td>1.253</td>
+      <td>1.159</td>
+      <td>0.052</td>
+      <td>1.076</td>
+      <td>1.269</td>
       <td>0.002</td>
       <td>0.002</td>
-      <td>1000.510</td>
-      <td>429.063</td>
-      <td>1.002</td>
+      <td>1171.801</td>
+      <td>465.334</td>
+      <td>0.999</td>
     </tr>
   </tbody>
 </table>
@@ -2084,37 +2086,37 @@ We recommend running at least 4 chains for robust computation of convergence dia
     <tr>
       <th>0</th>
       <td>Intercept</td>
-      <td>-22226.567935</td>
+      <td>-37305.570375</td>
       <td>0.0</td>
-      <td>-22226.567935</td>
+      <td>-37305.570375</td>
     </tr>
     <tr>
       <th>1</th>
       <td>poverty</td>
-      <td>6083.036287</td>
+      <td>10195.613951</td>
       <td>0.0</td>
-      <td>6083.036287</td>
+      <td>10195.613951</td>
     </tr>
     <tr>
       <th>2</th>
       <td>rev_rating</td>
-      <td>1.092035</td>
+      <td>1.154033</td>
       <td>0.0</td>
-      <td>1.092035</td>
+      <td>1.154033</td>
     </tr>
     <tr>
       <th>3</th>
       <td>num_spots</td>
-      <td>-10950.423635</td>
+      <td>-9285.798965</td>
       <td>0.0</td>
-      <td>-10950.423635</td>
+      <td>-9285.798965</td>
     </tr>
     <tr>
       <th>4</th>
       <td>crowded</td>
-      <td>10895.981932</td>
+      <td>43540.708812</td>
       <td>0.0</td>
-      <td>10895.981932</td>
+      <td>43540.708812</td>
     </tr>
   </tbody>
 </table>
@@ -2146,63 +2148,63 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>lam</th>
-      <td>0.549</td>
-      <td>0.056</td>
-      <td>1018.802</td>
-      <td>495.229</td>
-      <td>1.001</td>
+      <td>0.553</td>
+      <td>0.060</td>
+      <td>920.213</td>
+      <td>480.994</td>
+      <td>1.008</td>
     </tr>
     <tr>
       <th>beta[Intercept]</th>
-      <td>-22226.568</td>
-      <td>1018115.957</td>
-      <td>1093.058</td>
-      <td>460.911</td>
-      <td>1.001</td>
-    </tr>
-    <tr>
-      <th>beta[poverty]</th>
-      <td>6083.036</td>
-      <td>958466.725</td>
-      <td>822.856</td>
-      <td>480.173</td>
-      <td>1.010</td>
-    </tr>
-    <tr>
-      <th>beta[rev_rating]</th>
-      <td>1.092</td>
-      <td>3.910</td>
-      <td>1358.324</td>
-      <td>435.994</td>
-      <td>1.002</td>
-    </tr>
-    <tr>
-      <th>beta[num_spots]</th>
-      <td>-10950.424</td>
-      <td>1023050.961</td>
-      <td>896.519</td>
-      <td>399.810</td>
+      <td>-37305.570</td>
+      <td>1064481.412</td>
+      <td>1114.907</td>
+      <td>304.939</td>
       <td>0.999</td>
     </tr>
     <tr>
+      <th>beta[poverty]</th>
+      <td>10195.614</td>
+      <td>1026693.363</td>
+      <td>807.555</td>
+      <td>469.399</td>
+      <td>1.018</td>
+    </tr>
+    <tr>
+      <th>beta[rev_rating]</th>
+      <td>1.154</td>
+      <td>3.781</td>
+      <td>947.508</td>
+      <td>329.656</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>beta[num_spots]</th>
+      <td>-9285.799</td>
+      <td>1051793.567</td>
+      <td>1220.361</td>
+      <td>440.900</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
       <th>beta[crowded]</th>
-      <td>10895.982</td>
-      <td>941650.571</td>
-      <td>1058.341</td>
-      <td>321.745</td>
-      <td>1.002</td>
+      <td>43540.709</td>
+      <td>1013748.528</td>
+      <td>883.034</td>
+      <td>368.968</td>
+      <td>1.003</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.158</td>
-      <td>0.051</td>
-      <td>1000.510</td>
-      <td>429.063</td>
-      <td>1.002</td>
+      <td>1.159</td>
+      <td>0.052</td>
+      <td>1171.801</td>
+      <td>465.334</td>
+      <td>0.999</td>
     </tr>
   </tbody>
 </table>
-</div></div><img alt="../_images/bebeb388059c4d2391f568fd2ff10cad5512f7990750d742066acfb7d8d29155.png" src="../_images/bebeb388059c4d2391f568fd2ff10cad5512f7990750d742066acfb7d8d29155.png" />
+</div></div><img alt="../_images/e38abab541fc023212b6c97a361c759d41ab6fb8ddb8f6ef4d534d80a06cf99a.png" src="../_images/e38abab541fc023212b6c97a361c759d41ab6fb8ddb8f6ef4d534d80a06cf99a.png" />
 </div>
 </div>
 <h2 id="fit-sdmpanelfe">Fit: SDMPanelFE<a class="headerlink" href="#fit-sdmpanelfe" title="Link to this heading">¶</a></h2>
@@ -2222,10 +2224,10 @@ We recommend running at least 4 chains for robust computation of convergence dia
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 7 seconds.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 8 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_5514/2150201610.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_5490/2150201610.py:42: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -2261,135 +2263,135 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>34735.353</td>
-      <td>982479.231</td>
-      <td>-1897464.398</td>
-      <td>1709407.645</td>
-      <td>27678.311</td>
-      <td>45301.611</td>
-      <td>1269.123</td>
-      <td>460.538</td>
-      <td>1.012</td>
+      <td>2183.547</td>
+      <td>1042248.627</td>
+      <td>-1903853.684</td>
+      <td>1987994.502</td>
+      <td>25528.057</td>
+      <td>46310.366</td>
+      <td>1666.891</td>
+      <td>361.288</td>
+      <td>1.018</td>
     </tr>
     <tr>
       <th>poverty</th>
-      <td>-10139.842</td>
-      <td>1013590.696</td>
-      <td>-1681083.408</td>
-      <td>2033900.306</td>
-      <td>24826.131</td>
-      <td>39737.887</td>
-      <td>1666.891</td>
-      <td>463.340</td>
-      <td>1.014</td>
+      <td>20152.384</td>
+      <td>999928.806</td>
+      <td>-1836142.332</td>
+      <td>1763934.197</td>
+      <td>31996.397</td>
+      <td>43552.879</td>
+      <td>980.853</td>
+      <td>358.519</td>
+      <td>1.013</td>
     </tr>
     <tr>
       <th>rev_rating</th>
-      <td>0.342</td>
-      <td>3.854</td>
-      <td>-7.137</td>
-      <td>6.975</td>
-      <td>0.108</td>
-      <td>0.169</td>
-      <td>1297.816</td>
-      <td>349.368</td>
-      <td>1.003</td>
+      <td>0.253</td>
+      <td>3.971</td>
+      <td>-6.475</td>
+      <td>6.998</td>
+      <td>0.117</td>
+      <td>0.159</td>
+      <td>1139.934</td>
+      <td>426.476</td>
+      <td>1.006</td>
     </tr>
     <tr>
       <th>num_spots</th>
-      <td>-22324.761</td>
-      <td>995605.364</td>
-      <td>-2254230.258</td>
-      <td>1714157.478</td>
-      <td>27731.128</td>
-      <td>52397.960</td>
-      <td>1304.756</td>
-      <td>371.291</td>
-      <td>1.001</td>
+      <td>-16233.767</td>
+      <td>995932.323</td>
+      <td>-1901484.679</td>
+      <td>1819232.121</td>
+      <td>29090.039</td>
+      <td>45631.680</td>
+      <td>1190.853</td>
+      <td>434.160</td>
+      <td>0.998</td>
     </tr>
     <tr>
       <th>crowded</th>
-      <td>12695.105</td>
-      <td>1015800.568</td>
-      <td>-2122095.782</td>
-      <td>1620524.890</td>
-      <td>31977.199</td>
-      <td>43140.835</td>
-      <td>1005.175</td>
-      <td>482.777</td>
-      <td>1.001</td>
+      <td>2499.270</td>
+      <td>1095152.200</td>
+      <td>-2158627.679</td>
+      <td>1851076.842</td>
+      <td>32575.571</td>
+      <td>53369.568</td>
+      <td>1123.259</td>
+      <td>437.032</td>
+      <td>1.016</td>
     </tr>
     <tr>
       <th>W*poverty</th>
-      <td>16531.033</td>
-      <td>936149.991</td>
-      <td>-1819480.931</td>
-      <td>1702880.432</td>
-      <td>26117.965</td>
-      <td>45549.148</td>
-      <td>1299.717</td>
-      <td>345.332</td>
+      <td>-14026.099</td>
+      <td>925545.475</td>
+      <td>-1755767.570</td>
+      <td>1646462.770</td>
+      <td>26473.716</td>
+      <td>38878.715</td>
+      <td>1200.388</td>
+      <td>372.381</td>
       <td>1.007</td>
     </tr>
     <tr>
       <th>W*rev_rating</th>
-      <td>-4.906</td>
-      <td>7.228</td>
-      <td>-18.045</td>
-      <td>9.570</td>
-      <td>0.195</td>
-      <td>0.298</td>
-      <td>1396.595</td>
-      <td>411.337</td>
-      <td>0.998</td>
-    </tr>
-    <tr>
-      <th>W*num_spots</th>
-      <td>16935.438</td>
-      <td>998504.415</td>
-      <td>-1955440.268</td>
-      <td>1863778.985</td>
-      <td>29362.314</td>
-      <td>43219.885</td>
-      <td>1146.824</td>
-      <td>438.831</td>
-      <td>1.005</td>
-    </tr>
-    <tr>
-      <th>W*crowded</th>
-      <td>9761.605</td>
-      <td>1056148.907</td>
-      <td>-1762314.258</td>
-      <td>2250103.779</td>
-      <td>25868.520</td>
-      <td>60740.341</td>
-      <td>1666.891</td>
-      <td>348.598</td>
+      <td>-4.939</td>
+      <td>7.865</td>
+      <td>-20.154</td>
+      <td>9.110</td>
+      <td>0.202</td>
+      <td>0.307</td>
+      <td>1543.429</td>
+      <td>376.351</td>
       <td>0.999</td>
     </tr>
     <tr>
-      <th>rho</th>
-      <td>0.548</td>
-      <td>0.062</td>
-      <td>0.428</td>
-      <td>0.667</td>
-      <td>0.002</td>
-      <td>0.003</td>
-      <td>1281.747</td>
-      <td>384.191</td>
+      <th>W*num_spots</th>
+      <td>10268.914</td>
+      <td>985384.871</td>
+      <td>-2011278.963</td>
+      <td>1594152.032</td>
+      <td>28988.149</td>
+      <td>42873.265</td>
+      <td>1133.598</td>
+      <td>362.344</td>
+      <td>1.014</td>
+    </tr>
+    <tr>
+      <th>W*crowded</th>
+      <td>20060.240</td>
+      <td>1009738.871</td>
+      <td>-1798465.861</td>
+      <td>1699878.938</td>
+      <td>31950.089</td>
+      <td>44129.169</td>
+      <td>1013.063</td>
+      <td>415.593</td>
       <td>1.002</td>
     </tr>
     <tr>
+      <th>rho</th>
+      <td>0.549</td>
+      <td>0.059</td>
+      <td>0.429</td>
+      <td>0.646</td>
+      <td>0.002</td>
+      <td>0.003</td>
+      <td>1166.985</td>
+      <td>340.612</td>
+      <td>1.008</td>
+    </tr>
+    <tr>
       <th>sigma</th>
-      <td>1.160</td>
+      <td>1.164</td>
       <td>0.054</td>
-      <td>1.062</td>
-      <td>1.255</td>
+      <td>1.056</td>
+      <td>1.258</td>
       <td>0.002</td>
       <td>0.002</td>
-      <td>1150.509</td>
-      <td>466.438</td>
-      <td>1.003</td>
+      <td>1044.959</td>
+      <td>540.977</td>
+      <td>0.998</td>
     </tr>
   </tbody>
 </table>
@@ -2421,30 +2423,30 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
     <tr>
       <th>0</th>
       <td>poverty</td>
-      <td>-8299.048584</td>
-      <td>22423.628142</td>
-      <td>14124.579559</td>
+      <td>19652.893785</td>
+      <td>-6079.109127</td>
+      <td>13573.784659</td>
     </tr>
     <tr>
       <th>1</th>
       <td>rev_rating</td>
-      <td>-0.448661</td>
-      <td>-9.636894</td>
-      <td>-10.085555</td>
+      <td>-0.554048</td>
+      <td>-9.826699</td>
+      <td>-10.380747</td>
     </tr>
     <tr>
       <th>2</th>
       <td>num_spots</td>
-      <td>-21534.690655</td>
-      <td>9624.247190</td>
-      <td>-11910.443465</td>
+      <td>-16004.646667</td>
+      <td>2788.541843</td>
+      <td>-13216.104825</td>
     </tr>
     <tr>
       <th>3</th>
       <td>crowded</td>
-      <td>15497.091197</td>
-      <td>34132.404668</td>
-      <td>49629.495865</td>
+      <td>6104.644485</td>
+      <td>43879.630288</td>
+      <td>49984.274772</td>
     </tr>
   </tbody>
 </table>
@@ -2476,95 +2478,95 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
   <tbody>
     <tr>
       <th>rho</th>
-      <td>0.548</td>
-      <td>0.062</td>
-      <td>1281.747</td>
-      <td>384.191</td>
-      <td>1.002</td>
+      <td>0.549</td>
+      <td>0.059</td>
+      <td>1166.985</td>
+      <td>340.612</td>
+      <td>1.008</td>
     </tr>
     <tr>
       <th>beta[Intercept]</th>
-      <td>34735.353</td>
-      <td>982479.231</td>
-      <td>1269.123</td>
-      <td>460.538</td>
-      <td>1.012</td>
+      <td>2183.547</td>
+      <td>1042248.627</td>
+      <td>1666.891</td>
+      <td>361.288</td>
+      <td>1.018</td>
     </tr>
     <tr>
       <th>beta[poverty]</th>
-      <td>-10139.842</td>
-      <td>1013590.696</td>
-      <td>1666.891</td>
-      <td>463.340</td>
-      <td>1.014</td>
+      <td>20152.384</td>
+      <td>999928.806</td>
+      <td>980.853</td>
+      <td>358.519</td>
+      <td>1.013</td>
     </tr>
     <tr>
       <th>beta[rev_rating]</th>
-      <td>0.342</td>
-      <td>3.854</td>
-      <td>1297.816</td>
-      <td>349.368</td>
-      <td>1.003</td>
+      <td>0.253</td>
+      <td>3.971</td>
+      <td>1139.934</td>
+      <td>426.476</td>
+      <td>1.006</td>
     </tr>
     <tr>
       <th>beta[num_spots]</th>
-      <td>-22324.761</td>
-      <td>995605.364</td>
-      <td>1304.756</td>
-      <td>371.291</td>
-      <td>1.001</td>
+      <td>-16233.767</td>
+      <td>995932.323</td>
+      <td>1190.853</td>
+      <td>434.160</td>
+      <td>0.998</td>
     </tr>
     <tr>
       <th>beta[crowded]</th>
-      <td>12695.105</td>
-      <td>1015800.568</td>
-      <td>1005.175</td>
-      <td>482.777</td>
-      <td>1.001</td>
+      <td>2499.270</td>
+      <td>1095152.200</td>
+      <td>1123.259</td>
+      <td>437.032</td>
+      <td>1.016</td>
     </tr>
     <tr>
       <th>beta[W*poverty]</th>
-      <td>16531.033</td>
-      <td>936149.991</td>
-      <td>1299.717</td>
-      <td>345.332</td>
+      <td>-14026.099</td>
+      <td>925545.475</td>
+      <td>1200.388</td>
+      <td>372.381</td>
       <td>1.007</td>
     </tr>
     <tr>
       <th>beta[W*rev_rating]</th>
-      <td>-4.906</td>
-      <td>7.228</td>
-      <td>1396.595</td>
-      <td>411.337</td>
-      <td>0.998</td>
-    </tr>
-    <tr>
-      <th>beta[W*num_spots]</th>
-      <td>16935.438</td>
-      <td>998504.415</td>
-      <td>1146.824</td>
-      <td>438.831</td>
-      <td>1.005</td>
-    </tr>
-    <tr>
-      <th>beta[W*crowded]</th>
-      <td>9761.605</td>
-      <td>1056148.907</td>
-      <td>1666.891</td>
-      <td>348.598</td>
+      <td>-4.939</td>
+      <td>7.865</td>
+      <td>1543.429</td>
+      <td>376.351</td>
       <td>0.999</td>
     </tr>
     <tr>
+      <th>beta[W*num_spots]</th>
+      <td>10268.914</td>
+      <td>985384.871</td>
+      <td>1133.598</td>
+      <td>362.344</td>
+      <td>1.014</td>
+    </tr>
+    <tr>
+      <th>beta[W*crowded]</th>
+      <td>20060.240</td>
+      <td>1009738.871</td>
+      <td>1013.063</td>
+      <td>415.593</td>
+      <td>1.002</td>
+    </tr>
+    <tr>
       <th>sigma</th>
-      <td>1.160</td>
+      <td>1.164</td>
       <td>0.054</td>
-      <td>1150.509</td>
-      <td>466.438</td>
-      <td>1.003</td>
+      <td>1044.959</td>
+      <td>540.977</td>
+      <td>0.998</td>
     </tr>
   </tbody>
 </table>
-</div></div><img alt="../_images/89b1b5bd049ce4537dd307a99cce06f4507269998e5b2fe60104a71f4fecb2f2.png" src="../_images/89b1b5bd049ce4537dd307a99cce06f4507269998e5b2fe60104a71f4fecb2f2.png" />
+</div></div><img alt="../_images/511570eb38421cd79309e713245649511cce42f565a5e055e6a0e8f6139718b1.png" src="../_images/511570eb38421cd79309e713245649511cce42f565a5e055e6a0e8f6139718b1.png" />
 </div>
 </div>
 <h2 id="fit-sdempanelfe">Fit: SDEMPanelFE<a class="headerlink" href="#fit-sdempanelfe" title="Link to this heading">¶</a></h2>
@@ -2586,7 +2588,8 @@ Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [lam, beta, sigma]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 9 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-/tmp/ipykernel_5514/2150201610.py:42: UserWarning: The figure layout has changed to tight
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+/tmp/ipykernel_5490/2150201610.py:42: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -2622,135 +2625,135 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>25706.047</td>
-      <td>967986.588</td>
-      <td>-1735224.205</td>
-      <td>1798085.946</td>
-      <td>32173.742</td>
-      <td>36231.390</td>
-      <td>933.758</td>
-      <td>453.205</td>
-      <td>1.008</td>
+      <td>-40119.688</td>
+      <td>1028357.570</td>
+      <td>-2036866.081</td>
+      <td>1850646.917</td>
+      <td>26749.913</td>
+      <td>47506.110</td>
+      <td>1503.247</td>
+      <td>461.395</td>
+      <td>0.999</td>
     </tr>
     <tr>
       <th>poverty</th>
-      <td>-18970.843</td>
-      <td>1004947.408</td>
-      <td>-1848016.937</td>
-      <td>1773301.944</td>
-      <td>26271.521</td>
-      <td>37383.345</td>
-      <td>1581.577</td>
-      <td>525.207</td>
-      <td>1.001</td>
+      <td>-17347.940</td>
+      <td>1035967.208</td>
+      <td>-1986047.398</td>
+      <td>1820756.936</td>
+      <td>25374.205</td>
+      <td>50236.530</td>
+      <td>1666.891</td>
+      <td>436.759</td>
+      <td>1.014</td>
     </tr>
     <tr>
       <th>rev_rating</th>
-      <td>1.343</td>
-      <td>4.577</td>
-      <td>-7.781</td>
-      <td>9.156</td>
-      <td>0.179</td>
-      <td>0.163</td>
-      <td>649.270</td>
-      <td>489.628</td>
-      <td>1.003</td>
+      <td>1.453</td>
+      <td>4.441</td>
+      <td>-6.924</td>
+      <td>9.160</td>
+      <td>0.185</td>
+      <td>0.138</td>
+      <td>582.638</td>
+      <td>347.645</td>
+      <td>1.006</td>
     </tr>
     <tr>
       <th>num_spots</th>
-      <td>13786.498</td>
-      <td>916081.706</td>
-      <td>-1827739.904</td>
-      <td>1765797.738</td>
-      <td>29836.327</td>
-      <td>45452.002</td>
-      <td>940.895</td>
-      <td>361.025</td>
-      <td>1.003</td>
+      <td>-31789.267</td>
+      <td>993086.305</td>
+      <td>-1844182.048</td>
+      <td>1806237.905</td>
+      <td>24323.912</td>
+      <td>48402.416</td>
+      <td>1666.891</td>
+      <td>325.565</td>
+      <td>1.000</td>
     </tr>
     <tr>
       <th>crowded</th>
-      <td>-8618.624</td>
-      <td>1027065.938</td>
-      <td>-1957979.570</td>
-      <td>2013482.387</td>
-      <td>28733.788</td>
-      <td>43978.786</td>
-      <td>1270.826</td>
-      <td>460.413</td>
-      <td>0.998</td>
-    </tr>
-    <tr>
-      <th>W*poverty</th>
-      <td>-36341.692</td>
-      <td>959004.405</td>
-      <td>-1788505.867</td>
-      <td>1745295.994</td>
-      <td>30129.393</td>
-      <td>46393.783</td>
-      <td>1002.465</td>
-      <td>429.545</td>
-      <td>1.004</td>
-    </tr>
-    <tr>
-      <th>W*rev_rating</th>
-      <td>0.686</td>
-      <td>10.578</td>
-      <td>-19.486</td>
-      <td>19.953</td>
-      <td>0.356</td>
-      <td>0.354</td>
-      <td>874.490</td>
-      <td>549.809</td>
-      <td>0.998</td>
-    </tr>
-    <tr>
-      <th>W*num_spots</th>
-      <td>-19453.058</td>
-      <td>964586.385</td>
-      <td>-1700581.717</td>
-      <td>1884612.886</td>
-      <td>25545.178</td>
-      <td>49615.946</td>
-      <td>1309.140</td>
-      <td>385.589</td>
-      <td>1.008</td>
-    </tr>
-    <tr>
-      <th>W*crowded</th>
-      <td>33162.763</td>
-      <td>1026605.307</td>
-      <td>-2131106.295</td>
-      <td>1861686.351</td>
-      <td>28332.988</td>
-      <td>63144.233</td>
-      <td>1394.816</td>
-      <td>338.669</td>
-      <td>1.004</td>
-    </tr>
-    <tr>
-      <th>lam</th>
-      <td>0.554</td>
-      <td>0.062</td>
-      <td>0.439</td>
-      <td>0.672</td>
-      <td>0.002</td>
-      <td>0.003</td>
-      <td>1365.176</td>
-      <td>443.330</td>
+      <td>4186.726</td>
+      <td>1024630.380</td>
+      <td>-2005300.946</td>
+      <td>1899312.944</td>
+      <td>27427.526</td>
+      <td>39435.006</td>
+      <td>1331.539</td>
+      <td>550.908</td>
       <td>1.003</td>
     </tr>
     <tr>
-      <th>sigma</th>
-      <td>1.164</td>
-      <td>0.050</td>
-      <td>1.066</td>
-      <td>1.257</td>
-      <td>0.002</td>
-      <td>0.002</td>
-      <td>1066.558</td>
-      <td>563.451</td>
+      <th>W*poverty</th>
+      <td>-15709.743</td>
+      <td>972699.364</td>
+      <td>-1779468.249</td>
+      <td>1933146.958</td>
+      <td>29284.927</td>
+      <td>44960.360</td>
+      <td>1150.830</td>
+      <td>422.492</td>
       <td>0.999</td>
+    </tr>
+    <tr>
+      <th>W*rev_rating</th>
+      <td>1.194</td>
+      <td>9.876</td>
+      <td>-16.222</td>
+      <td>19.688</td>
+      <td>0.381</td>
+      <td>0.300</td>
+      <td>671.660</td>
+      <td>451.628</td>
+      <td>1.001</td>
+    </tr>
+    <tr>
+      <th>W*num_spots</th>
+      <td>11191.699</td>
+      <td>1014864.441</td>
+      <td>-1850063.335</td>
+      <td>1873597.690</td>
+      <td>26524.289</td>
+      <td>39255.282</td>
+      <td>1445.794</td>
+      <td>452.205</td>
+      <td>1.000</td>
+    </tr>
+    <tr>
+      <th>W*crowded</th>
+      <td>18312.632</td>
+      <td>960160.469</td>
+      <td>-1792445.388</td>
+      <td>1780718.654</td>
+      <td>28996.053</td>
+      <td>41588.002</td>
+      <td>1106.476</td>
+      <td>465.987</td>
+      <td>0.999</td>
+    </tr>
+    <tr>
+      <th>lam</th>
+      <td>0.555</td>
+      <td>0.063</td>
+      <td>0.420</td>
+      <td>0.655</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>1299.546</td>
+      <td>457.541</td>
+      <td>1.009</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>1.161</td>
+      <td>0.055</td>
+      <td>1.052</td>
+      <td>1.261</td>
+      <td>0.002</td>
+      <td>0.003</td>
+      <td>1243.131</td>
+      <td>412.741</td>
+      <td>1.004</td>
     </tr>
   </tbody>
 </table>
@@ -2782,30 +2785,30 @@ We recommend running at least 4 chains for robust computation of convergence dia
     <tr>
       <th>0</th>
       <td>poverty</td>
-      <td>-18970.842908</td>
-      <td>-36341.692241</td>
-      <td>-55312.535149</td>
+      <td>-17347.939668</td>
+      <td>-15709.743486</td>
+      <td>-33057.683154</td>
     </tr>
     <tr>
       <th>1</th>
       <td>rev_rating</td>
-      <td>1.343308</td>
-      <td>0.685712</td>
-      <td>2.029020</td>
+      <td>1.453342</td>
+      <td>1.194009</td>
+      <td>2.647351</td>
     </tr>
     <tr>
       <th>2</th>
       <td>num_spots</td>
-      <td>13786.498126</td>
-      <td>-19453.058109</td>
-      <td>-5666.559984</td>
+      <td>-31789.266690</td>
+      <td>11191.699192</td>
+      <td>-20597.567498</td>
     </tr>
     <tr>
       <th>3</th>
       <td>crowded</td>
-      <td>-8618.624414</td>
-      <td>33162.763297</td>
-      <td>24544.138883</td>
+      <td>4186.725529</td>
+      <td>18312.632496</td>
+      <td>22499.358025</td>
     </tr>
   </tbody>
 </table>
@@ -2837,95 +2840,95 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>lam</th>
-      <td>0.554</td>
-      <td>0.062</td>
-      <td>1365.176</td>
-      <td>443.330</td>
-      <td>1.003</td>
+      <td>0.555</td>
+      <td>0.063</td>
+      <td>1299.546</td>
+      <td>457.541</td>
+      <td>1.009</td>
     </tr>
     <tr>
       <th>beta[Intercept]</th>
-      <td>25706.047</td>
-      <td>967986.588</td>
-      <td>933.758</td>
-      <td>453.205</td>
-      <td>1.008</td>
+      <td>-40119.688</td>
+      <td>1028357.570</td>
+      <td>1503.247</td>
+      <td>461.395</td>
+      <td>0.999</td>
     </tr>
     <tr>
       <th>beta[poverty]</th>
-      <td>-18970.843</td>
-      <td>1004947.408</td>
-      <td>1581.577</td>
-      <td>525.207</td>
-      <td>1.001</td>
+      <td>-17347.940</td>
+      <td>1035967.208</td>
+      <td>1666.891</td>
+      <td>436.759</td>
+      <td>1.014</td>
     </tr>
     <tr>
       <th>beta[rev_rating]</th>
-      <td>1.343</td>
-      <td>4.577</td>
-      <td>649.270</td>
-      <td>489.628</td>
-      <td>1.003</td>
+      <td>1.453</td>
+      <td>4.441</td>
+      <td>582.638</td>
+      <td>347.645</td>
+      <td>1.006</td>
     </tr>
     <tr>
       <th>beta[num_spots]</th>
-      <td>13786.498</td>
-      <td>916081.706</td>
-      <td>940.895</td>
-      <td>361.025</td>
-      <td>1.003</td>
+      <td>-31789.267</td>
+      <td>993086.305</td>
+      <td>1666.891</td>
+      <td>325.565</td>
+      <td>1.000</td>
     </tr>
     <tr>
       <th>beta[crowded]</th>
-      <td>-8618.624</td>
-      <td>1027065.938</td>
-      <td>1270.826</td>
-      <td>460.413</td>
-      <td>0.998</td>
+      <td>4186.726</td>
+      <td>1024630.380</td>
+      <td>1331.539</td>
+      <td>550.908</td>
+      <td>1.003</td>
     </tr>
     <tr>
       <th>beta[W*poverty]</th>
-      <td>-36341.692</td>
-      <td>959004.405</td>
-      <td>1002.465</td>
-      <td>429.545</td>
-      <td>1.004</td>
+      <td>-15709.743</td>
+      <td>972699.364</td>
+      <td>1150.830</td>
+      <td>422.492</td>
+      <td>0.999</td>
     </tr>
     <tr>
       <th>beta[W*rev_rating]</th>
-      <td>0.686</td>
-      <td>10.578</td>
-      <td>874.490</td>
-      <td>549.809</td>
-      <td>0.998</td>
+      <td>1.194</td>
+      <td>9.876</td>
+      <td>671.660</td>
+      <td>451.628</td>
+      <td>1.001</td>
     </tr>
     <tr>
       <th>beta[W*num_spots]</th>
-      <td>-19453.058</td>
-      <td>964586.385</td>
-      <td>1309.140</td>
-      <td>385.589</td>
-      <td>1.008</td>
+      <td>11191.699</td>
+      <td>1014864.441</td>
+      <td>1445.794</td>
+      <td>452.205</td>
+      <td>1.000</td>
     </tr>
     <tr>
       <th>beta[W*crowded]</th>
-      <td>33162.763</td>
-      <td>1026605.307</td>
-      <td>1394.816</td>
-      <td>338.669</td>
-      <td>1.004</td>
+      <td>18312.632</td>
+      <td>960160.469</td>
+      <td>1106.476</td>
+      <td>465.987</td>
+      <td>0.999</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.164</td>
-      <td>0.050</td>
-      <td>1066.558</td>
-      <td>563.451</td>
-      <td>0.999</td>
+      <td>1.161</td>
+      <td>0.055</td>
+      <td>1243.131</td>
+      <td>412.741</td>
+      <td>1.004</td>
     </tr>
   </tbody>
 </table>
-</div></div><img alt="../_images/5b5d9f864a50e359eecea51488ec4f8e35200edd6d10036ae26b497fba977ce6.png" src="../_images/5b5d9f864a50e359eecea51488ec4f8e35200edd6d10036ae26b497fba977ce6.png" />
+</div></div><img alt="../_images/b3ff1b07bcfb6ed0d06fc2c17a6a8c8a2589a7bca69fee528ecf1b2198b9899b.png" src="../_images/b3ff1b07bcfb6ed0d06fc2c17a6a8c8a2589a7bca69fee528ecf1b2198b9899b.png" />
 </div>
 </div>
 <h2 id="random-effects-panel-models">Random-Effects Panel Models<a class="headerlink" href="#random-effects-panel-models" title="Link to this heading">¶</a></h2>
@@ -2949,13 +2952,13 @@ Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [beta, sigma, sigma_alpha, alpha]
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 26 seconds.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 27 seconds.
 There were 300 divergences after tuning. Increase `target_accept` or reparameterize.
 Chain 1 reached the maximum tree depth. Increase `max_treedepth`, increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_5514/2150201610.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_5490/2150201610.py:42: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -3294,13 +3297,12 @@ NUTS: [rho, beta, sigma, sigma_alpha, alpha]
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 25 seconds.
-There were 310 divergences after tuning. Increase `target_accept` or reparameterize.
-Chain 1 reached the maximum tree depth. Increase `max_treedepth`, increase `target_accept` or reparameterize.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 13 seconds.
+There were 599 divergences after tuning. Increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_5514/2150201610.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_5490/2150201610.py:42: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -3336,63 +3338,63 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>-120.550</td>
-      <td>77.182</td>
-      <td>-265.745</td>
-      <td>-57.045</td>
-      <td>51.415</td>
-      <td>23.293</td>
-      <td>2.758</td>
-      <td>13.657</td>
-      <td>2.112</td>
+      <td>-116.089</td>
+      <td>18.654</td>
+      <td>-136.249</td>
+      <td>-96.972</td>
+      <td>13.003</td>
+      <td>0.492</td>
+      <td>2.957</td>
+      <td>18.496</td>
+      <td>1.905</td>
     </tr>
     <tr>
       <th>poverty</th>
-      <td>0.007</td>
-      <td>0.167</td>
-      <td>-0.171</td>
-      <td>0.455</td>
-      <td>0.072</td>
-      <td>0.049</td>
-      <td>8.471</td>
-      <td>29.028</td>
-      <td>1.919</td>
+      <td>-0.095</td>
+      <td>0.262</td>
+      <td>-0.364</td>
+      <td>0.170</td>
+      <td>0.183</td>
+      <td>0.002</td>
+      <td>2.424</td>
+      <td>18.061</td>
+      <td>2.634</td>
     </tr>
     <tr>
       <th>rev_rating</th>
-      <td>1.517</td>
-      <td>0.772</td>
-      <td>0.887</td>
-      <td>3.010</td>
-      <td>0.510</td>
-      <td>0.233</td>
-      <td>2.863</td>
-      <td>14.454</td>
-      <td>2.197</td>
+      <td>1.400</td>
+      <td>0.218</td>
+      <td>1.177</td>
+      <td>1.629</td>
+      <td>0.152</td>
+      <td>0.002</td>
+      <td>2.960</td>
+      <td>21.405</td>
+      <td>1.896</td>
     </tr>
     <tr>
       <th>num_spots</th>
-      <td>0.027</td>
-      <td>0.023</td>
-      <td>0.006</td>
-      <td>0.067</td>
-      <td>0.013</td>
-      <td>0.004</td>
-      <td>3.136</td>
-      <td>20.060</td>
-      <td>1.764</td>
+      <td>0.025</td>
+      <td>0.010</td>
+      <td>0.015</td>
+      <td>0.035</td>
+      <td>0.007</td>
+      <td>0.000</td>
+      <td>2.590</td>
+      <td>11.980</td>
+      <td>2.262</td>
     </tr>
     <tr>
       <th>crowded</th>
-      <td>-1.833</td>
-      <td>0.452</td>
-      <td>-2.264</td>
-      <td>-0.862</td>
-      <td>0.198</td>
-      <td>0.056</td>
-      <td>6.566</td>
-      <td>51.659</td>
-      <td>1.888</td>
+      <td>-0.879</td>
+      <td>0.683</td>
+      <td>-1.565</td>
+      <td>-0.161</td>
+      <td>0.477</td>
+      <td>0.015</td>
+      <td>2.718</td>
+      <td>27.957</td>
+      <td>2.051</td>
     </tr>
     <tr>
       <th>...</th>
@@ -3408,63 +3410,63 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
     </tr>
     <tr>
       <th>alpha[65]</th>
-      <td>-1.795</td>
-      <td>2.585</td>
-      <td>-7.441</td>
-      <td>0.853</td>
-      <td>1.277</td>
-      <td>0.441</td>
-      <td>5.576</td>
-      <td>15.770</td>
-      <td>2.009</td>
+      <td>1.148</td>
+      <td>2.713</td>
+      <td>-1.734</td>
+      <td>3.903</td>
+      <td>1.892</td>
+      <td>0.021</td>
+      <td>2.872</td>
+      <td>12.916</td>
+      <td>1.915</td>
     </tr>
     <tr>
       <th>alpha[66]</th>
-      <td>-41.181</td>
-      <td>7.502</td>
-      <td>-47.494</td>
-      <td>-25.052</td>
-      <td>4.546</td>
-      <td>2.535</td>
-      <td>2.606</td>
-      <td>13.046</td>
-      <td>2.217</td>
+      <td>-36.917</td>
+      <td>2.842</td>
+      <td>-40.315</td>
+      <td>-33.700</td>
+      <td>1.979</td>
+      <td>0.223</td>
+      <td>2.369</td>
+      <td>34.090</td>
+      <td>2.918</td>
     </tr>
     <tr>
       <th>rho</th>
-      <td>0.822</td>
-      <td>0.023</td>
-      <td>0.786</td>
-      <td>0.880</td>
-      <td>0.004</td>
-      <td>0.007</td>
-      <td>36.231</td>
-      <td>124.455</td>
-      <td>1.855</td>
+      <td>0.853</td>
+      <td>0.018</td>
+      <td>0.834</td>
+      <td>0.875</td>
+      <td>0.013</td>
+      <td>0.002</td>
+      <td>2.682</td>
+      <td>15.490</td>
+      <td>2.161</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.358</td>
-      <td>0.054</td>
-      <td>1.241</td>
-      <td>1.463</td>
-      <td>0.006</td>
-      <td>0.011</td>
-      <td>94.832</td>
-      <td>93.686</td>
-      <td>1.260</td>
+      <td>1.359</td>
+      <td>0.032</td>
+      <td>1.304</td>
+      <td>1.401</td>
+      <td>0.020</td>
+      <td>0.009</td>
+      <td>3.651</td>
+      <td>19.919</td>
+      <td>1.606</td>
     </tr>
     <tr>
       <th>sigma_alpha</th>
-      <td>24.010</td>
-      <td>1.817</td>
-      <td>20.998</td>
-      <td>27.413</td>
-      <td>0.766</td>
-      <td>0.216</td>
-      <td>5.202</td>
-      <td>35.439</td>
-      <td>1.302</td>
+      <td>23.475</td>
+      <td>1.603</td>
+      <td>21.069</td>
+      <td>25.804</td>
+      <td>1.083</td>
+      <td>0.274</td>
+      <td>2.558</td>
+      <td>16.849</td>
+      <td>2.417</td>
     </tr>
   </tbody>
 </table>
@@ -3497,37 +3499,37 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
     <tr>
       <th>0</th>
       <td>Intercept</td>
-      <td>-161.376251</td>
-      <td>-517.334985</td>
-      <td>-678.711237</td>
+      <td>-162.806839</td>
+      <td>-624.849120</td>
+      <td>-787.655959</td>
     </tr>
     <tr>
       <th>1</th>
       <td>poverty</td>
-      <td>0.008758</td>
-      <td>0.028078</td>
-      <td>0.036836</td>
+      <td>-0.133894</td>
+      <td>-0.513883</td>
+      <td>-0.647777</td>
     </tr>
     <tr>
       <th>2</th>
       <td>rev_rating</td>
-      <td>2.030291</td>
-      <td>6.508643</td>
-      <td>8.538934</td>
+      <td>1.963648</td>
+      <td>7.536439</td>
+      <td>9.500087</td>
     </tr>
     <tr>
       <th>3</th>
       <td>num_spots</td>
-      <td>0.035505</td>
-      <td>0.113822</td>
-      <td>0.149328</td>
+      <td>0.034581</td>
+      <td>0.132721</td>
+      <td>0.167302</td>
     </tr>
     <tr>
       <th>4</th>
       <td>crowded</td>
-      <td>-2.454225</td>
-      <td>-7.867680</td>
-      <td>-10.321905</td>
+      <td>-1.233115</td>
+      <td>-4.732670</td>
+      <td>-5.965785</td>
     </tr>
   </tbody>
 </table>
@@ -3559,71 +3561,71 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <tbody>
     <tr>
       <th>rho</th>
-      <td>0.822</td>
-      <td>0.023</td>
-      <td>36.231</td>
-      <td>124.455</td>
-      <td>1.855</td>
+      <td>0.853</td>
+      <td>0.018</td>
+      <td>2.682</td>
+      <td>15.490</td>
+      <td>2.161</td>
     </tr>
     <tr>
       <th>beta[Intercept]</th>
-      <td>-120.550</td>
-      <td>77.182</td>
-      <td>2.758</td>
-      <td>13.657</td>
-      <td>2.112</td>
+      <td>-116.089</td>
+      <td>18.654</td>
+      <td>2.957</td>
+      <td>18.496</td>
+      <td>1.905</td>
     </tr>
     <tr>
       <th>beta[poverty]</th>
-      <td>0.007</td>
-      <td>0.167</td>
-      <td>8.471</td>
-      <td>29.028</td>
-      <td>1.919</td>
+      <td>-0.095</td>
+      <td>0.262</td>
+      <td>2.424</td>
+      <td>18.061</td>
+      <td>2.634</td>
     </tr>
     <tr>
       <th>beta[rev_rating]</th>
-      <td>1.517</td>
-      <td>0.772</td>
-      <td>2.863</td>
-      <td>14.454</td>
-      <td>2.197</td>
+      <td>1.400</td>
+      <td>0.218</td>
+      <td>2.960</td>
+      <td>21.405</td>
+      <td>1.896</td>
     </tr>
     <tr>
       <th>beta[num_spots]</th>
-      <td>0.027</td>
-      <td>0.023</td>
-      <td>3.136</td>
-      <td>20.060</td>
-      <td>1.764</td>
+      <td>0.025</td>
+      <td>0.010</td>
+      <td>2.590</td>
+      <td>11.980</td>
+      <td>2.262</td>
     </tr>
     <tr>
       <th>beta[crowded]</th>
-      <td>-1.833</td>
-      <td>0.452</td>
-      <td>6.566</td>
-      <td>51.659</td>
-      <td>1.888</td>
+      <td>-0.879</td>
+      <td>0.683</td>
+      <td>2.718</td>
+      <td>27.957</td>
+      <td>2.051</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.358</td>
-      <td>0.054</td>
-      <td>94.832</td>
-      <td>93.686</td>
-      <td>1.260</td>
+      <td>1.359</td>
+      <td>0.032</td>
+      <td>3.651</td>
+      <td>19.919</td>
+      <td>1.606</td>
     </tr>
     <tr>
       <th>sigma_alpha</th>
-      <td>24.010</td>
-      <td>1.817</td>
-      <td>5.202</td>
-      <td>35.439</td>
-      <td>1.302</td>
+      <td>23.475</td>
+      <td>1.603</td>
+      <td>2.558</td>
+      <td>16.849</td>
+      <td>2.417</td>
     </tr>
   </tbody>
 </table>
-</div></div><img alt="../_images/2539575fa026c78b75ead50d073b3d0b09a659df0d1fbc0aefe439ec186d5e80.png" src="../_images/2539575fa026c78b75ead50d073b3d0b09a659df0d1fbc0aefe439ec186d5e80.png" />
+</div></div><img alt="../_images/ff2d83ced21202d25194e3c65cecef61bb8248b77ad70ce1e408d5f178fefcff.png" src="../_images/ff2d83ced21202d25194e3c65cecef61bb8248b77ad70ce1e408d5f178fefcff.png" />
 </div>
 </div>
 <h3 id="fit-sempanelre">Fit: SEMPanelRE<a class="headerlink" href="#fit-sempanelre" title="Link to this heading">¶</a></h3>
@@ -3647,14 +3649,14 @@ NUTS: [lam, beta, sigma, sigma_alpha, alpha]
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 42 seconds.
-There were 12 divergences after tuning. Increase `target_accept` or reparameterize.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 39 seconds.
+There were 44 divergences after tuning. Increase `target_accept` or reparameterize.
 Chain 0 reached the maximum tree depth. Increase `max_treedepth`, increase `target_accept` or reparameterize.
 Chain 1 reached the maximum tree depth. Increase `max_treedepth`, increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_5514/2150201610.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_5490/2150201610.py:42: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -3690,63 +3692,63 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>-26.844</td>
-      <td>92.857</td>
-      <td>-205.486</td>
-      <td>126.890</td>
-      <td>10.881</td>
-      <td>6.189</td>
-      <td>77.224</td>
-      <td>80.267</td>
+      <td>-39.471</td>
+      <td>90.675</td>
+      <td>-236.353</td>
+      <td>111.923</td>
+      <td>10.186</td>
+      <td>7.050</td>
+      <td>84.711</td>
+      <td>40.467</td>
       <td>1.034</td>
     </tr>
     <tr>
       <th>poverty</th>
-      <td>0.328</td>
-      <td>0.359</td>
-      <td>-0.319</td>
-      <td>1.020</td>
-      <td>0.040</td>
-      <td>0.018</td>
-      <td>78.988</td>
-      <td>188.062</td>
-      <td>1.006</td>
+      <td>0.330</td>
+      <td>0.348</td>
+      <td>-0.302</td>
+      <td>0.927</td>
+      <td>0.033</td>
+      <td>0.016</td>
+      <td>109.621</td>
+      <td>227.550</td>
+      <td>1.012</td>
     </tr>
     <tr>
       <th>rev_rating</th>
-      <td>1.055</td>
-      <td>0.983</td>
-      <td>-0.732</td>
-      <td>2.937</td>
-      <td>0.114</td>
-      <td>0.062</td>
-      <td>77.332</td>
-      <td>187.764</td>
-      <td>1.037</td>
+      <td>1.206</td>
+      <td>0.966</td>
+      <td>-0.347</td>
+      <td>3.330</td>
+      <td>0.108</td>
+      <td>0.074</td>
+      <td>87.062</td>
+      <td>43.381</td>
+      <td>1.034</td>
     </tr>
     <tr>
       <th>num_spots</th>
-      <td>0.123</td>
-      <td>0.025</td>
-      <td>0.080</td>
-      <td>0.173</td>
+      <td>0.121</td>
+      <td>0.024</td>
+      <td>0.079</td>
+      <td>0.167</td>
       <td>0.002</td>
       <td>0.001</td>
-      <td>131.278</td>
-      <td>202.696</td>
-      <td>1.010</td>
+      <td>210.470</td>
+      <td>244.705</td>
+      <td>1.018</td>
     </tr>
     <tr>
       <th>crowded</th>
-      <td>-2.317</td>
-      <td>1.024</td>
-      <td>-4.309</td>
-      <td>-0.498</td>
-      <td>0.122</td>
-      <td>0.053</td>
-      <td>71.469</td>
-      <td>170.791</td>
-      <td>1.022</td>
+      <td>-2.587</td>
+      <td>1.035</td>
+      <td>-4.286</td>
+      <td>-0.716</td>
+      <td>0.099</td>
+      <td>0.051</td>
+      <td>100.721</td>
+      <td>117.342</td>
+      <td>1.010</td>
     </tr>
     <tr>
       <th>...</th>
@@ -3762,63 +3764,63 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
     </tr>
     <tr>
       <th>alpha[65]</th>
-      <td>-9.896</td>
-      <td>4.447</td>
-      <td>-17.947</td>
-      <td>-2.629</td>
-      <td>0.380</td>
-      <td>0.448</td>
-      <td>156.240</td>
-      <td>173.603</td>
-      <td>1.019</td>
+      <td>-10.175</td>
+      <td>4.387</td>
+      <td>-18.030</td>
+      <td>-1.553</td>
+      <td>0.308</td>
+      <td>0.248</td>
+      <td>205.041</td>
+      <td>200.695</td>
+      <td>1.006</td>
     </tr>
     <tr>
       <th>alpha[66]</th>
-      <td>-42.142</td>
-      <td>8.645</td>
-      <td>-57.581</td>
-      <td>-25.439</td>
-      <td>0.923</td>
-      <td>0.540</td>
-      <td>87.431</td>
-      <td>181.466</td>
-      <td>1.026</td>
+      <td>-43.101</td>
+      <td>7.943</td>
+      <td>-56.940</td>
+      <td>-28.001</td>
+      <td>0.672</td>
+      <td>0.464</td>
+      <td>142.173</td>
+      <td>100.578</td>
+      <td>1.002</td>
     </tr>
     <tr>
       <th>lam</th>
-      <td>0.867</td>
-      <td>0.028</td>
-      <td>0.815</td>
-      <td>0.917</td>
-      <td>0.001</td>
-      <td>0.001</td>
-      <td>434.786</td>
-      <td>364.030</td>
+      <td>0.865</td>
+      <td>0.029</td>
+      <td>0.803</td>
+      <td>0.908</td>
+      <td>0.002</td>
+      <td>0.002</td>
+      <td>192.389</td>
+      <td>64.697</td>
       <td>1.003</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.343</td>
-      <td>0.070</td>
-      <td>1.229</td>
-      <td>1.488</td>
+      <td>1.346</td>
+      <td>0.069</td>
+      <td>1.227</td>
+      <td>1.479</td>
+      <td>0.004</td>
       <td>0.003</td>
-      <td>0.002</td>
-      <td>436.030</td>
-      <td>415.700</td>
-      <td>1.003</td>
+      <td>345.821</td>
+      <td>486.290</td>
+      <td>1.002</td>
     </tr>
     <tr>
       <th>sigma_alpha</th>
-      <td>27.358</td>
-      <td>2.149</td>
-      <td>23.218</td>
-      <td>31.246</td>
-      <td>0.107</td>
-      <td>0.099</td>
-      <td>402.391</td>
-      <td>321.798</td>
-      <td>1.008</td>
+      <td>27.417</td>
+      <td>2.324</td>
+      <td>23.326</td>
+      <td>31.820</td>
+      <td>0.115</td>
+      <td>0.108</td>
+      <td>422.567</td>
+      <td>395.142</td>
+      <td>0.998</td>
     </tr>
   </tbody>
 </table>
@@ -3851,37 +3853,37 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
     <tr>
       <th>0</th>
       <td>Intercept</td>
-      <td>-26.843707</td>
+      <td>-39.470749</td>
       <td>0.0</td>
-      <td>-26.843707</td>
+      <td>-39.470749</td>
     </tr>
     <tr>
       <th>1</th>
       <td>poverty</td>
-      <td>0.328356</td>
+      <td>0.330057</td>
       <td>0.0</td>
-      <td>0.328356</td>
+      <td>0.330057</td>
     </tr>
     <tr>
       <th>2</th>
       <td>rev_rating</td>
-      <td>1.054660</td>
+      <td>1.206498</td>
       <td>0.0</td>
-      <td>1.054660</td>
+      <td>1.206498</td>
     </tr>
     <tr>
       <th>3</th>
       <td>num_spots</td>
-      <td>0.123051</td>
+      <td>0.120859</td>
       <td>0.0</td>
-      <td>0.123051</td>
+      <td>0.120859</td>
     </tr>
     <tr>
       <th>4</th>
       <td>crowded</td>
-      <td>-2.316894</td>
+      <td>-2.586668</td>
       <td>0.0</td>
-      <td>-2.316894</td>
+      <td>-2.586668</td>
     </tr>
   </tbody>
 </table>
@@ -3913,71 +3915,71 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <tbody>
     <tr>
       <th>lam</th>
-      <td>0.867</td>
-      <td>0.028</td>
-      <td>434.786</td>
-      <td>364.030</td>
+      <td>0.865</td>
+      <td>0.029</td>
+      <td>192.389</td>
+      <td>64.697</td>
       <td>1.003</td>
     </tr>
     <tr>
       <th>beta[Intercept]</th>
-      <td>-26.844</td>
-      <td>92.857</td>
-      <td>77.224</td>
-      <td>80.267</td>
+      <td>-39.471</td>
+      <td>90.675</td>
+      <td>84.711</td>
+      <td>40.467</td>
       <td>1.034</td>
     </tr>
     <tr>
       <th>beta[poverty]</th>
-      <td>0.328</td>
-      <td>0.359</td>
-      <td>78.988</td>
-      <td>188.062</td>
-      <td>1.006</td>
+      <td>0.330</td>
+      <td>0.348</td>
+      <td>109.621</td>
+      <td>227.550</td>
+      <td>1.012</td>
     </tr>
     <tr>
       <th>beta[rev_rating]</th>
-      <td>1.055</td>
-      <td>0.983</td>
-      <td>77.332</td>
-      <td>187.764</td>
-      <td>1.037</td>
+      <td>1.206</td>
+      <td>0.966</td>
+      <td>87.062</td>
+      <td>43.381</td>
+      <td>1.034</td>
     </tr>
     <tr>
       <th>beta[num_spots]</th>
-      <td>0.123</td>
-      <td>0.025</td>
-      <td>131.278</td>
-      <td>202.696</td>
-      <td>1.010</td>
+      <td>0.121</td>
+      <td>0.024</td>
+      <td>210.470</td>
+      <td>244.705</td>
+      <td>1.018</td>
     </tr>
     <tr>
       <th>beta[crowded]</th>
-      <td>-2.317</td>
-      <td>1.024</td>
-      <td>71.469</td>
-      <td>170.791</td>
-      <td>1.022</td>
+      <td>-2.587</td>
+      <td>1.035</td>
+      <td>100.721</td>
+      <td>117.342</td>
+      <td>1.010</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.343</td>
-      <td>0.070</td>
-      <td>436.030</td>
-      <td>415.700</td>
-      <td>1.003</td>
+      <td>1.346</td>
+      <td>0.069</td>
+      <td>345.821</td>
+      <td>486.290</td>
+      <td>1.002</td>
     </tr>
     <tr>
       <th>sigma_alpha</th>
-      <td>27.358</td>
-      <td>2.149</td>
-      <td>402.391</td>
-      <td>321.798</td>
-      <td>1.008</td>
+      <td>27.417</td>
+      <td>2.324</td>
+      <td>422.567</td>
+      <td>395.142</td>
+      <td>0.998</td>
     </tr>
   </tbody>
 </table>
-</div></div><img alt="../_images/0f5959ccb805fc70aae9979a4d6a6ec6dc8539db02473b6b943ef21ee7602224.png" src="../_images/0f5959ccb805fc70aae9979a4d6a6ec6dc8539db02473b6b943ef21ee7602224.png" />
+</div></div><img alt="../_images/b88972e1a4941ef0bde823c8323905bd07aeed6f0ba7cf59f1532780b09f7d2f.png" src="../_images/b88972e1a4941ef0bde823c8323905bd07aeed6f0ba7cf59f1532780b09f7d2f.png" />
 </div>
 </div>
 <h2 id="matlab-style-diagnostics-across-fe-and-re-models">MATLAB-Style Diagnostics Across FE and RE Models<a class="headerlink" href="#matlab-style-diagnostics-across-fe-and-re-models" title="Link to this heading">¶</a></h2>
@@ -4096,37 +4098,37 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
     <tr>
       <th>2</th>
       <td>SARPanelFE</td>
-      <td>0.907184</td>
-      <td>2.850601e-02</td>
-      <td>0.000446</td>
-      <td>-1.197287</td>
-      <td>0.231195</td>
+      <td>0.908007</td>
+      <td>2.778898e-02</td>
+      <td>0.000449</td>
+      <td>-1.197330</td>
+      <td>0.231178</td>
       <td>0</td>
-      <td>12</td>
+      <td>13</td>
       <td>3</td>
       <td>22</td>
     </tr>
     <tr>
       <th>3</th>
       <td>SARPanelRE</td>
-      <td>0.066202</td>
-      <td>6.107357e-01</td>
-      <td>0.241096</td>
-      <td>2.365523</td>
-      <td>0.018005</td>
+      <td>0.201125</td>
+      <td>3.533186e-01</td>
+      <td>0.080677</td>
+      <td>0.864107</td>
+      <td>0.387529</td>
       <td>27</td>
       <td>15</td>
-      <td>17</td>
-      <td>82</td>
+      <td>18</td>
+      <td>70</td>
     </tr>
     <tr>
       <th>4</th>
       <td>SDEMPanelFE</td>
-      <td>0.851996</td>
-      <td>4.939600e-07</td>
-      <td>0.001004</td>
-      <td>-1.198133</td>
-      <td>0.230865</td>
+      <td>0.851970</td>
+      <td>4.676623e-07</td>
+      <td>0.001036</td>
+      <td>-1.195892</td>
+      <td>0.231739</td>
       <td>0</td>
       <td>15</td>
       <td>3</td>
@@ -4135,11 +4137,11 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
     <tr>
       <th>5</th>
       <td>SDMPanelFE</td>
-      <td>0.887501</td>
-      <td>3.505785e-02</td>
-      <td>0.000288</td>
-      <td>-1.181109</td>
-      <td>0.237559</td>
+      <td>0.889134</td>
+      <td>3.564873e-02</td>
+      <td>0.000285</td>
+      <td>-1.181782</td>
+      <td>0.237292</td>
       <td>0</td>
       <td>12</td>
       <td>3</td>
@@ -4148,11 +4150,11 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
     <tr>
       <th>6</th>
       <td>SEMPanelFE</td>
-      <td>0.854140</td>
-      <td>5.136455e-07</td>
+      <td>0.852861</td>
+      <td>5.250126e-07</td>
       <td>0.000961</td>
-      <td>-1.201419</td>
-      <td>0.229589</td>
+      <td>-1.200937</td>
+      <td>0.229776</td>
       <td>0</td>
       <td>15</td>
       <td>3</td>
@@ -4162,14 +4164,14 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
       <th>7</th>
       <td>SEMPanelRE</td>
       <td>0.000002</td>
-      <td>3.976819e-13</td>
+      <td>5.837553e-13</td>
       <td>0.000000</td>
-      <td>82.674534</td>
+      <td>82.599775</td>
       <td>0.000000</td>
       <td>27</td>
-      <td>10</td>
+      <td>9</td>
       <td>14</td>
-      <td>56</td>
+      <td>55</td>
     </tr>
   </tbody>
 </table>
@@ -4304,11 +4306,11 @@ See http://arxiv.org/abs/1507.04544 for details
     <tr>
       <th>SARPanelFE</th>
       <td>0</td>
-      <td>-420.354804</td>
-      <td>2.864248</td>
+      <td>-420.419406</td>
+      <td>2.847150</td>
       <td>0.000000</td>
-      <td>7.691271e-01</td>
-      <td>11.028713</td>
+      <td>7.695913e-01</td>
+      <td>11.132957</td>
       <td>0.000000</td>
       <td>False</td>
       <td>log</td>
@@ -4316,36 +4318,36 @@ See http://arxiv.org/abs/1507.04544 for details
     <tr>
       <th>SDMPanelFE</th>
       <td>1</td>
-      <td>-421.665009</td>
-      <td>4.139467</td>
-      <td>1.310205</td>
-      <td>2.308593e-01</td>
-      <td>11.137753</td>
-      <td>0.644043</td>
+      <td>-421.713865</td>
+      <td>4.144399</td>
+      <td>1.294459</td>
+      <td>2.303941e-01</td>
+      <td>11.032568</td>
+      <td>0.634598</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SEMPanelFE</th>
       <td>2</td>
-      <td>-431.577311</td>
-      <td>2.996494</td>
-      <td>11.222507</td>
-      <td>1.052228e-05</td>
-      <td>11.082505</td>
-      <td>0.273069</td>
+      <td>-431.651953</td>
+      <td>3.027109</td>
+      <td>11.232546</td>
+      <td>1.045930e-05</td>
+      <td>11.086097</td>
+      <td>0.250243</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SDEMPanelFE</th>
       <td>3</td>
-      <td>-432.814095</td>
-      <td>4.066460</td>
-      <td>12.459291</td>
-      <td>3.089454e-06</td>
-      <td>10.964356</td>
-      <td>0.296896</td>
+      <td>-432.612882</td>
+      <td>3.861372</td>
+      <td>12.193476</td>
+      <td>4.114308e-06</td>
+      <td>11.058700</td>
+      <td>0.305076</td>
       <td>False</td>
       <td>log</td>
     </tr>
@@ -4354,22 +4356,22 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>4</td>
       <td>-461.456743</td>
       <td>2.802304</td>
-      <td>41.101939</td>
-      <td>6.663961e-12</td>
-      <td>14.737015</td>
-      <td>7.606851</td>
+      <td>41.037337</td>
+      <td>3.163612e-09</td>
+      <td>14.886751</td>
+      <td>7.580607</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SARPanelRE</th>
       <td>5</td>
-      <td>-500.274402</td>
-      <td>57.972698</td>
-      <td>79.919598</td>
-      <td>5.117049e-28</td>
-      <td>13.543688</td>
-      <td>8.880018</td>
+      <td>-486.471303</td>
+      <td>40.622194</td>
+      <td>66.051897</td>
+      <td>2.863252e-15</td>
+      <td>11.544629</td>
+      <td>9.449001</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -4378,10 +4380,10 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>6</td>
       <td>-712.096677</td>
       <td>48.757222</td>
-      <td>291.741873</td>
-      <td>3.127507e-114</td>
-      <td>12.742629</td>
-      <td>12.192807</td>
+      <td>291.677271</td>
+      <td>5.106497e-113</td>
+      <td>12.540486</td>
+      <td>12.214892</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -4420,11 +4422,11 @@ See http://arxiv.org/abs/1507.04544 for details
     <tr>
       <th>SARPanelFE</th>
       <td>0</td>
-      <td>-420.369359</td>
-      <td>2.878803</td>
+      <td>-420.435444</td>
+      <td>2.863188</td>
       <td>0.000000</td>
-      <td>7.750686e-01</td>
-      <td>10.743342</td>
+      <td>7.648588e-01</td>
+      <td>10.816037</td>
       <td>0.000000</td>
       <td>False</td>
       <td>log</td>
@@ -4432,36 +4434,36 @@ See http://arxiv.org/abs/1507.04544 for details
     <tr>
       <th>SDMPanelFE</th>
       <td>1</td>
-      <td>-421.698026</td>
-      <td>4.172483</td>
-      <td>1.328667</td>
-      <td>2.249180e-01</td>
-      <td>10.800796</td>
-      <td>0.645379</td>
+      <td>-421.736727</td>
+      <td>4.167261</td>
+      <td>1.301283</td>
+      <td>2.351267e-01</td>
+      <td>10.745491</td>
+      <td>0.634481</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SEMPanelFE</th>
       <td>2</td>
-      <td>-431.592275</td>
-      <td>3.011459</td>
-      <td>11.222916</td>
-      <td>1.042318e-05</td>
-      <td>10.801486</td>
-      <td>0.272344</td>
+      <td>-431.672159</td>
+      <td>3.047315</td>
+      <td>11.236715</td>
+      <td>1.035683e-05</td>
+      <td>10.767425</td>
+      <td>0.250093</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SDEMPanelFE</th>
       <td>3</td>
-      <td>-432.840207</td>
-      <td>4.092572</td>
-      <td>12.470848</td>
-      <td>3.022065e-06</td>
-      <td>10.697470</td>
-      <td>0.296746</td>
+      <td>-432.632104</td>
+      <td>3.880593</td>
+      <td>12.196660</td>
+      <td>4.074025e-06</td>
+      <td>10.727874</td>
+      <td>0.304948</td>
       <td>False</td>
       <td>log</td>
     </tr>
@@ -4470,22 +4472,22 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>4</td>
       <td>-461.476913</td>
       <td>2.822474</td>
-      <td>41.107554</td>
-      <td>4.146331e-09</td>
-      <td>14.297001</td>
-      <td>7.608803</td>
+      <td>41.041469</td>
+      <td>2.584750e-12</td>
+      <td>14.382405</td>
+      <td>7.581942</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SARPanelRE</th>
       <td>5</td>
-      <td>-499.729481</td>
-      <td>57.427778</td>
-      <td>79.360122</td>
-      <td>2.662242e-27</td>
-      <td>12.025381</td>
-      <td>7.905763</td>
+      <td>-484.232105</td>
+      <td>38.382996</td>
+      <td>63.796661</td>
+      <td>3.203744e-15</td>
+      <td>11.538606</td>
+      <td>9.223597</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -4494,10 +4496,10 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>6</td>
       <td>-713.511597</td>
       <td>50.172142</td>
-      <td>293.142238</td>
-      <td>4.388300e-114</td>
-      <td>11.881518</td>
-      <td>11.974332</td>
+      <td>293.076153</td>
+      <td>1.500653e-116</td>
+      <td>12.571402</td>
+      <td>11.997792</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -4554,50 +4556,50 @@ See http://arxiv.org/abs/1507.04544 for details
     <tr>
       <th>2</th>
       <td>SARPanelFE</td>
-      <td>-420.354804</td>
-      <td>2.864248</td>
-      <td>-420.369359</td>
-      <td>2.878803</td>
+      <td>-420.419406</td>
+      <td>2.847150</td>
+      <td>-420.435444</td>
+      <td>2.863188</td>
       <td>NaN</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>3</th>
       <td>SARPanelRE</td>
-      <td>-500.274402</td>
-      <td>57.972698</td>
-      <td>-499.729481</td>
-      <td>57.427778</td>
+      <td>-486.471303</td>
+      <td>40.622194</td>
+      <td>-484.232105</td>
+      <td>38.382996</td>
       <td>NaN</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>4</th>
       <td>SDEMPanelFE</td>
-      <td>-432.814095</td>
-      <td>4.066460</td>
-      <td>-432.840207</td>
-      <td>4.092572</td>
+      <td>-432.612882</td>
+      <td>3.861372</td>
+      <td>-432.632104</td>
+      <td>3.880593</td>
       <td>NaN</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>5</th>
       <td>SDMPanelFE</td>
-      <td>-421.665009</td>
-      <td>4.139467</td>
-      <td>-421.698026</td>
-      <td>4.172483</td>
+      <td>-421.713865</td>
+      <td>4.144399</td>
+      <td>-421.736727</td>
+      <td>4.167261</td>
       <td>NaN</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>6</th>
       <td>SEMPanelFE</td>
-      <td>-431.577311</td>
-      <td>2.996494</td>
-      <td>-431.592275</td>
-      <td>3.011459</td>
+      <td>-431.651953</td>
+      <td>3.027109</td>
+      <td>-431.672159</td>
+      <td>3.047315</td>
       <td>NaN</td>
       <td>NaN</td>
     </tr>

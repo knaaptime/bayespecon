@@ -981,7 +981,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">to_graph</span><span class="p">(</span><span class="n">W</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Graph</span><span class="p">:</span>
-    <span class="k">return</span> <span class="n">Graph</span><span class="o">.</span><span class="n">from_sparse</span><span class="p">(</span><span class="n">csr_matrix</span><span class="p">(</span><span class="n">W</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">Graph</span><span class="o">.</span><span class="n">from_sparse</span><span class="p">(</span><span class="n">csr_matrix</span><span class="p">(</span><span class="n">W</span><span class="p">))</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">summarize_recovery</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">abs_tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
@@ -1023,7 +1023,7 @@
 <span class="n">m_panel</span> <span class="o">=</span> <span class="n">SDEMPanelFE</span><span class="p">(</span>
     <span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span>
     <span class="n">X</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;x1&#39;</span><span class="p">,</span> <span class="s1">&#39;x2&#39;</span><span class="p">]),</span>
-    <span class="n">W</span><span class="o">=</span><span class="n">Wn</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">to_graph</span><span class="p">(</span><span class="n">Wn</span><span class="p">),</span>
     <span class="n">N</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
     <span class="n">T</span><span class="o">=</span><span class="n">t</span><span class="p">,</span>
     <span class="n">model</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
@@ -1038,7 +1038,7 @@
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Sequential sampling (1 chains in 1 job)
 NUTS: [lam, beta, sigma]
-Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 16 seconds.
+Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 17 seconds.
 Only one chain was sampled, this makes it impossible to run some convergence checks
 arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape: (chains=2, draws=4)
 </code></pre></div>
@@ -1542,7 +1542,7 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Sequential sampling (1 chains in 1 job)
 NUTS: [lam, beta, sigma]
-Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 36 seconds.
+Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 38 seconds.
 Only one chain was sampled, this makes it impossible to run some convergence checks
 arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape: (chains=2, draws=4)
 </code></pre></div>
@@ -1901,7 +1901,7 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <span class="n">sp</span> <span class="o">=</span> <span class="n">SpatialProbit</span><span class="p">(</span>
     <span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span>
     <span class="n">X</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">feature_names</span><span class="p">),</span>
-    <span class="n">W</span><span class="o">=</span><span class="n">Wm</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">to_graph</span><span class="p">(</span><span class="n">Wm</span><span class="p">),</span>
     <span class="n">region_ids</span><span class="o">=</span><span class="n">region_ids</span><span class="p">,</span>
     <span class="n">priors</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;rho_lower&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="s2">&quot;rho_upper&quot;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">,</span> <span class="s2">&quot;beta_sigma&quot;</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">},</span>
 <span class="p">)</span>
