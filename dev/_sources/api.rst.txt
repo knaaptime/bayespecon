@@ -126,13 +126,8 @@ Spatial Stats Helpers
    lmrhorob
    lmsar
    lratios
-   model_probs
    moran
    walds
-   prt_spat
-   prt_spat2
-   prt_old
-   plt_spat
    trans_tslow
    f_sarpanel
    f2_sarpanel

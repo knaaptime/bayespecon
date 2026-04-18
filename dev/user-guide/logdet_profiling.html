@@ -72,7 +72,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#notes" class="md-skip">
+        <a href="#coefficient-and-fit-time-comparison-across-logdet-methods" class="md-skip">
           Skip to content
         </a>
       
@@ -573,6 +573,16 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#coefficient-and-fit-time-comparison-across-logdet-methods" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Coefficient and Fit-<wbr>Time Comparison Across Logdet Methods</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#notes" class="md-nav__link">
     
     <span class="md-ellipsis">
@@ -817,6 +827,16 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#coefficient-and-fit-time-comparison-across-logdet-methods" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Coefficient and Fit-<wbr>Time Comparison Across Logdet Methods</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#notes" class="md-nav__link">
     
     <span class="md-ellipsis">
@@ -856,6 +876,10 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">exact</span></code>: symbolic determinant route</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">eigenvalue</span></code>: spectral precompute route</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">grid</span></code>: spline interpolation over a precomputed grid</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">full</span></code>: sparse-LU grid (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetfull</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">int</span></code>: sparse-LU + spline interpolation (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetint</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mc</span></code>: Monte Carlo trace approximation (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetmc</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ichol</span></code>: ILU-based approximation (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetichol</span></code> analog)</p></li>
 </ul>
 <p>For each matrix size, we report:</p>
 <ul class="simple">
@@ -921,7 +945,7 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">ProfileConfig</span><span class="p">:</span>
     <span class="c1"># Include larger sizes to expose high-n behavior.</span>
     <span class="n">sizes</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">40</span><span class="p">,</span> <span class="mi">80</span><span class="p">,</span> <span class="mi">120</span><span class="p">,</span> <span class="mi">180</span><span class="p">,</span> <span class="mi">260</span><span class="p">,</span> <span class="mi">360</span><span class="p">,</span> <span class="mi">520</span><span class="p">,</span> <span class="mi">720</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="mi">2000</span><span class="p">,</span> <span class="mi">5000</span><span class="p">,</span> <span class="mi">10000</span><span class="p">)</span>
-    <span class="n">methods</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;exact&#39;</span><span class="p">,</span> <span class="s1">&#39;eigenvalue&#39;</span><span class="p">,</span> <span class="s1">&#39;grid&#39;</span><span class="p">)</span>
+    <span class="n">methods</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;exact&#39;</span><span class="p">,</span> <span class="s1">&#39;eigenvalue&#39;</span><span class="p">,</span> <span class="s1">&#39;grid&#39;</span><span class="p">,</span> <span class="s1">&#39;full&#39;</span><span class="p">,</span> <span class="s1">&#39;int&#39;</span><span class="p">,</span> <span class="s1">&#39;mc&#39;</span><span class="p">,</span> <span class="s1">&#39;ichol&#39;</span><span class="p">)</span>
     <span class="n">method_max_n</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">eval_points</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">80</span>
     <span class="n">eval_repeats</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span>
@@ -932,10 +956,16 @@
             <span class="c1"># - exact grows quickly, keep only small n</span>
             <span class="c1"># - grid allocates an n_grid x n x n tensor internally</span>
             <span class="c1"># - eigenvalue requires dense eigendecomposition</span>
+            <span class="c1"># - full/int/ichol use sparse factorizations across rho grid</span>
+            <span class="c1"># - mc uses stochastic trace approximation</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">method_max_n</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="s1">&#39;exact&#39;</span><span class="p">:</span> <span class="mi">120</span><span class="p">,</span>
                 <span class="s1">&#39;eigenvalue&#39;</span><span class="p">:</span> <span class="mi">2000</span><span class="p">,</span>
                 <span class="s1">&#39;grid&#39;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
+                <span class="s1">&#39;full&#39;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
+                <span class="s1">&#39;int&#39;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
+                <span class="s1">&#39;mc&#39;</span><span class="p">:</span> <span class="mi">5000</span><span class="p">,</span>
+                <span class="s1">&#39;ichol&#39;</span><span class="p">:</span> <span class="mi">5000</span><span class="p">,</span>
             <span class="p">}</span>
 
 
@@ -961,7 +991,7 @@
                 <span class="s1">&#39;eval_us&#39;</span><span class="p">:</span> <span class="mf">1e6</span> <span class="o">*</span> <span class="n">eval_s</span><span class="p">,</span>
             <span class="p">})</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-            <span class="n">skipped</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;n&#39;</span><span class="p">:</span> <span class="n">n</span><span class="p">,</span> <span class="s1">&#39;method&#39;</span><span class="p">:</span> <span class="n">method</span><span class="p">,</span> <span class="s1">&#39;reason&#39;</span><span class="p">:</span> <span class="sa">f</span><span class="s1">&#39;failed: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">})</span>
+            <span class="n">skipped</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s1">&#39;n&#39;</span><span class="p">:</span> <span class="n">n</span><span class="p">,</span> <span class="s1">&#39;method&#39;</span><span class="p">:</span> <span class="n">method</span><span class="p">,</span> <span class="s1">&#39;reason&#39;</span><span class="p">:</span> <span class="sa">f</span><span class="s1">&#39;failed: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">})</span>
 
 <span class="n">res</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s1">&#39;method&#39;</span><span class="p">,</span> <span class="s1">&#39;n&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">if</span> <span class="ow">not</span> <span class="n">res</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
@@ -1016,180 +1046,93 @@ Profiling n=10000...
       <th>0</th>
       <td>40</td>
       <td>eigenvalue</td>
-      <td>595.300240</td>
-      <td>4.762800</td>
-      <td>595.681264</td>
+      <td>597.507629</td>
+      <td>5.176900</td>
+      <td>597.921781</td>
     </tr>
     <tr>
       <th>1</th>
       <td>80</td>
       <td>eigenvalue</td>
-      <td>16.253472</td>
-      <td>5.199575</td>
-      <td>16.669438</td>
+      <td>16.220814</td>
+      <td>5.344900</td>
+      <td>16.648406</td>
     </tr>
     <tr>
       <th>2</th>
       <td>120</td>
       <td>eigenvalue</td>
-      <td>17.943880</td>
-      <td>5.568513</td>
-      <td>18.389361</td>
+      <td>35.558166</td>
+      <td>5.699925</td>
+      <td>36.014160</td>
     </tr>
     <tr>
       <th>3</th>
       <td>180</td>
       <td>eigenvalue</td>
-      <td>31.954913</td>
-      <td>6.186200</td>
-      <td>32.449809</td>
+      <td>31.662870</td>
+      <td>6.205200</td>
+      <td>32.159286</td>
     </tr>
     <tr>
       <th>4</th>
       <td>260</td>
       <td>eigenvalue</td>
-      <td>48.346574</td>
-      <td>6.428063</td>
-      <td>48.860819</td>
+      <td>47.930745</td>
+      <td>6.731350</td>
+      <td>48.469253</td>
     </tr>
     <tr>
-      <th>5</th>
-      <td>360</td>
-      <td>eigenvalue</td>
-      <td>77.387115</td>
-      <td>7.682325</td>
-      <td>78.001701</td>
+      <th>...</th>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
     </tr>
     <tr>
-      <th>6</th>
+      <th>57</th>
       <td>520</td>
-      <td>eigenvalue</td>
-      <td>178.340823</td>
-      <td>8.430212</td>
-      <td>179.015240</td>
+      <td>mc</td>
+      <td>63.446337</td>
+      <td>5.506138</td>
+      <td>63.886828</td>
     </tr>
     <tr>
-      <th>7</th>
+      <th>58</th>
       <td>720</td>
-      <td>eigenvalue</td>
-      <td>316.870583</td>
-      <td>9.688475</td>
-      <td>317.645661</td>
+      <td>mc</td>
+      <td>81.835443</td>
+      <td>5.919637</td>
+      <td>82.309014</td>
     </tr>
     <tr>
-      <th>8</th>
+      <th>59</th>
       <td>1000</td>
-      <td>eigenvalue</td>
-      <td>519.658639</td>
-      <td>11.071562</td>
-      <td>520.544364</td>
+      <td>mc</td>
+      <td>71.707655</td>
+      <td>5.577862</td>
+      <td>72.153884</td>
     </tr>
     <tr>
-      <th>9</th>
+      <th>60</th>
       <td>2000</td>
-      <td>eigenvalue</td>
-      <td>2151.786159</td>
-      <td>18.177775</td>
-      <td>2153.240381</td>
+      <td>mc</td>
+      <td>89.456937</td>
+      <td>5.572113</td>
+      <td>89.902706</td>
     </tr>
     <tr>
-      <th>10</th>
-      <td>40</td>
-      <td>exact</td>
-      <td>1465.476034</td>
-      <td>23.960600</td>
-      <td>1467.392882</td>
-    </tr>
-    <tr>
-      <th>11</th>
-      <td>80</td>
-      <td>exact</td>
-      <td>15.644485</td>
-      <td>54.390963</td>
-      <td>19.995762</td>
-    </tr>
-    <tr>
-      <th>12</th>
-      <td>120</td>
-      <td>exact</td>
-      <td>14.439759</td>
-      <td>114.239650</td>
-      <td>23.578931</td>
-    </tr>
-    <tr>
-      <th>13</th>
-      <td>40</td>
-      <td>grid</td>
-      <td>2738.906454</td>
-      <td>5.589550</td>
-      <td>2739.353618</td>
-    </tr>
-    <tr>
-      <th>14</th>
-      <td>80</td>
-      <td>grid</td>
-      <td>53.550996</td>
-      <td>5.487025</td>
-      <td>53.989958</td>
-    </tr>
-    <tr>
-      <th>15</th>
-      <td>120</td>
-      <td>grid</td>
-      <td>130.910759</td>
-      <td>5.693462</td>
-      <td>131.366236</td>
-    </tr>
-    <tr>
-      <th>16</th>
-      <td>180</td>
-      <td>grid</td>
-      <td>93.799607</td>
-      <td>5.648887</td>
-      <td>94.251518</td>
-    </tr>
-    <tr>
-      <th>17</th>
-      <td>260</td>
-      <td>grid</td>
-      <td>149.496828</td>
-      <td>5.810387</td>
-      <td>149.961659</td>
-    </tr>
-    <tr>
-      <th>18</th>
-      <td>360</td>
-      <td>grid</td>
-      <td>262.796158</td>
-      <td>5.570012</td>
-      <td>263.241759</td>
-    </tr>
-    <tr>
-      <th>19</th>
-      <td>520</td>
-      <td>grid</td>
-      <td>565.146572</td>
-      <td>5.494900</td>
-      <td>565.586164</td>
-    </tr>
-    <tr>
-      <th>20</th>
-      <td>720</td>
-      <td>grid</td>
-      <td>1247.110836</td>
-      <td>5.943963</td>
-      <td>1247.586353</td>
-    </tr>
-    <tr>
-      <th>21</th>
-      <td>1000</td>
-      <td>grid</td>
-      <td>2738.520036</td>
-      <td>5.462863</td>
-      <td>2738.957065</td>
+      <th>61</th>
+      <td>5000</td>
+      <td>mc</td>
+      <td>198.286329</td>
+      <td>5.524787</td>
+      <td>198.728312</td>
     </tr>
   </tbody>
 </table>
+<p>62 rows × 5 columns</p>
 </div></div></div>
 </div>
 <div class="cell docutils container">
@@ -1231,7 +1174,7 @@ Profiling n=10000...
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/6fc00d748f12b40a94c311b21850ee4536bec21f5afe1fc283715d79ba91a233.png" src="../_images/6fc00d748f12b40a94c311b21850ee4536bec21f5afe1fc283715d79ba91a233.png" />
+<img alt="../_images/5510340f28d3767844e686110f9b84c8a58423bfca952811d64a16144eaafbc0.png" src="../_images/5510340f28d3767844e686110f9b84c8a58423bfca952811d64a16144eaafbc0.png" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -1272,24 +1215,48 @@ Profiling n=10000...
   <thead>
     <tr>
       <th></th>
-      <th colspan="3" halign="left">eval_us</th>
-      <th colspan="3" halign="left">setup_ms</th>
-      <th colspan="3" halign="left">total_ms</th>
+      <th colspan="7" halign="left">eval_us</th>
+      <th colspan="7" halign="left">setup_ms</th>
+      <th colspan="7" halign="left">total_ms</th>
     </tr>
     <tr>
       <th>method</th>
       <th>eigenvalue</th>
       <th>exact</th>
+      <th>full</th>
       <th>grid</th>
+      <th>ichol</th>
+      <th>int</th>
+      <th>mc</th>
       <th>eigenvalue</th>
       <th>exact</th>
-      <th>grid</th>
+      <th>full</th>
+      <th>...</th>
+      <th>ichol</th>
+      <th>int</th>
+      <th>mc</th>
       <th>eigenvalue</th>
       <th>exact</th>
+      <th>full</th>
       <th>grid</th>
+      <th>ichol</th>
+      <th>int</th>
+      <th>mc</th>
     </tr>
     <tr>
       <th>n</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
       <th></th>
       <th></th>
       <th></th>
@@ -1304,126 +1271,271 @@ Profiling n=10000...
   <tbody>
     <tr>
       <th>40</th>
-      <td>4.762800</td>
-      <td>23.960600</td>
-      <td>5.589550</td>
-      <td>595.300240</td>
-      <td>1465.476034</td>
-      <td>2738.906454</td>
-      <td>595.681264</td>
-      <td>1467.392882</td>
-      <td>2739.353618</td>
+      <td>5.176900</td>
+      <td>23.638475</td>
+      <td>5.585000</td>
+      <td>5.953300</td>
+      <td>5.544450</td>
+      <td>5.398725</td>
+      <td>5.480100</td>
+      <td>597.507629</td>
+      <td>1470.805802</td>
+      <td>614.500562</td>
+      <td>...</td>
+      <td>119.442451</td>
+      <td>580.771992</td>
+      <td>54.530840</td>
+      <td>597.921781</td>
+      <td>1472.696880</td>
+      <td>614.947362</td>
+      <td>2749.926511</td>
+      <td>119.886007</td>
+      <td>581.203890</td>
+      <td>54.969248</td>
     </tr>
     <tr>
       <th>80</th>
-      <td>5.199575</td>
-      <td>54.390963</td>
-      <td>5.487025</td>
-      <td>16.253472</td>
-      <td>15.644485</td>
-      <td>53.550996</td>
-      <td>16.669438</td>
-      <td>19.995762</td>
-      <td>53.989958</td>
+      <td>5.344900</td>
+      <td>54.571288</td>
+      <td>5.650225</td>
+      <td>5.649850</td>
+      <td>5.593138</td>
+      <td>5.604538</td>
+      <td>5.627688</td>
+      <td>16.220814</td>
+      <td>14.382866</td>
+      <td>73.872789</td>
+      <td>...</td>
+      <td>58.792798</td>
+      <td>42.136819</td>
+      <td>52.735977</td>
+      <td>16.648406</td>
+      <td>18.748569</td>
+      <td>74.324807</td>
+      <td>55.707497</td>
+      <td>59.240249</td>
+      <td>42.585182</td>
+      <td>53.186192</td>
     </tr>
     <tr>
       <th>120</th>
-      <td>5.568513</td>
-      <td>114.239650</td>
-      <td>5.693462</td>
-      <td>17.943880</td>
-      <td>14.439759</td>
-      <td>130.910759</td>
-      <td>18.389361</td>
-      <td>23.578931</td>
-      <td>131.366236</td>
+      <td>5.699925</td>
+      <td>114.269625</td>
+      <td>5.638088</td>
+      <td>5.533688</td>
+      <td>5.563975</td>
+      <td>5.669512</td>
+      <td>5.596275</td>
+      <td>35.558166</td>
+      <td>15.025982</td>
+      <td>81.959046</td>
+      <td>...</td>
+      <td>62.518489</td>
+      <td>48.144326</td>
+      <td>129.139574</td>
+      <td>36.014160</td>
+      <td>24.167552</td>
+      <td>82.410093</td>
+      <td>71.496263</td>
+      <td>62.963607</td>
+      <td>48.597887</td>
+      <td>129.587276</td>
     </tr>
     <tr>
       <th>180</th>
-      <td>6.186200</td>
+      <td>6.205200</td>
       <td>NaN</td>
-      <td>5.648887</td>
-      <td>31.954913</td>
+      <td>5.642463</td>
+      <td>5.690675</td>
+      <td>5.597025</td>
+      <td>5.441537</td>
+      <td>5.480100</td>
+      <td>31.662870</td>
       <td>NaN</td>
-      <td>93.799607</td>
-      <td>32.449809</td>
+      <td>83.234649</td>
+      <td>...</td>
+      <td>89.111460</td>
+      <td>44.918805</td>
+      <td>55.631833</td>
+      <td>32.159286</td>
       <td>NaN</td>
-      <td>94.251518</td>
+      <td>83.686046</td>
+      <td>99.354393</td>
+      <td>89.559222</td>
+      <td>45.354128</td>
+      <td>56.070241</td>
     </tr>
     <tr>
       <th>260</th>
-      <td>6.428063</td>
+      <td>6.731350</td>
       <td>NaN</td>
-      <td>5.810387</td>
-      <td>48.346574</td>
+      <td>5.910875</td>
+      <td>5.700050</td>
+      <td>6.122812</td>
+      <td>5.518537</td>
+      <td>5.524413</td>
+      <td>47.930745</td>
       <td>NaN</td>
-      <td>149.496828</td>
-      <td>48.860819</td>
+      <td>89.824450</td>
+      <td>...</td>
+      <td>73.277196</td>
+      <td>47.180460</td>
+      <td>58.324684</td>
+      <td>48.469253</td>
       <td>NaN</td>
-      <td>149.961659</td>
+      <td>90.297320</td>
+      <td>155.057072</td>
+      <td>73.767021</td>
+      <td>47.621943</td>
+      <td>58.766637</td>
     </tr>
     <tr>
       <th>360</th>
-      <td>7.682325</td>
+      <td>7.283938</td>
       <td>NaN</td>
-      <td>5.570012</td>
-      <td>77.387115</td>
+      <td>5.530425</td>
+      <td>5.616800</td>
+      <td>5.538688</td>
+      <td>5.659250</td>
+      <td>5.520538</td>
+      <td>83.673569</td>
       <td>NaN</td>
-      <td>262.796158</td>
-      <td>78.001701</td>
+      <td>97.300891</td>
+      <td>...</td>
+      <td>82.203222</td>
+      <td>48.818207</td>
+      <td>60.197315</td>
+      <td>84.256284</td>
       <td>NaN</td>
-      <td>263.241759</td>
+      <td>97.743325</td>
+      <td>267.339597</td>
+      <td>82.646317</td>
+      <td>49.270947</td>
+      <td>60.638958</td>
     </tr>
     <tr>
       <th>520</th>
-      <td>8.430212</td>
+      <td>8.399475</td>
       <td>NaN</td>
-      <td>5.494900</td>
-      <td>178.340823</td>
+      <td>5.479850</td>
+      <td>9.842138</td>
+      <td>5.678150</td>
+      <td>5.566850</td>
+      <td>5.506138</td>
+      <td>178.638263</td>
       <td>NaN</td>
-      <td>565.146572</td>
-      <td>179.015240</td>
+      <td>109.148288</td>
+      <td>...</td>
+      <td>94.944103</td>
+      <td>51.995435</td>
+      <td>63.446337</td>
+      <td>179.310221</td>
       <td>NaN</td>
-      <td>565.586164</td>
+      <td>109.586676</td>
+      <td>570.993375</td>
+      <td>95.398355</td>
+      <td>52.440783</td>
+      <td>63.886828</td>
     </tr>
     <tr>
       <th>720</th>
-      <td>9.688475</td>
+      <td>10.003512</td>
       <td>NaN</td>
-      <td>5.943963</td>
-      <td>316.870583</td>
+      <td>5.643350</td>
+      <td>5.786313</td>
+      <td>5.600275</td>
+      <td>5.571488</td>
+      <td>5.919637</td>
+      <td>299.680813</td>
       <td>NaN</td>
-      <td>1247.110836</td>
-      <td>317.645661</td>
+      <td>122.455397</td>
+      <td>...</td>
+      <td>114.349062</td>
+      <td>61.332065</td>
+      <td>81.835443</td>
+      <td>300.481094</td>
       <td>NaN</td>
-      <td>1247.586353</td>
+      <td>122.906865</td>
+      <td>1294.865180</td>
+      <td>114.797084</td>
+      <td>61.777784</td>
+      <td>82.309014</td>
     </tr>
     <tr>
       <th>1000</th>
-      <td>11.071562</td>
+      <td>11.817350</td>
       <td>NaN</td>
-      <td>5.462863</td>
-      <td>519.658639</td>
+      <td>5.635075</td>
+      <td>5.717838</td>
+      <td>5.489862</td>
+      <td>5.650600</td>
+      <td>5.577862</td>
+      <td>591.081580</td>
       <td>NaN</td>
-      <td>2738.520036</td>
-      <td>520.544364</td>
+      <td>141.940697</td>
+      <td>...</td>
+      <td>133.693311</td>
+      <td>61.635140</td>
+      <td>71.707655</td>
+      <td>592.026968</td>
       <td>NaN</td>
-      <td>2738.957065</td>
+      <td>142.391503</td>
+      <td>2731.897538</td>
+      <td>134.132500</td>
+      <td>62.087188</td>
+      <td>72.153884</td>
     </tr>
     <tr>
       <th>2000</th>
-      <td>18.177775</td>
+      <td>18.959462</td>
       <td>NaN</td>
       <td>NaN</td>
-      <td>2151.786159</td>
+      <td>NaN</td>
+      <td>5.741875</td>
+      <td>NaN</td>
+      <td>5.572113</td>
+      <td>2147.514657</td>
       <td>NaN</td>
       <td>NaN</td>
-      <td>2153.240381</td>
+      <td>...</td>
+      <td>252.365892</td>
+      <td>NaN</td>
+      <td>89.456937</td>
+      <td>2149.031414</td>
       <td>NaN</td>
       <td>NaN</td>
+      <td>NaN</td>
+      <td>252.825242</td>
+      <td>NaN</td>
+      <td>89.902706</td>
+    </tr>
+    <tr>
+      <th>5000</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>5.468963</td>
+      <td>NaN</td>
+      <td>5.524787</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>567.527093</td>
+      <td>NaN</td>
+      <td>198.286329</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>567.964610</td>
+      <td>NaN</td>
+      <td>198.728312</td>
     </tr>
   </tbody>
 </table>
+<p>11 rows × 21 columns</p>
 </div></div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Skipped combinations (due to safety caps or failures):
 </code></pre></div>
 </div>
@@ -1496,44 +1608,367 @@ Profiling n=10000...
     <tr>
       <th>7</th>
       <td>2000</td>
-      <td>grid</td>
+      <td>full</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
       <th>8</th>
-      <td>5000</td>
-      <td>eigenvalue</td>
+      <td>2000</td>
+      <td>grid</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
       <th>9</th>
-      <td>5000</td>
-      <td>exact</td>
+      <td>2000</td>
+      <td>int</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
       <th>10</th>
       <td>5000</td>
-      <td>grid</td>
+      <td>eigenvalue</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
       <th>11</th>
+      <td>5000</td>
+      <td>exact</td>
+      <td>above method_max_n cap</td>
+    </tr>
+    <tr>
+      <th>12</th>
+      <td>5000</td>
+      <td>full</td>
+      <td>above method_max_n cap</td>
+    </tr>
+    <tr>
+      <th>13</th>
+      <td>5000</td>
+      <td>grid</td>
+      <td>above method_max_n cap</td>
+    </tr>
+    <tr>
+      <th>14</th>
+      <td>5000</td>
+      <td>int</td>
+      <td>above method_max_n cap</td>
+    </tr>
+    <tr>
+      <th>15</th>
       <td>10000</td>
       <td>eigenvalue</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
-      <th>12</th>
+      <th>16</th>
       <td>10000</td>
       <td>exact</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
-      <th>13</th>
+      <th>17</th>
+      <td>10000</td>
+      <td>full</td>
+      <td>above method_max_n cap</td>
+    </tr>
+    <tr>
+      <th>18</th>
       <td>10000</td>
       <td>grid</td>
       <td>above method_max_n cap</td>
+    </tr>
+    <tr>
+      <th>19</th>
+      <td>10000</td>
+      <td>ichol</td>
+      <td>above method_max_n cap</td>
+    </tr>
+    <tr>
+      <th>20</th>
+      <td>10000</td>
+      <td>int</td>
+      <td>above method_max_n cap</td>
+    </tr>
+    <tr>
+      <th>21</th>
+      <td>10000</td>
+      <td>mc</td>
+      <td>above method_max_n cap</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<h2 id="coefficient-and-fit-time-comparison-across-logdet-methods">Coefficient and Fit-Time Comparison Across Logdet Methods<a class="headerlink" href="#coefficient-and-fit-time-comparison-across-logdet-methods" title="Link to this heading">¶</a></h2>
+<p>This section estimates the same SAR model using each <code class="docutils literal notranslate"><span class="pre">logdet_method</span></code> and compares:</p>
+<ul class="simple">
+<li><p>posterior mean coefficients (<code class="docutils literal notranslate"><span class="pre">rho</span></code>, <code class="docutils literal notranslate"><span class="pre">beta_0</span></code>, <code class="docutils literal notranslate"><span class="pre">beta_1</span></code>, <code class="docutils literal notranslate"><span class="pre">beta_2</span></code>)</p></li>
+<li><p>total wall-clock time to estimate each model</p></li>
+</ul>
+<p>To keep this section runnable in docs contexts, sampling is intentionally modest.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pymc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pm</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">simulate_sar_data</span><span class="p">(</span><span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">80</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2026</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Simulate a small SAR dataset for method comparison.&quot;&quot;&quot;</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="n">W</span> <span class="o">=</span> <span class="n">make_line_w</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+
+    <span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">(</span>
+        <span class="p">[</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">),</span>
+            <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">n</span><span class="p">),</span>
+            <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">n</span><span class="p">),</span>
+        <span class="p">]</span>
+    <span class="p">)</span>
+    <span class="n">beta_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="n">rho_true</span> <span class="o">=</span> <span class="mf">0.35</span>
+    <span class="n">sigma_true</span> <span class="o">=</span> <span class="mf">0.7</span>
+
+    <span class="c1"># y = (I - rho W)^(-1) (X beta + eps)</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">rho_true</span> <span class="o">*</span> <span class="n">W</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">X</span> <span class="o">@</span> <span class="n">beta_true</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">scale</span><span class="o">=</span><span class="n">sigma_true</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">n</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">W</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fit_sar_for_method</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">draws</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">120</span><span class="p">,</span> <span class="n">tune</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">120</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2026</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fit SAR with a specific logdet method and return posterior means + runtime.&quot;&quot;&quot;</span>
+    <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+
+    <span class="k">with</span> <span class="n">pm</span><span class="o">.</span><span class="n">Model</span><span class="p">()</span> <span class="k">as</span> <span class="n">model</span><span class="p">:</span>
+        <span class="n">rho</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">Uniform</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">lower</span><span class="o">=-</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="mf">0.95</span><span class="p">)</span>
+        <span class="n">beta</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">Normal</span><span class="p">(</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="n">mu</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">HalfNormal</span><span class="p">(</span><span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+
+        <span class="n">mu</span> <span class="o">=</span> <span class="n">rho</span> <span class="o">*</span> <span class="p">(</span><span class="n">W</span> <span class="o">@</span> <span class="n">y</span><span class="p">)</span> <span class="o">+</span> <span class="n">pt</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">beta</span><span class="p">)</span>
+        <span class="n">pm</span><span class="o">.</span><span class="n">Normal</span><span class="p">(</span><span class="s2">&quot;obs&quot;</span><span class="p">,</span> <span class="n">mu</span><span class="o">=</span><span class="n">mu</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">,</span> <span class="n">observed</span><span class="o">=</span><span class="n">y</span><span class="p">)</span>
+
+        <span class="n">pm</span><span class="o">.</span><span class="n">Potential</span><span class="p">(</span>
+            <span class="s2">&quot;jacobian&quot;</span><span class="p">,</span>
+            <span class="n">make_logdet_fn</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span> <span class="n">rho_min</span><span class="o">=-</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">rho_max</span><span class="o">=</span><span class="mf">0.95</span><span class="p">)(</span><span class="n">rho</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="n">idata</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span>
+            <span class="n">draws</span><span class="o">=</span><span class="n">draws</span><span class="p">,</span>
+            <span class="n">tune</span><span class="o">=</span><span class="n">tune</span><span class="p">,</span>
+            <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="n">cores</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">random_seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
+            <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">compute_convergence_checks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">elapsed_s</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
+    <span class="n">beta_mean</span> <span class="o">=</span> <span class="n">idata</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="s2">&quot;chain&quot;</span><span class="p">,</span> <span class="s2">&quot;draw&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+    <span class="n">rho_mean</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">idata</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="s2">&quot;chain&quot;</span><span class="p">,</span> <span class="s2">&quot;draw&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">())</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="n">method</span><span class="p">,</span>
+        <span class="s2">&quot;total_time_s&quot;</span><span class="p">:</span> <span class="n">elapsed_s</span><span class="p">,</span>
+        <span class="s2">&quot;rho&quot;</span><span class="p">:</span> <span class="n">rho_mean</span><span class="p">,</span>
+        <span class="s2">&quot;beta_0&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">beta_mean</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+        <span class="s2">&quot;beta_1&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">beta_mean</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+        <span class="s2">&quot;beta_2&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">beta_mean</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span>
+    <span class="p">}</span>
+
+
+<span class="n">methods_for_model</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;exact&quot;</span><span class="p">,</span> <span class="s2">&quot;eigenvalue&quot;</span><span class="p">,</span> <span class="s2">&quot;grid&quot;</span><span class="p">,</span> <span class="s2">&quot;full&quot;</span><span class="p">,</span> <span class="s2">&quot;int&quot;</span><span class="p">,</span> <span class="s2">&quot;mc&quot;</span><span class="p">,</span> <span class="s2">&quot;ichol&quot;</span><span class="p">]</span>
+<span class="n">y_model</span><span class="p">,</span> <span class="n">X_model</span><span class="p">,</span> <span class="n">W_model</span> <span class="o">=</span> <span class="n">simulate_sar_data</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">80</span><span class="p">)</span>
+
+<span class="n">model_rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">methods_for_model</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Estimating SAR with method=</span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">model_rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fit_sar_for_method</span><span class="p">(</span><span class="n">y_model</span><span class="p">,</span> <span class="n">X_model</span><span class="p">,</span> <span class="n">W_model</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">m</span><span class="p">))</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">model_rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="n">m</span><span class="p">,</span>
+                <span class="s2">&quot;total_time_s&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span>
+                <span class="s2">&quot;rho&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span>
+                <span class="s2">&quot;beta_0&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span>
+                <span class="s2">&quot;beta_1&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span>
+                <span class="s2">&quot;beta_2&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span>
+                <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+
+<span class="n">coef_compare</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">model_rows</span><span class="p">)</span>
+<span class="n">coef_compare</span> <span class="o">=</span> <span class="n">coef_compare</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;total_time_s&quot;</span><span class="p">,</span> <span class="n">na_position</span><span class="o">=</span><span class="s2">&quot;last&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="s2">&quot;eigenvalue&quot;</span> <span class="ow">in</span> <span class="n">coef_compare</span><span class="p">[</span><span class="s2">&quot;method&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">:</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">coef_compare</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">coef_compare</span><span class="p">[</span><span class="s2">&quot;method&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;eigenvalue&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta_0&quot;</span><span class="p">,</span> <span class="s2">&quot;beta_1&quot;</span><span class="p">,</span> <span class="s2">&quot;beta_2&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta_0&quot;</span><span class="p">,</span> <span class="s2">&quot;beta_1&quot;</span><span class="p">,</span> <span class="s2">&quot;beta_2&quot;</span><span class="p">]:</span>
+        <span class="n">coef_compare</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;delta_vs_eigen_</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">coef_compare</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">-</span> <span class="n">base</span><span class="p">[</span><span class="n">col</span><span class="p">]</span>
+
+<span class="n">display</span><span class="p">(</span><span class="n">coef_compare</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Estimating SAR with method=exact...
+Estimating SAR with method=eigenvalue...
+Estimating SAR with method=grid...
+Estimating SAR with method=full...
+Estimating SAR with method=int...
+Estimating SAR with method=mc...
+Estimating SAR with method=ichol...
+</code></pre></div>
+</div>
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 120 tune and 120 draw iterations (240 + 240 draws total) took 2 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 120 tune and 120 draw iterations (240 + 240 draws total) took 0 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 120 tune and 120 draw iterations (240 + 240 draws total) took 0 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 120 tune and 120 draw iterations (240 + 240 draws total) took 0 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 120 tune and 120 draw iterations (240 + 240 draws total) took 0 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 120 tune and 120 draw iterations (240 + 240 draws total) took 0 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Sequential sampling (2 chains in 1 job)
+NUTS: [rho, beta, sigma]
+Sampling 2 chains for 120 tune and 120 draw iterations (240 + 240 draws total) took 0 seconds.
+</code></pre></div>
+</div>
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>method</th>
+      <th>total_time_s</th>
+      <th>rho</th>
+      <th>beta_0</th>
+      <th>beta_1</th>
+      <th>beta_2</th>
+      <th>delta_vs_eigen_rho</th>
+      <th>delta_vs_eigen_beta_0</th>
+      <th>delta_vs_eigen_beta_1</th>
+      <th>delta_vs_eigen_beta_2</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>mc</td>
+      <td>1.081416</td>
+      <td>0.542949</td>
+      <td>0.726641</td>
+      <td>0.788517</td>
+      <td>-0.455577</td>
+      <td>0.075507</td>
+      <td>-0.150076</td>
+      <td>-0.033357</td>
+      <td>0.021792</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>ichol</td>
+      <td>1.171044</td>
+      <td>0.473925</td>
+      <td>0.857880</td>
+      <td>0.807608</td>
+      <td>-0.472414</td>
+      <td>0.006484</td>
+      <td>-0.018837</td>
+      <td>-0.014266</td>
+      <td>0.004954</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>full</td>
+      <td>1.847772</td>
+      <td>0.473925</td>
+      <td>0.857880</td>
+      <td>0.807608</td>
+      <td>-0.472414</td>
+      <td>0.006484</td>
+      <td>-0.018837</td>
+      <td>-0.014266</td>
+      <td>0.004954</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>eigenvalue</td>
+      <td>2.009179</td>
+      <td>0.467441</td>
+      <td>0.876717</td>
+      <td>0.821874</td>
+      <td>-0.477368</td>
+      <td>0.000000</td>
+      <td>0.000000</td>
+      <td>0.000000</td>
+      <td>0.000000</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>int</td>
+      <td>2.123042</td>
+      <td>0.481284</td>
+      <td>0.850836</td>
+      <td>0.810131</td>
+      <td>-0.462733</td>
+      <td>0.013842</td>
+      <td>-0.025881</td>
+      <td>-0.011744</td>
+      <td>0.014635</td>
+    </tr>
+    <tr>
+      <th>5</th>
+      <td>grid</td>
+      <td>3.632381</td>
+      <td>0.485567</td>
+      <td>0.843722</td>
+      <td>0.804894</td>
+      <td>-0.471797</td>
+      <td>0.018125</td>
+      <td>-0.032995</td>
+      <td>-0.016981</td>
+      <td>0.005572</td>
+    </tr>
+    <tr>
+      <th>6</th>
+      <td>exact</td>
+      <td>6.025219</td>
+      <td>0.475946</td>
+      <td>0.859551</td>
+      <td>0.811039</td>
+      <td>-0.473561</td>
+      <td>0.008505</td>
+      <td>-0.017166</td>
+      <td>-0.010836</td>
+      <td>0.003808</td>
     </tr>
   </tbody>
 </table>
@@ -1544,6 +1979,9 @@ Profiling n=10000...
 <li><p><code class="docutils literal notranslate"><span class="pre">exact</span></code> is expected to scale poorly and is intentionally capped at smaller n in this notebook.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">eigenvalue</span></code> usually has moderate setup cost and very fast repeated evaluations.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">grid</span></code> has an upfront grid-construction cost but can be competitive for repeated evaluation scenarios.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">full</span></code> and <code class="docutils literal notranslate"><span class="pre">int</span></code> are sparse-LU variants inspired by the MATLAB toolbox routines.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mc</span></code> is stochastic and may vary slightly run-to-run unless random seeds are fixed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ichol</span></code> uses an ILU approximation that can trade precision for speed depending on sparsity.</p></li>
 <li><p>Adjust <code class="docutils literal notranslate"><span class="pre">ProfileConfig.sizes</span></code> and <code class="docutils literal notranslate"><span class="pre">method_max_n</span></code> for deeper stress tests.</p></li>
 </ul>
 
