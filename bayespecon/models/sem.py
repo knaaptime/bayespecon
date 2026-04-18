@@ -52,8 +52,8 @@ class SEM(SpatialModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(self._W_dense, method=self.logdet_method,
-                                   rho_min=lam_lower, rho_max=lam_upper)
+        logdet_fn = make_logdet_fn(self._W_eigs.real, method=self.logdet_method,
+                       rho_min=lam_lower, rho_max=lam_upper)
         W_pt = pt.as_tensor_variable(self._W_dense)
 
         with pm.Model(coords=self._model_coords()) as model:

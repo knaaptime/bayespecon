@@ -56,8 +56,8 @@ class SDM(SpatialModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(self._W_dense, method=self.logdet_method,
-                                   rho_min=rho_lower, rho_max=rho_upper)
+        logdet_fn = make_logdet_fn(self._W_eigs.real, method=self.logdet_method,
+                       rho_min=rho_lower, rho_max=rho_upper)
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -88,16 +88,25 @@ class SDM(SpatialModel):
         kw = self._WX.shape[1]
         beta1, beta2 = beta[:k], beta[k:k + kw]
 
-        n = self._W_dense.shape[0]
-        W = self._W_dense
-        M = np.linalg.inv(np.eye(n) - rho * W)  # (I - rho*W)^{-1}
-
+        eigs = self._W_eigs
+        inv_eigs = 1.0 / (1.0 - rho * eigs)
+        mean_diag_M = float(np.mean(inv_eigs.real))
+        mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
+        if self._is_row_std:
+            mean_row_sum_M = 1.0 / (1.0 - rho)
+            mean_row_sum_MW = mean_row_sum_M
+        else:
+            ones = np.ones(self._W_sparse.shape[0])
+            A = np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray()
+            M_ones = np.linalg.solve(A, ones)
+            mean_row_sum_M = float(M_ones.mean())
+            mean_row_sum_MW = float((self._W_sparse.toarray() @ M_ones).mean())
         direct = np.array([
-            np.diag(M @ (beta1[j] * np.eye(n) + b2 * W)).mean()
+            beta1[j] * mean_diag_M + b2 * mean_diag_MW
             for j, b2 in zip(self._wx_column_indices, beta2)
         ])
         total = np.array([
-            (M @ (beta1[j] * np.eye(n) + b2 * W)).sum(axis=1).mean()
+            beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
             for j, b2 in zip(self._wx_column_indices, beta2)
         ])
         indirect = total - direct

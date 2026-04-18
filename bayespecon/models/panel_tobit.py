@@ -69,10 +69,11 @@ class SARPanelTobit(_PanelTobitBase):
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
         logdet_fn = make_logdet_fn(
-            self._W_dense,
+            self._W_eigs.real,
             method=self.logdet_method,
             rho_min=rho_lower,
             rho_max=rho_upper,
+            T=self._T,
         )
         W_pt = pt.as_tensor_variable(self._W_dense)
 
@@ -98,10 +99,19 @@ class SARPanelTobit(_PanelTobitBase):
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
-        n = self._W_dense.shape[0]
-        S = np.linalg.inv(np.eye(n) - rho * self._W_dense)
-        direct = np.diag(S).mean() * beta
-        total = S.sum(axis=1).mean() * beta
+        eigs = self._W_eigs
+        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
+        if self._is_row_std:
+            mean_row_sum = 1.0 / (1.0 - rho)
+        else:
+            mean_row_sum = float(
+                np.linalg.solve(
+                    np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray(),
+                    np.ones(self._W_sparse.shape[0]),
+                ).mean()
+            )
+        direct = mean_diag * beta
+        total = mean_row_sum * beta
         indirect = total - direct
         return {
             "direct": direct,
@@ -129,10 +139,11 @@ class SEMPanelTobit(_PanelTobitBase):
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
         logdet_fn = make_logdet_fn(
-            self._W_dense,
+            self._W_eigs.real,
             method=self.logdet_method,
             rho_min=lam_lower,
             rho_max=lam_upper,
+            T=self._T,
         )
         W_pt = pt.as_tensor_variable(self._W_dense)
 

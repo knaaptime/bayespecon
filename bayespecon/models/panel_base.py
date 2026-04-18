@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from typing import Optional, Union
 
@@ -9,6 +10,7 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
+import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
@@ -72,14 +74,15 @@ def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
     return y_with.reshape(-1), X_with.reshape(-1, X.shape[1])
 
 
-def _as_dense_W(W: Union[Graph, np.ndarray], N: int, T: int) -> np.ndarray:
-    """Convert graph/array weights into dense panel-compatible matrix.
+def _as_dense_W(W: Union[Graph, sp.spmatrix, np.ndarray], N: int, T: int) -> np.ndarray:
+    """Convert graph/sparse/array weights into dense panel-compatible matrix.
 
     Parameters
     ----------
-    W : Graph or np.ndarray
-        Either ``N x N`` cross-sectional weights or ``(N*T) x (N*T)`` panel
-        weights.
+    W : Graph, scipy.sparse, or np.ndarray
+        Either an ``N x N`` cross-sectional matrix or an ``(N*T) x (N*T)``
+        block-diagonal panel matrix. Public APIs accept only Graph or sparse
+        inputs; ndarray is supported here for internal use.
     N : int
         Number of units.
     T : int
@@ -92,6 +95,8 @@ def _as_dense_W(W: Union[Graph, np.ndarray], N: int, T: int) -> np.ndarray:
     """
     if isinstance(W, Graph):
         Wn = W.sparse.toarray().astype(float)
+    elif sp.issparse(W):
+        Wn = W.toarray().astype(float)
     else:
         Wn = np.asarray(W, dtype=float)
 
@@ -105,6 +110,71 @@ def _as_dense_W(W: Union[Graph, np.ndarray], N: int, T: int) -> np.ndarray:
     )
 
 
+def _parse_panel_W(
+    W: Union[Graph, sp.spmatrix],
+    N: int,
+    T: int,
+) -> sp.csr_matrix:
+    """Validate W and return it as a CSR sparse matrix sized ``(N, N)``.
+
+    Accepts a :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
+    matrix. Raises a :class:`ValueError` if the shape is incompatible with
+    *N* (and optionally *T*). Issues a :class:`UserWarning` when *W* does not
+    appear to be row-standardised.
+
+    Returns the CSR representation of the ``N x N`` cross-sectional matrix;
+    callers that need the full ``(N*T) x (N*T)`` Kronecker form should use
+    :func:`_as_dense_W` or build the sparse Kronecker product themselves.
+    """
+    if isinstance(W, Graph):
+        W_csr = W.sparse.tocsr().astype(np.float64)
+        transform = getattr(W, "transformation", None)
+        row_std = transform in ("r", "R")
+    elif sp.issparse(W):
+        W_csr = W.tocsr().astype(np.float64)
+        row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
+        row_std = bool(np.allclose(row_sums, 1.0, atol=1e-6))
+    elif hasattr(W, "sparse") and hasattr(W, "transform"):
+        raise TypeError(
+            "W appears to be a legacy libpysal.weights.W object. "
+            "Convert it to a libpysal.graph.Graph first: "
+            "Graph.from_W(w), or pass w.sparse (the scipy sparse matrix) directly."
+        )
+    else:
+        raise TypeError(
+            f"W must be a libpysal.graph.Graph or a scipy sparse matrix, "
+            f"got {type(W).__name__}."
+        )
+
+    if W_csr.ndim != 2 or W_csr.shape[0] != W_csr.shape[1]:
+        raise ValueError(f"W must be square, got shape {W_csr.shape}.")
+
+    if W_csr.shape[0] == N:
+        pass  # N x N unit matrix — expected
+    elif W_csr.shape[0] == N * T:
+        # Caller passed the full block matrix; extract N x N block for storage.
+        # We keep it as-is but raise if neither shape matches.
+        pass
+    else:
+        raise ValueError(
+            f"W has shape {W_csr.shape} but data has N={N} units (T={T} periods). "
+            f"W must be ({N},{N}) or ({N*T},{N*T})."
+        )
+
+    if not row_std:
+        warnings.warn(
+            "W does not appear to be row-standardised (row sums \u2260 1). "
+            "Most spatial models assume W is row-standardised; results may be "
+            "unreliable otherwise. For a scipy sparse matrix normalise rows "
+            "manually (divide each row by its sum). To use a libpysal.graph.Graph "
+            "set its transformation attribute: "
+            "graph = graph.transform('r').",
+            UserWarning,
+            stacklevel=3,
+        )
+    return W_csr, row_std
+
+
 class SpatialPanelModel(ABC):
     """Base class for static spatial panel models with FE transforms.
 
@@ -112,8 +182,15 @@ class SpatialPanelModel(ABC):
     ----------
     formula, data, y, X
         Either formula mode (formula + data) or matrix mode (y + X).
-    W
-        Spatial weights matrix for N units (preferred) or block matrix for N*T.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)`` (preferred) or the full
+        ``(N*T, N*T)`` block-diagonal panel matrix. Accepts a
+        :class:`libpysal.graph.Graph` (the modern libpysal graph API) or any
+        :class:`scipy.sparse` matrix.  The legacy :class:`libpysal.weights.W`
+        object is **not** accepted directly; pass ``w.sparse`` to use the
+        underlying sparse matrix, or convert with
+        ``libpysal.graph.Graph.from_W(w)``.
+        W should be row-standardised; a :class:`UserWarning` is raised if not.
     unit_col, time_col
         Required in formula mode for robust panel sorting and N/T inference.
     N, T
@@ -128,7 +205,7 @@ class SpatialPanelModel(ABC):
         data: Optional[pd.DataFrame] = None,
         y: Optional[Union[np.ndarray, pd.Series]] = None,
         X: Optional[Union[np.ndarray, pd.DataFrame]] = None,
-        W: Optional[Union[Graph, np.ndarray]] = None,
+        W: Optional[Union[Graph, sp.spmatrix]] = None,
         unit_col: Optional[str] = None,
         time_col: Optional[str] = None,
         N: Optional[int] = None,
@@ -144,6 +221,7 @@ class SpatialPanelModel(ABC):
         self.logdet_method = logdet_method
         self.model = int(model)
         self._idata: Optional[az.InferenceData] = None
+        self._W_dense_cache: Optional[np.ndarray] = None
 
         if formula is not None:
             if data is None:
@@ -193,14 +271,50 @@ class SpatialPanelModel(ABC):
         self._wx_column_indices = self._spatial_lag_column_indices(self._X_raw, self._feature_names)
         self._wx_feature_names = [self._feature_names[i] for i in self._wx_column_indices]
 
-        self._W_dense = _as_dense_W(W, self._N, self._T)
+        # Validate W and store as N×N CSR. Dense expansion is deferred.
+        self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
+        # Eigenvalues of the N×N matrix, pre-computed once (O(n³)).
+        self._W_eigs: np.ndarray = np.linalg.eigvals(
+            self._W_sparse.toarray().astype(np.float64)
+        )
 
         self._y, self._X = _demean_panel(self._y_raw, self._X_raw, self._N, self._T, self.model)
-        self._Wy = self._W_dense @ self._y
+
+        # Compute spatial lags with the sparse Kronecker block W⊗I_T, avoiding
+        # full dense materialisation.  For an N×N unit matrix W, the panel lag
+        # of a stacked vector v (length N*T, ordered T×N) is equivalent to
+        # applying W row-wise within each time period.
+        self._Wy = self._sparse_panel_lag(self._y)
         if self._wx_column_indices:
-            self._WX = self._W_dense @ self._X[:, self._wx_column_indices]
+            self._WX = np.column_stack([
+                self._sparse_panel_lag(self._X[:, j])
+                for j in self._wx_column_indices
+            ])
         else:
             self._WX = np.empty((self._X.shape[0], 0), dtype=float)
+
+    def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
+        """Apply the panel spatial lag W⊗I_T to a stacked vector *v*.
+
+        For each of the T time periods the N-length slice is multiplied by the
+        N×N sparse weight matrix, staying sparse until the final concatenation.
+        """
+        W = self._W_sparse
+        N, T = self._N, self._T
+        if W.shape[0] == N:
+            # Stack is ordered (T, N); reshape and apply W period by period.
+            chunks = v.reshape(T, N)  # (T, N)
+            return np.asarray((W @ chunks.T).T, dtype=float).ravel()
+        else:
+            # Full (N*T)×(N*T) block matrix provided.
+            return np.asarray(W @ v, dtype=float)
+
+    @property
+    def _W_dense(self) -> np.ndarray:
+        """Dense (N*T)×(N*T) weight matrix, materialised lazily on first access."""
+        if self._W_dense_cache is None:
+            self._W_dense_cache = _as_dense_W(self._W_sparse, self._N, self._T)
+        return self._W_dense_cache
 
     @staticmethod
     def _spatial_lag_column_indices(X: np.ndarray, feature_names: list[str]) -> list[int]:

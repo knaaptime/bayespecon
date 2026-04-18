@@ -76,10 +76,11 @@ def _build_logdet_grid(W_dense: np.ndarray, rho_min: float, rho_max: float, n_gr
     tuple[np.ndarray, np.ndarray]
         Pair ``(rho_grid, logdet_grid)``.
     """
-    n = W_dense.shape[0]
-    I = np.eye(n)
     rho_grid = np.linspace(rho_min + 1e-6, rho_max - 1e-6, n_grid)
-    logdet_grid = np.array([np.linalg.slogdet(I - r * W_dense)[1] for r in rho_grid])
+    I = np.eye(W_dense.shape[0])
+    # Vectorised batched slogdet — faster than a sequential Python loop.
+    A = I[np.newaxis] - rho_grid[:, np.newaxis, np.newaxis] * W_dense[np.newaxis]
+    _, logdet_grid = np.linalg.slogdet(A)
     return rho_grid, logdet_grid
 
 
@@ -127,54 +128,85 @@ def logdet_interpolated(rho, W_dense: np.ndarray, rho_min: float = -1.0, rho_max
     return value
 
 
-def make_logdet_fn(W_dense: np.ndarray, method: str = "auto", rho_min: float = -1.0, rho_max: float = 1.0):
+def make_logdet_fn(W, method: str = "auto", rho_min: float = -1.0, rho_max: float = 1.0, T: int = 1):
     """Return a function (rho) -> pytensor log|I - rho*W| expression.
 
     Parameters
     ----------
-    W_dense : np.ndarray
-        Dense spatial weights matrix.
+    W : np.ndarray
+        Either a 2-D dense ``(n, n)`` spatial weights matrix **or** a 1-D
+        array of pre-computed real eigenvalues.  Passing eigenvalues skips the
+        O(n³) decomposition inside this function; the ``'grid'`` and
+        ``'exact'`` methods are not available in that case and fall back to
+        ``'eigenvalue'``.
     method : str
-        "eigenvalue" — pre-compute W's eigenvalues once (O(n³)); every
+        ``"eigenvalue"`` — pre-compute W's eigenvalues once (O(n³)); every
         subsequent evaluation costs O(n) and is exact (default).
-        "exact" — exact O(n³) symbolic det via pytensor (slow for n > 500).
-        "grid"  — spline interpolation over pre-computed grid (approximate).
-        "auto"  — same as "eigenvalue".
-
+        ``"exact"`` — exact O(n³) symbolic det via pytensor (slow for n > 500).
+        ``"grid"``  — spline interpolation over pre-computed grid (approximate).
+        ``"auto"``  — same as ``"eigenvalue"``.
     rho_min : float, default=-1.0
         Lower bound for the grid method.
     rho_max : float, default=1.0
         Upper bound for the grid method.
+    T : int, default 1
+        Panel time-period count.  The returned log-determinant is multiplied
+        by *T*, exploiting
+        ``log|I_{NT} - ρ(I_T⊗W_N)| = T · log|I_N - ρW_N|``.
+        Leave at 1 for cross-sectional models.
 
     Returns
     -------
     callable
         Function mapping symbolic ``rho`` to symbolic log-determinant.
     """
-    n = W_dense.shape[0]
+    T = int(T)
+    W = np.asarray(W, dtype=np.float64)
+
+    if W.ndim == 1:
+        # 1-D eigenvalue array supplied — skip O(n³) decomposition.
+        eigs = W
+        if method in ("grid", "exact"):
+            method = "eigenvalue"
+        if method in ("auto", "eigenvalue"):
+            if T == 1:
+                return lambda rho: logdet_eigenvalue(rho, eigs)
+            return lambda rho: T * logdet_eigenvalue(rho, eigs)
+        raise ValueError(f"Unknown method: {method!r}.")
+
+    # 2-D dense matrix path.
+    W_dense = W
     if method == "auto":
         method = "eigenvalue"
 
     if method == "eigenvalue":
         eigs = np.linalg.eigvals(W_dense).real
-        return lambda rho: logdet_eigenvalue(rho, eigs)
+        if T == 1:
+            return lambda rho: logdet_eigenvalue(rho, eigs)
+        return lambda rho: T * logdet_eigenvalue(rho, eigs)
     elif method == "exact":
-        return lambda rho: logdet_exact(rho, W_dense)
+        if T == 1:
+            return lambda rho: logdet_exact(rho, W_dense)
+        return lambda rho: T * logdet_exact(rho, W_dense)
     elif method == "grid":
-        # Pre-compute grid once
         rho_grid, logdet_grid = _build_logdet_grid(W_dense, rho_min, rho_max)
         spline = CubicSpline(rho_grid, logdet_grid)
         breakpoints_np = spline.x.astype(np.float64)
         coefficients_np = spline.c.astype(np.float64)
+        # Uniform grid step enables O(1) index lookup instead of O(n_grid) scan.
+        step = float(breakpoints_np[1] - breakpoints_np[0])
+        bp0 = float(breakpoints_np[0])
+        n_intervals = len(breakpoints_np) - 2
 
         def _interp(rho):
             bp = pt.as_tensor_variable(breakpoints_np)
             c = pt.as_tensor_variable(coefficients_np)
-            idx = pt.sum(pt.lt(bp, rho)) - 1
-            idx = pt.clip(idx, 0, len(breakpoints_np) - 2)
+            idx = pt.cast(pt.floor((rho - bp0) / step), "int64")
+            idx = pt.clip(idx, 0, n_intervals)
             dx = rho - bp[idx]
             coefs = c[:, idx]
-            return coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
+            val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
+            return val if T == 1 else T * val
 
         return _interp
     else:

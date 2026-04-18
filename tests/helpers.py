@@ -76,7 +76,7 @@ def W_to_graph(W_dense: np.ndarray) -> Graph:
         np.array(focal),
         np.array(neighbor),
         np.array(weight, dtype=float),
-    )
+    ).transform("r")
 
 
 # ---------------------------------------------------------------------------

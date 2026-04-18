@@ -40,8 +40,13 @@ class SpatialProbit:
         Binary dependent variable (0/1), required in matrix mode.
     X : array-like or pandas.DataFrame, optional
         Covariate matrix, required in matrix mode.
-    W : libpysal.graph.Graph or np.ndarray
-        Region-level ``m x m`` spatial weights matrix.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Region-level ``m x m`` spatial weights matrix. Accepts a
+        :class:`libpysal.graph.Graph` (the modern libpysal graph API) or any
+        :class:`scipy.sparse` matrix.  The legacy :class:`libpysal.weights.W`
+        object is **not** accepted directly; pass ``w.sparse`` or convert with
+        ``libpysal.graph.Graph.from_W(w)``.
+        W should be row-standardised; a :class:`UserWarning` is raised if not.
     region_col : str, optional
         Region identifier column in ``data`` (formula mode).
     region_ids : array-like, optional
@@ -121,14 +126,42 @@ class SpatialProbit:
             )
 
     @staticmethod
-    def _as_dense_region_W(W: Union[Graph, np.ndarray]) -> np.ndarray:
+    def _as_dense_region_W(W: Union[Graph, "sp.spmatrix", np.ndarray]) -> np.ndarray:
+        import scipy.sparse as sp
+        import warnings
         if isinstance(W, Graph):
-            W_dense = W.sparse.toarray().astype(float)
+            W_csr = W.sparse.tocsr().astype(float)
+            transform = getattr(W, "transformation", None)
+            row_std = transform in ("r", "R")
+        elif sp.issparse(W):
+            W_csr = W.tocsr().astype(float)
+            row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
+            row_std = bool(np.allclose(row_sums, 1.0, atol=1e-6))
+        elif hasattr(W, "sparse") and hasattr(W, "transform"):
+            raise TypeError(
+                "W appears to be a legacy libpysal.weights.W object. "
+                "Convert it to a libpysal.graph.Graph first: "
+                "Graph.from_W(w), or pass w.sparse (the scipy sparse matrix) directly."
+            )
         else:
-            W_dense = np.asarray(W, dtype=float)
-        if W_dense.ndim != 2 or W_dense.shape[0] != W_dense.shape[1]:
+            raise TypeError(
+                f"W must be a libpysal.graph.Graph or a scipy sparse matrix, "
+                f"got {type(W).__name__}."
+            )
+        if W_csr.ndim != 2 or W_csr.shape[0] != W_csr.shape[1]:
             raise ValueError("W must be a square region-level matrix.")
-        return W_dense
+        if not row_std:
+            warnings.warn(
+                "W does not appear to be row-standardised (row sums \u2260 1). "
+                "Most spatial models assume W is row-standardised; results may be "
+                "unreliable otherwise. For a scipy sparse matrix normalise rows "
+                "manually (divide each row by its sum). To use a libpysal.graph.Graph "
+                "set its transformation attribute: "
+                "graph = graph.transform('r').",
+                UserWarning,
+                stacklevel=3,
+            )
+        return W_csr.toarray()
 
     @staticmethod
     def _parse_formula(formula: str, data: pd.DataFrame):

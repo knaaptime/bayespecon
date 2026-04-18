@@ -56,8 +56,8 @@ class SDEM(SpatialModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(self._W_dense, method=self.logdet_method,
-                                   rho_min=lam_lower, rho_max=lam_upper)
+        logdet_fn = make_logdet_fn(self._W_eigs.real, method=self.logdet_method,
+                       rho_min=lam_lower, rho_max=lam_upper)
         W_pt = pt.as_tensor_variable(self._W_dense)
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -95,9 +95,8 @@ class SDEM(SpatialModel):
         k = self._X.shape[1]
         kw = self._WX.shape[1]
         beta1, beta2 = beta[:k], beta[k:k + kw]
-        W = self._W_dense
-        mean_diag_w = float(np.diag(W).mean())
-        mean_row_sum_w = float(W.sum(axis=1).mean())
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
         direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
         total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
         return {

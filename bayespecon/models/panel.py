@@ -104,10 +104,11 @@ class SARPanelFE(SpatialPanelModel):
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
         logdet_fn = make_logdet_fn(
-            self._W_dense,
+            self._W_eigs.real,
             method=self.logdet_method,
             rho_min=rho_lower,
             rho_max=rho_upper,
+            T=self._T,
         )
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -141,10 +142,19 @@ class SARPanelFE(SpatialPanelModel):
         """
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
-        n = self._W_dense.shape[0]
-        S = np.linalg.inv(np.eye(n) - rho * self._W_dense)
-        direct = np.diag(S).mean() * beta
-        total = S.sum(axis=1).mean() * beta
+        eigs = self._W_eigs
+        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
+        if self._is_row_std:
+            mean_row_sum = 1.0 / (1.0 - rho)
+        else:
+            mean_row_sum = float(
+                np.linalg.solve(
+                    np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray(),
+                    np.ones(self._W_sparse.shape[0]),
+                ).mean()
+            )
+        direct = mean_diag * beta
+        total = mean_row_sum * beta
         indirect = total - direct
         return {
             "direct": direct,
@@ -184,10 +194,11 @@ class SEMPanelFE(SpatialPanelModel):
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
         logdet_fn = make_logdet_fn(
-            self._W_dense,
+            self._W_eigs.real,
             method=self.logdet_method,
             rho_min=lam_lower,
             rho_max=lam_upper,
+            T=self._T,
         )
 
         W_pt = pt.as_tensor_variable(self._W_dense)
@@ -331,10 +342,11 @@ class SDMPanelFE(SpatialPanelModel):
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
         logdet_fn = make_logdet_fn(
-            self._W_dense,
+            self._W_eigs.real,
             method=self.logdet_method,
             rho_min=rho_lower,
             rho_max=rho_upper,
+            T=self._T,
         )
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -373,16 +385,25 @@ class SDMPanelFE(SpatialPanelModel):
         kw = self._WX.shape[1]
         beta1, beta2 = beta[:k], beta[k:k + kw]
 
-        n = self._W_dense.shape[0]
-        W = self._W_dense
-        M = np.linalg.inv(np.eye(n) - rho * W)
-
+        eigs = self._W_eigs
+        inv_eigs = 1.0 / (1.0 - rho * eigs)
+        mean_diag_M = float(np.mean(inv_eigs.real))
+        mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
+        if self._is_row_std:
+            mean_row_sum_M = 1.0 / (1.0 - rho)
+            mean_row_sum_MW = mean_row_sum_M
+        else:
+            ones = np.ones(self._W_sparse.shape[0])
+            A = np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray()
+            M_ones = np.linalg.solve(A, ones)
+            mean_row_sum_M = float(M_ones.mean())
+            mean_row_sum_MW = float((self._W_sparse.toarray() @ M_ones).mean())
         direct = np.array([
-            np.diag(M @ (beta1[j] * np.eye(n) + b2 * W)).mean()
+            beta1[j] * mean_diag_M + b2 * mean_diag_MW
             for j, b2 in zip(self._wx_column_indices, beta2)
         ])
         total = np.array([
-            (M @ (beta1[j] * np.eye(n) + b2 * W)).sum(axis=1).mean()
+            beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
             for j, b2 in zip(self._wx_column_indices, beta2)
         ])
         indirect = total - direct
@@ -430,10 +451,11 @@ class SDEMPanelFE(SpatialPanelModel):
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
         logdet_fn = make_logdet_fn(
-            self._W_dense,
+            self._W_eigs.real,
             method=self.logdet_method,
             rho_min=lam_lower,
             rho_max=lam_upper,
+            T=self._T,
         )
 
         W_pt = pt.as_tensor_variable(self._W_dense)
@@ -538,9 +560,8 @@ class SDEMPanelFE(SpatialPanelModel):
         k = self._X.shape[1]
         kw = self._WX.shape[1]
         beta1, beta2 = beta[:k], beta[k:k + kw]
-        W = self._W_dense
-        mean_diag_w = float(np.diag(W).mean())
-        mean_row_sum_w = float(W.sum(axis=1).mean())
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
         direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
         total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
         return {

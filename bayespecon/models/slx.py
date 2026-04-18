@@ -83,9 +83,8 @@ class SLX(SpatialModel):
         # Direct   = mean(diag(S_k))
         # Total    = mean(row_sums(S_k))
         # Indirect = Total - Direct
-        W = self._W_dense
-        mean_diag_w = float(np.diag(W).mean())
-        mean_row_sum_w = float(W.sum(axis=1).mean())
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
         total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
