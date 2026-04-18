@@ -897,6 +897,12 @@
 <h1 id="sar-sampling-backend-profiling">SAR Sampling Backend Profiling<a class="headerlink" href="#sar-sampling-backend-profiling" title="Link to this heading">¶</a></h1>
 <p>This notebook profiles a fixed SAR model across PyMC sampling backends on a moderate spatial benchmark.</p>
 <p>The comparison keeps the SAR specification and log-determinant method fixed and varies the sampling backend only.</p>
+<p>The workflow uses the public bayespecon API end to end:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">bayespecon.dgp.simulate_sar(...)</span></code> generates the synthetic data</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bayespecon.SAR(...)</span></code> constructs the model</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SAR.fit(...)</span></code> runs each backend</p></li>
+</ul>
 <p>Dataset setup:</p>
 <ul class="simple">
 <li><p>a 20 x 20 rook-contiguity grid with 400 spatial units</p></li>
@@ -919,11 +925,8 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pymc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pm</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytensor.tensor</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pt</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">dgp</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon.logdet</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_logdet_fn</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">SAR</span><span class="p">,</span> <span class="n">dgp</span>
 </code></pre></div>
 </div>
 </div>
@@ -997,7 +1000,7 @@
     <span class="k">return</span> <span class="nb">all</span><span class="p">(</span><span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">requirements</span><span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">simulate_sar_data</span><span class="p">(</span><span class="n">n_rows</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">n_cols</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">simulate_sar_data</span><span class="p">(</span><span class="n">n_rows</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">n_cols</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="nb">object</span><span class="p">]:</span>
     <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
     <span class="n">W</span> <span class="o">=</span> <span class="n">make_rook_w</span><span class="p">(</span><span class="n">n_rows</span><span class="p">,</span> <span class="n">n_cols</span><span class="p">)</span>
     <span class="n">sim</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_sar</span><span class="p">(</span>
@@ -1007,26 +1010,10 @@
         <span class="n">sigma</span><span class="o">=</span><span class="n">TRUE_SIGMA</span><span class="p">,</span>
         <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">return</span> <span class="n">sim</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">],</span> <span class="n">sim</span><span class="p">[</span><span class="s1">&#39;X&#39;</span><span class="p">],</span> <span class="n">sim</span><span class="p">[</span><span class="s1">&#39;W_dense&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">sim</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">],</span> <span class="n">sim</span><span class="p">[</span><span class="s1">&#39;X&#39;</span><span class="p">],</span> <span class="n">sim</span><span class="p">[</span><span class="s1">&#39;W_graph&#39;</span><span class="p">]</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">build_sar_model</span><span class="p">(</span><span class="n">y</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">X</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">W</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">logdet_method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;eigenvalue&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pm</span><span class="o">.</span><span class="n">Model</span><span class="p">:</span>
-    <span class="k">with</span> <span class="n">pm</span><span class="o">.</span><span class="n">Model</span><span class="p">()</span> <span class="k">as</span> <span class="n">model</span><span class="p">:</span>
-        <span class="n">rho</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">Uniform</span><span class="p">(</span><span class="s1">&#39;rho&#39;</span><span class="p">,</span> <span class="n">lower</span><span class="o">=-</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="mf">0.95</span><span class="p">)</span>
-        <span class="n">beta</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">Normal</span><span class="p">(</span><span class="s1">&#39;beta&#39;</span><span class="p">,</span> <span class="n">mu</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-        <span class="n">sigma</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">HalfNormal</span><span class="p">(</span><span class="s1">&#39;sigma&#39;</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
-
-        <span class="n">mu</span> <span class="o">=</span> <span class="n">rho</span> <span class="o">*</span> <span class="p">(</span><span class="n">W</span> <span class="o">@</span> <span class="n">y</span><span class="p">)</span> <span class="o">+</span> <span class="n">pt</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">beta</span><span class="p">)</span>
-        <span class="n">pm</span><span class="o">.</span><span class="n">Normal</span><span class="p">(</span><span class="s1">&#39;obs&#39;</span><span class="p">,</span> <span class="n">mu</span><span class="o">=</span><span class="n">mu</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">,</span> <span class="n">observed</span><span class="o">=</span><span class="n">y</span><span class="p">)</span>
-        <span class="n">pm</span><span class="o">.</span><span class="n">Potential</span><span class="p">(</span>
-            <span class="s1">&#39;jacobian&#39;</span><span class="p">,</span>
-            <span class="n">make_logdet_fn</span><span class="p">(</span><span class="n">W</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">logdet_method</span><span class="p">,</span> <span class="n">rho_min</span><span class="o">=-</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">rho_max</span><span class="o">=</span><span class="mf">0.95</span><span class="p">)(</span><span class="n">rho</span><span class="p">),</span>
-        <span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">model</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">fit_backend</span><span class="p">(</span><span class="n">backend_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">X</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">W</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">fit_backend</span><span class="p">(</span><span class="n">backend_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">X</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">W</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
     <span class="n">cfg</span> <span class="o">=</span> <span class="n">BACKENDS</span><span class="p">[</span><span class="n">backend_name</span><span class="p">]</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">backend_available</span><span class="p">(</span><span class="n">cfg</span><span class="p">[</span><span class="s1">&#39;requires&#39;</span><span class="p">]):</span>
         <span class="k">return</span> <span class="p">{</span>
@@ -1043,19 +1030,23 @@
 
     <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">model</span> <span class="o">=</span> <span class="n">build_sar_model</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">logdet_method</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;logdet_method&#39;</span><span class="p">])</span>
-        <span class="k">with</span> <span class="n">model</span><span class="p">:</span>
-            <span class="n">idata</span> <span class="o">=</span> <span class="n">pm</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span>
-                <span class="n">draws</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;draws&#39;</span><span class="p">],</span>
-                <span class="n">tune</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;tune&#39;</span><span class="p">],</span>
-                <span class="n">chains</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;chains&#39;</span><span class="p">],</span>
-                <span class="n">cores</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;cores&#39;</span><span class="p">],</span>
-                <span class="n">random_seed</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;seed&#39;</span><span class="p">],</span>
-                <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                <span class="n">compute_convergence_checks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                <span class="n">nuts_sampler</span><span class="o">=</span><span class="n">cfg</span><span class="p">[</span><span class="s1">&#39;nuts_sampler&#39;</span><span class="p">],</span>
-                <span class="n">compile_kwargs</span><span class="o">=</span><span class="n">cfg</span><span class="p">[</span><span class="s1">&#39;compile_kwargs&#39;</span><span class="p">],</span>
-            <span class="p">)</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span>
+            <span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span>
+            <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span>
+            <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+            <span class="n">logdet_method</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;logdet_method&#39;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+            <span class="n">draws</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;draws&#39;</span><span class="p">],</span>
+            <span class="n">tune</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;tune&#39;</span><span class="p">],</span>
+            <span class="n">chains</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;chains&#39;</span><span class="p">],</span>
+            <span class="n">cores</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;cores&#39;</span><span class="p">],</span>
+            <span class="n">random_seed</span><span class="o">=</span><span class="n">PROFILE_CFG</span><span class="p">[</span><span class="s1">&#39;seed&#39;</span><span class="p">],</span>
+            <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">compute_convergence_checks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">nuts_sampler</span><span class="o">=</span><span class="n">cfg</span><span class="p">[</span><span class="s1">&#39;nuts_sampler&#39;</span><span class="p">],</span>
+            <span class="n">compile_kwargs</span><span class="o">=</span><span class="n">cfg</span><span class="p">[</span><span class="s1">&#39;compile_kwargs&#39;</span><span class="p">],</span>
+        <span class="p">)</span>
         <span class="n">elapsed_s</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
 
         <span class="n">beta_hat</span> <span class="o">=</span> <span class="n">idata</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;beta&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="s1">&#39;chain&#39;</span><span class="p">,</span> <span class="s1">&#39;draw&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
@@ -1122,14 +1113,10 @@ Profiling backend=blackjax...
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 11 seconds.
+Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
 Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 9 seconds.
 </code></pre></div>
 </div>
@@ -1169,57 +1156,57 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>0</th>
       <td>blackjax</td>
       <td>True</td>
-      <td>3.164878</td>
-      <td>0.361312</td>
-      <td>0.925456</td>
-      <td>0.792554</td>
-      <td>-0.496113</td>
+      <td>3.066408</td>
+      <td>0.360779</td>
+      <td>0.927808</td>
+      <td>0.790350</td>
+      <td>-0.497333</td>
       <td>0</td>
       <td></td>
-      <td>0.011312</td>
-      <td>0.043311</td>
+      <td>0.010779</td>
+      <td>0.042079</td>
     </tr>
     <tr>
       <th>1</th>
       <td>numpyro</td>
       <td>True</td>
-      <td>4.356119</td>
-      <td>0.360145</td>
-      <td>0.929249</td>
-      <td>0.792968</td>
-      <td>-0.496152</td>
+      <td>4.272953</td>
+      <td>0.358558</td>
+      <td>0.932909</td>
+      <td>0.792543</td>
+      <td>-0.496836</td>
       <td>0</td>
       <td></td>
-      <td>0.010145</td>
-      <td>0.041109</td>
+      <td>0.008558</td>
+      <td>0.039016</td>
     </tr>
     <tr>
       <th>2</th>
       <td>c</td>
       <td>True</td>
-      <td>13.922109</td>
-      <td>0.360895</td>
-      <td>0.926393</td>
-      <td>0.792062</td>
-      <td>-0.497944</td>
+      <td>13.323946</td>
+      <td>0.361985</td>
+      <td>0.928090</td>
+      <td>0.792071</td>
+      <td>-0.495805</td>
       <td>0</td>
       <td></td>
-      <td>0.010895</td>
-      <td>0.042760</td>
+      <td>0.011985</td>
+      <td>0.041839</td>
     </tr>
     <tr>
       <th>3</th>
       <td>numba</td>
       <td>True</td>
-      <td>15.081530</td>
-      <td>0.358908</td>
-      <td>0.931044</td>
-      <td>0.791565</td>
-      <td>-0.500605</td>
+      <td>15.742547</td>
+      <td>0.361985</td>
+      <td>0.928090</td>
+      <td>0.792071</td>
+      <td>-0.495805</td>
       <td>0</td>
       <td></td>
-      <td>0.008908</td>
-      <td>0.040110</td>
+      <td>0.011985</td>
+      <td>0.041839</td>
     </tr>
   </tbody>
 </table>
@@ -1275,10 +1262,10 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>0</th>
       <td>blackjax</td>
       <td>True</td>
-      <td>3.165</td>
+      <td>3.066</td>
       <td>0.361</td>
       <td>0.011</td>
-      <td>0.043</td>
+      <td>0.042</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1286,10 +1273,10 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>1</th>
       <td>numpyro</td>
       <td>True</td>
-      <td>4.356</td>
-      <td>0.360</td>
-      <td>0.010</td>
-      <td>0.041</td>
+      <td>4.273</td>
+      <td>0.359</td>
+      <td>0.009</td>
+      <td>0.039</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1297,10 +1284,10 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>2</th>
       <td>c</td>
       <td>True</td>
-      <td>13.922</td>
-      <td>0.361</td>
-      <td>0.011</td>
-      <td>0.043</td>
+      <td>13.324</td>
+      <td>0.362</td>
+      <td>0.012</td>
+      <td>0.042</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1308,10 +1295,10 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>3</th>
       <td>numba</td>
       <td>True</td>
-      <td>15.082</td>
-      <td>0.359</td>
-      <td>0.009</td>
-      <td>0.040</td>
+      <td>15.743</td>
+      <td>0.362</td>
+      <td>0.012</td>
+      <td>0.042</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1344,7 +1331,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/73dea9c87045a403015bb7fe2e89041110ad30ba426e0b796295e13efcd624df.png" src="../_images/73dea9c87045a403015bb7fe2e89041110ad30ba426e0b796295e13efcd624df.png" />
+<img alt="../_images/ea98ac47ec2f64735a31768e53420c0807ed4beddfabd2bcedaa859614fd0989.png" src="../_images/ea98ac47ec2f64735a31768e53420c0807ed4beddfabd2bcedaa859614fd0989.png" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -1386,15 +1373,11 @@ Profiling backend=blackjax on n=1500...
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
 Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 11 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
+Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 9 seconds.
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -1430,10 +1413,10 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>0</th>
       <td>blackjax</td>
       <td>True</td>
-      <td>4.038</td>
-      <td>0.369</td>
-      <td>0.019</td>
-      <td>0.014</td>
+      <td>3.887</td>
+      <td>0.371</td>
+      <td>0.021</td>
+      <td>0.015</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1441,10 +1424,10 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>1</th>
       <td>numpyro</td>
       <td>True</td>
-      <td>4.148</td>
-      <td>0.369</td>
-      <td>0.019</td>
-      <td>0.014</td>
+      <td>3.974</td>
+      <td>0.368</td>
+      <td>0.018</td>
+      <td>0.013</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1452,10 +1435,10 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>2</th>
       <td>numba</td>
       <td>True</td>
-      <td>12.185</td>
-      <td>0.371</td>
-      <td>0.021</td>
-      <td>0.016</td>
+      <td>12.101</td>
+      <td>0.369</td>
+      <td>0.019</td>
+      <td>0.014</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1463,10 +1446,10 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>3</th>
       <td>c</td>
       <td>True</td>
-      <td>12.949</td>
-      <td>0.371</td>
-      <td>0.021</td>
-      <td>0.016</td>
+      <td>12.968</td>
+      <td>0.369</td>
+      <td>0.019</td>
+      <td>0.014</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1507,7 +1490,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/53777d825c7817298c12a4ba068cfe93481092a1bc4c2711592c34f7776b0fa3.png" src="../_images/53777d825c7817298c12a4ba068cfe93481092a1bc4c2711592c34f7776b0fa3.png" />
+<img alt="../_images/ad91888daa1b55bc891dd2c50e3fcbb9b2aec9469d991a82d37b8943e61a1504.png" src="../_images/ad91888daa1b55bc891dd2c50e3fcbb9b2aec9469d991a82d37b8943e61a1504.png" />
 </div>
 </div>
 <h2 id="plot-for-the-1-500-observation-example">Plot For The 1,500-Observation Example<a class="headerlink" href="#plot-for-the-1-500-observation-example" title="Link to this heading">¶</a></h2>
