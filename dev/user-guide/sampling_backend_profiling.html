@@ -1124,7 +1124,7 @@ Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
+Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 11 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
@@ -1167,59 +1167,59 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
+      <td>blackjax</td>
+      <td>True</td>
+      <td>3.164878</td>
+      <td>0.361312</td>
+      <td>0.925456</td>
+      <td>0.792554</td>
+      <td>-0.496113</td>
+      <td>0</td>
+      <td></td>
+      <td>0.011312</td>
+      <td>0.043311</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>numpyro</td>
+      <td>True</td>
+      <td>4.356119</td>
+      <td>0.360145</td>
+      <td>0.929249</td>
+      <td>0.792968</td>
+      <td>-0.496152</td>
+      <td>0</td>
+      <td></td>
+      <td>0.010145</td>
+      <td>0.041109</td>
+    </tr>
+    <tr>
+      <th>2</th>
       <td>c</td>
       <td>True</td>
-      <td>13.470712</td>
+      <td>13.922109</td>
       <td>0.360895</td>
       <td>0.926393</td>
       <td>0.792062</td>
       <td>-0.497944</td>
-      <td>0.0</td>
+      <td>0</td>
       <td></td>
       <td>0.010895</td>
-      <td>0.04276</td>
+      <td>0.042760</td>
     </tr>
     <tr>
-      <th>1</th>
+      <th>3</th>
       <td>numba</td>
       <td>True</td>
-      <td>14.825552</td>
+      <td>15.081530</td>
       <td>0.358908</td>
       <td>0.931044</td>
       <td>0.791565</td>
       <td>-0.500605</td>
-      <td>0.0</td>
+      <td>0</td>
       <td></td>
       <td>0.008908</td>
-      <td>0.04011</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>numpyro</td>
-      <td>False</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>missing optional dependency</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>blackjax</td>
-      <td>False</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>missing optional dependency</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <td>0.040110</td>
     </tr>
   </tbody>
 </table>
@@ -1273,47 +1273,47 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>c</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>13.471</td>
+      <td>3.165</td>
       <td>0.361</td>
       <td>0.011</td>
       <td>0.043</td>
-      <td>0.0</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>1</th>
-      <td>numba</td>
+      <td>numpyro</td>
       <td>True</td>
-      <td>14.826</td>
-      <td>0.359</td>
-      <td>0.009</td>
-      <td>0.040</td>
-      <td>0.0</td>
+      <td>4.356</td>
+      <td>0.360</td>
+      <td>0.010</td>
+      <td>0.041</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>2</th>
-      <td>numpyro</td>
-      <td>False</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>missing optional dependency</td>
+      <td>c</td>
+      <td>True</td>
+      <td>13.922</td>
+      <td>0.361</td>
+      <td>0.011</td>
+      <td>0.043</td>
+      <td>0</td>
+      <td></td>
     </tr>
     <tr>
       <th>3</th>
-      <td>blackjax</td>
-      <td>False</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>missing optional dependency</td>
+      <td>numba</td>
+      <td>True</td>
+      <td>15.082</td>
+      <td>0.359</td>
+      <td>0.009</td>
+      <td>0.040</td>
+      <td>0</td>
+      <td></td>
     </tr>
   </tbody>
 </table>
@@ -1344,7 +1344,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/be36b86128f7911e0b97fd921a88b3e16d6a103afeed07c15753cd6d6551bb13.png" src="../_images/be36b86128f7911e0b97fd921a88b3e16d6a103afeed07c15753cd6d6551bb13.png" />
+<img alt="../_images/73dea9c87045a403015bb7fe2e89041110ad30ba426e0b796295e13efcd624df.png" src="../_images/73dea9c87045a403015bb7fe2e89041110ad30ba426e0b796295e13efcd624df.png" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -1428,47 +1428,47 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>numba</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>12.051</td>
-      <td>0.371</td>
-      <td>0.021</td>
-      <td>0.016</td>
-      <td>0.0</td>
+      <td>4.038</td>
+      <td>0.369</td>
+      <td>0.019</td>
+      <td>0.014</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>1</th>
-      <td>c</td>
+      <td>numpyro</td>
       <td>True</td>
-      <td>13.131</td>
-      <td>0.371</td>
-      <td>0.021</td>
-      <td>0.016</td>
-      <td>0.0</td>
+      <td>4.148</td>
+      <td>0.369</td>
+      <td>0.019</td>
+      <td>0.014</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>2</th>
-      <td>numpyro</td>
-      <td>False</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>missing optional dependency</td>
+      <td>numba</td>
+      <td>True</td>
+      <td>12.185</td>
+      <td>0.371</td>
+      <td>0.021</td>
+      <td>0.016</td>
+      <td>0</td>
+      <td></td>
     </tr>
     <tr>
       <th>3</th>
-      <td>blackjax</td>
-      <td>False</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>missing optional dependency</td>
+      <td>c</td>
+      <td>True</td>
+      <td>12.949</td>
+      <td>0.371</td>
+      <td>0.021</td>
+      <td>0.016</td>
+      <td>0</td>
+      <td></td>
     </tr>
   </tbody>
 </table>
@@ -1507,7 +1507,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/ff82eb7f5b801aed210b1d1873eea1f01a818b97a6bd1c6b4e840cb3145e9e7c.png" src="../_images/ff82eb7f5b801aed210b1d1873eea1f01a818b97a6bd1c6b4e840cb3145e9e7c.png" />
+<img alt="../_images/53777d825c7817298c12a4ba068cfe93481092a1bc4c2711592c34f7776b0fa3.png" src="../_images/53777d825c7817298c12a4ba068cfe93481092a1bc4c2711592c34f7776b0fa3.png" />
 </div>
 </div>
 <h2 id="plot-for-the-1-500-observation-example">Plot For The 1,500-Observation Example<a class="headerlink" href="#plot-for-the-1-500-observation-example" title="Link to this heading">¶</a></h2>
