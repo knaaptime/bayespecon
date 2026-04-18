@@ -12,13 +12,8 @@ Cross-sectional helpers
 - ``lmrhorob``
 - ``lmsar``
 - ``lratios``
-- ``model_probs``
 - ``moran``
 - ``walds``
-- ``prt_spat``
-- ``prt_spat2``
-- ``prt_old``
-- ``plt_spat``
 
 Panel helpers
 -------------
@@ -54,12 +49,7 @@ from .core import (
     lmrhorob,
     lmsar,
     lratios,
-    model_probs,
     moran,
-    plt_spat,
-    prt_old,
-    prt_spat,
-    prt_spat2,
     walds,
 )
 from .panel import (
@@ -95,13 +85,8 @@ __all__ = [
     "lmrhorob",
     "lmsar",
     "lratios",
-    "model_probs",
     "moran",
     "walds",
-    "prt_spat",
-    "prt_spat2",
-    "prt_old",
-    "plt_spat",
     "trans_tslow",
     "f_sarpanel",
     "f2_sarpanel",
