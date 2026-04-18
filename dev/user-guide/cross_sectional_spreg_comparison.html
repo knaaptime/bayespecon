@@ -814,73 +814,6 @@
 </code></pre></div>
 </div>
 </div>
-<div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>N=49 observations
-</code></pre></div>
-</div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/Users/knaaptime/miniforge3/envs/bayespecon/lib/python3.14/site-packages/libpysal/io/iohandlers/pyShpIO.py:247: FutureWarning: Objects based on the `Geometry` class will deprecated and removed in a future version of libpysal.
-  shp = self.type(vertices)
-/Users/knaaptime/miniforge3/envs/bayespecon/lib/python3.14/site-packages/libpysal/cg/shapes.py:1408: FutureWarning: Objects based on the `Geometry` class will deprecated and removed in a future version of libpysal.
-  self._part_rings = [Ring(vertices)]
-</code></pre></div>
-</div>
-<div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>CONSTANT</th>
-      <th>INC</th>
-      <th>HOVAL</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>1.0</td>
-      <td>19.531</td>
-      <td>80.467003</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>1.0</td>
-      <td>21.232</td>
-      <td>44.567001</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>1.0</td>
-      <td>15.956</td>
-      <td>26.350000</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>1.0</td>
-      <td>4.477</td>
-      <td>33.200001</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>1.0</td>
-      <td>11.252</td>
-      <td>23.225000</td>
-    </tr>
-  </tbody>
-</table>
-</div></div></div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
@@ -905,37 +838,6 @@
 </code></pre></div>
 </div>
 </div>
-<div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>GM_Lag
-GM_Error
-GM_Lag
-GM_Error
-Finished fitting all bayespecon models.
-</code></pre></div>
-</div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 4 jobs)
-NUTS: [beta, sigma]
-Sampling 4 chains for 600 tune and 600 draw iterations (2_400 + 2_400 draws total) took 1 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 4 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 600 tune and 600 draw iterations (2_400 + 2_400 draws total) took 1 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 4 jobs)
-NUTS: [lam, beta, sigma]
-Sampling 4 chains for 600 tune and 600 draw iterations (2_400 + 2_400 draws total) took 1 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 4 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 600 tune and 600 draw iterations (2_400 + 2_400 draws total) took 2 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 4 jobs)
-NUTS: [lam, beta, sigma]
-Sampling 4 chains for 600 tune and 600 draw iterations (2_400 + 2_400 draws total) took 1 seconds.
-</code></pre></div>
-</div>
-</div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
@@ -947,6 +849,7 @@ Sampling 4 chains for 600 tune and 600 draw iterations (2_400 + 2_400 draws tota
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">betas</span><span class="p">):</span>
         <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;param_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">betas</span><span class="p">))]</span>
     <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">betas</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">names</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+
 
 <span class="k">def</span><span class="w"> </span><span class="nf">extract_bayespecon_params</span><span class="p">(</span><span class="n">model_name</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">idata</span><span class="p">):</span>
     <span class="n">out</span> <span class="o">=</span> <span class="p">{}</span>
@@ -966,257 +869,152 @@ Sampling 4 chains for 600 tune and 600 draw iterations (2_400 + 2_400 draws tota
         <span class="n">harmonized</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
     <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">harmonized</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
 
-<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">bayes_effects_df</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
+    <span class="n">eff</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">eff</span><span class="p">[</span><span class="s2">&quot;feature_names&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;direct_bayespecon&quot;</span><span class="p">:</span> <span class="n">eff</span><span class="p">[</span><span class="s2">&quot;direct&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;indirect_bayespecon&quot;</span><span class="p">:</span> <span class="n">eff</span><span class="p">[</span><span class="s2">&quot;indirect&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;total_bayespecon&quot;</span><span class="p">:</span> <span class="n">eff</span><span class="p">[</span><span class="s2">&quot;total&quot;</span><span class="p">],</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">spreg_effects_df</span><span class="p">(</span><span class="n">model_name</span><span class="p">,</span> <span class="n">sp_params</span><span class="p">,</span> <span class="n">sp_model</span><span class="p">,</span> <span class="n">W_dense</span><span class="p">):</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">W_dense</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">mean_diag_w</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">W_dense</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+    <span class="n">mean_row_sum_w</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">W_dense</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+
+    <span class="k">if</span> <span class="n">model_name</span> <span class="o">==</span> <span class="s2">&quot;SAR&quot;</span><span class="p">:</span>
+        <span class="n">rho</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">sp_model</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">sp_params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">))))</span>
+        <span class="n">S</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">rho</span> <span class="o">*</span> <span class="n">W_dense</span><span class="p">)</span>
+        <span class="n">dmult</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">S</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+        <span class="n">tmult</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">S</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+        <span class="n">features</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;CONSTANT&quot;</span><span class="p">,</span> <span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;HOVAL&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">sp_params</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">features</span><span class="p">:</span>
+            <span class="n">b</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sp_params</span><span class="p">[</span><span class="n">f</span><span class="p">])</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">f</span><span class="p">,</span>
+                    <span class="s2">&quot;direct_spreg&quot;</span><span class="p">:</span> <span class="n">dmult</span> <span class="o">*</span> <span class="n">b</span><span class="p">,</span>
+                    <span class="s2">&quot;indirect_spreg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">tmult</span> <span class="o">-</span> <span class="n">dmult</span><span class="p">)</span> <span class="o">*</span> <span class="n">b</span><span class="p">,</span>
+                    <span class="s2">&quot;total_spreg&quot;</span><span class="p">:</span> <span class="n">tmult</span> <span class="o">*</span> <span class="n">b</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">model_name</span> <span class="o">==</span> <span class="s2">&quot;SEM&quot;</span><span class="p">:</span>
+        <span class="n">features</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;CONSTANT&quot;</span><span class="p">,</span> <span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;HOVAL&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">sp_params</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">features</span><span class="p">:</span>
+            <span class="n">b</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sp_params</span><span class="p">[</span><span class="n">f</span><span class="p">])</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">f</span><span class="p">,</span>
+                    <span class="s2">&quot;direct_spreg&quot;</span><span class="p">:</span> <span class="n">b</span><span class="p">,</span>
+                    <span class="s2">&quot;indirect_spreg&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                    <span class="s2">&quot;total_spreg&quot;</span><span class="p">:</span> <span class="n">b</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">model_name</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;SLX&quot;</span><span class="p">,</span> <span class="s2">&quot;SDEM&quot;</span><span class="p">}:</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;HOVAL&quot;</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">sp_params</span><span class="o">.</span><span class="n">index</span> <span class="ow">and</span> <span class="sa">f</span><span class="s2">&quot;W_</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2">&quot;</span> <span class="ow">in</span> <span class="n">sp_params</span><span class="o">.</span><span class="n">index</span><span class="p">:</span>
+                <span class="n">b1</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sp_params</span><span class="p">[</span><span class="n">f</span><span class="p">])</span>
+                <span class="n">b2</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sp_params</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;W_</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">])</span>
+                <span class="n">d</span> <span class="o">=</span> <span class="n">b1</span> <span class="o">+</span> <span class="n">b2</span> <span class="o">*</span> <span class="n">mean_diag_w</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="n">b1</span> <span class="o">+</span> <span class="n">b2</span> <span class="o">*</span> <span class="n">mean_row_sum_w</span>
+                <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">f</span><span class="p">,</span>
+                        <span class="s2">&quot;direct_spreg&quot;</span><span class="p">:</span> <span class="n">d</span><span class="p">,</span>
+                        <span class="s2">&quot;indirect_spreg&quot;</span><span class="p">:</span> <span class="n">t</span> <span class="o">-</span> <span class="n">d</span><span class="p">,</span>
+                        <span class="s2">&quot;total_spreg&quot;</span><span class="p">:</span> <span class="n">t</span><span class="p">,</span>
+                    <span class="p">}</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">model_name</span> <span class="o">==</span> <span class="s2">&quot;SDM&quot;</span><span class="p">:</span>
+        <span class="n">rho</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">sp_model</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">sp_params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">))))</span>
+        <span class="n">M</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">rho</span> <span class="o">*</span> <span class="n">W_dense</span><span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;HOVAL&quot;</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">sp_params</span><span class="o">.</span><span class="n">index</span> <span class="ow">and</span> <span class="sa">f</span><span class="s2">&quot;W_</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2">&quot;</span> <span class="ow">in</span> <span class="n">sp_params</span><span class="o">.</span><span class="n">index</span><span class="p">:</span>
+                <span class="n">b1</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sp_params</span><span class="p">[</span><span class="n">f</span><span class="p">])</span>
+                <span class="n">b2</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sp_params</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;W_</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">])</span>
+                <span class="n">Sx</span> <span class="o">=</span> <span class="n">M</span> <span class="o">@</span> <span class="p">(</span><span class="n">b1</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">+</span> <span class="n">b2</span> <span class="o">*</span> <span class="n">W_dense</span><span class="p">)</span>
+                <span class="n">d</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">Sx</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">Sx</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+                <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">f</span><span class="p">,</span>
+                        <span class="s2">&quot;direct_spreg&quot;</span><span class="p">:</span> <span class="n">d</span><span class="p">,</span>
+                        <span class="s2">&quot;indirect_spreg&quot;</span><span class="p">:</span> <span class="n">t</span> <span class="o">-</span> <span class="n">d</span><span class="p">,</span>
+                        <span class="s2">&quot;total_spreg&quot;</span><span class="p">:</span> <span class="n">t</span><span class="p">,</span>
+                    <span class="p">}</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;feature&quot;</span><span class="p">,</span> <span class="s2">&quot;direct_spreg&quot;</span><span class="p">,</span> <span class="s2">&quot;indirect_spreg&quot;</span><span class="p">,</span> <span class="s2">&quot;total_spreg&quot;</span><span class="p">])</span>
+
+
+<span class="n">coef_rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="n">effect_tables</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="n">W_dense</span> <span class="o">=</span> <span class="n">w</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">toarray</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+
 <span class="k">for</span> <span class="n">model_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;SLX&quot;</span><span class="p">,</span> <span class="s2">&quot;SAR&quot;</span><span class="p">,</span> <span class="s2">&quot;SEM&quot;</span><span class="p">,</span> <span class="s2">&quot;SDM&quot;</span><span class="p">,</span> <span class="s2">&quot;SDEM&quot;</span><span class="p">]:</span>
     <span class="n">sp</span> <span class="o">=</span> <span class="n">extract_spreg_params</span><span class="p">(</span><span class="n">spreg_results</span><span class="p">[</span><span class="n">model_name</span><span class="p">])</span>
     <span class="n">by</span> <span class="o">=</span> <span class="n">extract_bayespecon_params</span><span class="p">(</span><span class="n">model_name</span><span class="p">,</span> <span class="n">bayes_models</span><span class="p">[</span><span class="n">model_name</span><span class="p">],</span> <span class="n">bayes_idata</span><span class="p">[</span><span class="n">model_name</span><span class="p">])</span>
+
     <span class="n">common</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">sp</span><span class="o">.</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">by</span><span class="o">.</span><span class="n">index</span><span class="p">)))</span>
     <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">common</span><span class="p">:</span>
-        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">model_name</span><span class="p">,</span> <span class="s2">&quot;parameter&quot;</span><span class="p">:</span> <span class="n">param</span><span class="p">,</span> <span class="s2">&quot;bayespecon_posterior_mean&quot;</span><span class="p">:</span> <span class="n">by</span><span class="p">[</span><span class="n">param</span><span class="p">],</span> <span class="s2">&quot;spreg_estimate&quot;</span><span class="p">:</span> <span class="n">sp</span><span class="p">[</span><span class="n">param</span><span class="p">],</span> <span class="s2">&quot;difference&quot;</span><span class="p">:</span> <span class="n">by</span><span class="p">[</span><span class="n">param</span><span class="p">]</span> <span class="o">-</span> <span class="n">sp</span><span class="p">[</span><span class="n">param</span><span class="p">]})</span>
+        <span class="n">coef_rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">model_name</span><span class="p">,</span>
+                <span class="s2">&quot;parameter&quot;</span><span class="p">:</span> <span class="n">param</span><span class="p">,</span>
+                <span class="s2">&quot;bayespecon_posterior_mean&quot;</span><span class="p">:</span> <span class="n">by</span><span class="p">[</span><span class="n">param</span><span class="p">],</span>
+                <span class="s2">&quot;spreg_estimate&quot;</span><span class="p">:</span> <span class="n">sp</span><span class="p">[</span><span class="n">param</span><span class="p">],</span>
+                <span class="s2">&quot;difference&quot;</span><span class="p">:</span> <span class="n">by</span><span class="p">[</span><span class="n">param</span><span class="p">]</span> <span class="o">-</span> <span class="n">sp</span><span class="p">[</span><span class="n">param</span><span class="p">],</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
 
-<span class="n">comparison</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="s2">&quot;parameter&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">beff</span> <span class="o">=</span> <span class="n">bayes_effects_df</span><span class="p">(</span><span class="n">bayes_models</span><span class="p">[</span><span class="n">model_name</span><span class="p">])</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">seff</span> <span class="o">=</span> <span class="n">spreg_effects_df</span><span class="p">(</span><span class="n">model_name</span><span class="p">,</span> <span class="n">sp</span><span class="p">,</span> <span class="n">spreg_results</span><span class="p">[</span><span class="n">model_name</span><span class="p">],</span> <span class="n">W_dense</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">merged</span> <span class="o">=</span> <span class="n">beff</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">seff</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">&quot;feature&quot;</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s2">&quot;inner&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">merged</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;direct_difference&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;direct_bayespecon&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;direct_spreg&quot;</span><span class="p">]</span>
+        <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;indirect_difference&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;indirect_bayespecon&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;indirect_spreg&quot;</span><span class="p">]</span>
+        <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;total_difference&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;total_bayespecon&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">merged</span><span class="p">[</span><span class="s2">&quot;total_spreg&quot;</span><span class="p">]</span>
+        <span class="n">merged</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="n">model_name</span><span class="p">)</span>
+    <span class="n">effect_tables</span><span class="p">[</span><span class="n">model_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged</span>
+
+<span class="n">comparison</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">coef_rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">([</span><span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="s2">&quot;parameter&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">spatial_effects_comparison</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span>
+    <span class="p">[</span><span class="n">tbl</span> <span class="k">for</span> <span class="n">tbl</span> <span class="ow">in</span> <span class="n">effect_tables</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">tbl</span><span class="o">.</span><span class="n">empty</span><span class="p">],</span>
+    <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">display</span><span class="p">(</span><span class="n">comparison</span><span class="p">)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Coefficient comparison&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">comparison</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Direct/Indirect/Total effects comparison&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">spatial_effects_comparison</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
-<div class="cell_output docutils container">
-<div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>model</th>
-      <th>parameter</th>
-      <th>bayespecon_posterior_mean</th>
-      <th>spreg_estimate</th>
-      <th>difference</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>SAR</td>
-      <td>CONSTANT</td>
-      <td>46.177695</td>
-      <td>43.963191</td>
-      <td>2.214505</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>SAR</td>
-      <td>HOVAL</td>
-      <td>-0.266630</td>
-      <td>-0.265793</td>
-      <td>-0.000837</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>SAR</td>
-      <td>INC</td>
-      <td>-1.061617</td>
-      <td>-1.009637</td>
-      <td>-0.051980</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>SAR</td>
-      <td>rho</td>
-      <td>0.413482</td>
-      <td>0.453491</td>
-      <td>-0.040009</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>SDEM</td>
-      <td>CONSTANT</td>
-      <td>72.986752</td>
-      <td>73.782584</td>
-      <td>-0.795832</td>
-    </tr>
-    <tr>
-      <th>5</th>
-      <td>SDEM</td>
-      <td>HOVAL</td>
-      <td>-0.285482</td>
-      <td>-0.278631</td>
-      <td>-0.006851</td>
-    </tr>
-    <tr>
-      <th>6</th>
-      <td>SDEM</td>
-      <td>INC</td>
-      <td>-1.004101</td>
-      <td>-1.058484</td>
-      <td>0.054383</td>
-    </tr>
-    <tr>
-      <th>7</th>
-      <td>SDEM</td>
-      <td>W_HOVAL</td>
-      <td>0.104295</td>
-      <td>0.138482</td>
-      <td>-0.034187</td>
-    </tr>
-    <tr>
-      <th>8</th>
-      <td>SDEM</td>
-      <td>W_INC</td>
-      <td>-1.110198</td>
-      <td>-1.225845</td>
-      <td>0.115648</td>
-    </tr>
-    <tr>
-      <th>9</th>
-      <td>SDEM</td>
-      <td>lambda</td>
-      <td>0.471228</td>
-      <td>0.371442</td>
-      <td>0.099786</td>
-    </tr>
-    <tr>
-      <th>10</th>
-      <td>SDM</td>
-      <td>CONSTANT</td>
-      <td>46.968229</td>
-      <td>61.131323</td>
-      <td>-14.163094</td>
-    </tr>
-    <tr>
-      <th>11</th>
-      <td>SDM</td>
-      <td>HOVAL</td>
-      <td>-0.302025</td>
-      <td>-0.295606</td>
-      <td>-0.006419</td>
-    </tr>
-    <tr>
-      <th>12</th>
-      <td>SDM</td>
-      <td>INC</td>
-      <td>-0.922933</td>
-      <td>-1.018596</td>
-      <td>0.095663</td>
-    </tr>
-    <tr>
-      <th>13</th>
-      <td>SDM</td>
-      <td>W_HOVAL</td>
-      <td>0.259823</td>
-      <td>0.233861</td>
-      <td>0.025962</td>
-    </tr>
-    <tr>
-      <th>14</th>
-      <td>SDM</td>
-      <td>W_INC</td>
-      <td>-0.664683</td>
-      <td>-1.037001</td>
-      <td>0.372319</td>
-    </tr>
-    <tr>
-      <th>15</th>
-      <td>SDM</td>
-      <td>rho</td>
-      <td>0.365137</td>
-      <td>0.179117</td>
-      <td>0.186020</td>
-    </tr>
-    <tr>
-      <th>16</th>
-      <td>SEM</td>
-      <td>CONSTANT</td>
-      <td>60.358613</td>
-      <td>62.918805</td>
-      <td>-2.560193</td>
-    </tr>
-    <tr>
-      <th>17</th>
-      <td>SEM</td>
-      <td>HOVAL</td>
-      <td>-0.303714</td>
-      <td>-0.298231</td>
-      <td>-0.005483</td>
-    </tr>
-    <tr>
-      <th>18</th>
-      <td>SEM</td>
-      <td>INC</td>
-      <td>-0.962471</td>
-      <td>-1.150074</td>
-      <td>0.187604</td>
-    </tr>
-    <tr>
-      <th>19</th>
-      <td>SEM</td>
-      <td>lambda</td>
-      <td>0.551000</td>
-      <td>0.383455</td>
-      <td>0.167546</td>
-    </tr>
-    <tr>
-      <th>20</th>
-      <td>SLX</td>
-      <td>CONSTANT</td>
-      <td>74.623464</td>
-      <td>74.553427</td>
-      <td>0.070037</td>
-    </tr>
-    <tr>
-      <th>21</th>
-      <td>SLX</td>
-      <td>HOVAL</td>
-      <td>-0.295181</td>
-      <td>-0.294390</td>
-      <td>-0.000791</td>
-    </tr>
-    <tr>
-      <th>22</th>
-      <td>SLX</td>
-      <td>INC</td>
-      <td>-1.092979</td>
-      <td>-1.097390</td>
-      <td>0.004411</td>
-    </tr>
-    <tr>
-      <th>23</th>
-      <td>SLX</td>
-      <td>W_HOVAL</td>
-      <td>0.212337</td>
-      <td>0.214841</td>
-      <td>-0.002504</td>
-    </tr>
-    <tr>
-      <th>24</th>
-      <td>SLX</td>
-      <td>W_INC</td>
-      <td>-1.398520</td>
-      <td>-1.398746</td>
-      <td>0.000226</td>
-    </tr>
-  </tbody>
-</table>
-</div></div></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> uses Bayesian inference, so exact equality with <code class="docutils literal notranslate"><span class="pre">spreg</span></code> point estimates is not expected. The comparison table is intended to confirm that equivalent model specifications produce directionally and numerically comparable coefficients on the same real dataset.</p>
+<p><code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> uses Bayesian inference while <code class="docutils literal notranslate"><span class="pre">spreg</span></code> reports frequentist point estimates, so exact equality is not expected. The coefficient and effects tables are intended to verify directional and numerical agreement under matched model formulas.</p>
+<p>For effects, this notebook computes <code class="docutils literal notranslate"><span class="pre">spreg</span></code> direct/indirect/total impacts from its fitted point estimates using the same model-specific formulas used by <code class="docutils literal notranslate"><span class="pre">bayespecon.spatial_effects()</span></code> (SAR/SDM multiplier formulas, SLX/SDEM local-spillover formulas, SEM with zero indirect effects).</p>
 
 
 
