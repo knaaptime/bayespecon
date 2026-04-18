@@ -164,3 +164,42 @@ Spatial Stats Helpers
    prt_fe
    prt_back
    prt_test_fe
+
+
+Data Generating Processes
+-------------------------
+
+.. note::
+
+   All DGP simulators accept ``W`` (Graph/sparse/dense) and ``gdf`` inputs.
+   You may provide both together. In that case, ``W`` is used for simulation
+   and checked against ``gdf`` for dimensional compatibility; a ``ValueError``
+   is raised when they do not describe the same number of spatial units.
+
+.. currentmodule:: bayespecon.dgp
+
+.. autosummary::
+   :toctree: generated/
+
+   simulate_sar
+   simulate_sem
+   simulate_slx
+   simulate_sdm
+   simulate_sdem
+   simulate_sar_tobit
+   simulate_sem_tobit
+   simulate_sdm_tobit
+   simulate_spatial_probit
+   simulate_panel_ols_fe
+   simulate_panel_sar_fe
+   simulate_panel_sem_fe
+   simulate_panel_sdm_fe
+   simulate_panel_sdem_fe
+   simulate_panel_ols_re
+   simulate_panel_sar_re
+   simulate_panel_sem_re
+   simulate_panel_dlm_fe
+   simulate_panel_sdmr_fe
+   simulate_panel_sdmu_fe
+   simulate_panel_sar_tobit_fe
+   simulate_panel_sem_tobit_fe

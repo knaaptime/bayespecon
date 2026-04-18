@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.simulate\_panel\_ols\_re
+=======================================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: simulate_panel_ols_re

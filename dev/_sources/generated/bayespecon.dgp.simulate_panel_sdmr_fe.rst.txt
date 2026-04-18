@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.simulate\_panel\_sdmr\_fe
+========================================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: simulate_panel_sdmr_fe

@@ -980,6 +980,7 @@
 <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">:</span>
     <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">))</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">dgp</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">SDM</span><span class="p">,</span> <span class="n">SDEM</span><span class="p">,</span> <span class="n">SDEMPanelFE</span>
 </code></pre></div>
 </div>
@@ -1062,7 +1063,7 @@
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Sequential sampling (1 chains in 1 job)
 NUTS: [lam, beta, sigma]
-Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 17 seconds.
+Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 11 seconds.
 Only one chain was sampled, this makes it impossible to run some convergence checks
 arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape: (chains=2, draws=4)
 </code></pre></div>
@@ -1284,13 +1285,20 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <span class="n">beta_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
 <span class="n">theta_true</span> <span class="o">=</span> <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
 
-<span class="n">x</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">k</span><span class="p">))</span>
 <span class="n">Wn</span> <span class="o">=</span> <span class="n">make_knn_w</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
-<span class="n">xb</span> <span class="o">=</span> <span class="n">intercept_true</span> <span class="o">+</span> <span class="n">x</span> <span class="o">@</span> <span class="n">beta_true</span> <span class="o">+</span> <span class="p">(</span><span class="n">Wn</span> <span class="o">@</span> <span class="n">x</span><span class="p">)</span> <span class="o">@</span> <span class="n">theta_true</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">rho_true</span> <span class="o">*</span> <span class="n">Wn</span><span class="p">,</span> <span class="n">xb</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">0.5</span><span class="p">))</span>
+<span class="n">sdm_data</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_sdm</span><span class="p">(</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">Wn</span><span class="p">,</span>
+    <span class="n">rho</span><span class="o">=</span><span class="n">rho_true</span><span class="p">,</span>
+    <span class="n">beta1</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">intercept_true</span><span class="p">,</span> <span class="o">*</span><span class="n">beta_true</span><span class="p">]),</span>
+    <span class="n">beta2</span><span class="o">=</span><span class="n">theta_true</span><span class="p">,</span>
+    <span class="n">sigma</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">0.5</span><span class="p">),</span>
+    <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">sdm_data</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">]</span>
+<span class="n">X_arr</span> <span class="o">=</span> <span class="n">sdm_data</span><span class="p">[</span><span class="s2">&quot;X&quot;</span><span class="p">]</span>
 
-<span class="n">X</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;Intercept&#39;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="s1">&#39;x1&#39;</span><span class="p">:</span> <span class="n">x</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;x2&#39;</span><span class="p">:</span> <span class="n">x</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]})</span>
-<span class="n">m_sdm</span> <span class="o">=</span> <span class="n">SDM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">to_graph</span><span class="p">(</span><span class="n">Wn</span><span class="p">),</span> <span class="n">priors</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;rho_lower&#39;</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="s1">&#39;rho_upper&#39;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">})</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;Intercept&#39;</span><span class="p">:</span> <span class="n">X_arr</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;x1&#39;</span><span class="p">:</span> <span class="n">X_arr</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;x2&#39;</span><span class="p">:</span> <span class="n">X_arr</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]})</span>
+<span class="n">m_sdm</span> <span class="o">=</span> <span class="n">SDM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">sdm_data</span><span class="p">[</span><span class="s2">&quot;W_graph&quot;</span><span class="p">],</span> <span class="n">priors</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;rho_lower&#39;</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="s1">&#39;rho_upper&#39;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">})</span>
 <span class="n">idata_sdm</span> <span class="o">=</span> <span class="n">m_sdm</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">160</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">160</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">target_accept</span><span class="o">=</span><span class="mf">0.92</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">m_sdm</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">round_to</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>
 </code></pre></div>
@@ -1337,86 +1345,86 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>2.2929</td>
-      <td>0.1436</td>
-      <td>1.9998</td>
-      <td>2.5211</td>
-      <td>0.0168</td>
-      <td>0.0209</td>
-      <td>71.0486</td>
-      <td>46.2377</td>
+      <td>2.0895</td>
+      <td>0.1604</td>
+      <td>1.8084</td>
+      <td>2.3819</td>
+      <td>0.0184</td>
+      <td>0.0111</td>
+      <td>76.1709</td>
+      <td>69.7704</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>x1</th>
-      <td>0.9769</td>
-      <td>0.0234</td>
-      <td>0.9273</td>
-      <td>1.0138</td>
-      <td>0.0027</td>
-      <td>0.0015</td>
-      <td>73.4961</td>
-      <td>31.5598</td>
+      <td>0.9909</td>
+      <td>0.0223</td>
+      <td>0.9495</td>
+      <td>1.0274</td>
+      <td>0.0025</td>
+      <td>0.0012</td>
+      <td>78.6532</td>
+      <td>114.3114</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>x2</th>
-      <td>0.9948</td>
-      <td>0.0229</td>
+      <td>0.9904</td>
+      <td>0.0218</td>
       <td>0.9427</td>
-      <td>1.0273</td>
-      <td>0.0028</td>
-      <td>0.0016</td>
-      <td>67.0694</td>
-      <td>82.7908</td>
+      <td>1.0228</td>
+      <td>0.0024</td>
+      <td>0.0014</td>
+      <td>83.3803</td>
+      <td>133.7529</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>W*x1</th>
-      <td>-0.4098</td>
+      <td>-0.5214</td>
       <td>0.0725</td>
-      <td>-0.5463</td>
-      <td>-0.2777</td>
-      <td>0.0074</td>
-      <td>0.0043</td>
-      <td>98.4678</td>
-      <td>111.0651</td>
+      <td>-0.6267</td>
+      <td>-0.3649</td>
+      <td>0.0086</td>
+      <td>0.0052</td>
+      <td>71.4726</td>
+      <td>82.6740</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>W*x2</th>
-      <td>-0.4595</td>
-      <td>0.0686</td>
-      <td>-0.5815</td>
-      <td>-0.3355</td>
-      <td>0.0070</td>
-      <td>0.0053</td>
-      <td>94.8478</td>
-      <td>94.1290</td>
+      <td>-0.4491</td>
+      <td>0.0642</td>
+      <td>-0.5878</td>
+      <td>-0.3461</td>
+      <td>0.0078</td>
+      <td>0.0043</td>
+      <td>73.7442</td>
+      <td>42.5167</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>rho</th>
-      <td>0.4331</td>
-      <td>0.0358</td>
-      <td>0.3731</td>
-      <td>0.5049</td>
-      <td>0.0043</td>
-      <td>0.0049</td>
-      <td>68.2864</td>
-      <td>65.1576</td>
+      <td>0.4836</td>
+      <td>0.0396</td>
+      <td>0.4218</td>
+      <td>0.5583</td>
+      <td>0.0045</td>
+      <td>0.0027</td>
+      <td>77.7034</td>
+      <td>80.1964</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>0.7051</td>
-      <td>0.0155</td>
-      <td>0.6786</td>
-      <td>0.7354</td>
-      <td>0.0011</td>
-      <td>0.0017</td>
-      <td>210.3377</td>
-      <td>137.5019</td>
+      <td>0.7014</td>
+      <td>0.0145</td>
+      <td>0.6739</td>
+      <td>0.7266</td>
+      <td>0.0012</td>
+      <td>0.0010</td>
+      <td>148.0342</td>
+      <td>81.7051</td>
       <td>NaN</td>
     </tr>
   </tbody>
@@ -1473,54 +1481,54 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
       <th>0</th>
       <td>rho</td>
       <td>0.5</td>
-      <td>0.433130</td>
-      <td>0.066870</td>
-      <td>13.373934</td>
+      <td>0.483582</td>
+      <td>0.016418</td>
+      <td>3.283523</td>
       <td>True</td>
     </tr>
     <tr>
       <th>1</th>
       <td>Intercept</td>
       <td>2.0</td>
-      <td>2.292916</td>
-      <td>0.292916</td>
-      <td>14.645810</td>
+      <td>2.089455</td>
+      <td>0.089455</td>
+      <td>4.472738</td>
       <td>True</td>
     </tr>
     <tr>
       <th>2</th>
       <td>x1</td>
       <td>1.0</td>
-      <td>0.976941</td>
-      <td>0.023059</td>
-      <td>2.305881</td>
+      <td>0.990925</td>
+      <td>0.009075</td>
+      <td>0.907520</td>
       <td>True</td>
     </tr>
     <tr>
       <th>3</th>
       <td>x2</td>
       <td>1.0</td>
-      <td>0.994799</td>
-      <td>0.005201</td>
-      <td>0.520092</td>
+      <td>0.990423</td>
+      <td>0.009577</td>
+      <td>0.957704</td>
       <td>True</td>
     </tr>
     <tr>
       <th>4</th>
       <td>W*x1</td>
       <td>-0.5</td>
-      <td>-0.409805</td>
-      <td>0.090195</td>
-      <td>18.039021</td>
+      <td>-0.521430</td>
+      <td>0.021430</td>
+      <td>4.285993</td>
       <td>True</td>
     </tr>
     <tr>
       <th>5</th>
       <td>W*x2</td>
       <td>-0.5</td>
-      <td>-0.459462</td>
-      <td>0.040538</td>
-      <td>8.107612</td>
+      <td>-0.449054</td>
+      <td>0.050946</td>
+      <td>10.189174</td>
       <td>True</td>
     </tr>
   </tbody>
@@ -1547,16 +1555,23 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <span class="n">beta_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
 <span class="n">theta_true</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
 
-<span class="n">x</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">k</span><span class="p">))</span>
 <span class="n">Wn</span> <span class="o">=</span> <span class="n">make_knn_w</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-<span class="n">u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">lam_true</span> <span class="o">*</span> <span class="n">Wn</span><span class="p">,</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">intercept_true</span> <span class="o">+</span> <span class="n">x</span> <span class="o">@</span> <span class="n">beta_true</span> <span class="o">+</span> <span class="p">(</span><span class="n">Wn</span> <span class="o">@</span> <span class="n">x</span><span class="p">)</span> <span class="o">@</span> <span class="n">theta_true</span> <span class="o">+</span> <span class="n">u</span>
+<span class="n">sdem_data</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_sdem</span><span class="p">(</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">Wn</span><span class="p">,</span>
+    <span class="n">lam</span><span class="o">=</span><span class="n">lam_true</span><span class="p">,</span>
+    <span class="n">beta1</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">intercept_true</span><span class="p">,</span> <span class="o">*</span><span class="n">beta_true</span><span class="p">]),</span>
+    <span class="n">beta2</span><span class="o">=</span><span class="n">theta_true</span><span class="p">,</span>
+    <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">sdem_data</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">]</span>
+<span class="n">X_arr</span> <span class="o">=</span> <span class="n">sdem_data</span><span class="p">[</span><span class="s2">&quot;X&quot;</span><span class="p">]</span>
 
-<span class="n">X</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;Intercept&#39;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">n</span><span class="p">)})</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;Intercept&#39;</span><span class="p">:</span> <span class="n">X_arr</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]})</span>
 <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k</span><span class="p">):</span>
-    <span class="n">X</span><span class="p">[</span><span class="sa">f</span><span class="s1">&#39;x</span><span class="si">{</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="n">j</span><span class="p">]</span>
+    <span class="n">X</span><span class="p">[</span><span class="sa">f</span><span class="s1">&#39;x</span><span class="si">{</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">X_arr</span><span class="p">[:,</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
 
-<span class="n">m_sdem</span> <span class="o">=</span> <span class="n">SDEM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">to_graph</span><span class="p">(</span><span class="n">Wn</span><span class="p">),</span> <span class="n">priors</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;lam_lower&#39;</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="s1">&#39;lam_upper&#39;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">})</span>
+<span class="n">m_sdem</span> <span class="o">=</span> <span class="n">SDEM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">sdem_data</span><span class="p">[</span><span class="s2">&quot;W_graph&quot;</span><span class="p">],</span> <span class="n">priors</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;lam_lower&#39;</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="s1">&#39;lam_upper&#39;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">})</span>
 <span class="n">idata_sdem</span> <span class="o">=</span> <span class="n">m_sdem</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">160</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">160</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">target_accept</span><span class="o">=</span><span class="mf">0.92</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">33</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">m_sdem</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">round_to</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>
 </code></pre></div>
@@ -1566,7 +1581,7 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Sequential sampling (1 chains in 1 job)
 NUTS: [lam, beta, sigma]
-Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 35 seconds.
+Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 40 seconds.
 Only one chain was sampled, this makes it impossible to run some convergence checks
 arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape: (chains=2, draws=4)
 </code></pre></div>
@@ -1603,134 +1618,134 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>0.8727</td>
-      <td>0.1111</td>
-      <td>0.6851</td>
-      <td>1.0652</td>
+      <td>0.8825</td>
+      <td>0.1032</td>
+      <td>0.7220</td>
+      <td>1.1005</td>
       <td>0.0074</td>
-      <td>0.0093</td>
-      <td>246.2293</td>
-      <td>113.6371</td>
+      <td>0.0091</td>
+      <td>202.0411</td>
+      <td>103.9191</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>x1</th>
-      <td>1.0187</td>
-      <td>0.0227</td>
-      <td>0.9826</td>
-      <td>1.0609</td>
+      <td>1.0481</td>
+      <td>0.0238</td>
+      <td>1.0047</td>
+      <td>1.0911</td>
       <td>0.0019</td>
-      <td>0.0013</td>
-      <td>146.4335</td>
-      <td>113.5137</td>
+      <td>0.0015</td>
+      <td>158.7727</td>
+      <td>123.1338</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>x2</th>
-      <td>0.9726</td>
-      <td>0.0220</td>
-      <td>0.9258</td>
-      <td>1.0060</td>
-      <td>0.0017</td>
+      <td>0.9737</td>
+      <td>0.0231</td>
+      <td>0.9387</td>
+      <td>1.0248</td>
       <td>0.0018</td>
-      <td>163.9264</td>
-      <td>112.9707</td>
+      <td>0.0015</td>
+      <td>153.2695</td>
+      <td>140.6729</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>x3</th>
-      <td>1.0129</td>
-      <td>0.0209</td>
-      <td>0.9775</td>
-      <td>1.0512</td>
-      <td>0.0016</td>
-      <td>0.0023</td>
-      <td>185.0973</td>
-      <td>106.5455</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>x4</th>
-      <td>0.9770</td>
-      <td>0.0215</td>
-      <td>0.9446</td>
-      <td>1.0185</td>
-      <td>0.0021</td>
-      <td>0.0013</td>
-      <td>110.1802</td>
-      <td>140.6729</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>W*x1</th>
-      <td>0.4669</td>
-      <td>0.0704</td>
-      <td>0.3560</td>
-      <td>0.5969</td>
-      <td>0.0069</td>
-      <td>0.0048</td>
-      <td>109.2579</td>
-      <td>86.2033</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>W*x2</th>
-      <td>0.4320</td>
-      <td>0.0703</td>
-      <td>0.3170</td>
-      <td>0.5649</td>
-      <td>0.0057</td>
-      <td>0.0053</td>
-      <td>156.7828</td>
-      <td>82.7908</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>W*x3</th>
-      <td>0.6004</td>
-      <td>0.0619</td>
-      <td>0.4973</td>
-      <td>0.7117</td>
-      <td>0.0047</td>
-      <td>0.0046</td>
-      <td>178.8872</td>
-      <td>51.9715</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>W*x4</th>
-      <td>0.5413</td>
-      <td>0.0680</td>
-      <td>0.4187</td>
-      <td>0.6557</td>
-      <td>0.0070</td>
-      <td>0.0042</td>
-      <td>101.0980</td>
-      <td>140.6729</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>lam</th>
-      <td>0.8112</td>
-      <td>0.0092</td>
-      <td>0.7957</td>
-      <td>0.8288</td>
-      <td>0.0008</td>
-      <td>0.0006</td>
-      <td>147.1686</td>
+      <td>1.0189</td>
+      <td>0.0191</td>
+      <td>0.9822</td>
+      <td>1.0483</td>
+      <td>0.0019</td>
+      <td>0.0010</td>
+      <td>107.1056</td>
       <td>139.6531</td>
       <td>NaN</td>
     </tr>
     <tr>
+      <th>x4</th>
+      <td>1.0260</td>
+      <td>0.0218</td>
+      <td>0.9872</td>
+      <td>1.0608</td>
+      <td>0.0022</td>
+      <td>0.0016</td>
+      <td>103.7006</td>
+      <td>95.7920</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>W*x1</th>
+      <td>0.5570</td>
+      <td>0.0613</td>
+      <td>0.4483</td>
+      <td>0.6681</td>
+      <td>0.0050</td>
+      <td>0.0039</td>
+      <td>188.2920</td>
+      <td>175.2638</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>W*x2</th>
+      <td>0.4742</td>
+      <td>0.0700</td>
+      <td>0.3346</td>
+      <td>0.5738</td>
+      <td>0.0061</td>
+      <td>0.0049</td>
+      <td>135.1161</td>
+      <td>138.7687</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>W*x3</th>
+      <td>0.6098</td>
+      <td>0.0646</td>
+      <td>0.5094</td>
+      <td>0.7484</td>
+      <td>0.0054</td>
+      <td>0.0042</td>
+      <td>142.0523</td>
+      <td>140.6729</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>W*x4</th>
+      <td>0.6317</td>
+      <td>0.0659</td>
+      <td>0.5142</td>
+      <td>0.7428</td>
+      <td>0.0065</td>
+      <td>0.0043</td>
+      <td>107.4254</td>
+      <td>92.2475</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
+      <th>lam</th>
+      <td>0.8147</td>
+      <td>0.0100</td>
+      <td>0.7944</td>
+      <td>0.8331</td>
+      <td>0.0007</td>
+      <td>0.0011</td>
+      <td>210.8133</td>
+      <td>95.6355</td>
+      <td>NaN</td>
+    </tr>
+    <tr>
       <th>sigma</th>
-      <td>1.0057</td>
-      <td>0.0116</td>
-      <td>0.9818</td>
-      <td>1.0261</td>
-      <td>0.0008</td>
-      <td>0.0014</td>
-      <td>202.6176</td>
-      <td>77.6264</td>
+      <td>1.0029</td>
+      <td>0.0118</td>
+      <td>0.9809</td>
+      <td>1.0264</td>
+      <td>0.0011</td>
+      <td>0.0011</td>
+      <td>117.0226</td>
+      <td>114.3114</td>
       <td>NaN</td>
     </tr>
   </tbody>
@@ -1786,90 +1801,90 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
       <th>0</th>
       <td>lam</td>
       <td>0.8</td>
-      <td>0.811152</td>
-      <td>0.011152</td>
-      <td>1.394042</td>
+      <td>0.814673</td>
+      <td>0.014673</td>
+      <td>1.834086</td>
       <td>True</td>
     </tr>
     <tr>
       <th>1</th>
       <td>Intercept</td>
       <td>1.0</td>
-      <td>0.872741</td>
-      <td>0.127259</td>
-      <td>12.725895</td>
+      <td>0.882506</td>
+      <td>0.117494</td>
+      <td>11.749364</td>
       <td>True</td>
     </tr>
     <tr>
       <th>2</th>
       <td>x1</td>
       <td>1.0</td>
-      <td>1.018715</td>
-      <td>0.018715</td>
-      <td>1.871472</td>
+      <td>1.048149</td>
+      <td>0.048149</td>
+      <td>4.814949</td>
       <td>True</td>
     </tr>
     <tr>
       <th>3</th>
       <td>x2</td>
       <td>1.0</td>
-      <td>0.972553</td>
-      <td>0.027447</td>
-      <td>2.744665</td>
+      <td>0.973665</td>
+      <td>0.026335</td>
+      <td>2.633489</td>
       <td>True</td>
     </tr>
     <tr>
       <th>4</th>
       <td>x3</td>
       <td>1.0</td>
-      <td>1.012920</td>
-      <td>0.012920</td>
-      <td>1.291993</td>
+      <td>1.018902</td>
+      <td>0.018902</td>
+      <td>1.890174</td>
       <td>True</td>
     </tr>
     <tr>
       <th>5</th>
       <td>x4</td>
       <td>1.0</td>
-      <td>0.976952</td>
-      <td>0.023048</td>
-      <td>2.304807</td>
+      <td>1.026049</td>
+      <td>0.026049</td>
+      <td>2.604886</td>
       <td>True</td>
     </tr>
     <tr>
       <th>6</th>
       <td>W*x1</td>
       <td>0.5</td>
-      <td>0.466932</td>
-      <td>0.033068</td>
-      <td>6.613619</td>
+      <td>0.557048</td>
+      <td>0.057048</td>
+      <td>11.409560</td>
       <td>True</td>
     </tr>
     <tr>
       <th>7</th>
       <td>W*x2</td>
       <td>0.5</td>
-      <td>0.431974</td>
-      <td>0.068026</td>
-      <td>13.605237</td>
+      <td>0.474210</td>
+      <td>0.025790</td>
+      <td>5.157997</td>
       <td>True</td>
     </tr>
     <tr>
       <th>8</th>
       <td>W*x3</td>
       <td>0.5</td>
-      <td>0.600392</td>
-      <td>0.100392</td>
-      <td>20.078326</td>
+      <td>0.609806</td>
+      <td>0.109806</td>
+      <td>21.961218</td>
       <td>True</td>
     </tr>
     <tr>
       <th>9</th>
       <td>W*x4</td>
       <td>0.5</td>
-      <td>0.541325</td>
-      <td>0.041325</td>
-      <td>8.264903</td>
+      <td>0.631671</td>
+      <td>0.131671</td>
+      <td>26.334224</td>
       <td>True</td>
     </tr>
   </tbody>
@@ -1939,7 +1954,7 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Sequential sampling (1 chains in 1 job)
 NUTS: [rho, beta, sigma_a, a_raw]
-Sampling 1 chain for 220 tune and 220 draw iterations (220 + 220 draws total) took 8 seconds.
+Sampling 1 chain for 220 tune and 220 draw iterations (220 + 220 draws total) took 6 seconds.
 Only one chain was sampled, this makes it impossible to run some convergence checks
 arviz - WARNING - Shape validation failed: input_shape: (1, 220), minimum_shape: (chains=2, draws=4)
 </code></pre></div>
@@ -1976,74 +1991,74 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 220), minimum_shape:
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>0.7778</td>
-      <td>0.3263</td>
-      <td>0.2251</td>
-      <td>1.3275</td>
-      <td>0.0754</td>
-      <td>0.0354</td>
-      <td>17.3242</td>
-      <td>49.5074</td>
+      <td>0.7678</td>
+      <td>0.3821</td>
+      <td>0.2602</td>
+      <td>1.6048</td>
+      <td>0.1721</td>
+      <td>0.0715</td>
+      <td>4.5929</td>
+      <td>16.8008</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>x1</th>
-      <td>0.8654</td>
-      <td>0.0469</td>
-      <td>0.7834</td>
-      <td>0.9523</td>
-      <td>0.0035</td>
+      <td>0.8671</td>
+      <td>0.0393</td>
+      <td>0.7843</td>
+      <td>0.9283</td>
       <td>0.0030</td>
-      <td>181.9248</td>
-      <td>147.6451</td>
+      <td>0.0021</td>
+      <td>164.6771</td>
+      <td>134.3036</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>x2</th>
-      <td>-0.6205</td>
-      <td>0.0367</td>
-      <td>-0.6835</td>
-      <td>-0.5474</td>
-      <td>0.0028</td>
-      <td>0.0023</td>
-      <td>188.8376</td>
-      <td>146.2932</td>
+      <td>-0.6235</td>
+      <td>0.0347</td>
+      <td>-0.6798</td>
+      <td>-0.5553</td>
+      <td>0.0030</td>
+      <td>0.0025</td>
+      <td>142.2526</td>
+      <td>93.6235</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>x3</th>
-      <td>0.5343</td>
-      <td>0.0391</td>
-      <td>0.4690</td>
-      <td>0.6146</td>
-      <td>0.0022</td>
-      <td>0.0030</td>
-      <td>327.4212</td>
-      <td>174.7469</td>
+      <td>0.5325</td>
+      <td>0.0414</td>
+      <td>0.4534</td>
+      <td>0.6037</td>
+      <td>0.0039</td>
+      <td>0.0036</td>
+      <td>113.5547</td>
+      <td>81.6012</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>rho</th>
-      <td>0.3942</td>
-      <td>0.1670</td>
-      <td>0.0798</td>
-      <td>0.6851</td>
-      <td>0.0313</td>
-      <td>0.0094</td>
-      <td>28.5124</td>
-      <td>99.5993</td>
+      <td>0.3434</td>
+      <td>0.1961</td>
+      <td>0.0156</td>
+      <td>0.6794</td>
+      <td>0.0457</td>
+      <td>0.0154</td>
+      <td>18.8656</td>
+      <td>62.6910</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>sigma_a</th>
-      <td>1.3413</td>
-      <td>0.1587</td>
-      <td>1.0373</td>
-      <td>1.6105</td>
-      <td>0.0234</td>
-      <td>0.0221</td>
-      <td>50.1832</td>
-      <td>57.8635</td>
+      <td>1.3873</td>
+      <td>0.1615</td>
+      <td>1.1108</td>
+      <td>1.7101</td>
+      <td>0.0302</td>
+      <td>0.0167</td>
+      <td>33.9299</td>
+      <td>35.0452</td>
       <td>NaN</td>
     </tr>
   </tbody>
@@ -2072,7 +2087,7 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 220), minimum_shape:
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Regional-effects RMSE: 0.4578
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Regional-effects RMSE: 0.4495
 SpatialProbit semip-style pass rate: 0.8
 </code></pre></div>
 </div>
@@ -2107,45 +2122,45 @@ SpatialProbit semip-style pass rate: 0.8
       <th>0</th>
       <td>rho</td>
       <td>0.45</td>
-      <td>0.394223</td>
-      <td>0.055777</td>
-      <td>12.394997</td>
+      <td>0.343432</td>
+      <td>0.106568</td>
+      <td>23.681790</td>
       <td>True</td>
     </tr>
     <tr>
       <th>1</th>
       <td>Intercept</td>
       <td>0.40</td>
-      <td>0.777816</td>
-      <td>0.377816</td>
-      <td>94.454005</td>
+      <td>0.767822</td>
+      <td>0.367822</td>
+      <td>91.955623</td>
       <td>False</td>
     </tr>
     <tr>
       <th>2</th>
       <td>x1</td>
       <td>0.80</td>
-      <td>0.865380</td>
-      <td>0.065380</td>
-      <td>8.172557</td>
+      <td>0.867103</td>
+      <td>0.067103</td>
+      <td>8.387924</td>
       <td>True</td>
     </tr>
     <tr>
       <th>3</th>
       <td>x2</td>
       <td>-0.60</td>
-      <td>-0.620527</td>
-      <td>0.020527</td>
-      <td>3.421164</td>
+      <td>-0.623542</td>
+      <td>0.023542</td>
+      <td>3.923648</td>
       <td>True</td>
     </tr>
     <tr>
       <th>4</th>
       <td>x3</td>
       <td>0.50</td>
-      <td>0.534281</td>
-      <td>0.034281</td>
-      <td>6.856177</td>
+      <td>0.532501</td>
+      <td>0.032501</td>
+      <td>6.500262</td>
       <td>True</td>
     </tr>
   </tbody>

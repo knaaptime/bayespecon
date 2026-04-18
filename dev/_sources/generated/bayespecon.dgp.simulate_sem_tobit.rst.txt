@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.simulate\_sem\_tobit
+===================================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: simulate_sem_tobit

@@ -881,8 +881,7 @@
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">SARPanelTobit</span><span class="p">,</span> <span class="n">SEMPanelTobit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">SARPanelTobit</span><span class="p">,</span> <span class="n">SEMPanelTobit</span><span class="p">,</span> <span class="n">dgp</span>
 
 <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 
@@ -902,10 +901,6 @@
                 <span class="n">W_dense</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">nr</span> <span class="o">*</span> <span class="n">side</span> <span class="o">+</span> <span class="n">nc</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
 <span class="n">row_sums</span> <span class="o">=</span> <span class="n">W_dense</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="n">W_dense</span> <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">row_sums</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">row_sums</span><span class="p">)</span>
-
-<span class="c1"># Convert to libpysal Graph</span>
-<span class="n">i_idx</span><span class="p">,</span> <span class="n">j_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">W_dense</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
-<span class="n">W_graph</span> <span class="o">=</span> <span class="n">Graph</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">(</span><span class="n">i_idx</span><span class="p">,</span> <span class="n">j_idx</span><span class="p">,</span> <span class="n">W_dense</span><span class="p">[</span><span class="n">i_idx</span><span class="p">,</span> <span class="n">j_idx</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">))</span>
 </code></pre></div>
 </div>
 </div>
@@ -918,18 +913,19 @@
 <span class="n">beta_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.4</span><span class="p">])</span>
 <span class="n">sigma_true</span> <span class="o">=</span> <span class="mf">0.8</span>
 
-<span class="n">A_inv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="o">-</span> <span class="n">rho_true</span> <span class="o">*</span> <span class="n">W_dense</span><span class="p">)</span>
-
-<span class="n">y_list</span><span class="p">,</span> <span class="n">X_list</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
-    <span class="n">Xt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">N</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">N</span><span class="p">)])</span>
-    <span class="n">eps</span> <span class="o">=</span> <span class="n">sigma_true</span> <span class="o">*</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
-    <span class="n">y_lat</span> <span class="o">=</span> <span class="n">A_inv</span> <span class="o">@</span> <span class="p">(</span><span class="n">Xt</span> <span class="o">@</span> <span class="n">beta_true</span> <span class="o">+</span> <span class="n">eps</span><span class="p">)</span>
-    <span class="n">y_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">y_lat</span><span class="p">))</span>
-    <span class="n">X_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Xt</span><span class="p">)</span>
-
-<span class="n">y_sar</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">y_list</span><span class="p">)</span>
-<span class="n">X_sar</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">X_list</span><span class="p">)</span>
+<span class="n">sar_data</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_panel_sar_tobit_fe</span><span class="p">(</span>
+    <span class="n">N</span><span class="o">=</span><span class="n">N</span><span class="p">,</span>
+    <span class="n">T</span><span class="o">=</span><span class="n">T</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W_dense</span><span class="p">,</span>
+    <span class="n">rho</span><span class="o">=</span><span class="n">rho_true</span><span class="p">,</span>
+    <span class="n">beta</span><span class="o">=</span><span class="n">beta_true</span><span class="p">,</span>
+    <span class="n">sigma</span><span class="o">=</span><span class="n">sigma_true</span><span class="p">,</span>
+    <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">y_sar</span> <span class="o">=</span> <span class="n">sar_data</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">]</span>
+<span class="n">X_sar</span> <span class="o">=</span> <span class="n">sar_data</span><span class="p">[</span><span class="s2">&quot;X&quot;</span><span class="p">]</span>
+<span class="n">W_graph</span> <span class="o">=</span> <span class="n">sar_data</span><span class="p">[</span><span class="s2">&quot;W_graph&quot;</span><span class="p">]</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Censored fraction: </span><span class="si">{</span><span class="p">(</span><span class="n">y_sar</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
@@ -945,18 +941,16 @@
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Censored fraction: 0.20
-rho:   true=0.35  estimated=0.295
-beta[0]: true=1.00  estimated=1.092
-beta[1]: true=1.40  estimated=1.285
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Censored fraction: 0.21
+rho:   true=0.35  estimated=0.258
+beta[0]: true=1.00  estimated=0.825
+beta[1]: true=1.40  estimated=1.502
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/models/panel_tobit.py:30: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  super().__init__(*args, model=0, **kwargs)
-Initializing NUTS using jitter+adapt_diag...
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho, beta, sigma, y_cens_gap]
-Sampling 2 chains for 500 tune and 500 draw iterations (1_000 + 1_000 draws total) took 7 seconds.
+Sampling 2 chains for 500 tune and 500 draw iterations (1_000 + 1_000 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 </code></pre></div>
@@ -969,22 +963,29 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">lam_true</span> <span class="o">=</span> <span class="mf">0.35</span>
 
-<span class="n">B_inv</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="o">-</span> <span class="n">lam_true</span> <span class="o">*</span> <span class="n">W_dense</span><span class="p">)</span>
-
-<span class="n">y_list</span><span class="p">,</span> <span class="n">X_list</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
-    <span class="n">Xt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">N</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">N</span><span class="p">)])</span>
-    <span class="n">u_t</span> <span class="o">=</span> <span class="n">B_inv</span> <span class="o">@</span> <span class="p">(</span><span class="n">sigma_true</span> <span class="o">*</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">N</span><span class="p">))</span>
-    <span class="n">y_lat</span> <span class="o">=</span> <span class="n">Xt</span> <span class="o">@</span> <span class="n">beta_true</span> <span class="o">+</span> <span class="n">u_t</span>
-    <span class="n">y_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">y_lat</span><span class="p">))</span>
-    <span class="n">X_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Xt</span><span class="p">)</span>
-
-<span class="n">y_sem</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">y_list</span><span class="p">)</span>
-<span class="n">X_sem</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">(</span><span class="n">X_list</span><span class="p">)</span>
+<span class="n">sem_data</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_panel_sem_tobit_fe</span><span class="p">(</span>
+    <span class="n">N</span><span class="o">=</span><span class="n">N</span><span class="p">,</span>
+    <span class="n">T</span><span class="o">=</span><span class="n">T</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W_dense</span><span class="p">,</span>
+    <span class="n">lam</span><span class="o">=</span><span class="n">lam_true</span><span class="p">,</span>
+    <span class="n">beta</span><span class="o">=</span><span class="n">beta_true</span><span class="p">,</span>
+    <span class="n">sigma</span><span class="o">=</span><span class="n">sigma_true</span><span class="p">,</span>
+    <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">y_sem</span> <span class="o">=</span> <span class="n">sem_data</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">]</span>
+<span class="n">X_sem</span> <span class="o">=</span> <span class="n">sem_data</span><span class="p">[</span><span class="s2">&quot;X&quot;</span><span class="p">]</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Censored fraction: </span><span class="si">{</span><span class="p">(</span><span class="n">y_sem</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-<span class="n">sem_model</span> <span class="o">=</span> <span class="n">SEMPanelTobit</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y_sem</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X_sem</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W_graph</span><span class="p">,</span> <span class="n">N</span><span class="o">=</span><span class="n">N</span><span class="p">,</span> <span class="n">T</span><span class="o">=</span><span class="n">T</span><span class="p">,</span> <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+<span class="n">sem_model</span> <span class="o">=</span> <span class="n">SEMPanelTobit</span><span class="p">(</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">y_sem</span><span class="p">,</span>
+    <span class="n">X</span><span class="o">=</span><span class="n">X_sem</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">sem_data</span><span class="p">[</span><span class="s2">&quot;W_graph&quot;</span><span class="p">],</span>
+    <span class="n">N</span><span class="o">=</span><span class="n">N</span><span class="p">,</span>
+    <span class="n">T</span><span class="o">=</span><span class="n">T</span><span class="p">,</span>
+    <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+ <span class="p">)</span>
 <span class="n">sem_idata</span> <span class="o">=</span> <span class="n">sem_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">tune</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
 <span class="n">lam_hat</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sem_idata</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
@@ -996,18 +997,16 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Censored fraction: 0.27
-lam:   true=0.35  estimated=0.363
-beta[0]: true=1.00  estimated=0.976
-beta[1]: true=1.40  estimated=1.526
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Censored fraction: 0.21
+lam:   true=0.35  estimated=0.387
+beta[0]: true=1.00  estimated=1.187
+beta[1]: true=1.40  estimated=1.434
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/models/panel_tobit.py:30: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  super().__init__(*args, model=0, **kwargs)
-Initializing NUTS using jitter+adapt_diag...
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [lam, beta, sigma, y_cens_gap]
-Sampling 2 chains for 500 tune and 500 draw iterations (1_000 + 1_000 draws total) took 7 seconds.
+Sampling 2 chains for 500 tune and 500 draw iterations (1_000 + 1_000 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 </code></pre></div>
 </div>

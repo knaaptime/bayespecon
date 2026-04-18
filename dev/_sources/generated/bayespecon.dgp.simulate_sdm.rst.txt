@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.simulate\_sdm
+============================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: simulate_sdm

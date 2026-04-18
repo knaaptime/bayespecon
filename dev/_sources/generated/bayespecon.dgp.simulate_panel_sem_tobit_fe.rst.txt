@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.simulate\_panel\_sem\_tobit\_fe
+==============================================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: simulate_panel_sem_tobit_fe

@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.simulate\_sdem
+=============================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: simulate_sdem

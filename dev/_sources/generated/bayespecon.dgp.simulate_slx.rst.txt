@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.simulate\_slx
+============================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: simulate_slx

@@ -913,9 +913,7 @@
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.special</span><span class="w"> </span><span class="kn">import</span> <span class="n">erf</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpatialProbit</span><span class="p">,</span> <span class="n">SARTobit</span><span class="p">,</span> <span class="n">SEMTobit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpatialProbit</span><span class="p">,</span> <span class="n">SARTobit</span><span class="p">,</span> <span class="n">SEMTobit</span><span class="p">,</span> <span class="n">dgp</span>
 
 <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">1234</span><span class="p">)</span>
 
@@ -928,10 +926,6 @@
             <span class="n">W</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
     <span class="n">s</span> <span class="o">=</span> <span class="n">W</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">W</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">s</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">W_to_graph</span><span class="p">(</span><span class="n">W</span><span class="p">):</span>
-    <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">W</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">Graph</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">W</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">))</span>
 </code></pre></div>
 </div>
 </div>
@@ -941,29 +935,34 @@
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># SpatialProbit</span>
 <span class="n">m</span><span class="p">,</span> <span class="n">n_per_region</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">20</span>
 <span class="n">Wm</span> <span class="o">=</span> <span class="n">make_line_W</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
-<span class="n">Gm</span> <span class="o">=</span> <span class="n">W_to_graph</span><span class="p">(</span><span class="n">Wm</span><span class="p">)</span>
 <span class="n">rho</span><span class="p">,</span> <span class="n">beta</span><span class="p">,</span> <span class="n">sigma_a</span> <span class="o">=</span> <span class="mf">0.35</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]),</span> <span class="mf">0.8</span>
-<span class="n">a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="o">-</span> <span class="n">rho</span> <span class="o">*</span> <span class="n">Wm</span><span class="p">,</span> <span class="n">sigma_a</span> <span class="o">*</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">m</span><span class="p">))</span>
-<span class="n">region_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">m</span><span class="p">),</span> <span class="n">n_per_region</span><span class="p">)</span>
-<span class="n">x1</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">m</span> <span class="o">*</span> <span class="n">n_per_region</span><span class="p">)</span>
-<span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">x1</span><span class="p">),</span> <span class="n">x1</span><span class="p">])</span>
-<span class="n">eta</span> <span class="o">=</span> <span class="n">X</span> <span class="o">@</span> <span class="n">beta</span> <span class="o">+</span> <span class="n">a</span><span class="p">[</span><span class="n">region_ids</span><span class="p">]</span>
-<span class="n">p</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">erf</span><span class="p">(</span><span class="n">eta</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)))</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">binomial</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
-<span class="n">sp</span> <span class="o">=</span> <span class="n">SpatialProbit</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">Gm</span><span class="p">,</span> <span class="n">region_ids</span><span class="o">=</span><span class="n">region_ids</span><span class="p">)</span>
+
+<span class="n">sp_data</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_spatial_probit</span><span class="p">(</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">Wm</span><span class="p">,</span>
+    <span class="n">rho</span><span class="o">=</span><span class="n">rho</span><span class="p">,</span>
+    <span class="n">beta</span><span class="o">=</span><span class="n">beta</span><span class="p">,</span>
+    <span class="n">sigma_a</span><span class="o">=</span><span class="n">sigma_a</span><span class="p">,</span>
+    <span class="n">n_per_region</span><span class="o">=</span><span class="n">n_per_region</span><span class="p">,</span>
+    <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+ <span class="p">)</span>
+
+<span class="n">sp</span> <span class="o">=</span> <span class="n">SpatialProbit</span><span class="p">(</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">sp_data</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">],</span>
+    <span class="n">X</span><span class="o">=</span><span class="n">sp_data</span><span class="p">[</span><span class="s2">&quot;X&quot;</span><span class="p">],</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">sp_data</span><span class="p">[</span><span class="s2">&quot;W_graph&quot;</span><span class="p">],</span>
+    <span class="n">region_ids</span><span class="o">=</span><span class="n">sp_data</span><span class="p">[</span><span class="s2">&quot;region_ids&quot;</span><span class="p">],</span>
+<span class="p">)</span>
 <span class="n">sp</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="n">sp</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">var_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_a&quot;</span><span class="p">])</span>
 </code></pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_5120/4111274317.py:13: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  sp = SpatialProbit(y=y, X=X, W=Gm, region_ids=region_ids)
-Initializing NUTS using jitter+adapt_diag...
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho, beta, sigma_a, a_raw]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 8 seconds.
-There were 23 divergences after tuning. Increase `target_accept` or reparameterize.
+There were 2 divergences after tuning. Increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
@@ -1001,51 +1000,51 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <tbody>
     <tr>
       <th>rho</th>
-      <td>0.204</td>
-      <td>0.367</td>
-      <td>-0.511</td>
-      <td>0.766</td>
-      <td>0.029</td>
-      <td>0.016</td>
-      <td>163.0</td>
-      <td>198.0</td>
-      <td>1.01</td>
-    </tr>
-    <tr>
-      <th>x0</th>
-      <td>0.196</td>
-      <td>1.441</td>
-      <td>-3.345</td>
-      <td>2.313</td>
-      <td>0.240</td>
-      <td>0.325</td>
-      <td>53.0</td>
-      <td>24.0</td>
-      <td>1.09</td>
-    </tr>
-    <tr>
-      <th>x1</th>
-      <td>1.010</td>
-      <td>0.187</td>
-      <td>0.670</td>
-      <td>1.369</td>
-      <td>0.012</td>
-      <td>0.007</td>
-      <td>235.0</td>
-      <td>393.0</td>
+      <td>0.189</td>
+      <td>0.354</td>
+      <td>-0.452</td>
+      <td>0.774</td>
+      <td>0.030</td>
+      <td>0.013</td>
+      <td>145.0</td>
+      <td>334.0</td>
       <td>1.00</td>
     </tr>
     <tr>
+      <th>x0</th>
+      <td>0.452</td>
+      <td>1.027</td>
+      <td>-1.694</td>
+      <td>2.429</td>
+      <td>0.087</td>
+      <td>0.064</td>
+      <td>140.0</td>
+      <td>252.0</td>
+      <td>1.01</td>
+    </tr>
+    <tr>
+      <th>x1</th>
+      <td>1.027</td>
+      <td>0.214</td>
+      <td>0.639</td>
+      <td>1.413</td>
+      <td>0.011</td>
+      <td>0.011</td>
+      <td>404.0</td>
+      <td>377.0</td>
+      <td>1.01</td>
+    </tr>
+    <tr>
       <th>sigma_a</th>
-      <td>2.000</td>
-      <td>0.795</td>
-      <td>0.812</td>
-      <td>3.681</td>
-      <td>0.175</td>
-      <td>0.131</td>
-      <td>32.0</td>
-      <td>30.0</td>
-      <td>1.07</td>
+      <td>1.905</td>
+      <td>0.615</td>
+      <td>0.924</td>
+      <td>2.950</td>
+      <td>0.049</td>
+      <td>0.036</td>
+      <td>176.0</td>
+      <td>259.0</td>
+      <td>1.00</td>
     </tr>
   </tbody>
 </table>
@@ -1056,19 +1055,39 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># SARTobit and SEMTobit</span>
 <span class="n">n</span> <span class="o">=</span> <span class="mi">30</span>
 <span class="n">W</span> <span class="o">=</span> <span class="n">make_line_W</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
-<span class="n">G</span> <span class="o">=</span> <span class="n">W_to_graph</span><span class="p">(</span><span class="n">W</span><span class="p">)</span>
-<span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">n</span><span class="p">)])</span>
 <span class="n">beta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">])</span>
 <span class="n">sigma</span><span class="p">,</span> <span class="n">rho</span><span class="p">,</span> <span class="n">lam</span> <span class="o">=</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.35</span>
-<span class="n">y_lat_sar</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">rho</span> <span class="o">*</span> <span class="n">W</span><span class="p">,</span> <span class="n">X</span> <span class="o">@</span> <span class="n">beta</span> <span class="o">+</span> <span class="n">sigma</span> <span class="o">*</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>
-<span class="n">y_sar</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">y_lat_sar</span><span class="p">)</span>
-<span class="n">sar_tobit</span> <span class="o">=</span> <span class="n">SARTobit</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y_sar</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">G</span><span class="p">,</span> <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+
+<span class="n">sar_data</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_sar_tobit</span><span class="p">(</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+    <span class="n">rho</span><span class="o">=</span><span class="n">rho</span><span class="p">,</span>
+    <span class="n">beta</span><span class="o">=</span><span class="n">beta</span><span class="p">,</span>
+    <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">,</span>
+    <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">sar_tobit</span> <span class="o">=</span> <span class="n">SARTobit</span><span class="p">(</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">sar_data</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">],</span>
+    <span class="n">X</span><span class="o">=</span><span class="n">sar_data</span><span class="p">[</span><span class="s2">&quot;X&quot;</span><span class="p">],</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">sar_data</span><span class="p">[</span><span class="s2">&quot;W_graph&quot;</span><span class="p">],</span>
+    <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="n">sar_tobit</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
-<span class="n">u_sem</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">-</span> <span class="n">lam</span> <span class="o">*</span> <span class="n">W</span><span class="p">,</span> <span class="n">sigma</span> <span class="o">*</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>
-<span class="n">y_lat_sem</span> <span class="o">=</span> <span class="n">X</span> <span class="o">@</span> <span class="n">beta</span> <span class="o">+</span> <span class="n">u_sem</span>
-<span class="n">y_sem</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">y_lat_sem</span><span class="p">)</span>
-<span class="n">sem_tobit</span> <span class="o">=</span> <span class="n">SEMTobit</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y_sem</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">G</span><span class="p">,</span> <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+<span class="n">sem_data</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_sem_tobit</span><span class="p">(</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+    <span class="n">lam</span><span class="o">=</span><span class="n">lam</span><span class="p">,</span>
+    <span class="n">beta</span><span class="o">=</span><span class="n">beta</span><span class="p">,</span>
+    <span class="n">sigma</span><span class="o">=</span><span class="n">sigma</span><span class="p">,</span>
+    <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">sem_tobit</span> <span class="o">=</span> <span class="n">SEMTobit</span><span class="p">(</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">sem_data</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">],</span>
+    <span class="n">X</span><span class="o">=</span><span class="n">sem_data</span><span class="p">[</span><span class="s2">&quot;X&quot;</span><span class="p">],</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">sem_data</span><span class="p">[</span><span class="s2">&quot;W_graph&quot;</span><span class="p">],</span>
+    <span class="n">censoring</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="n">sem_tobit</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
 <span class="n">sar_tobit</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">var_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]),</span> <span class="n">sem_tobit</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">var_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">])</span>
@@ -1076,46 +1095,40 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/models/tobit.py:27: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  super().__init__(*args, **kwargs)
-Initializing NUTS using jitter+adapt_diag...
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho, beta, sigma, y_cens_gap]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/models/tobit.py:27: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  super().__init__(*args, **kwargs)
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [lam, beta, sigma, y_cens_gap]
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 6 seconds.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
 </code></pre></div>
 </div>
 <div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>(        mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  \
- rho    0.459  0.077   0.338    0.620      0.004    0.003     443.0     546.0   
- x0     0.760  0.216   0.371    1.183      0.010    0.007     436.0     498.0   
- x1     1.669  0.172   1.338    1.982      0.009    0.006     392.0     457.0   
- sigma  0.815  0.138   0.571    1.075      0.007    0.005     458.0     419.0   
+ rho    0.446  0.083   0.302    0.612      0.004    0.003     358.0     346.0   
+ x0     0.774  0.222   0.370    1.186      0.012    0.008     344.0     484.0   
+ x1     1.677  0.172   1.350    2.014      0.011    0.008     276.0     235.0   
+ sigma  0.816  0.136   0.608    1.103      0.007    0.007     369.0     367.0   
  
         r_hat  
- rho      1.0  
- x0       1.0  
- x1       1.0  
- sigma    1.0  ,
-         mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  \
- lam    0.344  0.182   0.029    0.670      0.008    0.007     468.0     263.0   
- x0     1.218  0.313   0.631    1.788      0.017    0.021     385.0     180.0   
- x1     1.299  0.160   1.026    1.610      0.007    0.009     472.0     384.0   
- sigma  0.902  0.151   0.662    1.202      0.008    0.007     411.0     435.0   
- 
-        r_hat  
- lam     1.01  
- x0      1.00  
+ rho     1.01  
+ x0      1.01  
  x1      1.00  
+ sigma   1.00  ,
+         mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  \
+ lam    0.440  0.153   0.152    0.713      0.009    0.007     298.0     243.0   
+ x0     1.459  0.210   1.087    1.864      0.012    0.016     350.0     196.0   
+ x1     1.223  0.098   1.038    1.415      0.006    0.005     257.0     242.0   
+ sigma  0.554  0.083   0.413    0.724      0.005    0.003     336.0     424.0   
+ 
+        r_hat  
+ lam     1.00  
+ x0      1.00  
+ x1      1.01  
  sigma   1.00  )
 </code></pre></div>
 </div>

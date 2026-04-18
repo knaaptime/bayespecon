@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.simulate\_sar\_tobit
+===================================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: simulate_sar_tobit
