@@ -120,6 +120,7 @@ Regression Diagnostics
    bpagan_test
    arch_test
    ljung_box_q
+   hausman_fe_re_test
    outlier_candidates
    panel_residual_structure
    pesaran_cd_test

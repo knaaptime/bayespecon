@@ -406,3 +406,77 @@ def pesaran_cd_test(resid: np.ndarray, N: int, T: int) -> dict[str, float | str]
 
     pval = float(2.0 * (1.0 - norm.cdf(abs(cd))))
     return DiagnosticResult(name="pesaran_cd", statistic=cd, pvalue=pval)
+
+
+def hausman_fe_re_test(
+    beta_fe: np.ndarray,
+    cov_fe: np.ndarray,
+    beta_re: np.ndarray,
+    cov_re: np.ndarray,
+    coef_names: list[str] | None = None,
+) -> DiagnosticResult:
+    """Hausman specification test comparing FE and RE panel estimates.
+
+    Parameters
+    ----------
+    beta_fe : np.ndarray
+        Fixed-effects coefficient estimates.
+    cov_fe : np.ndarray
+        Covariance matrix for ``beta_fe``.
+    beta_re : np.ndarray
+        Random-effects coefficient estimates aligned to ``beta_fe``.
+    cov_re : np.ndarray
+        Covariance matrix for ``beta_re``.
+    coef_names : list[str], optional
+        Names of compared coefficients.
+
+    Returns
+    -------
+    DiagnosticResult
+        Hausman statistic and chi-square p-value.
+
+    Notes
+    -----
+    The test statistic is
+
+    .. math::
+        H = (\\hat\\beta_{FE} - \\hat\\beta_{RE})'
+            [\\widehat{V}_{FE} - \\widehat{V}_{RE}]^{-1}
+            (\\hat\\beta_{FE} - \\hat\\beta_{RE}).
+
+    The pseudo-inverse is used for numerical stability when
+    ``V_FE - V_RE`` is ill-conditioned.
+    """
+    bfe = np.asarray(beta_fe, dtype=float).reshape(-1)
+    bre = np.asarray(beta_re, dtype=float).reshape(-1)
+    vfe = np.asarray(cov_fe, dtype=float)
+    vre = np.asarray(cov_re, dtype=float)
+
+    if bfe.shape != bre.shape:
+        raise ValueError("beta_fe and beta_re must have the same shape")
+    k = bfe.size
+
+    if vfe.shape != (k, k):
+        raise ValueError("cov_fe must have shape (k, k) matching beta_fe")
+    if vre.shape != (k, k):
+        raise ValueError("cov_re must have shape (k, k) matching beta_re")
+
+    diff = bfe - bre
+    vdiff = vfe - vre
+    h = float(diff.T @ np.linalg.pinv(vdiff) @ diff)
+
+    dof = int(np.linalg.matrix_rank(vdiff))
+    pval = float(1.0 - chi2.cdf(h, dof)) if dof > 0 else np.nan
+
+    extra: dict[str, object] = {"dof": dof, "n_coef": int(k)}
+    if coef_names is not None:
+        if len(coef_names) != k:
+            raise ValueError("coef_names length must match number of coefficients")
+        extra["coefficients"] = list(coef_names)
+
+    return DiagnosticResult(
+        name="hausman_fe_re",
+        statistic=h,
+        pvalue=pval,
+        extra=extra,
+    )

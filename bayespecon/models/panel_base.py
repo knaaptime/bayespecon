@@ -608,19 +608,35 @@ class SpatialPanelModel(ABC):
         n, k = self._X.shape
         return outlier_candidates(self.regression_diagnostics(), n=n, k=k)
 
-    def panel_diagnostics(self) -> dict:
-        """Panel-specific diagnostics on transformed residuals."""
+    def panel_diagnostics(self, re_model=None) -> dict:
+        """Panel-specific diagnostics on transformed residuals.
+
+        Parameters
+        ----------
+        re_model : object, optional
+            Optional random-effects model comparator. If provided and the
+            current model implements ``hausman_test``, the Hausman FE-vs-RE
+            diagnostic is included under key ``"hausman"``.
+        """
         self._require_fit()
         resid = self.residuals()
-        return {
+        out = {
             "structure": panel_residual_structure(resid, N=self._N, T=self._T),
             "pesaran_cd": pesaran_cd_test(resid, N=self._N, T=self._T),
         }
+        if re_model is not None:
+            if not hasattr(self, "hausman_test"):
+                raise TypeError(
+                    f"{self.__class__.__name__} does not implement hausman_test(re_model)"
+                )
+            out["hausman"] = self.hausman_test(re_model)
+        return out
 
     def diagnostics(
         self,
         arch_lags: int | list[int] = 5,
         autocorr_lags: int | list[int] = 10,
+        re_model=None,
     ) -> dict:
         """Return a bundled set of panel model diagnostics.
 
@@ -630,6 +646,10 @@ class SpatialPanelModel(ABC):
             Lag order(s) for ARCH diagnostics.
         autocorr_lags : int or list[int], default=10
             Lag order(s) for Ljung-Box diagnostics.
+        re_model : object, optional
+            Optional random-effects model comparator used to add a Hausman
+            FE-vs-RE diagnostic inside the ``"panel"`` diagnostics group when
+            supported by the model class.
 
         Returns
         -------
@@ -642,7 +662,7 @@ class SpatialPanelModel(ABC):
             "heteroskedasticity": self.heteroskedasticity_diagnostics(arch_lags=arch_lags),
             "autocorrelation": self.autocorrelation_diagnostics(lags=autocorr_lags),
             "outliers": self.outlier_diagnostics(),
-            "panel": self.panel_diagnostics(),
+            "panel": self.panel_diagnostics(re_model=re_model),
         }
 
     def __repr__(self) -> str:

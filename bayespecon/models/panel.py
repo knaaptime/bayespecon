@@ -9,7 +9,7 @@ import xarray as xr
 
 from ..logdet import make_logdet_fn
 from .panel_base import SpatialPanelModel
-from ..diagnostics import DiagnosticResult
+from ..diagnostics import DiagnosticResult, hausman_fe_re_test
 
 
 class OLSPanelFE(SpatialPanelModel):
@@ -75,8 +75,84 @@ class OLSPanelFE(SpatialPanelModel):
         }
 
     # ------------------------------------------------------------------
-    # Spatial specification tests
+    # Specification tests
     # ------------------------------------------------------------------
+
+    def hausman_test(
+        self,
+        re_model,
+        variance_tol: float = 1e-12,
+    ) -> DiagnosticResult:
+        """Hausman FE-vs-RE specification test against an ``OLSPanelRE`` fit.
+
+        Parameters
+        ----------
+        re_model : OLSPanelRE
+            Fitted random-effects panel model using the same outcome and
+            regressors.
+        variance_tol : float, default=1e-12
+            Threshold used to drop FE coefficients with effectively zero
+            transformed design variance (e.g., demeaned intercepts).
+
+        Returns
+        -------
+        DiagnosticResult
+            ``name`` : ``"hausman_fe_re"``
+
+            ``statistic`` : float — Hausman chi-square statistic.
+
+            ``pvalue`` : float — chi-square p-value.
+
+        Notes
+        -----
+        Coefficients are aligned by shared feature names. Any coefficient that
+        is unidentified after FE transformation (near-zero variance column) is
+        excluded automatically.
+        """
+        from .panel_re import OLSPanelRE
+
+        self._require_fit()
+        if not isinstance(re_model, OLSPanelRE):
+            raise TypeError("re_model must be an instance of OLSPanelRE")
+        re_model._require_fit()
+
+        fe_names = list(self._beta_names())
+        re_names = list(re_model._beta_names())
+        common_names = [name for name in fe_names if name in re_names]
+        if not common_names:
+            raise ValueError("No shared coefficients found between FE and RE models")
+
+        filtered_names: list[str] = []
+        fe_idx: list[int] = []
+        re_idx: list[int] = []
+        for name in common_names:
+            i_fe = fe_names.index(name)
+            if float(np.var(self._X[:, i_fe])) <= variance_tol:
+                continue
+            filtered_names.append(name)
+            fe_idx.append(i_fe)
+            re_idx.append(re_names.index(name))
+
+        if not filtered_names:
+            raise ValueError(
+                "No identifiable shared coefficients remain after FE variance filtering"
+            )
+
+        fe_draws = np.asarray(self._idata.posterior["beta"]).reshape(-1, len(fe_names))[:, fe_idx]
+        re_draws = np.asarray(re_model._idata.posterior["beta"]).reshape(-1, len(re_names))[:, re_idx]
+
+        beta_fe = fe_draws.mean(axis=0)
+        beta_re = re_draws.mean(axis=0)
+        cov_fe = np.atleast_2d(np.cov(fe_draws, rowvar=False))
+        cov_re = np.atleast_2d(np.cov(re_draws, rowvar=False))
+
+        return hausman_fe_re_test(
+            beta_fe=beta_fe,
+            cov_fe=cov_fe,
+            beta_re=beta_re,
+            cov_re=cov_re,
+            coef_names=filtered_names,
+        )
 
     def lm_error_test(self) -> DiagnosticResult:
         """LM test for spatial error dependence in a fixed-effects panel.

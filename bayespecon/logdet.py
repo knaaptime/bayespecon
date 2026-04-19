@@ -152,6 +152,13 @@ def lndetint(W, rmin: float = 0.0, rmax: float = 1.0, n_grid: int = 100) -> dict
     dict
         Dictionary with ``rho`` and ``lndet`` vectors.
     """
+    if n_grid < 20:
+        raise ValueError("n_grid must be at least 20 for stable spline interpolation.")
+    if rmin < 0.0:
+        raise ValueError("lndetint is defined for nonnegative rho ranges (rmin >= 0).")
+    if rmax <= rmin:
+        raise ValueError("rmax must be greater than rmin.")
+
     W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
     n = W_sp.shape[0]
     I = sp.eye(n, format="csc", dtype=np.float64)
@@ -214,6 +221,10 @@ def lndetmc(
         raise ValueError("order must be positive.")
     if iter <= 0:
         raise ValueError("iter must be positive.")
+    if rmin < 0.0:
+        raise ValueError("lndetmc is defined for nonnegative rho ranges (rmin >= 0).")
+    if rmax <= rmin:
+        raise ValueError("rmax must be greater than rmin.")
     W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
     n = W_sp.shape[0]
 
@@ -229,15 +240,16 @@ def lndetmc(
         utu = float(u @ u)
         for i in range(order):
             v = W_sp @ v
+            # Barry-Pace moment construction uses the 1/k scaling here.
             mavmomi[i, j] = n * float(u @ v) / ((i + 1) * utu)
 
     mavmomi[:oexact, :] = td[:, None]
     avmomi = mavmomi.mean(axis=1)
 
     rho = _stable_rho_grid(rmin, rmax, grid)
-    # Build polynomial terms alpha^1..alpha^order for -sum(alpha^k/k * tr(W^k)).
+    # Build polynomial terms alpha^1..alpha^order.
     powers = np.power(rho[:, None], np.arange(1, order + 1, dtype=np.float64)[None, :])
-    alomat = -(powers / np.arange(1, order + 1, dtype=np.float64)[None, :])
+    alomat = -powers
 
     lndet = alomat @ avmomi
     srvs = (alomat @ mavmomi).T
@@ -393,6 +405,11 @@ def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max
 
     # 2-D dense matrix path.
     W_dense = W
+    if method in ("int", "mc") and rho_min < 0.0:
+        raise ValueError(
+            f"method='{method}' is defined for nonnegative rho ranges; "
+            "use rho_min >= 0 or choose 'eigenvalue'/'exact'/'full'/'ichol'."
+        )
     if method == "eigenvalue":
         eigs = np.linalg.eigvals(W_dense).real
         if T == 1:

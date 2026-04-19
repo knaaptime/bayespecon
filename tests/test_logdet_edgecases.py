@@ -1,0 +1,65 @@
+"""Fast edge-case tests for logdet utilities."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from bayespecon import logdet
+
+
+def _toy_w(n: int = 5) -> np.ndarray:
+    W = np.zeros((n, n), dtype=float)
+    for i in range(n):
+        if i > 0:
+            W[i, i - 1] = 1.0
+        if i < n - 1:
+            W[i, i + 1] = 1.0
+    rs = W.sum(axis=1, keepdims=True)
+    return W / np.where(rs == 0, 1, rs)
+
+
+def test_stable_rho_grid_validation():
+    with pytest.raises(ValueError, match="positive"):
+        logdet._stable_rho_grid(-0.5, 0.5, 0.0)
+    with pytest.raises(ValueError, match="greater"):
+        logdet._stable_rho_grid(0.5, 0.5, 0.1)
+
+
+def test_lndetmc_parameter_validation():
+    W = _toy_w(4)
+    with pytest.raises(ValueError, match="order"):
+        logdet.lndetmc(order=0, iter=5, W=W)
+    with pytest.raises(ValueError, match="iter"):
+        logdet.lndetmc(order=5, iter=0, W=W)
+    with pytest.raises(ValueError, match="nonnegative rho"):
+        logdet.lndetmc(order=5, iter=5, W=W, rmin=-0.1, rmax=0.5)
+
+
+def test_lndetint_validation():
+    W = _toy_w(4)
+    with pytest.raises(ValueError, match="nonnegative rho"):
+        logdet.lndetint(W, rmin=-0.1, rmax=0.5, n_grid=50)
+    with pytest.raises(ValueError, match="at least 20"):
+        logdet.lndetint(W, rmin=0.0, rmax=0.5, n_grid=10)
+
+
+def test_make_logdet_fn_unknown_method_raises():
+    W = _toy_w(4)
+    with pytest.raises(ValueError, match="Unknown method"):
+        logdet.make_logdet_fn(W, method="not-a-method")
+
+
+def test_make_logdet_fn_1d_eigs_falls_back_to_eigenvalue_for_grid_like_methods():
+    W = _toy_w(4)
+    eigs = np.linalg.eigvals(W).real
+    fn = logdet.make_logdet_fn(eigs, method="grid")
+    assert callable(fn)
+
+
+def test_make_logdet_fn_int_mc_reject_negative_rho_min_for_matrix_input():
+    W = _toy_w(4)
+    with pytest.raises(ValueError, match="nonnegative rho"):
+        logdet.make_logdet_fn(W, method="int", rho_min=-0.5, rho_max=0.5)
+    with pytest.raises(ValueError, match="nonnegative rho"):
+        logdet.make_logdet_fn(W, method="mc", rho_min=-0.5, rho_max=0.5)

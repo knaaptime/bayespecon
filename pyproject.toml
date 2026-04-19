@@ -32,3 +32,16 @@ markers = [
     "slow: marks tests as slow (MCMC parameter recovery — deselected by default)",
 ]
 
+[tool.coverage.run]
+source = ["bayespecon"]
+omit = [
+    "tests/*",
+    "*/tests/*",
+]
+
+[tool.coverage.report]
+omit = [
+    "tests/*",
+    "*/tests/*",
+]
+
