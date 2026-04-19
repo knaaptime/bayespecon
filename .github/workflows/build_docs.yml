@@ -47,7 +47,10 @@ jobs:
           micromamba-version: "latest"
 
       - name: Install package
-        run: pip install . --no-deps
+        run: pip install . --no-deps 
+
+      - name: Install backends
+        run: conda install blackjax numpyro -y
 
       - name: Make docs
         run: cd docs; make html

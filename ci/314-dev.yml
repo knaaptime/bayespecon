@@ -21,8 +21,6 @@ dependencies:
   - pytest-mpl
   - pytest-xdist
   - openpyxl
-  - numpyro # [not win]
-  - blackjax # [not win]
 
   # docs
   - twine
