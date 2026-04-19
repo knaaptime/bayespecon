@@ -170,7 +170,7 @@ html_theme_options = {
     "version_dropdown": True,
     "version_json": "https://pysal.org/bayespecon/versions.json",
 }
-nb_execution_mode = "cache"
+nb_execution_mode = "force"
 nb_execution_timeout = -1
 nb_kernel_rgx_aliases = {".*": "python3"}
 nb_merge_streams = True
