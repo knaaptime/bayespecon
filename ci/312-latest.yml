@@ -5,9 +5,7 @@ dependencies:
   - python=3.12
   - libpysal
   - arviz < 1
-  - esda
   - formulaic
-  - bambi
   - pymc
   - arviz
   - spreg

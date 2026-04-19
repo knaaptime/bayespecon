@@ -5,11 +5,8 @@ dependencies:
   - python=3.14
   - libpysal
   - arviz < 1
-  - esda
   - formulaic
-  - bambi
   - pymc
-  - arviz
   - spreg
   - statsmodels
   - geopandas
@@ -36,7 +33,6 @@ dependencies:
       - --pre \
         --index-url https://pypi.anaconda.org/scientific-python-nightly-wheels/simple \
         --extra-index-url https://pypi.org/simple
-      - scikit-learn
       - scipy
       - shapely
       - git+https://github.com/geopandas/geopandas.git@main
