@@ -100,7 +100,7 @@ def _build_logdet_grid(W_dense: np.ndarray, rho_min: float, rho_max: float, n_gr
     return rho_grid, logdet_grid
 
 
-def lndetfull(W, lmin: float, lmax: float, grid: float = 0.01) -> dict:
+def sparse_grid(W, lmin: float, lmax: float, grid: float = 0.01) -> dict:
     """Compute exact sparse-LU log-determinant grid (MATLAB ``lndetfull`` style).
 
     Parameters
@@ -133,7 +133,7 @@ def lndetfull(W, lmin: float, lmax: float, grid: float = 0.01) -> dict:
     return {"rho": rho, "lndet": lndet}
 
 
-def lndetint(W, rmin: float = 0.0, rmax: float = 1.0, n_grid: int = 100) -> dict:
+def spline(W, rmin: float = 0.0, rmax: float = 1.0, n_grid: int = 100) -> dict:
     """Compute spline-interpolated log-determinant grid (MATLAB ``lndetint`` style).
 
     Parameters
@@ -184,7 +184,7 @@ def lndetint(W, rmin: float = 0.0, rmax: float = 1.0, n_grid: int = 100) -> dict
     return {"rho": rho, "lndet": lndet}
 
 
-def lndetmc(
+def mc(
     order: int,
     iter: int,
     W,
@@ -262,7 +262,7 @@ def lndetmc(
     return {"rho": rho, "lndet": lndet, "up95": up95, "lo95": lo95}
 
 
-def lndetichol(
+def ilu(
     W,
     lmin: float,
     lmax: float,
@@ -351,6 +351,16 @@ def logdet_interpolated(rho, W_dense: np.ndarray, rho_min: float = -1.0, rho_max
 
 
 def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max: float = 1.0, T: int = 1):
+    # Map legacy method names to new ones for backward compatibility
+    legacy_map = {
+        "grid": "dense_grid",
+        "full": "sparse_grid",
+        "int": "spline",
+        "mc": "mc",
+        "ichol": "ilu",
+    }
+    if method in legacy_map:
+        method = legacy_map[method]
     """Return a function (rho) -> pytensor log|I - rho*W| expression.
 
     Parameters
@@ -395,20 +405,20 @@ def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max
     if W.ndim == 1:
         # 1-D eigenvalue array supplied — skip O(n³) decomposition.
         eigs = W
-        if method in ("grid", "exact", "full", "int", "mc", "ichol"):
+        if method in ("dense_grid", "exact", "sparse_grid", "spline", "mc", "ilu"):
             method = "eigenvalue"
         if method == "eigenvalue":
             if T == 1:
                 return lambda rho: logdet_eigenvalue(rho, eigs)
             return lambda rho: T * logdet_eigenvalue(rho, eigs)
-        raise ValueError(f"Unknown method: {method!r}.")
+        raise ValueError(f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu'.")
 
     # 2-D dense matrix path.
     W_dense = W
-    if method in ("int", "mc") and rho_min < 0.0:
+    if method in ("spline", "mc") and rho_min < 0.0:
         raise ValueError(
             f"method='{method}' is defined for nonnegative rho ranges; "
-            "use rho_min >= 0 or choose 'eigenvalue'/'exact'/'full'/'ichol'."
+            "use rho_min >= 0 or choose 'eigenvalue'/'exact'/'dense_grid'/'sparse_grid'/'ilu'."
         )
     if method == "eigenvalue":
         eigs = np.linalg.eigvals(W_dense).real
@@ -419,11 +429,11 @@ def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max
         if T == 1:
             return lambda rho: logdet_exact(rho, W_dense)
         return lambda rho: T * logdet_exact(rho, W_dense)
-    elif method == "grid":
+    elif method == "dense_grid":
         rho_grid, logdet_grid = _build_logdet_grid(W_dense, rho_min, rho_max)
-        spline = CubicSpline(rho_grid, logdet_grid)
-        breakpoints_np = spline.x.astype(np.float64)
-        coefficients_np = spline.c.astype(np.float64)
+        spline_obj = CubicSpline(rho_grid, logdet_grid)
+        breakpoints_np = spline_obj.x.astype(np.float64)
+        coefficients_np = spline_obj.c.astype(np.float64)
         # Uniform grid step enables O(1) index lookup instead of O(n_grid) scan.
         step = float(breakpoints_np[1] - breakpoints_np[0])
         bp0 = float(breakpoints_np[0])
@@ -440,69 +450,67 @@ def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max
             return val if T == 1 else T * val
 
         return _interp
-    elif method == "full":
-        out = lndetfull(W_dense, rho_min, rho_max)
-        spline = CubicSpline(out["rho"], out["lndet"])
+    elif method == "sparse_grid":
+        out = sparse_grid(W_dense, rho_min, rho_max)
+        spline_obj = CubicSpline(out["rho"], out["lndet"])
 
-        def _full_interp(rho):
-            val = pt.as_tensor_variable(np.float64(0.0))
-            bp = pt.as_tensor_variable(spline.x.astype(np.float64))
-            c = pt.as_tensor_variable(spline.c.astype(np.float64))
+        def _sparse_grid_interp(rho):
+            bp = pt.as_tensor_variable(spline_obj.x.astype(np.float64))
+            c = pt.as_tensor_variable(spline_obj.c.astype(np.float64))
             idx = pt.cast(pt.floor((rho - bp[0]) / (bp[1] - bp[0])), "int64")
-            idx = pt.clip(idx, 0, len(spline.x) - 2)
+            idx = pt.clip(idx, 0, len(spline_obj.x) - 2)
             dx = rho - bp[idx]
             coefs = c[:, idx]
             val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
             return val if T == 1 else T * val
 
-        return _full_interp
-    elif method == "int":
-        out = lndetint(W_dense, rho_min, rho_max)
-        spline = CubicSpline(out["rho"], out["lndet"])
+        return _sparse_grid_interp
+    elif method == "spline":
+        out = spline(W_dense, rho_min, rho_max)
+        spline_obj = CubicSpline(out["rho"], out["lndet"])
 
-        def _int_interp(rho):
-            bp = pt.as_tensor_variable(spline.x.astype(np.float64))
-            c = pt.as_tensor_variable(spline.c.astype(np.float64))
+        def _spline_interp(rho):
+            bp = pt.as_tensor_variable(spline_obj.x.astype(np.float64))
+            c = pt.as_tensor_variable(spline_obj.c.astype(np.float64))
             idx = pt.cast(pt.floor((rho - bp[0]) / (bp[1] - bp[0])), "int64")
-            idx = pt.clip(idx, 0, len(spline.x) - 2)
+            idx = pt.clip(idx, 0, len(spline_obj.x) - 2)
             dx = rho - bp[idx]
             coefs = c[:, idx]
             val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
             return val if T == 1 else T * val
 
-        return _int_interp
+        return _spline_interp
     elif method == "mc":
-        out = lndetmc(order=50, iter=30, W=W_dense, rmin=rho_min, rmax=rho_max)
-        spline = CubicSpline(out["rho"], out["lndet"])
+        out = mc(order=50, iter=30, W=W_dense, rmin=rho_min, rmax=rho_max)
+        spline_obj = CubicSpline(out["rho"], out["lndet"])
 
         def _mc_interp(rho):
-            bp = pt.as_tensor_variable(spline.x.astype(np.float64))
-            c = pt.as_tensor_variable(spline.c.astype(np.float64))
+            bp = pt.as_tensor_variable(spline_obj.x.astype(np.float64))
+            c = pt.as_tensor_variable(spline_obj.c.astype(np.float64))
             idx = pt.cast(pt.floor((rho - bp[0]) / (bp[1] - bp[0])), "int64")
-            idx = pt.clip(idx, 0, len(spline.x) - 2)
+            idx = pt.clip(idx, 0, len(spline_obj.x) - 2)
             dx = rho - bp[idx]
             coefs = c[:, idx]
             val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
             return val if T == 1 else T * val
 
         return _mc_interp
-    elif method == "ichol":
-        out = lndetichol(W_dense, rho_min, rho_max)
-        spline = CubicSpline(out["rho"], out["lndet"])
+    elif method == "ilu":
+        out = ilu(W_dense, rho_min, rho_max)
+        spline_obj = CubicSpline(out["rho"], out["lndet"])
 
-        def _ichol_interp(rho):
-            bp = pt.as_tensor_variable(spline.x.astype(np.float64))
-            c = pt.as_tensor_variable(spline.c.astype(np.float64))
+        def _ilu_interp(rho):
+            bp = pt.as_tensor_variable(spline_obj.x.astype(np.float64))
+            c = pt.as_tensor_variable(spline_obj.c.astype(np.float64))
             idx = pt.cast(pt.floor((rho - bp[0]) / (bp[1] - bp[0])), "int64")
-            idx = pt.clip(idx, 0, len(spline.x) - 2)
+            idx = pt.clip(idx, 0, len(spline_obj.x) - 2)
             dx = rho - bp[idx]
             coefs = c[:, idx]
             val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
             return val if T == 1 else T * val
 
-        return _ichol_interp
+        return _ilu_interp
     else:
         raise ValueError(
-            f"Unknown method: {method!r}. "
-            "Choose 'eigenvalue', 'exact', 'grid', 'full', 'int', 'mc', or 'ichol'."
+            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu'."
         )

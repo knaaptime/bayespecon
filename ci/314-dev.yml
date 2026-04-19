@@ -42,4 +42,3 @@ dependencies:
       - scipy
       - shapely
       - git+https://github.com/geopandas/geopandas.git@main
-      - git+https://github.com/geopandas/dask-geopandas.git@main
