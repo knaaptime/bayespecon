@@ -11,17 +11,17 @@
       
       
       
-        <link rel="prev" href="bayespecon.diagnostics.hausman_fe_re_test.html">
+        <link rel="prev" href="bayespecon.diagnostics.ljung_box_q.html">
       
       
-        <link rel="next" href="bayespecon.diagnostics.panel_residual_structure.html">
+        <link rel="next" href="bayespecon.diagnostics.outlier_candidates.html">
       
       
       <link rel="icon" href="../_static/pysal_favicon.ico">
     
     
       
-        <title>bayespecon.diagnostics.outlier_candidates - bayespecon</title>
+        <title>bayespecon.diagnostics.hausman_fe_re_test - bayespecon</title>
       
     
     
@@ -72,7 +72,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#bayespecon.diagnostics.outlier_candidates" class="md-skip">
+        <a href="#bayespecon.diagnostics.hausman_fe_re_test" class="md-skip">
           Skip to content
         </a>
       
@@ -109,7 +109,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              bayespecon.diagnostics.outlier_candidates
+              bayespecon.diagnostics.hausman_fe_re_test
             
           </span>
         </div>
@@ -1025,30 +1025,6 @@
                 
   
   
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="bayespecon.diagnostics.hausman_fe_re_test.html" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    <span>bayespecon.<wbr>diagnostics.<wbr>hausman_<wbr>fe_<wbr>re_<wbr>test</span>
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
     
   
     
@@ -1065,7 +1041,7 @@
   
   
   <span class="md-ellipsis">
-    <span>bayespecon.<wbr>diagnostics.<wbr>outlier_<wbr>candidates</span>
+    <span>bayespecon.<wbr>diagnostics.<wbr>hausman_<wbr>fe_<wbr>re_<wbr>test</span>
     
   </span>
   
@@ -1078,7 +1054,7 @@
   
   
   <span class="md-ellipsis">
-    <span>bayespecon.<wbr>diagnostics.<wbr>outlier_<wbr>candidates</span>
+    <span>bayespecon.<wbr>diagnostics.<wbr>hausman_<wbr>fe_<wbr>re_<wbr>test</span>
     
   </span>
   
@@ -1100,20 +1076,20 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test" class="md-nav__link">
     
       <span aria-label="Python function" class="objinfo-icon objinfo-icon__procedure" title="Python function">F</span>
     
     <span class="md-ellipsis">
-      <span title="bayespecon.diagnostics.outlier_candidates (Python function) — Return candidate outlier/influence indices using common thresholds."><span>bayespecon.<wbr>diagnostics.<wbr>outlier_<wbr>candidates</span></span>
+      <span title="bayespecon.diagnostics.hausman_fe_re_test (Python function) — Hausman specification test comparing FE and RE panel estimates."><span>bayespecon.<wbr>diagnostics.<wbr>hausman_<wbr>fe_<wbr>re_<wbr>test</span></span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="bayespecon.diagnostics.outlier_candidates">
+    <nav class="md-nav" aria-label="bayespecon.diagnostics.hausman_fe_re_test">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates-parameters" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test-parameters" class="md-nav__link">
     
     <span class="md-ellipsis">
       <span>Parameters</span>
@@ -1124,36 +1100,60 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates.diagnostics" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.beta_fe" class="md-nav__link">
     
       <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
     
     <span class="md-ellipsis">
-      <span title="bayespecon.diagnostics.outlier_candidates.diagnostics (Python parameter) — Output from rdiagnose_like()."><span>diagnostics</span></span>
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.beta_fe (Python parameter) — Fixed-effects coefficient estimates."><span>beta_<wbr>fe</span></span>
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates.n" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.cov_fe" class="md-nav__link">
     
       <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
     
     <span class="md-ellipsis">
-      <span title="bayespecon.diagnostics.outlier_candidates.n (Python parameter) — Number of observations."><span>n</span></span>
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.cov_fe (Python parameter) — Covariance matrix for beta_fe."><span>cov_<wbr>fe</span></span>
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates.k" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.beta_re" class="md-nav__link">
     
       <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
     
     <span class="md-ellipsis">
-      <span title="bayespecon.diagnostics.outlier_candidates.k (Python parameter) — Number of regressors."><span>k</span></span>
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.beta_re (Python parameter) — Random-effects coefficient estimates aligned to beta_fe."><span>beta_<wbr>re</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.cov_re" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.cov_re (Python parameter) — Covariance matrix for beta_re."><span>cov_<wbr>re</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.coef_names" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.coef_names (Python parameter) — Names of compared coefficients."><span>coef_<wbr>names</span></span>
     </span>
   </a>
   
@@ -1165,7 +1165,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates-returns" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test-returns" class="md-nav__link">
     
     <span class="md-ellipsis">
       <span>Returns</span>
@@ -1175,7 +1175,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates-return-type" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test-return-type" class="md-nav__link">
     
     <span class="md-ellipsis">
       <span>Return type</span>
@@ -1193,6 +1193,30 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="bayespecon.diagnostics.outlier_candidates.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>bayespecon.<wbr>diagnostics.<wbr>outlier_<wbr>candidates</span>
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1441,20 +1465,20 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test" class="md-nav__link">
     
       <span aria-label="Python function" class="objinfo-icon objinfo-icon__procedure" title="Python function">F</span>
     
     <span class="md-ellipsis">
-      <span title="bayespecon.diagnostics.outlier_candidates (Python function) — Return candidate outlier/influence indices using common thresholds."><span>bayespecon.<wbr>diagnostics.<wbr>outlier_<wbr>candidates</span></span>
+      <span title="bayespecon.diagnostics.hausman_fe_re_test (Python function) — Hausman specification test comparing FE and RE panel estimates."><span>bayespecon.<wbr>diagnostics.<wbr>hausman_<wbr>fe_<wbr>re_<wbr>test</span></span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="bayespecon.diagnostics.outlier_candidates">
+    <nav class="md-nav" aria-label="bayespecon.diagnostics.hausman_fe_re_test">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates-parameters" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test-parameters" class="md-nav__link">
     
     <span class="md-ellipsis">
       <span>Parameters</span>
@@ -1465,36 +1489,60 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates.diagnostics" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.beta_fe" class="md-nav__link">
     
       <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
     
     <span class="md-ellipsis">
-      <span title="bayespecon.diagnostics.outlier_candidates.diagnostics (Python parameter) — Output from rdiagnose_like()."><span>diagnostics</span></span>
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.beta_fe (Python parameter) — Fixed-effects coefficient estimates."><span>beta_<wbr>fe</span></span>
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates.n" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.cov_fe" class="md-nav__link">
     
       <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
     
     <span class="md-ellipsis">
-      <span title="bayespecon.diagnostics.outlier_candidates.n (Python parameter) — Number of observations."><span>n</span></span>
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.cov_fe (Python parameter) — Covariance matrix for beta_fe."><span>cov_<wbr>fe</span></span>
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates.k" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.beta_re" class="md-nav__link">
     
       <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
     
     <span class="md-ellipsis">
-      <span title="bayespecon.diagnostics.outlier_candidates.k (Python parameter) — Number of regressors."><span>k</span></span>
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.beta_re (Python parameter) — Random-effects coefficient estimates aligned to beta_fe."><span>beta_<wbr>re</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.cov_re" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.cov_re (Python parameter) — Covariance matrix for beta_re."><span>cov_<wbr>re</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test.coef_names" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.diagnostics.hausman_fe_re_test.coef_names (Python parameter) — Names of compared coefficients."><span>coef_<wbr>names</span></span>
     </span>
   </a>
   
@@ -1506,7 +1554,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates-returns" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test-returns" class="md-nav__link">
     
     <span class="md-ellipsis">
       <span>Returns</span>
@@ -1516,7 +1564,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#bayespecon.diagnostics.outlier_candidates-return-type" class="md-nav__link">
+  <a href="#bayespecon.diagnostics.hausman_fe_re_test-return-type" class="md-nav__link">
     
     <span class="md-ellipsis">
       <span>Return type</span>
@@ -1547,36 +1595,48 @@
 
 
   
-    <a href="https://github.com/pysal/bayespecon/blob/main/docs/generated/bayespecon.diagnostics.outlier_candidates.rst" title="Edit this page" class="md-content__button md-icon">
+    <a href="https://github.com/pysal/bayespecon/blob/main/docs/generated/bayespecon.diagnostics.hausman_fe_re_test.rst" title="Edit this page" class="md-content__button md-icon">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.11.89-2 2-2m.12 13.5 3.74 3.74 1.42-1.41-2.33-2.33 2.33-2.33-1.42-1.41zm11.16 0-3.74-3.74-1.42 1.41 2.33 2.33-2.33 2.33 1.42 1.41z"/></svg>
     </a>
   
   
 
-<h1 id="bayespecon-diagnostics-outlier-candidates">bayespecon.diagnostics.outlier_candidates<a class="headerlink" href="#bayespecon-diagnostics-outlier-candidates" title="Link to this heading">¶</a></h1>
+<h1 id="bayespecon-diagnostics-hausman-fe-re-test">bayespecon.diagnostics.hausman_fe_re_test<a class="headerlink" href="#bayespecon-diagnostics-hausman-fe-re-test" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
-<dt class="sig sig-object highlight py" id="bayespecon.diagnostics.outlier_candidates">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.diagnostics.</span></span><span class="sig-name descname"><span class="pre">outlier_candidates</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.outlier_candidates.diagnostics" title="bayespecon.diagnostics.outlier_candidates.diagnostics (Python parameter) — Output from rdiagnose_like()."><span class="n"><span class="pre">diagnostics</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.outlier_candidates.n" title="bayespecon.diagnostics.outlier_candidates.n (Python parameter) — Number of observations."><span class="n"><span class="pre">n</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.outlier_candidates.k" title="bayespecon.diagnostics.outlier_candidates.k (Python parameter) — Number of regressors."><span class="n"><span class="pre">k</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/diagnostics.py#L293-L324"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.diagnostics.outlier_candidates" title="Link to this definition">¶</a></dt>
-<dd><p>Return candidate outlier/influence indices using common thresholds.</p>
+<dt class="sig sig-object highlight sig-wrap py" id="bayespecon.diagnostics.hausman_fe_re_test">
+<span class="sig-prename descclassname"><span class="pre">bayespecon.diagnostics.</span></span><span class="sig-name descname"><span class="pre">hausman_fe_re_test</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.hausman_fe_re_test.beta_fe" title="bayespecon.diagnostics.hausman_fe_re_test.beta_fe (Python parameter) — Fixed-effects coefficient estimates."><span class="n"><span class="pre">beta_fe</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.hausman_fe_re_test.cov_fe" title="bayespecon.diagnostics.hausman_fe_re_test.cov_fe (Python parameter) — Covariance matrix for beta_fe."><span class="n"><span class="pre">cov_fe</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.hausman_fe_re_test.beta_re" title="bayespecon.diagnostics.hausman_fe_re_test.beta_re (Python parameter) — Random-effects coefficient estimates aligned to beta_fe."><span class="n"><span class="pre">beta_re</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.hausman_fe_re_test.cov_re" title="bayespecon.diagnostics.hausman_fe_re_test.cov_re (Python parameter) — Covariance matrix for beta_re."><span class="n"><span class="pre">cov_re</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.hausman_fe_re_test.coef_names" title="bayespecon.diagnostics.hausman_fe_re_test.coef_names (Python parameter) — Names of compared coefficients."><span class="n"><span class="pre">coef_names</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/diagnostics.py#L411-L482"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test" title="Link to this definition">¶</a></dt>
+<dd><p>Hausman specification test comparing FE and RE panel estimates.</p>
 <dl class="field-list simple">
-<dt class="field-odd" id="bayespecon.diagnostics.outlier_candidates-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.outlier_candidates-parameters" title="Permalink to this headline">¶</a></dt>
+<dt class="field-odd" id="bayespecon.diagnostics.hausman_fe_re_test-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test-parameters" title="Permalink to this headline">¶</a></dt>
 <dd class="field-odd"><dl class="simple api-field highlight">
-<dt id="bayespecon.diagnostics.outlier_candidates.diagnostics"><span class="sig-name descname">diagnostics</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></span></span><a class="headerlink" href="#bayespecon.diagnostics.outlier_candidates.diagnostics" title="Permalink to this definition">¶</a></dt><dd><p>Output from <a class="reference internal" href="bayespecon.diagnostics.rdiagnose_like.html#bayespecon.diagnostics.rdiagnose_like" title="bayespecon.diagnostics.rdiagnose_like (Python function) — OLS-style influence diagnostics (MATLAB rdiagnose analogue)."><code class="xref py py-func docutils literal notranslate"><span class="pre">rdiagnose_like()</span></code></a>.</p>
+<dt id="bayespecon.diagnostics.hausman_fe_re_test.beta_fe"><span class="sig-name descname">beta_fe</span><span class="p"> : </span><span class="desctype"><span class="desctype">np.ndarray</span></span><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test.beta_fe" title="Permalink to this definition">¶</a></dt><dd><p>Fixed-effects coefficient estimates.</p>
 </dd>
-<dt id="bayespecon.diagnostics.outlier_candidates.n"><span class="sig-name descname">n</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></span></span><a class="headerlink" href="#bayespecon.diagnostics.outlier_candidates.n" title="Permalink to this definition">¶</a></dt><dd><p>Number of observations.</p>
+<dt id="bayespecon.diagnostics.hausman_fe_re_test.cov_fe"><span class="sig-name descname">cov_fe</span><span class="p"> : </span><span class="desctype"><span class="desctype">np.ndarray</span></span><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test.cov_fe" title="Permalink to this definition">¶</a></dt><dd><p>Covariance matrix for <code class="docutils literal notranslate"><span class="pre">beta_fe</span></code>.</p>
 </dd>
-<dt id="bayespecon.diagnostics.outlier_candidates.k"><span class="sig-name descname">k</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a></span></span><a class="headerlink" href="#bayespecon.diagnostics.outlier_candidates.k" title="Permalink to this definition">¶</a></dt><dd><p>Number of regressors.</p>
+<dt id="bayespecon.diagnostics.hausman_fe_re_test.beta_re"><span class="sig-name descname">beta_re</span><span class="p"> : </span><span class="desctype"><span class="desctype">np.ndarray</span></span><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test.beta_re" title="Permalink to this definition">¶</a></dt><dd><p>Random-effects coefficient estimates aligned to <code class="docutils literal notranslate"><span class="pre">beta_fe</span></code>.</p>
 </dd>
-</dl>
+<dt id="bayespecon.diagnostics.hausman_fe_re_test.cov_re"><span class="sig-name descname">cov_re</span><span class="p"> : </span><span class="desctype"><span class="desctype">np.ndarray</span></span><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test.cov_re" title="Permalink to this definition">¶</a></dt><dd><p>Covariance matrix for <code class="docutils literal notranslate"><span class="pre">beta_re</span></code>.</p>
 </dd>
-<dt class="field-even" id="bayespecon.diagnostics.outlier_candidates-returns">Returns<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.outlier_candidates-returns" title="Permalink to this headline">¶</a></dt>
-<dd class="field-even"><p>Index arrays for leverage, r-student, DFFIT, and DFBETA flags.</p>
-</dd>
-<dt class="field-odd" id="bayespecon.diagnostics.outlier_candidates-return-type">Return type<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.outlier_candidates-return-type" title="Permalink to this headline">¶</a></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+<dt id="bayespecon.diagnostics.hausman_fe_re_test.coef_names"><span class="sig-name descname">coef_names</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)">list</a>[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a>], optional</span></span><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test.coef_names" title="Permalink to this definition">¶</a></dt><dd><p>Names of compared coefficients.</p>
 </dd>
 </dl>
+</dd>
+<dt class="field-even" id="bayespecon.diagnostics.hausman_fe_re_test-returns">Returns<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test-returns" title="Permalink to this headline">¶</a></dt>
+<dd class="field-even"><p>Hausman statistic and chi-square p-value.</p>
+</dd>
+<dt class="field-odd" id="bayespecon.diagnostics.hausman_fe_re_test-return-type">Return type<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.hausman_fe_re_test-return-type" title="Permalink to this headline">¶</a></dt>
+<dd class="field-odd"><p><a class="reference internal" href="bayespecon.diagnostics.DiagnosticResult.html#bayespecon.diagnostics.DiagnosticResult" title="bayespecon.diagnostics.DiagnosticResult (Python class) — Standardized container for a single hypothesis test result.">DiagnosticResult</a></p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The test statistic is</p>
+<div class="math notranslate nohighlight">
+\[H = (\hat\beta_{FE} - \hat\beta_{RE})'
+    [\widehat{V}_{FE} - \widehat{V}_{RE}]^{-1}
+    (\hat\beta_{FE} - \hat\beta_{RE}).\]</div>
+<p>The pseudo-inverse is used for numerical stability when
+<code class="docutils literal notranslate"><span class="pre">V_FE</span> <span class="pre">-</span> <span class="pre">V_RE</span></code> is ill-conditioned.</p>
 </dd></dl>
 
 
@@ -1647,6 +1707,8 @@
         <script src="../_static/sphinx_immaterial_theme.32136f45f91ae6956.min.js?v=a7a9472a"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
         <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script id="MathJax-script" src="../_static/mathjax/tex-mml-chtml.js"></script>
     
   </body>
 </html>

@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.hausman\_fe\_re\_test
+============================================
+
+.. currentmodule:: bayespecon.diagnostics
+
+.. autofunction:: hausman_fe_re_test

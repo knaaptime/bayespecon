@@ -18,6 +18,7 @@
       ~OLSPanelFE.diagnostics
       ~OLSPanelFE.fit
       ~OLSPanelFE.fitted_values
+      ~OLSPanelFE.hausman_test
       ~OLSPanelFE.heteroskedasticity_diagnostics
       ~OLSPanelFE.lm_error_test
       ~OLSPanelFE.lm_joint_test
