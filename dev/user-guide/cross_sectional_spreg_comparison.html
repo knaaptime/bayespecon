@@ -71,6 +71,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#columbus-example" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -384,6 +389,19 @@
       
       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    <span>Comparing bayespecon vs spreg</span>
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="#" class="md-nav__link md-nav__link--active">
         
   
@@ -395,6 +413,70 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary">
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#columbus-example" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Columbus example</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Columbus example">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coefficient-comparison" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Coefficient comparison</span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#direct-indirect-total-effects-comparison" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Direct/Indirect/Total effects comparison</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-synthetic-data-on-a-30x30-grid" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Example:<wbr> Synthetic Data on a 30x30 Grid</span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -788,6 +870,60 @@
   
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#columbus-example" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Columbus example</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Columbus example">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coefficient-comparison" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Coefficient comparison</span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#direct-indirect-total-effects-comparison" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Direct/Indirect/Total effects comparison</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-synthetic-data-on-a-30x30-grid" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Example:<wbr> Synthetic Data on a 30x30 Grid</span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -811,6 +947,7 @@
   
 
 <h1 id="cross-sectional-model-comparison-bayespecon-vs-spreg">Cross-Sectional Model Comparison: bayespecon vs spreg<a class="headerlink" href="#cross-sectional-model-comparison-bayespecon-vs-spreg" title="Link to this heading">¶</a></h1>
+<h2 id="columbus-example">Columbus example<a class="headerlink" href="#columbus-example" title="Link to this heading">¶</a></h2>
 <p>This notebook compares equivalent cross-sectional models between <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> and <code class="docutils literal notranslate"><span class="pre">spreg</span></code> on a real example dataset from the PySAL/spreg ecosystem.</p>
 <p>The dependent variable is <code class="docutils literal notranslate"><span class="pre">HOVAL</span></code>, with <code class="docutils literal notranslate"><span class="pre">INC</span></code> and <code class="docutils literal notranslate"><span class="pre">CRIME</span></code> used as explanatory variables.</p>
 <p>Model mapping used:</p>
@@ -824,13 +961,12 @@
 <p>Dataset: <strong>Columbus</strong> neighborhood data from <code class="docutils literal notranslate"><span class="pre">libpysal.examples</span></code>.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">libpysal</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">spreg</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">spreg.sputils</span><span class="w"> </span><span class="kn">import</span> <span class="n">_sp_effects</span><span class="p">,</span> <span class="n">spmultiplier</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.weights</span><span class="w"> </span><span class="kn">import</span> <span class="n">Queen</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">display</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">SLX</span><span class="p">,</span> <span class="n">SAR</span><span class="p">,</span> <span class="n">SEM</span><span class="p">,</span> <span class="n">SDM</span><span class="p">,</span> <span class="n">SDEM</span>
@@ -840,27 +976,23 @@
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Load a real dataset from libpysal/spreg examples</span>
-<span class="n">columbus</span> <span class="o">=</span> <span class="n">libpysal</span><span class="o">.</span><span class="n">examples</span><span class="o">.</span><span class="n">load_example</span><span class="p">(</span><span class="s2">&quot;Columbus&quot;</span><span class="p">)</span>
-<span class="n">shp_path</span> <span class="o">=</span> <span class="n">columbus</span><span class="o">.</span><span class="n">get_path</span><span class="p">(</span><span class="s2">&quot;columbus.shp&quot;</span><span class="p">)</span>
-<span class="n">dbf_path</span> <span class="o">=</span> <span class="n">columbus</span><span class="o">.</span><span class="n">get_path</span><span class="p">(</span><span class="s2">&quot;columbus.dbf&quot;</span><span class="p">)</span>
-
-<span class="n">db</span> <span class="o">=</span> <span class="n">libpysal</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">dbf_path</span><span class="p">)</span>
-<span class="n">y_col</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">db</span><span class="o">.</span><span class="n">by_col</span><span class="p">(</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
-<span class="n">X_raw</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;INC&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">db</span><span class="o">.</span><span class="n">by_col</span><span class="p">(</span><span class="s2">&quot;INC&quot;</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">),</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">db</span><span class="o">.</span><span class="n">by_col</span><span class="p">(</span><span class="s2">&quot;CRIME&quot;</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)})</span>
-
-<span class="n">X_spreg</span> <span class="o">=</span> <span class="n">X_raw</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-<span class="n">y_spreg</span> <span class="o">=</span> <span class="n">y_col</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
-<span class="n">X_bayes</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">X_raw</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;CONSTANT&quot;</span><span class="p">),</span> <span class="n">X_raw</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-<span class="n">y_bayes</span> <span class="o">=</span> <span class="n">y_col</span>
-
-<span class="n">w</span> <span class="o">=</span> <span class="n">Queen</span><span class="o">.</span><span class="n">from_shapefile</span><span class="p">(</span><span class="n">shp_path</span><span class="p">)</span>
-<span class="n">w</span><span class="o">.</span><span class="n">transform</span> <span class="o">=</span> <span class="s2">&quot;r&quot;</span>
-<span class="n">w_coo</span> <span class="o">=</span> <span class="n">w</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">tocoo</span><span class="p">()</span>
-<span class="n">W_graph</span> <span class="o">=</span> <span class="n">Graph</span><span class="o">.</span><span class="n">from_arrays</span><span class="p">(</span><span class="n">w_coo</span><span class="o">.</span><span class="n">row</span><span class="p">,</span> <span class="n">w_coo</span><span class="o">.</span><span class="n">col</span><span class="p">,</span> <span class="n">w_coo</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">))</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s1">&#39;r&#39;</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;N=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">y_col</span><span class="p">)</span><span class="si">}</span><span class="s2"> observations&quot;</span><span class="p">)</span>
-<span class="n">X_bayes</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">columbus</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="n">libpysal</span><span class="o">.</span><span class="n">examples</span><span class="o">.</span><span class="n">get_path</span><span class="p">(</span><span class="s2">&quot;columbus.shp&quot;</span><span class="p">))</span>
+<span class="n">columbus</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">scheme</span><span class="o">=</span><span class="s2">&quot;quantiles&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">w</span> <span class="o">=</span> <span class="n">libpysal</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">columbus</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s1">&#39;r&#39;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">y</span> <span class="o">=</span> <span class="n">columbus</span><span class="o">.</span><span class="n">HOVAL</span><span class="o">.</span><span class="n">values</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">columbus</span><span class="p">[[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]]</span>
 </code></pre></div>
 </div>
 </div>
@@ -868,23 +1000,30 @@
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">spreg_results</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">OLS</span><span class="p">(</span><span class="n">y_spreg</span><span class="p">,</span> <span class="n">X_spreg</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">slx_lags</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
-    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Lag</span><span class="p">(</span><span class="n">y_spreg</span><span class="p">,</span> <span class="n">X_spreg</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
-    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Error</span><span class="p">(</span><span class="n">y_spreg</span><span class="p">,</span> <span class="n">X_spreg</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
-    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Lag</span><span class="p">(</span><span class="n">y_spreg</span><span class="p">,</span> <span class="n">X_spreg</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">slx_lags</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">w_lags</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
-    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Error</span><span class="p">(</span><span class="n">y_spreg</span><span class="p">,</span> <span class="n">X_spreg</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">slx_lags</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
+    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">OLS</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">slx_lags</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
+    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Lag</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
+    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Error</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
+    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Lag</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">slx_lags</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">w_lags</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
+    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Error</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">slx_lags</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
 <span class="p">}</span>
 
 <span class="n">sample_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="n">bayes_models</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">SLX</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y_bayes</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X_bayes</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W_graph</span><span class="p">),</span>
-    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y_bayes</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X_bayes</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W_graph</span><span class="p">),</span>
-    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">SEM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y_bayes</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X_bayes</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W_graph</span><span class="p">),</span>
-    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">SDM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y_bayes</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X_bayes</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W_graph</span><span class="p">),</span>
-    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">SDEM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y_bayes</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X_bayes</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W_graph</span><span class="p">),</span>
+    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">SLX</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">w</span><span class="p">),</span>
+    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">w</span><span class="p">),</span>
+    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">SEM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">w</span><span class="p">),</span>
+    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">SDM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">w</span><span class="p">),</span>
+    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">SDEM</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">w</span><span class="p">),</span>
 <span class="p">}</span>
 <span class="n">bayes_idata</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="o">**</span><span class="n">sample_kwargs</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">model</span> <span class="ow">in</span> <span class="n">bayes_models</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Finished fitting all bayespecon models.&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="nb">print</span><span class="p">(</span><span class="n">spreg_results</span><span class="p">[</span><span class="s2">&quot;SLX&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">name_x</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -1024,19 +1163,68 @@
 </div>
 </div>
 </div>
+<h3 id="coefficient-comparison">Coefficient comparison<a class="headerlink" href="#coefficient-comparison" title="Link to this heading">¶</a></h3>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Coefficient comparison&quot;</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">comparison</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Direct/Indirect/Total effects comparison&quot;</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">spatial_effects_comparison</span><span class="p">)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">display</span><span class="p">(</span><span class="n">comparison</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="direct-indirect-total-effects-comparison">Direct/Indirect/Total effects comparison<a class="headerlink" href="#direct-indirect-total-effects-comparison" title="Link to this heading">¶</a></h3>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">display</span><span class="p">(</span><span class="n">spatial_effects_comparison</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> uses Bayesian inference while <code class="docutils literal notranslate"><span class="pre">spreg</span></code> reports frequentist point estimates, so exact equality is not expected. The coefficient and effects tables are intended to verify directional and numerical agreement under matched model formulas with <code class="docutils literal notranslate"><span class="pre">HOVAL</span></code> as the dependent variable.</p>
 <p>For effects, this notebook now uses <code class="docutils literal notranslate"><span class="pre">spreg</span></code>’s own spatial-impact utilities: <code class="docutils literal notranslate"><span class="pre">spreg.sputils.spmultiplier</span></code> and <code class="docutils literal notranslate"><span class="pre">spreg.sputils._sp_effects</span></code>. SEM is the one exception, since it has no spatial multiplier on the systematic component and therefore uses direct = coefficient, indirect = 0, total = coefficient.</p>
+<h2 id="example-synthetic-data-on-a-30x30-grid">Example: Synthetic Data on a 30x30 Grid<a class="headerlink" href="#example-synthetic-data-on-a-30x30-grid" title="Link to this heading">¶</a></h2>
+<p>This example demonstrates how to generate synthetic spatial data on a 30x30 regular grid, construct a spatial weights matrix, and fit a cross-sectional spatial regression model using the bayespecon package.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">SAR</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">dgp</span>
+
+<span class="c1"># Set random seed for reproducibility</span>
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+
+<span class="c1"># True parameters</span>
+<span class="n">beta_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">])</span>
+<span class="n">rho_true</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="n">sigma_true</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+<span class="n">gdf</span> <span class="o">=</span> <span class="n">dgp</span><span class="o">.</span><span class="n">simulate_sar</span><span class="p">(</span>
+    <span class="n">n</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span> <span class="n">beta</span><span class="o">=</span><span class="n">beta_true</span><span class="p">,</span> <span class="n">rho</span><span class="o">=</span><span class="n">rho_true</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="n">sigma_true</span><span class="p">,</span> <span class="n">create_gdf</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">contiguity</span><span class="o">=</span><span class="s1">&#39;queen&#39;</span><span class="p">)</span>
+
+<span class="n">w</span> <span class="o">=</span> <span class="n">libpysal</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">rook</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s1">&#39;r&#39;</span><span class="p">)</span>
+
+<span class="c1"># Fit SAR model</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="s2">&quot;y ~ X_1&quot;</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">)</span>
+<span class="n">res</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sim_spreg</span> <span class="o">=</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Lag</span><span class="p">(</span><span class="n">gdf</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">],</span> <span class="n">gdf</span><span class="p">[</span><span class="s1">&#39;X_1&#39;</span><span class="p">],</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="nb">print</span><span class="p">(</span><span class="n">sim_spreg</span><span class="o">.</span><span class="n">summary</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
 
 
 
