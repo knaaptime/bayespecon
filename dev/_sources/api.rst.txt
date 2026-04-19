@@ -15,7 +15,7 @@ Base Classes
 .. autosummary::
    :toctree: generated/
 
-   SpatialModel
+   SpatialModel :no-index:
 
 
 .. currentmodule:: bayespecon.models.panel_base
@@ -23,7 +23,7 @@ Base Classes
 .. autosummary::
    :toctree: generated/
 
-   SpatialPanelModel
+   SpatialPanelModel :no-index:
 
 
 Cross Sectional Spatial Models
@@ -89,7 +89,7 @@ Non-Linear Spatial Models
 .. autosummary::
    :toctree: generated/
 
-   SpatialProbit
+   SpatialProbit :no-index:
    SARTobit
    SEMTobit
    SDMTobit

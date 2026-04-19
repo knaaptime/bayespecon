@@ -322,19 +322,7 @@
    "execution_count": null,
    "id": "43b1008c",
    "metadata": {},
-   "outputs": [
-    {
-     "ename": "",
-     "evalue": "",
-     "output_type": "error",
-     "traceback": [
-      "\u001b[1;31mThe Kernel crashed while executing code in the current cell or a previous cell. \n",
-      "\u001b[1;31mPlease review the code in the cell(s) to identify a possible cause of the failure. \n",
-      "\u001b[1;31mClick <a href='https://aka.ms/vscodeJupyterKernelCrash'>here</a> for more info. \n",
-      "\u001b[1;31mView Jupyter <a href='command:jupyter.viewOutput'>log</a> for further details."
-     ]
-    }
-   ],
+   "outputs": [],
    "source": [
     "ok_full = results_full[results_full['total_time_s'].notna()].copy()\n",
     "fig, axes = plt.subplots(1, 2, figsize=(12, 4))\n",
