@@ -933,6 +933,82 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#ols-panel-random-effects" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>OLS panel <wbr>(Random Effects)</span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sar-panel-random-effects" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>SAR panel <wbr>(Random Effects)</span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sem-panel-random-effects" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>SEM panel <wbr>(Random Effects)</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dynamic-panel-models" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Dynamic Panel Models</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dynamic Panel Models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dlmpanelfe-dynamic-linear-model-fe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>DLMPanel<wbr>FE <wbr>(Dynamic Linear Model, FE)</span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sdmrpanelfe-dynamic-restricted-spatial-durbin-fe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>SDMRPanel<wbr>FE <wbr>(Dynamic Restricted Spatial Durbin, FE)</span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sdmupanelfe-dynamic-unrestricted-spatial-durbin-fe" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>SDMUPanel<wbr>FE <wbr>(Dynamic Unrestricted Spatial Durbin, FE)</span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1053,8 +1129,21 @@
 <p><a class="reference external" href="https://github.com/knaaptime/bayespecon/actions/workflows/unittests.yml"><img alt="Continuous Integration" src="https://github.com/knaaptime/bayespecon/actions/workflows/unittests.yml/badge.svg" /></a>
 <a class="reference external" href="https://codecov.io/gh/knaaptime/bayespecon"><img alt="codecov" src="https://codecov.io/gh/knaaptime/bayespecon/branch/main/graph/badge.svg?token=XO4SilfBEb" /></a></p>
 <p><strong>Bayesian Spatial Econometric Models</strong></p>
-<p>Bayesians are cool but MATLAB is not</p>
-<p>This package is a Python port of (the Bayesian parts of) Jim LeSage’s <a class="reference external" href="https://www.spatial-econometrics.com/">spatial econometrics toolbox</a> with a few minor enhancements. Models are specified using the familiar Wilkinson format via <a class="reference external" href="https://matthew.wardrop.casa/formulaic/latest/"><code class="docutils literal notranslate"><span class="pre">formulaic</span></code></a> (but you can pass design matrices if you prefer), and spatial weights matrices <span class="math notranslate nohighlight">\(W\)</span> are represented by PySAL <a class="reference external" href="https://pysal.org/libpysal/stable/generated/libpysal.graph.Graph.html#libpysal.graph.Graph"><code class="docutils literal notranslate"><span class="pre">graph</span></code></a> objects (or sparse matrices if you prefer). Estimation is handled by <a class="reference external" href="https://www.pymc.io/welcome.html"><code class="docutils literal notranslate"><span class="pre">pymc</span></code></a></p>
+<p>Because Bayesians are cool but MATLAB is not</p>
+<p>Bayesian spatial models have excellent reference implementations in proprietary languages (e.g. MATLAB), but considerably less exposure in open-source languages. Python has a robust ecosystem for Bayesian inference, but fitting regression models with spatial effects traditionally requires a thorough knowledge of <em>both</em> probabilistic programming languages and spatial econometrics</p>
+<p>Thus, <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> provides a simple interface for generating <code class="docutils literal notranslate"><span class="pre">pymc.Model</span></code> objects that fit commonly-used spatial econometric models. This design makes relatively sophisticated models available to applied researchers in short order, giving the benefit of fully Bayesian estimation without learning a new syntax.</p>
+<p>Models are specified using the familiar Wilkinson format via <a class="reference external" href="https://matthew.wardrop.casa/formulaic/latest/"><code class="docutils literal notranslate"><span class="pre">formulaic</span></code></a> (but you can pass design matrices if you prefer), and spatial weights matrices <span class="math notranslate nohighlight">\(W\)</span> are represented by PySAL <a class="reference external" href="https://pysal.org/libpysal/stable/generated/libpysal.graph.Graph.html#libpysal.graph.Graph"><code class="docutils literal notranslate"><span class="pre">graph</span></code></a> objects (or sparse matrices if you prefer). Estimation is handled by <a class="reference external" href="https://www.pymc.io/welcome.html"><code class="docutils literal notranslate"><span class="pre">pymc</span></code></a></p>
+<p>To ensure correctness, the vast majority of functionality is ported from and validated against Jim LeSage’s <a class="reference external" href="https://www.spatial-econometrics.com/">spatial econometrics toolbox</a>.</p>
+<p><strong>Main Features</strong>:</p>
+<ul class="simple">
+<li><p>Fit models using Wilkinson formulas and PySAL <code class="docutils literal notranslate"><span class="pre">Graph</span></code> objects</p></li>
+<li><p>Classes for a wide variety of spatial econometric model specifications</p></li>
+<li><p>Models compile to PyMC for full customizability and <a class="reference internal" href="#"><span class="xref myst">performant sampling options</span></a></p></li>
+<li><p>Fast <a class="reference internal" href="#"><span class="xref myst">log-determinant functions</span></a> for evaluating spatial terms</p></li>
+<li><p>Compute marginal (direct and indirect) effects for models with spatial terms</p></li>
+<li><p>Full suite of spatial diagnostics</p></li>
+<li><p>Functions to generate synthetic datasets using a known DGP for each model</p></li>
+</ul>
 <h2 id="supported-models">Supported Models<a class="headerlink" href="#supported-models" title="Link to this heading">¶</a></h2>
 <h3 id="cross-sectional-models">Cross Sectional Models<a class="headerlink" href="#cross-sectional-models" title="Link to this heading">¶</a></h3>
 <h4 id="slx">SLX<a class="headerlink" href="#slx" title="Link to this heading">¶</a></h4>
@@ -1088,6 +1177,25 @@
 <h4 id="sdem-panel">SDEM panel<a class="headerlink" href="#sdem-panel" title="Link to this heading">¶</a></h4>
 <div class="math notranslate nohighlight">
 \[y_{it} = x_{it} ' \beta + Wx_{it}' \theta + a_i + \tau_t + u_{it}, u_{it}=\lambda Wu_{it} + \epsilon_{it}\]</div>
+<h4 id="ols-panel-random-effects">OLS panel (Random Effects)<a class="headerlink" href="#ols-panel-random-effects" title="Link to this heading">¶</a></h4>
+<div class="math notranslate nohighlight">
+\[y_{it} = x_{it}' \beta + \alpha_i + \tau_t + \epsilon_{it}, \quad \alpha_i \sim N(0, \sigma_\alpha^2)\]</div>
+<h4 id="sar-panel-random-effects">SAR panel (Random Effects)<a class="headerlink" href="#sar-panel-random-effects" title="Link to this heading">¶</a></h4>
+<div class="math notranslate nohighlight">
+\[y_{it} = \rho W y_{it} + x_{it}' \beta + \alpha_i + \tau_t + \epsilon_{it}, \quad \alpha_i \sim N(0, \sigma_\alpha^2)\]</div>
+<h4 id="sem-panel-random-effects">SEM panel (Random Effects)<a class="headerlink" href="#sem-panel-random-effects" title="Link to this heading">¶</a></h4>
+<div class="math notranslate nohighlight">
+\[y_{it} = x_{it}' \beta + \alpha_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}, \quad \alpha_i \sim N(0, \sigma_\alpha^2)\]</div>
+<h3 id="dynamic-panel-models">Dynamic Panel Models<a class="headerlink" href="#dynamic-panel-models" title="Link to this heading">¶</a></h3>
+<h4 id="dlmpanelfe-dynamic-linear-model-fe">DLMPanelFE (Dynamic Linear Model, FE)<a class="headerlink" href="#dlmpanelfe-dynamic-linear-model-fe" title="Link to this heading">¶</a></h4>
+<div class="math notranslate nohighlight">
+\[y_{it} = \phi y_{i, t-1} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}\]</div>
+<h4 id="sdmrpanelfe-dynamic-restricted-spatial-durbin-fe">SDMRPanelFE (Dynamic Restricted Spatial Durbin, FE)<a class="headerlink" href="#sdmrpanelfe-dynamic-restricted-spatial-durbin-fe" title="Link to this heading">¶</a></h4>
+<div class="math notranslate nohighlight">
+\[y_{it} = \phi y_{i, t-1} + \rho W y_{it} - \rho \phi W y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}\]</div>
+<h4 id="sdmupanelfe-dynamic-unrestricted-spatial-durbin-fe">SDMUPanelFE (Dynamic Unrestricted Spatial Durbin, FE)<a class="headerlink" href="#sdmupanelfe-dynamic-unrestricted-spatial-durbin-fe" title="Link to this heading">¶</a></h4>
+<div class="math notranslate nohighlight">
+\[y_{it} = \phi y_{i, t-1} + \rho W y_{it} + \theta W y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}\]</div>
 <h3 id="non-linear-models">Non-Linear Models<a class="headerlink" href="#non-linear-models" title="Link to this heading">¶</a></h3>
 <h4 id="spatial-probit">Spatial Probit<a class="headerlink" href="#spatial-probit" title="Link to this heading">¶</a></h4>
 <p>For binary outcomes <span class="math notranslate nohighlight">\(y_i \in \{0,1\}\)</span>, latent utilities <span class="math notranslate nohighlight">\(y^*\)</span> follow a spatial lag:</p>

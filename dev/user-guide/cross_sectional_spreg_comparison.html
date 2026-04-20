@@ -1057,7 +1057,7 @@ NUTS: [rho, beta, sigma]
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 22 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 23 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [lam, beta, sigma]
@@ -1818,16 +1818,16 @@ for Jupyter support
 </pre>
 </div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 </div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>            mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  \
-Intercept  0.840  0.058   0.729    0.946      0.001    0.001    4051.0   
-X_1       -0.989  0.027  -1.039   -0.938      0.000    0.000    5266.0   
-rho        0.571  0.026   0.524    0.623      0.000    0.000    4058.0   
-sigma      1.041  0.018   1.006    1.075      0.000    0.000    5238.0   
+Intercept  1.083  0.065   0.966    1.207      0.001    0.001    3834.0   
+X_1       -1.063  0.027  -1.113   -1.012      0.000    0.000    5619.0   
+rho        0.463  0.029   0.407    0.516      0.000    0.000    3800.0   
+sigma      1.056  0.019   1.020    1.091      0.000    0.000    5776.0   
 
            ess_tail  r_hat  
-Intercept    4374.0    1.0  
-X_1          5007.0    1.0  
-rho          4304.0    1.0  
-sigma        4221.0    1.0
+Intercept    3926.0    1.0  
+X_1          4874.0    1.0  
+rho          4043.0    1.0  
+sigma        4495.0    1.0
 </code></pre></div>
 </div>
 </div>
@@ -1859,29 +1859,29 @@ SUMMARY OF OUTPUT: SPATIAL TWO STAGE LEAST SQUARES
 Data set            :     unknown
 Weights matrix      :     unknown
 Dependent Variable  :           y                Number of Observations:        1600
-Mean dependent var  :      1.9517                Number of Variables   :           3
-S.D. dependent var  :      1.6006                Degrees of Freedom    :        1597
-Pseudo R-squared    :      0.5797
-Spatial Pseudo R-squared:  0.4899
+Mean dependent var  :      2.0280                Number of Variables   :           3
+S.D. dependent var  :      1.5631                Degrees of Freedom    :        1597
+Pseudo R-squared    :      0.5426
+Spatial Pseudo R-squared:  0.4815
 
 ------------------------------------------------------------------------------------
             Variable     Coefficient       Std.Error     z-Statistic     Probability
 ------------------------------------------------------------------------------------
-            CONSTANT         0.81664         0.08908         9.16794         0.00000
-                 X_1        -0.98780         0.02703       -36.54854         0.00000
-                 W_y         0.58348         0.04374        13.33975         0.00000
+            CONSTANT         1.16139         0.11725         9.90534         0.00000
+                 X_1        -1.06496         0.02709       -39.31558         0.00000
+                 W_y         0.42415         0.05621         7.54590         0.00000
 ------------------------------------------------------------------------------------
 Instrumented: W_y
 Instruments: W_X_1
 
 DIAGNOSTICS FOR SPATIAL DEPENDENCE
 TEST                              DF         VALUE           PROB
-Anselin-Kelejian Test             1          0.220           0.6387
+Anselin-Kelejian Test             1          0.402           0.5263
 
 SPATIAL LAG MODEL IMPACTS
 Impacts computed using the &#39;simple&#39; method.
             Variable         Direct        Indirect          Total
-                 X_1        -0.9878         -1.3838         -2.3716
+                 X_1        -1.0650         -0.7844         -1.8494
 ================================ END OF REPORT =====================================
 </code></pre></div>
 </div>
