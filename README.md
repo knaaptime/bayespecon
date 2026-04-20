@@ -132,7 +132,7 @@ $$y_i = \max(c,\, y^*_i)$$
 
 spatial lag in the latent outcome:
 
-$$y^*_t = \rho W y^*_t + X_t \beta + \varepsilon_t$$
+$$y_t^* = \rho W y_t^* + X_t \beta + \varepsilon_t$$
 
 #### SEMPanelTobit
 
