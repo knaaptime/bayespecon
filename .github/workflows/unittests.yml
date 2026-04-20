@@ -77,8 +77,7 @@ jobs:
 
       - name: run tests
         run: |
-          pytest tests \
-          -m slow \
+          pytest -m '' \
           -v \
           -r a \
           -n auto \
