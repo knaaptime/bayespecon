@@ -6,7 +6,7 @@ import arviz as az
 import numpy as np
 
 from bayespecon import OLS, OLSPanelFE
-from tests.helpers import W_to_graph, make_line_W
+from .helpers  import W_to_graph, make_line_W
 
 
 def _idata_beta(beta: np.ndarray):

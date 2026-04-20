@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from bayespecon import SARPanelTobit, SEMPanelTobit
-from tests.helpers import (
+from .helpers  import (
     PANEL_N,
     PANEL_T,
     SAMPLE_KWARGS,

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from bayespecon import dgp
-from tests.helpers import W_to_graph, make_rook_W
+from .helpers import W_to_graph, make_rook_W
 
 
 def test_dgp_exports_have_gdf_argument() -> None:

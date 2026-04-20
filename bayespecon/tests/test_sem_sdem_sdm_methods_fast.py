@@ -7,7 +7,7 @@ import numpy as np
 import pymc as pm
 
 from bayespecon import SEM, SDEM, SDM
-from tests.helpers import W_to_graph, make_line_W
+from .helpers  import W_to_graph, make_line_W
 
 
 def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:

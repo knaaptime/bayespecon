@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from bayespecon import DLMPanelFE, SDMRPanelFE, SDMUPanelFE
-from tests.helpers import (
+from .helpers  import (
     SAMPLE_KWARGS,
     W_to_graph,
     make_line_W,

@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from bayespecon import SpatialProbit
-from tests.helpers import (
+from .helpers  import (
     SAMPLE_KWARGS,
     make_line_W,
     make_spatial_probit_data,

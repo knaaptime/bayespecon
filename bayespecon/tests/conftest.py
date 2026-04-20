@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from libpysal.graph import Graph
 
-from tests.helpers import PANEL_N, make_line_W, make_rook_W, W_to_graph
+from .helpers import PANEL_N, make_line_W, make_rook_W, W_to_graph
 
 SIDE = 6  # 36 cross-sectional units
 

@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from bayespecon import OLSPanelFE, OLSPanelRE, SARPanelFE
-from tests.helpers import W_to_graph, make_line_W
+from .helpers  import W_to_graph, make_line_W
 
 
 def _idata_with_beta(beta: np.ndarray, rho: float | None = None):

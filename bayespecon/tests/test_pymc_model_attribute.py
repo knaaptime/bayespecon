@@ -7,7 +7,7 @@ import numpy as np
 import pymc as pm
 
 from bayespecon import SAR, SARPanelFE, SpatialProbit
-from tests.helpers import W_to_graph, make_line_W
+from .helpers  import W_to_graph, make_line_W
 
 
 def _fake_sample(*args, **kwargs):

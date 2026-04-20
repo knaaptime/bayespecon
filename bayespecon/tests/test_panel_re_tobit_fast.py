@@ -6,7 +6,7 @@ import arviz as az
 import numpy as np
 
 from bayespecon import OLSPanelRE, SARPanelRE, SEMPanelRE, SARPanelTobit, SEMPanelTobit
-from tests.helpers import W_to_graph, make_line_W
+from .helpers  import W_to_graph, make_line_W
 
 
 def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:

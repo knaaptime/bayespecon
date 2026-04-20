@@ -8,7 +8,7 @@ import pymc as pm
 
 from bayespecon import OLSPanelFE, SARPanelFE, SEMPanelFE, SDMPanelFE, SDEMPanelFE
 from bayespecon.models.panel_base import SpatialPanelModel
-from tests.helpers import W_to_graph, make_line_W
+from .helpers  import W_to_graph, make_line_W
 
 
 def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:

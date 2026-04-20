@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from bayespecon import OLSPanelFE, OLSPanelRE, SARPanelFE, SDEMPanelFE, SDMPanelFE, SEMPanelFE
-from tests.helpers import (
+from .helpers  import (
     PANEL_N,
     PANEL_T,
     SAMPLE_KWARGS,
