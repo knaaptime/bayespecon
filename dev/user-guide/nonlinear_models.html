@@ -987,8 +987,8 @@
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho, beta, sigma_a, a_raw]
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 5 seconds.
-There was 1 divergence after tuning. Increase `target_accept` or reparameterize.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 8 seconds.
+There were 23 divergences after tuning. Increase `target_accept` or reparameterize.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
@@ -1026,51 +1026,51 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <tbody>
     <tr>
       <th>rho</th>
-      <td>0.162</td>
-      <td>0.323</td>
-      <td>-0.470</td>
-      <td>0.686</td>
-      <td>0.023</td>
-      <td>0.014</td>
-      <td>201.0</td>
-      <td>229.0</td>
+      <td>0.204</td>
+      <td>0.367</td>
+      <td>-0.511</td>
+      <td>0.766</td>
+      <td>0.029</td>
+      <td>0.016</td>
+      <td>163.0</td>
+      <td>198.0</td>
       <td>1.01</td>
     </tr>
     <tr>
       <th>x0</th>
-      <td>0.305</td>
-      <td>1.005</td>
-      <td>-1.621</td>
-      <td>2.532</td>
-      <td>0.085</td>
-      <td>0.064</td>
-      <td>142.0</td>
-      <td>150.0</td>
-      <td>1.00</td>
+      <td>0.196</td>
+      <td>1.441</td>
+      <td>-3.345</td>
+      <td>2.313</td>
+      <td>0.240</td>
+      <td>0.325</td>
+      <td>53.0</td>
+      <td>24.0</td>
+      <td>1.09</td>
     </tr>
     <tr>
       <th>x1</th>
-      <td>1.027</td>
-      <td>0.211</td>
-      <td>0.654</td>
-      <td>1.437</td>
-      <td>0.011</td>
-      <td>0.009</td>
-      <td>412.0</td>
-      <td>297.0</td>
+      <td>1.010</td>
+      <td>0.187</td>
+      <td>0.670</td>
+      <td>1.369</td>
+      <td>0.012</td>
+      <td>0.007</td>
+      <td>235.0</td>
+      <td>393.0</td>
       <td>1.00</td>
     </tr>
     <tr>
       <th>sigma_a</th>
-      <td>1.835</td>
-      <td>0.605</td>
-      <td>0.848</td>
-      <td>2.983</td>
-      <td>0.040</td>
-      <td>0.028</td>
-      <td>233.0</td>
-      <td>293.0</td>
-      <td>1.00</td>
+      <td>2.000</td>
+      <td>0.795</td>
+      <td>0.812</td>
+      <td>3.681</td>
+      <td>0.175</td>
+      <td>0.131</td>
+      <td>32.0</td>
+      <td>30.0</td>
+      <td>1.07</td>
     </tr>
   </tbody>
 </table>
@@ -1135,35 +1135,35 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho, beta, sigma, y_cens_gap]
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 5 seconds.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [lam, beta, sigma, y_cens_gap]
-Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 4 seconds.
+Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 </code></pre></div>
 </div>
 <div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>(        mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  \
- rho    0.461  0.084   0.302    0.604      0.004    0.003     426.0     453.0   
- x0     0.757  0.223   0.332    1.178      0.012    0.008     375.0     375.0   
- x1     1.671  0.184   1.353    2.013      0.010    0.007     324.0     466.0   
- sigma  0.816  0.145   0.582    1.061      0.009    0.010     286.0     359.0   
+ rho    0.459  0.077   0.338    0.620      0.004    0.003     443.0     546.0   
+ x0     0.760  0.216   0.371    1.183      0.010    0.007     436.0     498.0   
+ x1     1.669  0.172   1.338    1.982      0.009    0.006     392.0     457.0   
+ sigma  0.815  0.138   0.571    1.075      0.007    0.005     458.0     419.0   
  
         r_hat  
- rho     1.00  
- x0      1.00  
- x1      1.01  
- sigma   1.00  ,
+ rho      1.0  
+ x0       1.0  
+ x1       1.0  
+ sigma    1.0  ,
          mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  ess_tail  \
- lam    0.456  0.148   0.156    0.718      0.008    0.005     346.0     366.0   
- x0     1.448  0.220   1.026    1.910      0.012    0.012     321.0     297.0   
- x1     1.206  0.092   1.023    1.373      0.005    0.004     304.0     270.0   
- sigma  0.546  0.083   0.405    0.703      0.004    0.004     448.0     457.0   
+ lam    0.439  0.144   0.170    0.702      0.007    0.006     462.0     422.0   
+ x0     1.443  0.205   1.048    1.812      0.010    0.009     409.0     366.0   
+ x1     1.212  0.091   1.055    1.411      0.005    0.004     375.0     337.0   
+ sigma  0.552  0.087   0.419    0.733      0.004    0.003     454.0     442.0   
  
         r_hat  
- lam     1.00  
+ lam     1.01  
  x0      1.01  
  x1      1.01  
  sigma   1.00  )
