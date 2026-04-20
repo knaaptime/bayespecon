@@ -1039,7 +1039,7 @@ Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [beta, sigma]
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 19 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 20 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
@@ -1057,7 +1057,7 @@ NUTS: [rho, beta, sigma]
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 23 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 22 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [lam, beta, sigma]
@@ -1809,7 +1809,7 @@ Impacts computed using the &#39;simple&#39; method.
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-Sampling 4 chains for 1_000 tune and 2_000 draw iterations (4_000 + 8_000 draws total) took 15 seconds.
+Sampling 4 chains for 1_000 tune and 2_000 draw iterations (4_000 + 8_000 draws total) took 16 seconds.
 </code></pre></div>
 </div>
 <div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
@@ -1818,16 +1818,16 @@ for Jupyter support
 </pre>
 </div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 </div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>            mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  \
-Intercept  0.920  0.057   0.811    1.024      0.001    0.001    4142.0   
-X_1       -1.051  0.025  -1.096   -1.001      0.000    0.000    5569.0   
-rho        0.545  0.026   0.495    0.593      0.000    0.000    4254.0   
-sigma      1.036  0.018   1.001    1.071      0.000    0.000    5881.0   
+Intercept  0.977  0.059   0.869    1.092      0.001    0.001    3508.0   
+X_1       -1.042  0.026  -1.089   -0.994      0.000    0.000    6595.0   
+rho        0.497  0.027   0.445    0.546      0.000    0.000    3556.0   
+sigma      1.037  0.019   1.002    1.072      0.000    0.000    5611.0   
 
            ess_tail  r_hat  
-Intercept    3755.0    1.0  
-X_1          4623.0    1.0  
-rho          4372.0    1.0  
-sigma        4677.0    1.0
+Intercept    4506.0    1.0  
+X_1          5550.0    1.0  
+rho          4366.0    1.0  
+sigma        5262.0    1.0
 </code></pre></div>
 </div>
 </div>
@@ -1859,29 +1859,29 @@ SUMMARY OF OUTPUT: SPATIAL TWO STAGE LEAST SQUARES
 Data set            :     unknown
 Weights matrix      :     unknown
 Dependent Variable  :           y                Number of Observations:        1600
-Mean dependent var  :      1.9254                Number of Variables   :           3
-S.D. dependent var  :      1.6336                Degrees of Freedom    :        1597
-Pseudo R-squared    :      0.6005
-Spatial Pseudo R-squared:  0.5228
+Mean dependent var  :      1.9438                Number of Variables   :           3
+S.D. dependent var  :      1.5941                Degrees of Freedom    :        1597
+Pseudo R-squared    :      0.5807
+Spatial Pseudo R-squared:  0.5205
 
 ------------------------------------------------------------------------------------
             Variable     Coefficient       Std.Error     z-Statistic     Probability
 ------------------------------------------------------------------------------------
-            CONSTANT         0.88205         0.08931         9.87598         0.00000
-                 X_1        -1.04847         0.02581       -40.61574         0.00000
-                 W_y         0.56514         0.04449        12.70157         0.00000
+            CONSTANT         0.91428         0.08951        10.21393         0.00000
+                 X_1        -1.03739         0.02640       -39.29623         0.00000
+                 W_y         0.52932         0.04416        11.98699         0.00000
 ------------------------------------------------------------------------------------
 Instrumented: W_y
 Instruments: W_X_1
 
 DIAGNOSTICS FOR SPATIAL DEPENDENCE
 TEST                              DF         VALUE           PROB
-Anselin-Kelejian Test             1          0.472           0.4922
+Anselin-Kelejian Test             1          2.061           0.1511
 
 SPATIAL LAG MODEL IMPACTS
 Impacts computed using the &#39;simple&#39; method.
             Variable         Direct        Indirect          Total
-                 X_1        -1.0485         -1.3626         -2.4110
+                 X_1        -1.0374         -1.1666         -2.2040
 ================================ END OF REPORT =====================================
 </code></pre></div>
 </div>
