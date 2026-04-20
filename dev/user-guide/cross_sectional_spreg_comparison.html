@@ -1039,25 +1039,25 @@ Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [beta, sigma]
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 20 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 17 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 16 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [lam, beta, sigma]
 Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 14 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [lam, beta, sigma]
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 13 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 23 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 18 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [lam, beta, sigma]
@@ -1065,7 +1065,7 @@ NUTS: [lam, beta, sigma]
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 21 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 17 seconds.
 There was 1 divergence after tuning. Increase `target_accept` or reparameterize.
 </code></pre></div>
 </div>
@@ -1809,7 +1809,7 @@ Impacts computed using the &#39;simple&#39; method.
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-Sampling 4 chains for 1_000 tune and 2_000 draw iterations (4_000 + 8_000 draws total) took 16 seconds.
+Sampling 4 chains for 1_000 tune and 2_000 draw iterations (4_000 + 8_000 draws total) took 14 seconds.
 </code></pre></div>
 </div>
 <div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
@@ -1818,16 +1818,16 @@ for Jupyter support
 </pre>
 </div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 </div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>            mean     sd  hdi_3%  hdi_97%  mcse_mean  mcse_sd  ess_bulk  \
-Intercept  0.899  0.062   0.786    1.017      0.001    0.001    4043.0   
-X_1       -1.017  0.026  -1.067   -0.968      0.000    0.000    6212.0   
-rho        0.549  0.027   0.501    0.603      0.000    0.000    4089.0   
-sigma      1.087  0.020   1.052    1.124      0.000    0.000    5666.0   
+Intercept  0.973  0.062   0.852    1.085      0.001    0.001    3635.0   
+X_1       -1.039  0.027  -1.089   -0.987      0.000    0.000    5100.0   
+rho        0.498  0.029   0.441    0.548      0.000    0.000    3632.0   
+sigma      1.070  0.019   1.035    1.106      0.000    0.000    5889.0   
 
            ess_tail  r_hat  
-Intercept    4253.0    1.0  
-X_1          5529.0    1.0  
-rho          4398.0    1.0  
-sigma        4526.0    1.0
+Intercept    4149.0    1.0  
+X_1          4710.0    1.0  
+rho          4318.0    1.0  
+sigma        5011.0    1.0
 </code></pre></div>
 </div>
 </div>
@@ -1859,29 +1859,29 @@ SUMMARY OF OUTPUT: SPATIAL TWO STAGE LEAST SQUARES
 Data set            :     unknown
 Weights matrix      :     unknown
 Dependent Variable  :           y                Number of Observations:        1600
-Mean dependent var  :      2.0439                Number of Variables   :           3
-S.D. dependent var  :      1.6496                Degrees of Freedom    :        1597
-Pseudo R-squared    :      0.5682
-Spatial Pseudo R-squared:  0.4749
+Mean dependent var  :      1.9558                Number of Variables   :           3
+S.D. dependent var  :      1.6146                Degrees of Freedom    :        1597
+Pseudo R-squared    :      0.5633
+Spatial Pseudo R-squared:  0.4965
 
 ------------------------------------------------------------------------------------
             Variable     Coefficient       Std.Error     z-Statistic     Probability
 ------------------------------------------------------------------------------------
-            CONSTANT         0.89343         0.10847         8.23637         0.00000
-                 X_1        -1.01638         0.02703       -37.60280         0.00000
-                 W_y         0.55198         0.05139        10.74198         0.00000
+            CONSTANT         0.94597         0.10113         9.35438         0.00000
+                 X_1        -1.03748         0.02722       -38.10998         0.00000
+                 W_y         0.51207         0.04988        10.26682         0.00000
 ------------------------------------------------------------------------------------
 Instrumented: W_y
 Instruments: W_X_1
 
 DIAGNOSTICS FOR SPATIAL DEPENDENCE
 TEST                              DF         VALUE           PROB
-Anselin-Kelejian Test             1          0.001           0.9722
+Anselin-Kelejian Test             1          0.402           0.5261
 
 SPATIAL LAG MODEL IMPACTS
 Impacts computed using the &#39;simple&#39; method.
             Variable         Direct        Indirect          Total
-                 X_1        -1.0164         -1.2522         -2.2686
+                 X_1        -1.0375         -1.0888         -2.1263
 ================================ END OF REPORT =====================================
 </code></pre></div>
 </div>
