@@ -19,13 +19,16 @@ def _left_censor(y_latent: np.ndarray, censoring: float) -> tuple[np.ndarray, np
     return y_obs, mask
 
 
-def simulate_panel_sar_tobit_fe(*, censoring: float = 0.0, **kwargs) -> dict:
+def simulate_panel_sar_tobit_fe(*, censoring: float = 0.0, err_hetero: bool = False, **kwargs) -> dict:
     """Simulate left-censored panel SAR FE data.
 
     Parameters
     ----------
     censoring : float, default=0.0
         Left-censoring threshold ``c`` where observed ``y = max(c, y*)``.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations. Forwarded to
+        :func:`bayespecon.dgp.panel_fe.simulate_panel_sar_fe`.
     **kwargs
         Forwarded to :func:`bayespecon.dgp.panel_fe.simulate_panel_sar_fe`.
 
@@ -38,7 +41,7 @@ def simulate_panel_sar_tobit_fe(*, censoring: float = 0.0, **kwargs) -> dict:
     wide = kwargs.pop("wide", False)
     geometry_type = kwargs.pop("geometry_type", "polygon")
     gdf = kwargs.get("gdf", None)
-    out = simulate_panel_sar_fe(**kwargs)
+    out = simulate_panel_sar_fe(err_hetero=err_hetero, **kwargs)
     y_obs, mask = _left_censor(out["y"], censoring)
     out["y_latent"] = out["y"]
     out["y"] = y_obs
@@ -51,13 +54,16 @@ def simulate_panel_sar_tobit_fe(*, censoring: float = 0.0, **kwargs) -> dict:
     return out
 
 
-def simulate_panel_sem_tobit_fe(*, censoring: float = 0.0, **kwargs) -> dict:
+def simulate_panel_sem_tobit_fe(*, censoring: float = 0.0, err_hetero: bool = False, **kwargs) -> dict:
     """Simulate left-censored panel SEM FE data.
 
     Parameters
     ----------
     censoring : float, default=0.0
         Left-censoring threshold ``c`` where observed ``y = max(c, y*)``.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations. Forwarded to
+        :func:`bayespecon.dgp.panel_fe.simulate_panel_sem_fe`.
     **kwargs
         Forwarded to :func:`bayespecon.dgp.panel_fe.simulate_panel_sem_fe`.
 
@@ -70,7 +76,7 @@ def simulate_panel_sem_tobit_fe(*, censoring: float = 0.0, **kwargs) -> dict:
     wide = kwargs.pop("wide", False)
     geometry_type = kwargs.pop("geometry_type", "polygon")
     gdf = kwargs.get("gdf", None)
-    out = simulate_panel_sem_fe(**kwargs)
+    out = simulate_panel_sem_fe(err_hetero=err_hetero, **kwargs)
     y_obs, mask = _left_censor(out["y"], censoring)
     out["y_latent"] = out["y"]
     out["y"] = y_obs

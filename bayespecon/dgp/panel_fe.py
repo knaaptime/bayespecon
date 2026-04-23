@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .utils import ensure_rng, make_design_matrix, make_panel_output_geodataframe, panel_index, resolve_weights
+from .utils import _hetero_scale, ensure_rng, make_design_matrix, make_panel_output_geodataframe, panel_index, resolve_weights
 
 
 def _panel_finalize(y_list: list[np.ndarray], X_list: list[np.ndarray], N: int, T: int) -> tuple[np.ndarray, np.ndarray, dict]:
@@ -20,6 +20,7 @@ def simulate_panel_ols_fe(
     beta: np.ndarray | None = None,
     sigma: float = 1.0,
     sigma_alpha: float = 0.5,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     W=None,
@@ -41,6 +42,10 @@ def simulate_panel_ols_fe(
         Idiosyncratic noise scale.
     sigma_alpha : float, default=0.5
         Unit effect scale used in simulation.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations with
+        observation-specific standard deviations
+        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
     rng, seed
         Random state controls.
     W, gdf, contiguity
@@ -66,7 +71,8 @@ def simulate_panel_ols_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        yt = Xt @ beta + alpha + sigma * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
+        yt = Xt @ beta + alpha + eps
         y_list.append(yt)
         X_list.append(Xt)
 
@@ -92,6 +98,7 @@ def simulate_panel_sar_fe(
     beta: np.ndarray | None = None,
     sigma: float = 1.0,
     sigma_alpha: float = 0.5,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     W=None,
@@ -121,6 +128,10 @@ def simulate_panel_sar_fe(
         Idiosyncratic noise scale.
     sigma_alpha : float, default=0.5
         Unit effect scale.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations with
+        observation-specific standard deviations
+        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
     rng, seed
         Random state controls.
     W, gdf, contiguity
@@ -146,7 +157,7 @@ def simulate_panel_sar_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = sigma * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
         yt = A_inv @ (Xt @ beta + alpha + eps)
         y_list.append(yt)
         X_list.append(Xt)
@@ -173,6 +184,7 @@ def simulate_panel_sem_fe(
     beta: np.ndarray | None = None,
     sigma: float = 1.0,
     sigma_alpha: float = 0.5,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     W=None,
@@ -201,6 +213,10 @@ def simulate_panel_sem_fe(
         Idiosyncratic noise scale.
     sigma_alpha : float, default=0.5
         Unit effect scale.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations with
+        observation-specific standard deviations
+        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
     rng, seed
         Random state controls.
     W, gdf, contiguity
@@ -226,7 +242,7 @@ def simulate_panel_sem_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        u = A_inv @ (sigma * rng.standard_normal(N))
+        u = A_inv @ ((_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N))
         yt = Xt @ beta + alpha + u
         y_list.append(yt)
         X_list.append(Xt)
@@ -254,6 +270,7 @@ def simulate_panel_sdm_fe(
     beta2: np.ndarray | None = None,
     sigma: float = 1.0,
     sigma_alpha: float = 0.5,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     W=None,
@@ -283,6 +300,10 @@ def simulate_panel_sdm_fe(
         Idiosyncratic noise scale.
     sigma_alpha : float, default=0.5
         Unit effect scale.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations with
+        observation-specific standard deviations
+        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
     rng, seed
         Random state controls.
     W, gdf, contiguity
@@ -313,7 +334,7 @@ def simulate_panel_sdm_fe(
         Wx = Wd @ Xt[:, 1:]
         if Wx.shape[1] != len(beta2):
             raise ValueError("len(beta2) must match number of non-intercept regressors.")
-        eps = sigma * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
         yt = A_inv @ (Xt @ beta1 + Wx @ beta2 + alpha + eps)
         y_list.append(yt)
         X_list.append(Xt)
@@ -347,6 +368,7 @@ def simulate_panel_sdem_fe(
     beta2: np.ndarray | None = None,
     sigma: float = 1.0,
     sigma_alpha: float = 0.5,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     W=None,
@@ -377,6 +399,10 @@ def simulate_panel_sdem_fe(
         Idiosyncratic noise scale.
     sigma_alpha : float, default=0.5
         Unit effect scale.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations with
+        observation-specific standard deviations
+        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
     rng, seed
         Random state controls.
     W, gdf, contiguity
@@ -407,7 +433,7 @@ def simulate_panel_sdem_fe(
         Wx = Wd @ Xt[:, 1:]
         if Wx.shape[1] != len(beta2):
             raise ValueError("len(beta2) must match number of non-intercept regressors.")
-        u = A_inv @ (sigma * rng.standard_normal(N))
+        u = A_inv @ ((_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N))
         yt = Xt @ beta1 + Wx @ beta2 + alpha + u
         y_list.append(yt)
         X_list.append(Xt)

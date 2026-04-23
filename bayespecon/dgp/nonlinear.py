@@ -11,7 +11,7 @@ import numpy as np
 from scipy.special import erf
 
 from .cross_sectional import simulate_sar, simulate_sdm, simulate_sem
-from .utils import ensure_rng, make_design_matrix, resolve_weights
+from .utils import _hetero_scale, ensure_rng, make_design_matrix, resolve_weights
 
 
 def _left_censor(y_latent: np.ndarray, censoring: float) -> tuple[np.ndarray, np.ndarray]:
@@ -21,13 +21,16 @@ def _left_censor(y_latent: np.ndarray, censoring: float) -> tuple[np.ndarray, np
     return y_obs, mask
 
 
-def simulate_sar_tobit(*, censoring: float = 0.0, **kwargs) -> dict:
+def simulate_sar_tobit(*, censoring: float = 0.0, err_hetero: bool = False, **kwargs) -> dict:
     """Simulate left-censored SAR Tobit data.
 
     Parameters
     ----------
     censoring : float, default=0.0
         Left-censoring threshold ``c`` where observed ``y = max(c, y*)``.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations. Forwarded to
+        :func:`simulate_sar`.
     **kwargs
         Forwarded to :func:`simulate_sar`.
 
@@ -36,7 +39,7 @@ def simulate_sar_tobit(*, censoring: float = 0.0, **kwargs) -> dict:
     dict
         Includes ``y`` (observed), ``y_latent``, and ``censored_mask``.
     """
-    out = simulate_sar(**kwargs)
+    out = simulate_sar(err_hetero=err_hetero, **kwargs)
     y_obs, mask = _left_censor(out["y"], censoring)
     out["y_latent"] = out["y"]
     out["y"] = y_obs
@@ -45,13 +48,16 @@ def simulate_sar_tobit(*, censoring: float = 0.0, **kwargs) -> dict:
     return out
 
 
-def simulate_sem_tobit(*, censoring: float = 0.0, **kwargs) -> dict:
+def simulate_sem_tobit(*, censoring: float = 0.0, err_hetero: bool = False, **kwargs) -> dict:
     """Simulate left-censored SEM Tobit data.
 
     Parameters
     ----------
     censoring : float, default=0.0
         Left-censoring threshold ``c``.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations. Forwarded to
+        :func:`simulate_sem`.
     **kwargs
         Forwarded to :func:`simulate_sem`.
 
@@ -60,7 +66,7 @@ def simulate_sem_tobit(*, censoring: float = 0.0, **kwargs) -> dict:
     dict
         Includes ``y`` (observed), ``y_latent``, and ``censored_mask``.
     """
-    out = simulate_sem(**kwargs)
+    out = simulate_sem(err_hetero=err_hetero, **kwargs)
     y_obs, mask = _left_censor(out["y"], censoring)
     out["y_latent"] = out["y"]
     out["y"] = y_obs
@@ -69,13 +75,16 @@ def simulate_sem_tobit(*, censoring: float = 0.0, **kwargs) -> dict:
     return out
 
 
-def simulate_sdm_tobit(*, censoring: float = 0.0, **kwargs) -> dict:
+def simulate_sdm_tobit(*, censoring: float = 0.0, err_hetero: bool = False, **kwargs) -> dict:
     """Simulate left-censored SDM Tobit data.
 
     Parameters
     ----------
     censoring : float, default=0.0
         Left-censoring threshold ``c``.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations. Forwarded to
+        :func:`simulate_sdm`.
     **kwargs
         Forwarded to :func:`simulate_sdm`.
 
@@ -84,7 +93,7 @@ def simulate_sdm_tobit(*, censoring: float = 0.0, **kwargs) -> dict:
     dict
         Includes ``y`` (observed), ``y_latent``, and ``censored_mask``.
     """
-    out = simulate_sdm(**kwargs)
+    out = simulate_sdm(err_hetero=err_hetero, **kwargs)
     y_obs, mask = _left_censor(out["y"], censoring)
     out["y_latent"] = out["y"]
     out["y"] = y_obs
@@ -101,6 +110,7 @@ def simulate_spatial_probit(
     beta: np.ndarray | None = None,
     sigma_a: float = 0.8,
     n_per_region: int = 25,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
@@ -126,6 +136,12 @@ def simulate_spatial_probit(
         Regional effect innovation scale.
     n_per_region : int, default=25
         Number of observations per region.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic region effects with
+        region-specific standard deviations
+        :math:`\\sigma_{a,j} = \\sigma_a \\sqrt{1 + \\|\\bar{x}_j\\|^2}`
+        where :math:`\\bar{x}_j` is the mean regressor vector for region
+        ``j``.
     rng, seed
         Random state controls.
     contiguity : str, default="queen"
@@ -145,11 +161,24 @@ def simulate_spatial_probit(
         beta = np.array([0.3, 1.0], dtype=float)
     beta = np.asarray(beta, dtype=float)
 
-    a = np.linalg.solve(np.eye(m) - rho * Wd, sigma_a * rng.standard_normal(m))
-
     nobs = int(m * n_per_region)
     region_ids = np.repeat(np.arange(m), n_per_region)
-    X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
+
+    if err_hetero:
+        # Generate X first so we can compute region-level means for
+        # heteroskedastic scaling.  This changes the RNG draw order
+        # relative to the homoskedastic path.
+        X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
+        X_region_mean = X.reshape(m, n_per_region, -1).mean(axis=1)
+        a_scale = _hetero_scale(X_region_mean, sigma_a)
+    else:
+        # Preserve the original RNG draw order: a is drawn before X.
+        a_scale = sigma_a
+
+    a = np.linalg.solve(np.eye(m) - rho * Wd, a_scale * rng.standard_normal(m))
+
+    if not err_hetero:
+        X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
 
     eta = X @ beta + a[region_ids]
     p = 0.5 * (1.0 + erf(eta / np.sqrt(2.0)))

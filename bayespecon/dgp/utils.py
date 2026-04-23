@@ -244,6 +244,30 @@ def resolve_weights(
     return g.sparse.toarray().astype(float), g
 
 
+def _hetero_scale(X: np.ndarray, sigma: float) -> np.ndarray:
+    """Compute observation-specific standard deviations for heteroskedastic errors.
+
+    When ``err_hetero=True`` in a DGP simulator, each observation's error
+    standard deviation is scaled by the norm of its regressor row so that
+    units with larger covariate values receive noisier shocks.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Design matrix of shape ``(n, k)`` (including intercept column if
+        applicable).
+    sigma : float
+        Base innovation standard deviation.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape ``(n,)`` with element-wise standard deviations
+        ``sigma * sqrt(1 + ||x_i||^2)``.
+    """
+    return sigma * np.sqrt(1.0 + np.sum(X ** 2, axis=1))
+
+
 def make_design_matrix(rng: np.random.Generator, n: int, k: int = 1, add_intercept: bool = True) -> np.ndarray:
     """Generate synthetic design matrix.
 

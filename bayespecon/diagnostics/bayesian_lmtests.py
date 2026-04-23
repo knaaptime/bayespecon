@@ -4,6 +4,9 @@ Bayesian LM-type diagnostics for spatial models (Dogan et al., 2021).
 Implements Bayesian LM tests for omitted spatial lag (SAR) and error (SEM)
 models, as well as SDM/SDEM variant tests (WX, joint, and robust),
 following the formulas in Dogan et al. (2021) and Koley & Bera (2024).
+
+Panel variants follow Anselin (2008) and Elhorst (2014) for the
+information-matrix adjustment (T multiplier, Wb'MWb term).
 """
 
 from dataclasses import dataclass
@@ -1228,4 +1231,1316 @@ def bayesian_robust_lm_error_sdem_test(
         test_type="bayesian_robust_lm_error_sdem",
         df=df,
         details={"n_draws": LM.shape[0], "k_wx": k_wx},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Panel helpers
+# ---------------------------------------------------------------------------
+
+
+def _panel_residuals(model, beta_draws: np.ndarray) -> np.ndarray:
+    """Compute panel residuals from posterior beta draws.
+
+    Dispatches on FE vs RE model structure:
+
+    - **FE models** (``_y`` and ``_X`` already demeaned):
+      ``e = y - X @ beta``
+
+    - **RE models** (raw scale, with ``alpha`` in posterior):
+      ``e = y - X @ beta - alpha[unit_idx]``
+
+    Parameters
+    ----------
+    model : SpatialPanelModel
+        Fitted panel model with ``inference_data`` attribute.
+    beta_draws : np.ndarray
+        Posterior draws of beta, shape ``(draws, k)``.
+
+    Returns
+    -------
+    np.ndarray
+        Residual matrix of shape ``(draws, n)`` where ``n = N*T``.
+    """
+    y = model._y
+    X = model._X
+    fitted = beta_draws @ X.T  # (draws, n)
+    resid = y[None, :] - fitted  # (draws, n)
+
+    # RE models: subtract random effects alpha[unit_idx]
+    if hasattr(model, "_unit_idx") and "alpha" in model.inference_data.posterior:
+        alpha_draws = _get_posterior_draws(model.inference_data, "alpha")  # (draws, N)
+        unit_idx = model._unit_idx
+        # alpha_draws[:, unit_idx] → (draws, n)
+        resid = resid - alpha_draws[:, unit_idx]
+
+    return resid
+
+
+def _panel_spatial_lag(W_sparse, v: np.ndarray, N: int, T: int) -> np.ndarray:
+    """Apply panel spatial lag W⊗I_T to a vector or matrix of draws.
+
+    For each of the T time periods, the N-length slice is multiplied by
+    the N×N sparse weight matrix.
+
+    Parameters
+    ----------
+    W_sparse : scipy.sparse matrix
+        N×N spatial weights matrix.
+    v : np.ndarray
+        Either a 1-D vector of length N*T, or a 2-D array of shape
+        ``(draws, N*T)``.
+    N : int
+        Number of cross-sectional units.
+    T : int
+        Number of time periods.
+
+    Returns
+    -------
+    np.ndarray
+        Spatially lagged array with the same shape as *v*.
+    """
+    if v.ndim == 1:
+        out = np.zeros_like(v)
+        for t in range(T):
+            s, e = t * N, (t + 1) * N
+            out[s:e] = np.asarray(W_sparse @ v[s:e]).ravel()
+        return out
+    else:
+        # v is (draws, N*T)
+        out = np.zeros_like(v)
+        for t in range(T):
+            s, e = t * N, (t + 1) * N
+            out[:, s:e] = np.asarray(W_sparse @ v[:, s:e].T).T
+        return out
+
+
+def _panel_trace_WtW_WW(W_sparse) -> float:
+    """Compute tr(W'W + W²) from an N×N sparse weights matrix.
+
+    Parameters
+    ----------
+    W_sparse : scipy.sparse matrix
+        N×N spatial weights matrix.
+
+    Returns
+    -------
+    float
+        Trace of W'W + W².
+    """
+    WtW = W_sparse.T @ W_sparse
+    WW = W_sparse @ W_sparse
+    return float(WtW.diagonal().sum() + WW.diagonal().sum())
+
+
+def _panel_info_matrix_blocks(
+    X: np.ndarray,
+    WX: np.ndarray,
+    W_sparse,
+    W_eigs: np.ndarray,
+    sigma2: float,
+    N: int,
+    T: int,
+    y_hat: np.ndarray | None = None,
+    Wy_hat: np.ndarray | None = None,
+) -> dict:
+    r"""Compute partitioned information matrix blocks for panel models.
+
+    Computes the blocks of the information matrix :math:`J` needed for
+    panel LM tests, following Anselin (2008) and Elhorst (2014).
+
+    The key difference from cross-sectional is the T multiplier on the
+    trace term and the Wb'MWb term in J_{ρρ}:
+
+    .. math::
+        J_{\rho\rho \cdot \sigma} &= \frac{1}{\sigma^2}
+        \left( (W\hat{y})^\top M (W\hat{y}) + T \cdot \mathrm{tr}(W'W + W^2)
+        \right) \\
+        J_{\lambda\lambda \cdot \sigma} &= T \cdot \mathrm{tr}(W'W + W^2) \\
+        J_{\rho\lambda \cdot \sigma} &= T \cdot \mathrm{tr}(W'W + W^2)
+
+    where :math:`M = I - X(X^\top X)^{-1} X^\top` is the annihilator
+    matrix and :math:`\hat{y} = X\bar{\beta}`.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Design matrix of shape ``(n, k)`` (demeaned for FE models).
+    WX : np.ndarray
+        Spatially lagged design matrix of shape ``(n, k_wx)``.
+    W_sparse : scipy.sparse matrix
+        N×N spatial weights matrix.
+    W_eigs : np.ndarray
+        Eigenvalues of the N×N W matrix.
+    sigma2 : float
+        Error variance estimate (posterior mean of sigma^2).
+    N : int
+        Number of cross-sectional units.
+    T : int
+        Number of time periods.
+    y_hat : np.ndarray or None, optional
+        Fitted values under H₀, shape ``(n,)``.
+        If provided, used to compute Wb'MWb term.
+    Wy_hat : np.ndarray or None, optional
+        Spatially lagged fitted values, shape ``(n,)``.
+        If provided, used directly for Wb'MWb term.
+        If None but y_hat is provided, computed as W_nt @ y_hat.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys ``J_rho_rho``, ``J_lam_lam``, ``J_rho_lam``,
+        ``J_rho_gamma``, ``J_gamma_gamma``, ``T_ww``, ``T_mult``.
+    """
+    n = X.shape[0]
+    k_wx = WX.shape[1]
+
+    # tr(W'W + W²) from N×N matrix
+    T_ww = _panel_trace_WtW_WW(W_sparse)
+    T_mult = T  # multiplier from Kronecker structure
+
+    # J_{λλ·σ} = T * tr(W'W + W²)
+    J_lam_lam = T_mult * T_ww
+
+    # J_{ρλ·σ} = T * tr(W'W + W²) under H₀ (Elhorst 2014)
+    J_rho_lam = T_mult * T_ww
+
+    # J_{ρρ·σ} = (Wb'MWb + T*tr) / σ²
+    # where M = I - X(X'X)^{-1}X' is the annihilator matrix
+    if y_hat is not None or Wy_hat is not None:
+        if Wy_hat is None:
+            Wy_hat = _panel_spatial_lag(W_sparse, y_hat, N, T_mult)
+
+        # M = I - X(X'X)^{-1}X' (annihilator matrix)
+        XtX_inv = np.linalg.inv(X.T @ X + 1e-12 * np.eye(X.shape[1]))
+        M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
+        WbMWb = float(Wy_hat @ M_Wy)
+        J_rho_rho = (WbMWb + T_mult * T_ww) / sigma2
+    else:
+        # Fallback: use n + T*tr (simplified, no Wb'MWb term)
+        J_rho_rho = (n + T_mult * T_ww) / sigma2
+
+    # J_{γγ·σ} = (WX)'(WX) / σ² (same as cross-sectional)
+    J_gamma_gamma = (WX.T @ WX) / sigma2  # (k_wx, k_wx)
+
+    # J_{ργ·σ}: cross term between ρ and γ
+    # = (Wy_hat)'(WX) / σ² when Wy_hat is available
+    if Wy_hat is not None and k_wx > 0:
+        J_rho_gamma = (Wy_hat @ WX) / sigma2  # (k_wx,)
+    else:
+        J_rho_gamma = np.zeros(k_wx)  # (k_wx,)
+
+    return {
+        "J_rho_rho": J_rho_rho,
+        "J_lam_lam": J_lam_lam,
+        "J_rho_lam": J_rho_lam,
+        "J_rho_gamma": J_rho_gamma,
+        "J_gamma_gamma": J_gamma_gamma,
+        "T_ww": T_ww,
+        "T_mult": T_mult,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Panel Bayesian LM tests — lag and error (Anselin 2008, Elhorst 2014)
+# ---------------------------------------------------------------------------
+
+
+def bayesian_panel_lm_lag_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel LM test for omitted spatial lag (H₀: ρ = 0).
+
+    Follows Anselin (2008) and the Bayesian framework of Dogan et al.
+    (2021). Tests whether a spatial lag term should be added to a panel
+    regression.
+
+    The null model is a pooled/FE panel OLS. For each posterior draw,
+    residuals are:
+
+    .. math::
+        \mathbf{e} = \mathbf{y} - X \beta
+
+    (demeaned for FE models; with alpha subtracted for RE models).
+
+    The score for each draw is:
+
+    .. math::
+        S = \mathbf{e}^\top W_{NT} \mathbf{y}
+
+    where :math:`W_{NT} = W \otimes I_T` is the block-diagonal panel
+    weights matrix.
+
+    The information matrix (Anselin 2008) is:
+
+    .. math::
+        J = \frac{1}{\sigma^2} \left(
+        (W\hat{y})^\top M (W\hat{y}) + T \cdot \mathrm{tr}(W'W + W^2)
+        \right)
+
+    where :math:`M = I - X(X^\top X)^{-1} X^\top` and
+    :math:`\hat{y} = X\bar{\beta}`.
+
+    The LM statistic for each draw is:
+
+    .. math::
+        \mathrm{LM} = \frac{S^2}{\sigma^2 \cdot J}
+
+    which is distributed as :math:`\chi^2_1` under H₀.
+
+    Parameters
+    ----------
+    model : SpatialPanelModel
+        Fitted panel model (e.g. ``OLSPanelFE``, ``OLSPanelRE``) with
+        ``inference_data`` attribute containing posterior draws for
+        ``beta`` and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+
+    References
+    ----------
+    Anselin, L. (2008). "Spatial Econometrics: Methods and Models."
+    Springer.
+
+    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
+    chi-squared test for testing simple hypotheses." Journal of
+    Econometrics, 222(2), 933-958.
+    """
+    y = model._y
+    X = model._X
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    N = model._N
+    T = model._T
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # Panel residuals (handles FE vs RE)
+    resid = _panel_residuals(model, beta_draws)  # (draws, n)
+
+    # Score: S = e'Wy for each draw
+    S = np.dot(resid, Wy)  # (draws,)
+
+    # Compute information matrix for panel LM-lag (Anselin 2008)
+    # J = (Wb'MWb + T*tr(W'W+W²)*σ²) / σ²
+    # LM = (e'Wy)² / (σ² * J) = (e'Wy)² / (Wb'MWb + T*tr*σ²)
+    beta_mean = np.mean(beta_draws, axis=0)  # (k,)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    y_hat = X @ beta_mean  # (n,)
+
+    # Panel spatial lag of y_hat
+    Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)  # (n,)
+
+    # Annihilator matrix: M = I - X(X'X)^{-1}X'
+    XtX_inv = np.linalg.inv(X.T @ X + 1e-12 * np.eye(X.shape[1]))
+    M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
+    WbMWb = float(Wy_hat @ M_Wy)
+
+    T_ww = _panel_trace_WtW_WW(W_sp)
+    J_val = WbMWb + T * T_ww * sigma2_mean
+
+    # LM = S² / (sigma2 * J_val) for each draw
+    # But sigma2 varies across draws. Use posterior mean sigma2 for J,
+    # and per-draw sigma2 for the score variance.
+    # Following the existing cross-sectional pattern: use information matrix
+    # evaluated at posterior mean, compute LM per draw.
+    sigma2_draws = sigma_draws**2  # (draws,)
+    LM = S**2 / (sigma2_draws * J_val + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_lag",
+        df=df,
+        details={"n_draws": LM.shape[0], "N": N, "T": T},
+    )
+
+
+def bayesian_panel_lm_error_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel LM test for omitted spatial error (H₀: λ = 0).
+
+    Follows Anselin (2008) and the Bayesian framework of Dogan et al.
+    (2021). Tests whether a spatial error term should be added to a panel
+    regression.
+
+    The null model is a pooled/FE panel OLS. For each posterior draw,
+    residuals are computed (demeaned for FE, alpha-adjusted for RE).
+
+    The score for each draw is:
+
+    .. math::
+        S = \mathbf{e}^\top W_{NT} \mathbf{e}
+
+    The variance is:
+
+    .. math::
+        V = \sigma^4 \cdot T \cdot \mathrm{tr}(W'W + W^2)
+
+    The LM statistic for each draw is:
+
+    .. math::
+        \mathrm{LM} = \frac{S^2}{V}
+
+    which is distributed as :math:`\chi^2_1` under H₀.
+
+    Parameters
+    ----------
+    model : SpatialPanelModel
+        Fitted panel model (e.g. ``OLSPanelFE``, ``OLSPanelRE``) with
+        ``inference_data`` attribute containing posterior draws for
+        ``beta`` and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+
+    References
+    ----------
+    Anselin, L. (2008). "Spatial Econometrics: Methods and Models."
+    Springer.
+
+    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
+    chi-squared test for testing simple hypotheses." Journal of
+    Econometrics, 222(2), 933-958.
+    """
+    y = model._y
+    X = model._X
+    W_sp = model._W_sparse
+    N = model._N
+    T = model._T
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # Panel residuals
+    resid = _panel_residuals(model, beta_draws)  # (draws, n)
+
+    # Score: S = e'W_nt e for each draw
+    # Apply N×N W period-by-period to the N*T stacked residuals
+    We_panel = _panel_spatial_lag(W_sp, resid, N, T)  # (draws, n)
+
+    S = np.sum(resid * We_panel, axis=1)  # (draws,)
+
+    # Variance: V = sigma^4 * T * tr(W'W + W²)
+    T_ww = _panel_trace_WtW_WW(W_sp)
+    sigma2_draws = sigma_draws**2  # (draws,)
+    V = sigma2_draws**2 * T * T_ww  # (draws,)
+
+    # LM = S² / V
+    LM = S**2 / (V + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_error",
+        df=df,
+        details={"n_draws": LM.shape[0], "N": N, "T": T},
+    )
+
+
+def bayesian_panel_robust_lm_lag_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel robust LM-Lag test (H₀: ρ = 0, robust to λ).
+
+    Follows Elhorst (2014). Tests the null hypothesis that the spatial
+    lag coefficient is zero, robust to the local presence of spatial
+    error autocorrelation.
+
+    The null model is a pooled/FE panel OLS. The robust LM statistic is:
+
+    .. math::
+        \mathrm{LM}_R = \frac{
+        \left( \frac{\mathbf{e}^\top W \mathbf{y}}{\sigma^2}
+        - \frac{\mathbf{e}^\top W \mathbf{e}}{\sigma^2} \right)^2
+        }{J - T \cdot \mathrm{tr}(W'W + W^2)}
+
+    where :math:`J` is the information matrix from the panel LM-lag test
+    and :math:`\mathrm{tr}` denotes :math:`\mathrm{tr}(W'W + W^2)`.
+
+    This is distributed as :math:`\chi^2_1` under H₀.
+
+    Parameters
+    ----------
+    model : SpatialPanelModel
+        Fitted panel model (e.g. ``OLSPanelFE``) with ``inference_data``
+        attribute containing posterior draws for ``beta`` and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+
+    References
+    ----------
+    Elhorst, J.P. (2014). "Spatial Econometrics: From Cross-Sectional
+    Data to Spatial Panels." Springer.
+
+    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
+    chi-squared test for testing simple hypotheses." Journal of
+    Econometrics, 222(2), 933-958.
+    """
+    y = model._y
+    X = model._X
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    N = model._N
+    T = model._T
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # Panel residuals
+    resid = _panel_residuals(model, beta_draws)  # (draws, n)
+
+    # Score for lag: S_lag = e'Wy
+    S_lag = np.dot(resid, Wy)  # (draws,)
+
+    # Score for error: S_err = e'W_nt e
+    We_panel = _panel_spatial_lag(W_sp, resid, N, T)
+    S_err = np.sum(resid * We_panel, axis=1)  # (draws,)
+
+    # Information matrix for lag test
+    beta_mean = np.mean(beta_draws, axis=0)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    y_hat = X @ beta_mean
+    Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
+    XtX_inv = np.linalg.inv(X.T @ X + 1e-12 * np.eye(X.shape[1]))
+    M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
+    WbMWb = float(Wy_hat @ M_Wy)
+
+    T_ww = _panel_trace_WtW_WW(W_sp)
+    J_val = WbMWb + T * T_ww * sigma2_mean
+
+    # Robust LM = (S_lag/σ² - S_err/σ²)² / (J - T*tr)
+    # where J is in σ² units and tr = tr(W'W+W²)
+    sigma2_draws = sigma_draws**2
+    robust_score = (S_lag / sigma2_draws - S_err / sigma2_draws)  # (draws,)
+    denom = J_val / sigma2_mean - T * T_ww  # J/σ² - T*tr (scalar)
+
+    LM = robust_score**2 / (abs(denom) + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_robust_lm_lag",
+        df=df,
+        details={"n_draws": LM.shape[0], "N": N, "T": T},
+    )
+
+
+def bayesian_panel_robust_lm_error_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel robust LM-Error test (H₀: λ = 0, robust to ρ).
+
+    Follows Elhorst (2014). Tests the null hypothesis that the spatial
+    error coefficient is zero, robust to the local presence of a spatial
+    lag.
+
+    The null model is a pooled/FE panel OLS. The robust LM statistic is:
+
+    .. math::
+        \mathrm{LM}_R = \frac{
+        \left( \frac{\mathbf{e}^\top W \mathbf{e}}{\sigma^2}
+        - \frac{T \cdot \mathrm{tr}}{J} \cdot
+        \frac{\mathbf{e}^\top W \mathbf{y}}{\sigma^2} \right)^2
+        }{
+        T \cdot \mathrm{tr} \cdot \left(1 - \frac{T \cdot \mathrm{tr}}{J}\right)
+        }
+
+    where :math:`J` is the information matrix from the panel LM-lag test
+    and :math:`\mathrm{tr} = \mathrm{tr}(W'W + W^2)`.
+
+    This is distributed as :math:`\chi^2_1` under H₀.
+
+    Parameters
+    ----------
+    model : SpatialPanelModel
+        Fitted panel model (e.g. ``OLSPanelFE``) with ``inference_data``
+        attribute containing posterior draws for ``beta`` and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+
+    References
+    ----------
+    Elhorst, J.P. (2014). "Spatial Econometrics: From Cross-Sectional
+    Data to Spatial Panels." Springer.
+
+    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
+    chi-squared test for testing simple hypotheses." Journal of
+    Econometrics, 222(2), 933-958.
+    """
+    y = model._y
+    X = model._X
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    N = model._N
+    T = model._T
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # Panel residuals
+    resid = _panel_residuals(model, beta_draws)  # (draws, n)
+
+    # Score for lag: S_lag = e'Wy
+    S_lag = np.dot(resid, Wy)  # (draws,)
+
+    # Score for error: S_err = e'W_nt e
+    We_panel = _panel_spatial_lag(W_sp, resid, N, T)
+    S_err = np.sum(resid * We_panel, axis=1)  # (draws,)
+
+    # Information matrix for lag test
+    beta_mean = np.mean(beta_draws, axis=0)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    y_hat = X @ beta_mean
+    Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
+    XtX_inv = np.linalg.inv(X.T @ X + 1e-12 * np.eye(X.shape[1]))
+    M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
+    WbMWb = float(Wy_hat @ M_Wy)
+
+    T_ww = _panel_trace_WtW_WW(W_sp)
+    J_val = WbMWb + T * T_ww * sigma2_mean
+
+    # Robust LM = (S_err/σ² - T*tr/J * S_lag/σ²)² / (T*tr*(1 - T*tr/J))
+    # where J is in raw units (not divided by σ²)
+    # J/σ² is the scaled version
+    J_scaled = J_val / sigma2_mean  # J/σ²
+    Ttr = T * T_ww
+
+    sigma2_draws = sigma_draws**2
+    robust_score = S_err / sigma2_draws - (Ttr / J_scaled) * S_lag / sigma2_draws
+    denom = Ttr * (1 - Ttr / J_scaled)
+
+    LM = robust_score**2 / (abs(denom) + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_robust_lm_error",
+        df=df,
+        details={"n_draws": LM.shape[0], "N": N, "T": T},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Panel Bayesian LM tests — SDM/SDEM variants (Koley & Bera 2024)
+# ---------------------------------------------------------------------------
+
+
+def bayesian_panel_lm_wx_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel LM test for WX coefficients (H₀: γ = 0).
+
+    Tests whether spatially lagged covariates (WX) should be added to a
+    SAR panel model, i.e., whether SAR should be extended to SDM.
+    Follows the multi-parameter Bayesian LM test framework of
+    Dogan et al. (2021) and Koley & Bera (2024).
+
+    The null model is a SAR panel (includes ρ but not γ). For each
+    posterior draw from the SAR model, residuals are:
+
+    .. math::
+        \mathbf{e} = \mathbf{y} - \rho W \mathbf{y} - X \beta
+
+    The score vector for the WX coefficients is:
+
+    .. math::
+        \mathbf{g}_\gamma = (WX)^\top \mathbf{e}
+
+    The concentration matrix is:
+
+    .. math::
+        J_{\gamma\gamma} = \frac{1}{\bar{\sigma}^2} (WX)^\top (WX)
+
+    The LM statistic for each draw is:
+
+    .. math::
+        \mathrm{LM} = \mathbf{g}_\gamma^\top J_{\gamma\gamma}^{-1}
+        \mathbf{g}_\gamma
+
+    distributed as :math:`\chi^2_{k_{wx}}` under H₀.
+
+    Parameters
+    ----------
+    model : SARPanelFE or SARPanelRE
+        Fitted SAR panel model with ``inference_data`` containing
+        posterior draws for ``beta``, ``rho``, and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+        The ``df`` field is set to :math:`k_{wx}`.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    k_wx = WX.shape[1]
+    N = model._N
+    T = model._T
+
+    if k_wx == 0:
+        raise ValueError(
+            "Model has no WX columns. The panel WX test requires at least one "
+            "spatially lagged covariate."
+        )
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    rho_draws = _get_posterior_draws(idata, "rho")  # (draws,)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # SAR residuals: e = y - rho*Wy - X@beta
+    fitted = rho_draws[:, None] * Wy[None, :] + beta_draws @ X.T  # (draws, n)
+    resid = y[None, :] - fitted  # (draws, n)
+
+    # For RE models, also subtract alpha
+    if hasattr(model, "_unit_idx") and "alpha" in idata.posterior:
+        alpha_draws = _get_posterior_draws(idata, "alpha")  # (draws, N)
+        resid = resid - alpha_draws[:, model._unit_idx]
+
+    # Score: g_gamma = WX' @ e for each draw → (draws, k_wx)
+    g_gamma = resid @ WX  # (draws, k_wx)
+
+    # Information matrix: J = (1/sigma2_mean) * WX'WX
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    J_gamma_gamma = (WX.T @ WX) / sigma2_mean  # (k_wx, k_wx)
+
+    # LM = g' J^{-1} g for each draw
+    J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
+    LM = np.array([g_gamma[g] @ J_inv @ g_gamma[g] for g in range(g_gamma.shape[0])])
+
+    df = k_wx
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_wx",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_wx": k_wx, "N": N, "T": T},
+    )
+
+
+def bayesian_panel_lm_sdm_joint_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel joint LM test for SDM (H₀: ρ = 0 AND γ = 0).
+
+    Tests the joint null hypothesis that both the spatial lag coefficient
+    and the WX coefficients are zero, i.e., whether the OLS panel model
+    should be extended to an SDM specification.
+
+    The null model is OLS panel. The joint score vector is:
+
+    .. math::
+        \mathbf{g} = \begin{pmatrix} \mathbf{e}^\top W \mathbf{y} \\
+        (WX)^\top \mathbf{e} \end{pmatrix}
+
+    a :math:`(1 + k_{wx}) \times 1` vector for each draw. The
+    concentration matrix uses panel-adjusted J_{ρρ}:
+
+    .. math::
+        J = \begin{pmatrix}
+        J_{\rho\rho} & J_{\rho\gamma} \\
+        J_{\gamma\rho} & J_{\gamma\gamma}
+        \end{pmatrix}
+
+    The LM statistic is :math:`\chi^2_{1 + k_{wx}}` under H₀.
+
+    Parameters
+    ----------
+    model : SpatialPanelModel
+        Fitted OLS panel model with ``inference_data`` containing
+        posterior draws for ``beta`` and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+        The ``df`` field is set to :math:`1 + k_{wx}`.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    k_wx = WX.shape[1]
+    N = model._N
+    T = model._T
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # Panel residuals
+    resid = _panel_residuals(model, beta_draws)  # (draws, n)
+
+    # Score components
+    g_rho = np.dot(resid, Wy)  # (draws,)
+    g_gamma = resid @ WX  # (draws, k_wx)
+
+    # Joint score: g = [g_rho, g_gamma']' → (draws, 1+k_wx)
+    g = np.column_stack([g_rho, g_gamma])  # (draws, 1+k_wx)
+
+    # Information matrix (panel-adjusted)
+    beta_mean = np.mean(beta_draws, axis=0)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    y_hat = X @ beta_mean
+
+    info = _panel_info_matrix_blocks(
+        X, WX, W_sp, model._W_eigs, sigma2_mean, N, T, y_hat=y_hat,
+    )
+
+    p = 1 + k_wx
+    J = np.zeros((p, p))
+    J[0, 0] = info["J_rho_rho"]
+    if k_wx > 0:
+        J[0, 1:] = info["J_rho_gamma"]
+        J[1:, 0] = info["J_rho_gamma"]
+        J[1:, 1:] = info["J_gamma_gamma"]
+
+    # LM = g' J^{-1} g for each draw
+    J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
+    LM = np.array([g[d] @ J_inv @ g[d] for d in range(g.shape[0])])
+
+    df = p
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_sdm_joint",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_wx": k_wx, "N": N, "T": T},
+    )
+
+
+def bayesian_panel_lm_slx_error_joint_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel joint LM test for SDEM (H₀: λ = 0 AND γ = 0).
+
+    Tests the joint null hypothesis that both the spatial error coefficient
+    and the WX coefficients are zero, i.e., whether the OLS panel model
+    should be extended to an SDEM specification.
+
+    The null model is OLS panel. The joint score vector is:
+
+    .. math::
+        \mathbf{g} = \begin{pmatrix} \mathbf{e}^\top W \mathbf{e} \\
+        (WX)^\top \mathbf{e} \end{pmatrix}
+
+    The concentration matrix has zero off-diagonal blocks under H₀
+    (spherical errors):
+
+    .. math::
+        J = \begin{pmatrix}
+        T \cdot \mathrm{tr}(W'W + W^2) & 0 \\
+        0 & \frac{1}{\bar{\sigma}^2} (WX)^\top (WX)
+        \end{pmatrix}
+
+    The LM statistic is :math:`\chi^2_{1 + k_{wx}}` under H₀.
+
+    Parameters
+    ----------
+    model : SpatialPanelModel
+        Fitted OLS panel model with ``inference_data`` containing
+        posterior draws for ``beta`` and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+        The ``df`` field is set to :math:`1 + k_{wx}`.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    W_sp = model._W_sparse
+    k_wx = WX.shape[1]
+    N = model._N
+    T = model._T
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # Panel residuals
+    resid = _panel_residuals(model, beta_draws)  # (draws, n)
+
+    # Score for error: g_lambda = e'W_nt e
+    We_panel = _panel_spatial_lag(W_sp, resid, N, T)
+    g_lambda = np.sum(resid * We_panel, axis=1)  # (draws,)
+
+    # Score for WX: g_gamma = WX'e
+    g_gamma = resid @ WX  # (draws, k_wx)
+
+    # Joint score
+    g = np.column_stack([g_lambda, g_gamma])  # (draws, 1+k_wx)
+
+    # Information matrix
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    T_ww = _panel_trace_WtW_WW(W_sp)
+
+    p = 1 + k_wx
+    J = np.zeros((p, p))
+    J[0, 0] = T * T_ww  # J_{λλ} = T * tr(W'W + W²)
+    # Off-diagonal blocks are zero under H₀
+    if k_wx > 0:
+        J[1:, 1:] = (WX.T @ WX) / sigma2_mean
+
+    # LM = g' J^{-1} g for each draw
+    J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
+    LM = np.array([g[d] @ J_inv @ g[d] for d in range(g.shape[0])])
+
+    df = p
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_slx_error_joint",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_wx": k_wx, "N": N, "T": T},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Panel robust Bayesian LM tests — SDM/SDEM (Neyman orthogonal score)
+# ---------------------------------------------------------------------------
+
+
+def bayesian_panel_robust_lm_lag_sdm_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel robust LM-Lag test in SDM context (H₀: ρ = 0, robust to γ).
+
+    Tests the null hypothesis that the spatial lag coefficient is zero,
+    robust to the local presence of WX effects (γ). Uses the Neyman
+    orthogonal score adjustment from Dogan et al. (2021, Proposition 3).
+
+    The alternative model is SLX panel (includes γ but not ρ). For each
+    posterior draw from the SLX model, residuals are:
+
+    .. math::
+        \mathbf{e} = \mathbf{y} - X\beta_1 - WX\beta_2
+
+    The Neyman-adjusted score for ρ is:
+
+    .. math::
+        g_\rho^* = g_\rho - J_{\rho\gamma \cdot \sigma}
+        J_{\gamma\gamma \cdot \sigma}^{-1} \boldsymbol{g}_\gamma
+
+    The robust LM statistic is :math:`\chi^2_1` under H₀.
+
+    Parameters
+    ----------
+    model : SLXPanelFE or SLX-like panel model
+        Fitted SLX panel model with ``inference_data`` containing
+        posterior draws for ``beta`` and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    k_wx = WX.shape[1]
+    N = model._N
+    T = model._T
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k_total)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # SLX residuals: e = y - [X, WX] @ beta
+    Z = np.hstack([X, WX])  # (n, k+k_wx)
+    fitted = beta_draws @ Z.T  # (draws, n)
+    resid = y[None, :] - fitted  # (draws, n)
+
+    # Unadjusted scores
+    g_rho = np.dot(resid, Wy)  # (draws,)
+    g_gamma = resid @ WX  # (draws, k_wx)
+
+    # Compute Wy_hat for information matrix cross-term
+    beta_mean = np.mean(beta_draws, axis=0)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    y_hat = Z @ beta_mean
+    Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
+
+    info = _panel_info_matrix_blocks(
+        X, WX, W_sp, model._W_eigs, sigma2_mean, N, T, Wy_hat=Wy_hat,
+    )
+
+    J_rho_rho = info["J_rho_rho"]
+    J_rho_gamma = info["J_rho_gamma"]  # (k_wx,)
+    J_gamma_gamma = info["J_gamma_gamma"]  # (k_wx, k_wx)
+
+    # Neyman adjustment
+    if k_wx > 0:
+        J_gamma_gamma_inv = np.linalg.inv(
+            J_gamma_gamma + 1e-12 * np.eye(k_wx)
+        )
+        neyman_coef = J_rho_gamma @ J_gamma_gamma_inv  # (k_wx,)
+        adjustment = g_gamma @ neyman_coef  # (draws,)
+        g_rho_star = g_rho - adjustment
+
+        V_star = J_rho_rho - neyman_coef @ J_rho_gamma
+    else:
+        g_rho_star = g_rho
+        V_star = J_rho_rho
+
+    LM = g_rho_star**2 / (V_star + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_robust_lm_lag_sdm",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_wx": k_wx, "N": N, "T": T},
+    )
+
+
+def bayesian_panel_robust_lm_wx_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel robust LM-WX test (H₀: γ = 0, robust to ρ).
+
+    Tests the null hypothesis that the WX coefficients are zero,
+    robust to the local presence of a spatial lag (ρ). Uses the Neyman
+    orthogonal score adjustment from Dogan et al. (2021, Proposition 3).
+
+    The alternative model is SAR panel (includes ρ but not γ). For each
+    posterior draw from the SAR model, residuals are:
+
+    .. math::
+        \mathbf{e} = \mathbf{y} - \rho W \mathbf{y} - X\beta
+
+    The Neyman-adjusted score for γ is:
+
+    .. math::
+        \boldsymbol{g}_\gamma^* = \boldsymbol{g}_\gamma -
+        J_{\gamma\rho \cdot \sigma} J_{\rho\rho \cdot \sigma}^{-1} g_\rho
+
+    The robust LM statistic is :math:`\chi^2_{k_{wx}}` under H₀.
+
+    Parameters
+    ----------
+    model : SARPanelFE or SARPanelRE
+        Fitted SAR panel model with ``inference_data`` containing
+        posterior draws for ``beta``, ``rho``, and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    k_wx = WX.shape[1]
+    N = model._N
+    T = model._T
+
+    if k_wx == 0:
+        raise ValueError(
+            "Model has no WX columns. The robust panel LM-WX test requires "
+            "at least one spatially lagged covariate."
+        )
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    rho_draws = _get_posterior_draws(idata, "rho")  # (draws,)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # SAR residuals: e = y - rho*Wy - X@beta
+    fitted = rho_draws[:, None] * Wy[None, :] + beta_draws @ X.T
+    resid = y[None, :] - fitted
+
+    # For RE models, also subtract alpha
+    if hasattr(model, "_unit_idx") and "alpha" in idata.posterior:
+        alpha_draws = _get_posterior_draws(idata, "alpha")
+        resid = resid - alpha_draws[:, model._unit_idx]
+
+    # Unadjusted scores
+    g_rho = np.dot(resid, Wy)  # (draws,)
+    g_gamma = resid @ WX  # (draws, k_wx)
+
+    # Compute Wy_hat for information matrix
+    beta_mean = np.mean(beta_draws, axis=0)
+    rho_mean = float(np.mean(rho_draws))
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    y_hat = rho_mean * Wy + X @ beta_mean
+    Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
+
+    info = _panel_info_matrix_blocks(
+        X, WX, W_sp, model._W_eigs, sigma2_mean, N, T, Wy_hat=Wy_hat,
+    )
+
+    J_rho_rho = info["J_rho_rho"]
+    J_rho_gamma = info["J_rho_gamma"]  # (k_wx,)
+    J_gamma_gamma = info["J_gamma_gamma"]  # (k_wx, k_wx)
+
+    # J_{γ·ρ} = J_{γγ·σ} - J_{γρ·σ} J_{ρρ·σ}^{-1} J_{ργ·σ}
+    J_gamma_given_rho = J_gamma_gamma - np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12)
+
+    # Neyman adjustment: g_gamma* = g_gamma - J_{γρ·σ} J_{ρρ·σ}^{-1} g_rho
+    neyman_coef = J_rho_gamma / (J_rho_rho + 1e-12)  # (k_wx,)
+    g_gamma_star = g_gamma - np.outer(g_rho, neyman_coef)  # (draws, k_wx)
+
+    # Adjusted weight matrix: C*_{γγ} = P_{γγ} J_{γ·ρ}
+    J_gamma_given_rho_inv = np.linalg.inv(
+        J_gamma_given_rho + 1e-12 * np.eye(k_wx)
+    )
+    P_gamma = np.eye(k_wx) - (
+        np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12)
+    ) @ J_gamma_given_rho_inv
+
+    C_star = P_gamma @ J_gamma_given_rho  # (k_wx, k_wx)
+
+    # Robust LM = g_gamma*' C*^{-1} g_gamma* for each draw
+    C_star_inv = np.linalg.inv(C_star + 1e-12 * np.eye(k_wx))
+    LM = np.array([
+        g_gamma_star[d] @ C_star_inv @ g_gamma_star[d]
+        for d in range(g_gamma_star.shape[0])
+    ])
+
+    df = k_wx
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_robust_lm_wx",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_wx": k_wx, "N": N, "T": T},
+    )
+
+
+def bayesian_panel_robust_lm_error_sdem_test(
+    model,
+    beta_name: str = "beta",
+) -> BayesianLMTestResult:
+    r"""Bayesian panel robust LM-Error test in SDEM context (H₀: λ = 0, robust to γ).
+
+    Tests the null hypothesis that the spatial error coefficient is zero,
+    robust to the local presence of WX effects (γ). Uses the Neyman
+    orthogonal score adjustment from Dogan et al. (2021, Proposition 3).
+
+    The alternative model is SLX panel (includes γ but not λ). For each
+    posterior draw from the SLX model, residuals are:
+
+    .. math::
+        \mathbf{e} = \mathbf{y} - X\beta_1 - WX\beta_2
+
+    The Neyman-adjusted score for λ is:
+
+    .. math::
+        g_\lambda^* = g_\lambda - J_{\lambda\gamma \cdot \sigma}
+        J_{\gamma\gamma \cdot \sigma}^{-1} \boldsymbol{g}_\gamma
+
+    Under H₀, :math:`J_{\lambda\gamma \cdot \sigma} = 0` (odd moments
+    vanish for normal errors), so the adjustment is a no-op and the
+    robust test equals the non-robust test.
+
+    The robust LM statistic is :math:`\chi^2_1` under H₀.
+
+    Parameters
+    ----------
+    model : SLXPanelFE or SLX-like panel model
+        Fitted SLX panel model with ``inference_data`` containing
+        posterior draws for ``beta`` and ``sigma``.
+    beta_name : str, default "beta"
+        Name of the regression coefficient parameter in the posterior.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    W_sp = model._W_sparse
+    k_wx = WX.shape[1]
+    N = model._N
+    T = model._T
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k_total)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # SLX residuals: e = y - [X, WX] @ beta
+    Z = np.hstack([X, WX])
+    fitted = beta_draws @ Z.T
+    resid = y[None, :] - fitted
+
+    # Score for error: g_lambda = e'W_nt e
+    We_panel = _panel_spatial_lag(W_sp, resid, N, T)
+    g_lambda = np.sum(resid * We_panel, axis=1)  # (draws,)
+
+    # Score for WX: g_gamma = WX'e
+    g_gamma = resid @ WX  # (draws, k_wx)
+
+    # Information matrix blocks
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    T_ww = _panel_trace_WtW_WW(W_sp)
+
+    J_lam_lam = T * T_ww
+    J_lam_gamma = np.zeros(k_wx)  # zero under H₀
+    J_gamma_gamma = (WX.T @ WX) / sigma2_mean
+
+    # Neyman adjustment (no-op since J_lam_gamma = 0)
+    if k_wx > 0:
+        J_gamma_gamma_inv = np.linalg.inv(
+            J_gamma_gamma + 1e-12 * np.eye(k_wx)
+        )
+        neyman_coef = J_lam_gamma @ J_gamma_gamma_inv  # zeros
+        adjustment = g_gamma @ neyman_coef  # zeros
+        g_lambda_star = g_lambda - adjustment
+
+        V_star = J_lam_lam - neyman_coef @ J_lam_gamma
+    else:
+        g_lambda_star = g_lambda
+        V_star = J_lam_lam
+
+    LM = g_lambda_star**2 / (V_star + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_robust_lm_error_sdem",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_wx": k_wx, "N": N, "T": T},
     )

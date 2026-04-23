@@ -6,7 +6,7 @@ import arviz as az
 import numpy as np
 import pymc as pm
 
-from bayespecon import OLSPanelFE, SARPanelFE, SEMPanelFE, SDMPanelFE, SDEMPanelFE
+from bayespecon import OLSPanelFE, SARPanelFE, SEMPanelFE, SDMPanelFE, SDEMPanelFE, SLXPanelFE
 from bayespecon.models.panel_base import SpatialPanelModel
 from .helpers  import W_to_graph, make_line_W
 
@@ -36,6 +36,7 @@ def test_panel_fe_build_pymc_models():
         SEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
         SDMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
         SDEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
+        SLXPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
     ]
 
     for model in models:
@@ -76,7 +77,12 @@ def test_panel_fe_fitted_values_and_effects_with_mock_posteriors():
         "lam": np.array([0.1, 0.101]),
     })
 
-    for model in [ols, sar, sem, sdm, sdem]:
+    slx = SLXPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    slx._idata = _idata({
+        "beta": np.stack([beta_3, beta_3 + 1e-3]),
+    })
+
+    for model in [ols, sar, sem, sdm, sdem, slx]:
         fitted = model.fitted_values()
         effects = model.spatial_effects()
         assert fitted.shape == y.shape

@@ -21,6 +21,17 @@ from .bayesian_lmtests import (
     bayesian_robust_lm_wx_test,
     bayesian_robust_lm_error_sdem_test,
     summarize_bayesian_lm_test,
+    # Panel LM tests
+    bayesian_panel_lm_lag_test,
+    bayesian_panel_lm_error_test,
+    bayesian_panel_robust_lm_lag_test,
+    bayesian_panel_robust_lm_error_test,
+    bayesian_panel_lm_wx_test,
+    bayesian_panel_lm_sdm_joint_test,
+    bayesian_panel_lm_slx_error_joint_test,
+    bayesian_panel_robust_lm_lag_sdm_test,
+    bayesian_panel_robust_lm_wx_test,
+    bayesian_panel_robust_lm_error_sdem_test,
 )
 from .bayesfactor import (
     bayes_factor_compare_models,
@@ -30,7 +41,7 @@ from .bayesfactor import (
 )
 
 __all__ = [
-    # Bayesian LM tests
+    # Bayesian LM tests (cross-sectional)
     "BayesianLMTestResult",
     "bayesian_lm_lag_test",
     "bayesian_lm_error_test",
@@ -41,6 +52,17 @@ __all__ = [
     "bayesian_robust_lm_wx_test",
     "bayesian_robust_lm_error_sdem_test",
     "summarize_bayesian_lm_test",
+    # Bayesian LM tests (panel)
+    "bayesian_panel_lm_lag_test",
+    "bayesian_panel_lm_error_test",
+    "bayesian_panel_robust_lm_lag_test",
+    "bayesian_panel_robust_lm_error_test",
+    "bayesian_panel_lm_wx_test",
+    "bayesian_panel_lm_sdm_joint_test",
+    "bayesian_panel_lm_slx_error_joint_test",
+    "bayesian_panel_robust_lm_lag_sdm_test",
+    "bayesian_panel_robust_lm_wx_test",
+    "bayesian_panel_robust_lm_error_sdem_test",
     # Bayes factor comparison
     "bayes_factor_compare_models",
     "bic_to_bf",

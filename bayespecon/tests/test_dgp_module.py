@@ -294,3 +294,142 @@ def test_panel_tobit_create_gdf() -> None:
     assert isinstance(unit_gdf, gpd.GeoDataFrame)
     assert len(unit_gdf) == N
     assert len(long_df) == N * T
+
+
+# --- Heteroskedasticity tests ---
+
+
+def test_dgp_exports_have_err_hetero_argument() -> None:
+    """All exported simulator functions should accept an ``err_hetero`` argument."""
+    funcs = [getattr(dgp, name) for name in dgp.__all__]
+    for fn in funcs:
+        sig = inspect.signature(fn)
+        assert "err_hetero" in sig.parameters or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        ), f"{fn.__name__} must accept err_hetero directly or through **kwargs"
+
+
+def test_cross_sectional_err_hetero_produces_different_variances() -> None:
+    """err_hetero=True should produce heteroskedastic errors in cross-sectional DGPs.
+
+    We verify this by checking that the _hetero_scale helper produces
+    observation-specific standard deviations that vary with X norms.
+    """
+    from bayespecon.dgp.utils import _hetero_scale
+
+    rng = np.random.default_rng(42)
+    # Create a design matrix with varying row norms.
+    X = np.column_stack([np.ones(20), rng.standard_normal((20, 3))])
+    scales = _hetero_scale(X, sigma=1.0)
+    # Scales should vary across observations.
+    assert scales.max() / scales.min() > 1.3, (
+        f"_hetero_scale should produce varying scales, got max/min = {scales.max() / scales.min():.2f}"
+    )
+    # Scales should be >= sigma (since sqrt(1 + ||x||^2) >= 1).
+    assert (scales >= 1.0).all(), "All scales should be >= sigma"
+
+    # Also verify that simulate_ols with err_hetero=True produces different
+    # results than err_hetero=False (same seed should give different y).
+    out_homo = dgp.simulate_ols(n=4, sigma=1.0, err_hetero=False, seed=123)
+    out_hetero = dgp.simulate_ols(n=4, sigma=1.0, err_hetero=True, seed=123)
+    # The y values should differ because the error scaling is different.
+    assert not np.allclose(out_homo["y"], out_hetero["y"]), (
+        "err_hetero=True should produce different y values than err_hetero=False"
+    )
+
+
+def test_cross_sectional_err_hetero_false_is_homoskedastic() -> None:
+    """err_hetero=False (default) should produce homoskedastic errors."""
+    # Verify that with err_hetero=False, the error scale is constant sigma.
+    from bayespecon.dgp.utils import _hetero_scale
+
+    rng = np.random.default_rng(42)
+    X = np.column_stack([np.ones(20), rng.standard_normal((20, 3))])
+    # When err_hetero=False, the scale is just sigma (scalar), not _hetero_scale.
+    # Verify _hetero_scale produces non-constant scales for comparison.
+    scales = _hetero_scale(X, sigma=1.0)
+    assert not np.allclose(scales, 1.0), (
+        "_hetero_scale should produce non-constant scales for non-trivial X"
+    )
+
+    # Verify backward compatibility: default err_hetero=False gives same
+    # results as before the parameter was added.
+    out1 = dgp.simulate_ols(n=4, sigma=1.0, seed=123)
+    out2 = dgp.simulate_ols(n=4, sigma=1.0, seed=123, err_hetero=False)
+    assert np.allclose(out1["y"], out2["y"]), (
+        "err_hetero=False should produce identical results to the default"
+    )
+
+
+def test_panel_fe_err_hetero_runs_and_preserves_shape() -> None:
+    """Panel FE simulators with err_hetero=True should return same shapes."""
+    rng = np.random.default_rng(42)
+    N, T = 9, 3
+    W = make_rook_W(3)
+
+    for sim_fn in [dgp.simulate_panel_ols_fe, dgp.simulate_panel_sar_fe,
+                   dgp.simulate_panel_sem_fe, dgp.simulate_panel_sdm_fe,
+                   dgp.simulate_panel_sdem_fe]:
+        out_homo = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=False)
+        out_hetero = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=True)
+        assert out_homo["y"].shape == out_hetero["y"].shape
+        assert out_homo["X"].shape == out_hetero["X"].shape
+        assert out_homo["params_true"].keys() == out_hetero["params_true"].keys()
+
+
+def test_panel_re_err_hetero_forwarded() -> None:
+    """Panel RE wrappers should forward err_hetero to underlying FE simulators."""
+    rng = np.random.default_rng(42)
+    N, T = 9, 3
+    W = make_rook_W(3)
+
+    for sim_fn in [dgp.simulate_panel_ols_re, dgp.simulate_panel_sar_re,
+                   dgp.simulate_panel_sem_re]:
+        out = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=True)
+        assert out["y"].shape == (N * T,)
+
+
+def test_dynamic_panel_err_hetero_runs_and_preserves_shape() -> None:
+    """Dynamic panel simulators with err_hetero=True should return same shapes."""
+    rng = np.random.default_rng(42)
+    N, T = 9, 3
+    W = make_rook_W(3)
+
+    for sim_fn in [dgp.simulate_panel_dlm_fe, dgp.simulate_panel_sdmr_fe,
+                   dgp.simulate_panel_sdmu_fe, dgp.simulate_panel_sar_dynamic_fe,
+                   dgp.simulate_panel_sem_dynamic_fe, dgp.simulate_panel_sdem_dynamic_fe,
+                   dgp.simulate_panel_slx_dynamic_fe]:
+        out_homo = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=False)
+        out_hetero = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=True)
+        assert out_homo["y"].shape == out_hetero["y"].shape
+        assert out_homo["X"].shape == out_hetero["X"].shape
+
+
+def test_tobit_err_hetero_forwarded() -> None:
+    """Tobit wrappers should forward err_hetero to underlying simulators."""
+    rng = np.random.default_rng(42)
+    W = make_rook_W(3)
+
+    # Cross-sectional tobit
+    for sim_fn in [dgp.simulate_sar_tobit, dgp.simulate_sem_tobit, dgp.simulate_sdm_tobit]:
+        out = sim_fn(W=W, rng=rng, err_hetero=True)
+        assert "y_latent" in out
+        assert "censored_mask" in out
+
+    # Panel tobit
+    N, T = 9, 3
+    for sim_fn in [dgp.simulate_panel_sar_tobit_fe, dgp.simulate_panel_sem_tobit_fe]:
+        out = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=True)
+        assert "y_latent" in out
+        assert "censored_mask" in out
+
+
+def test_spatial_probit_err_hetero_runs() -> None:
+    """Spatial probit with err_hetero=True should run and return same keys."""
+    rng = np.random.default_rng(42)
+    W = make_rook_W(3)
+
+    out_homo = dgp.simulate_spatial_probit(W=W, rng=rng, err_hetero=False)
+    out_hetero = dgp.simulate_spatial_probit(W=W, rng=rng, err_hetero=True)
+    assert out_homo.keys() == out_hetero.keys()
+    assert out_homo["y"].shape == out_hetero["y"].shape

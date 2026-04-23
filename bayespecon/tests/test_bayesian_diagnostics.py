@@ -14,6 +14,17 @@ from bayespecon.diagnostics.bayesian_lmtests import (
     bayesian_robust_lm_wx_test,
     bayesian_robust_lm_error_sdem_test,
     summarize_bayesian_lm_test,
+    # Panel LM tests
+    bayesian_panel_lm_lag_test,
+    bayesian_panel_lm_error_test,
+    bayesian_panel_robust_lm_lag_test,
+    bayesian_panel_robust_lm_error_test,
+    bayesian_panel_lm_wx_test,
+    bayesian_panel_lm_sdm_joint_test,
+    bayesian_panel_lm_slx_error_joint_test,
+    bayesian_panel_robust_lm_lag_sdm_test,
+    bayesian_panel_robust_lm_wx_test,
+    bayesian_panel_robust_lm_error_sdem_test,
 )
 
 
@@ -470,3 +481,329 @@ class TestRobustVsNonRobust:
 
         # These should differ (different null models + Neyman adjustment)
         assert result_lag.mean != result_robust_lag.mean
+
+
+# ---------------------------------------------------------------------------
+# Panel mock model builders
+# ---------------------------------------------------------------------------
+
+
+def _make_panel_data(N=6, T=3, k_wx=0, seed=42):
+    """Generate panel data with N units and T time periods."""
+    rng = np.random.default_rng(seed)
+    n = N * T
+    X = np.column_stack([np.ones(n), rng.normal(size=n)])
+    beta_true = np.array([1.0, 2.0])
+    y = X @ beta_true + rng.normal(scale=0.5, size=n)
+
+    # Simple row-normalized ring weights for N units
+    W_dense = np.eye(N, k=1) + np.eye(N, k=-1)
+    W_dense[0, -1] = W_dense[-1, 0] = 1
+    W_dense = W_dense / W_dense.sum(axis=1, keepdims=True)
+    import scipy.sparse as sp
+    W_sparse = sp.csr_matrix(W_dense)
+
+    # WX columns (spatially lagged X, applied period-by-period)
+    if k_wx > 0:
+        WX_list = []
+        for j in range(k_wx):
+            wx_j = np.zeros(n)
+            for t in range(T):
+                start = t * N
+                end = (t + 1) * N
+                wx_j[start:end] = W_dense @ X[start:end, 1]  # lag the non-constant column
+            WX_list.append(wx_j)
+        WX = np.column_stack(WX_list)
+    else:
+        WX = np.empty((n, 0), dtype=float)
+
+    # Wy (panel spatial lag)
+    Wy = np.zeros(n)
+    for t in range(T):
+        start = t * N
+        end = (t + 1) * N
+        Wy[start:end] = W_dense @ y[start:end]
+
+    # W eigenvalues
+    W_eigs = np.linalg.eigvals(W_dense)
+
+    return y, X, WX, Wy, W_dense, W_sparse, W_eigs, N, T
+
+
+def _make_mock_panel_ols_model(N=6, T=3, k_wx=0, beta_noise=0.1, draws=100, seed=42):
+    """Build a mock OLS panel model for panel LM tests."""
+    y, X, WX, Wy, W_dense, W_sparse, W_eigs, N, T = _make_panel_data(N, T, k_wx, seed)
+
+    beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
+    beta_samples = np.tile(beta_ols, (draws, 1))
+    rng = np.random.default_rng(42)
+    beta_samples += rng.normal(scale=beta_noise, size=beta_samples.shape)
+
+    idata = az.from_dict(
+        posterior={"beta": beta_samples[:, None, :], "sigma": np.ones(draws)[:, None]},
+        observed_data={"y": y},
+    )
+
+    model = MagicMock()
+    model._y = y
+    model._X = X
+    model._WX = WX
+    model._Wy = Wy
+    model._W_sparse = W_sparse
+    model._W_eigs = W_eigs
+    model._N = N
+    model._T = T
+    model.inference_data = idata
+    return model
+
+
+def _make_mock_panel_sar_model(N=6, T=3, k_wx=2, beta_noise=0.1, rho_noise=0.05, draws=100, seed=42):
+    """Build a mock SAR panel model for panel LM tests."""
+    y, X, WX, Wy, W_dense, W_sparse, W_eigs, N, T = _make_panel_data(N, T, k_wx, seed)
+
+    beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
+    beta_samples = np.tile(beta_ols, (draws, 1))
+    rng = np.random.default_rng(42)
+    beta_samples += rng.normal(scale=beta_noise, size=beta_samples.shape)
+    rho_samples = rng.normal(scale=rho_noise, size=draws)
+
+    idata = az.from_dict(
+        posterior={
+            "beta": beta_samples[:, None, :],
+            "rho": rho_samples[:, None],
+            "sigma": np.ones(draws)[:, None],
+        },
+        observed_data={"y": y},
+    )
+
+    model = MagicMock()
+    model._y = y
+    model._X = X
+    model._WX = WX
+    model._Wy = Wy
+    model._W_sparse = W_sparse
+    model._W_eigs = W_eigs
+    model._N = N
+    model._T = T
+    model.inference_data = idata
+    return model
+
+
+def _make_mock_panel_slx_model(N=6, T=3, k_wx=2, beta_noise=0.1, draws=100, seed=42):
+    """Build a mock SLX panel model for panel LM tests."""
+    y, X, WX, Wy, W_dense, W_sparse, W_eigs, N, T = _make_panel_data(N, T, k_wx, seed)
+
+    Z = np.hstack([X, WX])
+    beta_slx = np.linalg.lstsq(Z, y, rcond=None)[0]
+    beta_samples = np.tile(beta_slx, (draws, 1))
+    rng = np.random.default_rng(42)
+    beta_samples += rng.normal(scale=beta_noise, size=beta_samples.shape)
+
+    idata = az.from_dict(
+        posterior={
+            "beta": beta_samples[:, None, :],
+            "sigma": np.ones(draws)[:, None],
+        },
+        observed_data={"y": y},
+    )
+
+    model = MagicMock()
+    model._y = y
+    model._X = X
+    model._WX = WX
+    model._Wy = Wy
+    model._W_sparse = W_sparse
+    model._W_eigs = W_eigs
+    model._N = N
+    model._T = T
+    model.inference_data = idata
+    return model
+
+
+# ---------------------------------------------------------------------------
+# Panel LM-Lag and LM-Error tests
+# ---------------------------------------------------------------------------
+
+
+class TestBayesianPanelLMLagTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_ols_model(draws=200)
+        result = bayesian_panel_lm_lag_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 1
+        assert result.test_type == "bayesian_panel_lm_lag"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+        assert result.details["N"] == 6
+        assert result.details["T"] == 3
+
+    def test_small_panel(self):
+        model = _make_mock_panel_ols_model(N=4, T=2, draws=50)
+        result = bayesian_panel_lm_lag_test(model)
+
+        assert result.lm_samples.shape[0] == 50
+        assert result.df == 1
+
+
+class TestBayesianPanelLMErrorTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_ols_model(draws=200)
+        result = bayesian_panel_lm_error_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 1
+        assert result.test_type == "bayesian_panel_lm_error"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+    def test_small_panel(self):
+        model = _make_mock_panel_ols_model(N=4, T=2, draws=50)
+        result = bayesian_panel_lm_error_test(model)
+
+        assert result.lm_samples.shape[0] == 50
+        assert result.df == 1
+
+
+# ---------------------------------------------------------------------------
+# Panel robust LM-Lag and LM-Error tests
+# ---------------------------------------------------------------------------
+
+
+class TestBayesianPanelRobustLMLagTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_ols_model(draws=200)
+        result = bayesian_panel_robust_lm_lag_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 1
+        assert result.test_type == "bayesian_panel_robust_lm_lag"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+
+class TestBayesianPanelRobustLMErrorTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_ols_model(draws=200)
+        result = bayesian_panel_robust_lm_error_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 1
+        assert result.test_type == "bayesian_panel_robust_lm_error"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+
+# ---------------------------------------------------------------------------
+# Panel WX / Joint / Robust SDM/SDEM tests
+# ---------------------------------------------------------------------------
+
+
+class TestBayesianPanelLMWxTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_sar_model(k_wx=2, draws=200)
+        result = bayesian_panel_lm_wx_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 2  # k_wx = 2
+        assert result.test_type == "bayesian_panel_lm_wx"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+    def test_no_wx_raises(self):
+        model = _make_mock_panel_ols_model(k_wx=0, draws=50)
+        with pytest.raises(ValueError, match="no WX columns"):
+            bayesian_panel_lm_wx_test(model)
+
+
+class TestBayesianPanelLMSDMJointTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_ols_model(k_wx=2, draws=200)
+        result = bayesian_panel_lm_sdm_joint_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 3  # 1 + k_wx = 1 + 2
+        assert result.test_type == "bayesian_panel_lm_sdm_joint"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+    def test_zero_wx_columns(self):
+        model = _make_mock_panel_ols_model(k_wx=0, draws=50)
+        result = bayesian_panel_lm_sdm_joint_test(model)
+
+        assert result.df == 1  # 1 + 0
+
+
+class TestBayesianPanelLMSLXErrorJointTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_ols_model(k_wx=2, draws=200)
+        result = bayesian_panel_lm_slx_error_joint_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 3  # 1 + k_wx = 1 + 2
+        assert result.test_type == "bayesian_panel_lm_slx_error_joint"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+
+class TestBayesianPanelRobustLMLagSDMTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_slx_model(k_wx=2, draws=200)
+        result = bayesian_panel_robust_lm_lag_sdm_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 1
+        assert result.test_type == "bayesian_panel_robust_lm_lag_sdm"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+    def test_no_wx_columns(self):
+        model = _make_mock_panel_ols_model(k_wx=0, draws=50)
+        result = bayesian_panel_robust_lm_lag_sdm_test(model)
+
+        assert result.df == 1
+
+
+class TestBayesianPanelRobustLMWXTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_sar_model(k_wx=2, draws=200)
+        result = bayesian_panel_robust_lm_wx_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 2  # k_wx = 2
+        assert result.test_type == "bayesian_panel_robust_lm_wx"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+    def test_no_wx_raises(self):
+        model = _make_mock_panel_ols_model(k_wx=0, draws=50)
+        with pytest.raises(ValueError, match="no WX columns"):
+            bayesian_panel_robust_lm_wx_test(model)
+
+
+class TestBayesianPanelRobustLMErrorSDEMTest:
+    def test_basic_output(self):
+        model = _make_mock_panel_slx_model(k_wx=2, draws=200)
+        result = bayesian_panel_robust_lm_error_sdem_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.df == 1
+        assert result.test_type == "bayesian_panel_robust_lm_error_sdem"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+    def test_no_wx_columns(self):
+        model = _make_mock_panel_ols_model(k_wx=0, draws=50)
+        result = bayesian_panel_robust_lm_error_sdem_test(model)
+
+        assert result.df == 1

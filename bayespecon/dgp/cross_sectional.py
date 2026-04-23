@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from .utils import ensure_rng, make_design_matrix, make_output_geodataframe, resolve_weights
+from .utils import _hetero_scale, ensure_rng, make_design_matrix, make_output_geodataframe, resolve_weights
 
 
 def _attach_optional_gdf(
@@ -33,6 +33,7 @@ def simulate_sar(
     rho: float = 0.5,
     beta: np.ndarray | None = None,
     sigma: float = 1.0,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
@@ -58,6 +59,10 @@ def simulate_sar(
         Regression coefficients including intercept.
     sigma : float, default=1.0
         Innovation standard deviation.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations with
+        observation-specific standard deviations
+        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_i\\|^2}`.
     rng : np.random.Generator, optional
         Random generator.
     seed : int, optional
@@ -85,7 +90,7 @@ def simulate_sar(
     beta = np.asarray(beta, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
-    eps = sigma * rng.standard_normal(nobs)
+    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
     y = np.linalg.solve(np.eye(nobs) - rho * Wd, X @ beta + eps)
     out = {
         "y": y,
@@ -108,6 +113,7 @@ def simulate_ols(
     gdf=None,
     beta: np.ndarray | None = None,
     sigma: float = 1.0,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
@@ -136,6 +142,10 @@ def simulate_ols(
         ``[1.0, 2.0]`` (intercept = 1, one regressor with slope = 2).
     sigma : float, default=1.0
         Innovation standard deviation :math:`\\sigma`.
+    err_hetero : bool, default=False
+        If True, generate heteroskedastic innovations with
+        observation-specific standard deviations
+        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_i\\|^2}`.
     rng : numpy.random.Generator, optional
         Random generator instance for reproducibility.
     seed : int, optional
@@ -175,7 +185,7 @@ def simulate_ols(
     beta = np.asarray(beta, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
-    eps = sigma * rng.standard_normal(nobs)
+    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
     y = X @ beta + eps
 
     out: dict = {
@@ -198,6 +208,7 @@ def simulate_sem(
     lam: float = 0.5,
     beta: np.ndarray | None = None,
     sigma: float = 1.0,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
@@ -223,7 +234,7 @@ def simulate_sem(
     beta = np.asarray(beta, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
-    eps = sigma * rng.standard_normal(nobs)
+    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
     u = np.linalg.solve(np.eye(nobs) - lam * Wd, eps)
     y = X @ beta + u
     out = {
@@ -248,6 +259,7 @@ def simulate_slx(
     beta1: np.ndarray | None = None,
     beta2: np.ndarray | None = None,
     sigma: float = 1.0,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
@@ -277,7 +289,7 @@ def simulate_slx(
     if Wx.shape[1] != len(beta2):
         raise ValueError("len(beta2) must match number of non-intercept regressors.")
 
-    y = X @ beta1 + Wx @ beta2 + sigma * rng.standard_normal(nobs)
+    y = X @ beta1 + Wx @ beta2 + (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
     out = {
         "y": y,
         "X": X,
@@ -301,6 +313,7 @@ def simulate_sdm(
     beta1: np.ndarray | None = None,
     beta2: np.ndarray | None = None,
     sigma: float = 1.0,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
@@ -330,7 +343,7 @@ def simulate_sdm(
     if Wx.shape[1] != len(beta2):
         raise ValueError("len(beta2) must match number of non-intercept regressors.")
 
-    eps = sigma * rng.standard_normal(nobs)
+    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
     y = np.linalg.solve(np.eye(nobs) - rho * Wd, X @ beta1 + Wx @ beta2 + eps)
     out = {
         "y": y,
@@ -355,6 +368,7 @@ def simulate_sdem(
     beta1: np.ndarray | None = None,
     beta2: np.ndarray | None = None,
     sigma: float = 1.0,
+    err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
@@ -384,7 +398,7 @@ def simulate_sdem(
     if Wx.shape[1] != len(beta2):
         raise ValueError("len(beta2) must match number of non-intercept regressors.")
 
-    u = np.linalg.solve(np.eye(nobs) - lam * Wd, sigma * rng.standard_normal(nobs))
+    u = np.linalg.solve(np.eye(nobs) - lam * Wd, (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs))
     y = X @ beta1 + Wx @ beta2 + u
     out = {
         "y": y,

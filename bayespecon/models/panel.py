@@ -632,3 +632,101 @@ class SDEMPanelFE(SpatialPanelModel):
             "total": total,
             "feature_names": self._wx_feature_names,
         }
+
+
+class SLXPanelFE(SpatialPanelModel):
+    """Bayesian SLX (Spatial Lag X) panel model with fixed effects.
+
+    .. math::
+        y_{it} = X_{it}\\beta_1 + (WX)_{it}\\beta_2 + \\mu_i + \\varepsilon_{it}
+
+    where :math:`\\varepsilon_{it} \\sim N(0, \\sigma^2)`. No spatial lag
+    on y, so no Jacobian adjustment is needed and NUTS converges without
+    difficulty.
+
+    Parameters
+    ----------
+    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
+    logdet_method
+        See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
+
+    Priors (``priors`` dict keys)
+    ------------------------------
+    beta_mu : float, default 0
+        Prior mean for all beta coefficients.
+    beta_sigma : float, default 1e6
+        Prior std for all beta coefficients (diffuse Normal).
+    sigma_sigma : float, default 10
+        Scale for HalfNormal prior on sigma.
+
+    Notes
+    -----
+    The design matrix is augmented with spatially lagged regressors
+    ``WX``, so ``beta`` covers both ``[X, WX]`` columns. This is the
+    panel analogue of the cross-sectional :class:`SLX` model.
+    """
+
+    def _beta_names(self) -> list[str]:
+        return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
+    def _build_pymc_model(self) -> pm.Model:
+        """Construct the PyMC model for SLX panel regression.
+
+        Returns
+        -------
+        pymc.Model
+            Compiled probabilistic model object.
+        """
+        Z = np.hstack([self._X, self._WX])
+
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        with pm.Model(coords=self._model_coords()) as model:
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+
+            mu = pt.dot(Z, beta)
+            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+
+        return model
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute fitted values at posterior mean coefficients.
+
+        Returns
+        -------
+        np.ndarray
+            Posterior-mean fitted values.
+        """
+        beta = self._posterior_mean("beta")
+        Z = np.hstack([self._X, self._WX])
+        return Z @ beta
+
+    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
+        """Compute SLX panel direct/indirect/total effects.
+
+        Returns
+        -------
+        dict
+            Direct, indirect, total effects and feature names.
+        """
+        beta = self._posterior_mean("beta")
+        k = self._X.shape[1]
+        kw = self._WX.shape[1]
+        beta1, beta2 = beta[:k], beta[k:k + kw]
+
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+
+        direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
+        total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
+        indirect = total - direct
+
+        return {
+            "direct": direct,
+            "indirect": indirect,
+            "total": total,
+            "feature_names": self._wx_feature_names,
+        }

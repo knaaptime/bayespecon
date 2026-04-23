@@ -28,6 +28,10 @@ Because models are compiled to PyMC, you can use the classes to specify a common
 
 ### Cross Sectional Models
 
+#### OLS
+
+$$y = X\beta + \epsilon$$
+
 #### SLX
 
 $$y = X\beta + WX\theta + \epsilon$$
@@ -69,6 +73,9 @@ $$y_{it} = \rho Wy_{it} + x_{it} ' \beta + Wx_{it}' \theta + a_i + \tau_t + \eps
 #### SDEM panel
 
 $$y_{it} = x_{it} ' \beta + Wx_{it}' \theta + a_i + \tau_t + u_{it}, u_{it}=\lambda Wu_{it} + \epsilon_{it}$$
+#### SLX panel
+
+$$y_{it} = x_{it}'\beta + Wx_{it}'\theta + a_i + \tau_t + \epsilon_{it}$$
 
 #### OLS panel (Random Effects)
 
@@ -96,6 +103,22 @@ $$y_{it} = \phi y_{i, t-1} + \rho W y_{it} - \rho \phi W y_{i, t-1} + x_{it}' \b
 #### SDMUPanelFE (Dynamic Unrestricted Spatial Durbin, FE)
 
 $$y_{it} = \phi y_{i, t-1} + \rho W y_{it} + \theta W y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
+
+#### SARPanelDEDynamic (Dynamic SAR, DE transformation)
+
+$$y_{it} = \phi y_{i, t-1} + \rho W y_{it} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
+
+#### SEMPanelDEDynamic (Dynamic SEM, DE transformation)
+
+$$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}$$
+
+#### SDEMPanelDEDynamic (Dynamic SDEM, DE transformation)
+
+$$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}$$
+
+#### SLXPanelDEDynamic (Dynamic SLX, DE transformation)
+
+$$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
 
 
 ### Non-Linear Models

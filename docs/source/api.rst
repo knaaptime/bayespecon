@@ -55,6 +55,7 @@ Panel Spatial Models
    SEMPanelFE
    SDMPanelFE
    SDEMPanelFE
+   SLXPanelFE
 
 Panel Spatial Models (Random Effects)
 --------------------------------------
@@ -79,6 +80,10 @@ Dynamic Panel Spatial Models
    DLMPanelFE
    SDMRPanelFE
    SDMUPanelFE
+   SARPanelDEDynamic
+   SEMPanelDEDynamic
+   SDEMPanelDEDynamic
+   SLXPanelDEDynamic
 
 
 Non-Linear Spatial Models
@@ -125,6 +130,25 @@ Bayesian Diagnostics
    bayesian_robust_lm_wx_test
    bayesian_robust_lm_error_sdem_test
    summarize_bayesian_lm_test
+
+Panel Bayesian LM Tests
+^^^^^^^^^^^^^^^^^^^^^^^
+
+.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
+
+.. autosummary::
+   :toctree: generated/
+
+   bayesian_panel_lm_lag_test
+   bayesian_panel_lm_error_test
+   bayesian_panel_robust_lm_lag_test
+   bayesian_panel_robust_lm_error_test
+   bayesian_panel_lm_wx_test
+   bayesian_panel_lm_sdm_joint_test
+   bayesian_panel_lm_slx_error_joint_test
+   bayesian_panel_robust_lm_lag_sdm_test
+   bayesian_panel_robust_lm_wx_test
+   bayesian_panel_robust_lm_error_sdem_test
 
 .. currentmodule:: bayespecon.diagnostics.bayesfactor
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from bayespecon import OLSPanelFE, OLSPanelRE, SARPanelFE
+from bayespecon import OLSPanelFE, OLSPanelRE, SARPanelFE, SLXPanelFE
 
 
 def test_panel_models_no_longer_expose_frequentist_diagnostics():
     """Panel models should not expose frequentist diagnostic methods."""
-    for cls in [OLSPanelFE, OLSPanelRE, SARPanelFE]:
+    for cls in [OLSPanelFE, OLSPanelRE, SARPanelFE, SLXPanelFE]:
         assert not hasattr(cls, "diagnostics"), (
             f"{cls.__name__} still has diagnostics()"
         )
