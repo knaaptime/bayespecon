@@ -1,89 +1,95 @@
 """Bayesian spatial econometric models and diagnostics.
 
 The package exposes cross-sectional and panel spatial regression model
-classes, residual diagnostics, and MATLAB-style test/statistics helpers.
+classes and Bayesian specification tests.
 
 Examples
 --------
 Import a model class directly from the package namespace::
 
-	from bayespecon import SAR
-
-Import MATLAB-style statistics helpers from the stats submodule::
-
-	from bayespecon import stats
+        from bayespecon import SAR
 """
 
-from . import dgp, stats
+from . import dgp
 from .diagnostics import (
-    DiagnosticResult,
-    arch_test,
-    bpagan_test,
-	hausman_fe_re_test,
-    ljung_box_q,
-    panel_residual_structure,
-    pesaran_cd_test,
-    rdiagnose_like,
+    BayesianLMTestResult,
+    bayesian_lm_lag_test,
+    bayesian_lm_error_test,
+    bayesian_lm_wx_test,
+    bayesian_lm_sdm_joint_test,
+    bayesian_lm_slx_error_joint_test,
+    bayesian_robust_lm_lag_sdm_test,
+    bayesian_robust_lm_wx_test,
+    bayesian_robust_lm_error_sdem_test,
+    summarize_bayesian_lm_test,
+    bayes_factor_compare_models,
+    bic_to_bf,
+    compile_log_posterior,
+    post_prob,
 )
 from .models import (
+    OLS,
     SAR,
-		OLS,
     SDEM,
     SDM,
     SEM,
-	SARTobit,
-	SDMTobit,
-	SEMTobit,
     SLX,
+    DLMPanelFE,
     OLSPanelFE,
+    OLSPanelRE,
     SARPanelFE,
+    SARPanelRE,
+    SARPanelTobit,
+    SARTobit,
     SDEMPanelFE,
     SDMPanelFE,
+    SDMRPanelFE,
+    SDMTobit,
+    SDMUPanelFE,
     SEMPanelFE,
-	DLMPanelFE,
-	SDMRPanelFE,
-	SDMUPanelFE,
-    OLSPanelRE,
-    SARPanelRE,
-	SARPanelTobit,
     SEMPanelRE,
-	SEMPanelTobit,
+    SEMPanelTobit,
+    SEMTobit,
     SpatialProbit,
 )
 
 __all__ = [
-	"SLX",
-		"OLS",
-	"SAR",
-	"SEM",
-	"SDM",
-	"SDEM",
-	"SARTobit",
-	"SEMTobit",
-	"SDMTobit",
-	"SpatialProbit",
-	"OLSPanelFE",
-	"SARPanelFE",
-	"SEMPanelFE",
-	"SDMPanelFE",
-	"SDEMPanelFE",
-	"DLMPanelFE",
-	"SDMRPanelFE",
-	"SDMUPanelFE",
-	"OLSPanelRE",
-	"SARPanelRE",
-	"SEMPanelRE",
-	"SARPanelTobit",
-	"SEMPanelTobit",
-	"rdiagnose_like",
-	"bpagan_test",
-	"arch_test",
-	"hausman_fe_re_test",
-	"ljung_box_q",
-	"panel_residual_structure",
-	"pesaran_cd_test",
-	"stats",
-	"dgp",
+    "SLX",
+    "OLS",
+    "SAR",
+    "SEM",
+    "SDM",
+    "SDEM",
+    "SARTobit",
+    "SEMTobit",
+    "SDMTobit",
+    "SpatialProbit",
+    "OLSPanelFE",
+    "SARPanelFE",
+    "SEMPanelFE",
+    "SDMPanelFE",
+    "SDEMPanelFE",
+    "DLMPanelFE",
+    "SDMRPanelFE",
+    "SDMUPanelFE",
+    "OLSPanelRE",
+    "SARPanelRE",
+    "SEMPanelRE",
+    "SARPanelTobit",
+    "SEMPanelTobit",
+    "dgp",
+    "bayes_factor_compare_models",
+    "bic_to_bf",
+    "BayesianLMTestResult",
+    "bayesian_lm_lag_test",
+    "bayesian_lm_error_test",
+    "bayesian_lm_wx_test",
+    "bayesian_lm_sdm_joint_test",
+    "bayesian_lm_slx_error_joint_test",
+    "bayesian_robust_lm_lag_sdm_test",
+    "bayesian_robust_lm_wx_test",
+    "bayesian_robust_lm_error_sdem_test",
+    "summarize_bayesian_lm_test",
 ]
 
 

@@ -3,11 +3,9 @@
 y = X @ beta + epsilon,  epsilon ~ N(0, sigma^2 I)
 
 This model contains no spatial structure of its own.  It is the natural
-baseline from which spatial specification tests are run to determine which
-spatial model — SAR, SEM, SLX, etc. — is most appropriate.  W is optional
-at construction time, but several methods (``moran_test``,
-``lm_error_test``, ``lm_lag_test``, ``spatial_specification_tests``) require
-W to be supplied.
+baseline from which Bayesian spatial specification tests are run to
+determine which spatial model — SAR, SEM, SLX, etc. — is most appropriate.
+W is optional at construction time.
 """
 
 from __future__ import annotations
@@ -17,7 +15,6 @@ import pymc as pm
 import pytensor.tensor as pt
 
 from .base import SpatialModel
-from ..diagnostics import DiagnosticResult
 
 
 class OLS(SpatialModel):
@@ -30,8 +27,8 @@ class OLS(SpatialModel):
     :math:`\\beta` and a HalfNormal prior on the noise standard deviation
     :math:`\\sigma`.
 
-    ``W`` is **optional**.  If supplied, Moran's I, LM-error, and LM-lag
-    tests can be run on the OLS residuals to guide model selection.
+    ``W`` is **optional**.  If supplied, Bayesian LM tests can be run on
+    the OLS posterior to guide model selection.
 
     Parameters
     ----------
@@ -46,9 +43,7 @@ class OLS(SpatialModel):
         Predictor matrix.  Required in matrix mode.
     W : libpysal.graph.Graph or scipy.sparse matrix, optional
         Spatial weights matrix of shape ``(n, n)``.  Not used during
-        estimation; required only for the spatial specification tests
-        ``moran_test``, ``lm_error_test``, ``lm_lag_test``, and
-        ``spatial_specification_tests``.
+        estimation; required for Bayesian LM specification tests.
     priors : dict, optional
         Override default priors.  Supported keys:
 
@@ -87,12 +82,12 @@ class OLS(SpatialModel):
         Raises
         ------
         NotImplementedError
-            Always raised; use ``spatial_specification_tests()`` instead to
+            Always raised; use Bayesian LM diagnostics instead to
             assess spatial structure after estimation.
         """
         raise NotImplementedError(
             "OLS has no spatial lag structure and therefore no spatial effects. "
-            "Run spatial_specification_tests() to assess which spatial model "
+            "Use Bayesian LM diagnostics to assess which spatial model "
             "is appropriate, then refit with SAR, SEM, SLX, SDM, or SDEM."
         )
 
@@ -106,96 +101,3 @@ class OLS(SpatialModel):
         """
         beta = self._posterior_mean("beta")
         return self._X @ beta
-
-    # ------------------------------------------------------------------
-    # Spatial specification tests
-    # ------------------------------------------------------------------
-
-    def lm_error_test(self) -> DiagnosticResult:
-        """LM test for omitted spatial error autocorrelation.
-
-        Tests whether the OLS residuals exhibit spatial error dependence,
-        suggesting that a SEM or SDEM specification may be more appropriate
-        than OLS.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"lm_error"``
-
-            ``statistic`` : float — LM statistic value.
-
-            ``pvalue`` : float — p-value under :math:`\\chi^2(1)` null.
-
-        Notes
-        -----
-        H\\ :sub:`0`: no spatial error autocorrelation in OLS residuals.
-        Under H\\ :sub:`0` the statistic is asymptotically
-        :math:`\\chi^2(1)`.
-
-        References
-        ----------
-        .. [1] Anselin, L. (1988). *Spatial Econometrics: Methods and Models*.
-               Kluwer Academic Publishers.
-        """
-        self._require_W()
-        from ..stats.core import lmerror
-        raw = lmerror(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result("lm_error", raw, "lm")
-
-    def lm_lag_test(self) -> DiagnosticResult:
-        """LM test for an omitted spatially lagged dependent variable.
-
-        Tests whether a spatially lagged term :math:`\\rho Wy` is missing
-        from the OLS specification, suggesting that a SAR or SDM model may
-        be more appropriate.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"lm_lag"``
-
-            ``statistic`` : float — LM statistic value.
-
-            ``pvalue`` : float — p-value under :math:`\\chi^2(1)` null.
-
-        Notes
-        -----
-        H\\ :sub:`0`: no omitted spatial lag of the dependent variable.
-        Under H\\ :sub:`0` the statistic is asymptotically
-        :math:`\\chi^2(1)`.
-
-        References
-        ----------
-        .. [1] Anselin, L. (1988). *Spatial Econometrics: Methods and Models*.
-               Kluwer Academic Publishers.
-        """
-        self._require_W()
-        from ..stats.core import lmlag
-        raw = lmlag(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result("lm_lag", raw, "lm")
-
-    def spatial_specification_tests(self) -> dict[str, DiagnosticResult]:
-        """Run the full battery of spatial specification tests on OLS residuals.
-
-        Runs Moran's I, the LM-error test, and the LM-lag test.  Together
-        these three tests guide model selection: if LM-error dominates,
-        prefer SEM; if LM-lag dominates, prefer SAR; if both are significant,
-        consider SDM or SDEM.
-
-        Returns
-        -------
-        dict[str, DiagnosticResult]
-            Keys: ``"moran"``, ``"lm_error"``, ``"lm_lag"``.
-
-        See Also
-        --------
-        moran_test : Moran's I for residual spatial autocorrelation.
-        lm_error_test : LM test for spatial error dependence.
-        lm_lag_test : LM test for omitted spatial lag.
-        """
-        return {
-            "moran": self.moran_test(),
-            "lm_error": self.lm_error_test(),
-            "lm_lag": self.lm_lag_test(),
-        }

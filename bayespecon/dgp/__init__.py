@@ -21,7 +21,7 @@ from .panel_re import simulate_panel_ols_re, simulate_panel_sar_re, simulate_pan
 from .panel_tobit import simulate_panel_sar_tobit_fe, simulate_panel_sem_tobit_fe
 
 __all__ = [
-        "simulate_ols",
+    "simulate_ols",
     "simulate_sar",
     "simulate_sem",
     "simulate_slx",

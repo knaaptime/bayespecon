@@ -1,4 +1,8 @@
-"""Dynamic panel DGP functions."""
+"""Dynamic panel DGP functions.
+
+Simulates data from dynamic spatial panel models with lagged dependent
+variables, including DLM, SDMR, and SDMU fixed-effects specifications.
+"""
 
 from __future__ import annotations
 

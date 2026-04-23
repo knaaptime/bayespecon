@@ -1,4 +1,8 @@
-"""Panel censored (Tobit-style) DGP functions."""
+"""Panel censored (Tobit-style) DGP functions.
+
+Simulates left-censored panel data from SAR and SEM spatial Tobit models
+with fixed-effects transformations.
+"""
 
 from __future__ import annotations
 

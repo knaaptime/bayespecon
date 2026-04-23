@@ -198,6 +198,37 @@ class SARPanelRE(SpatialPanelModel):
 
         return model
 
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
+        """Sample posterior and attach Jacobian-corrected log-likelihood.
+
+        The SAR panel RE model uses ``pm.Normal("obs", observed=y)`` which
+        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
+        Jacobian term that is not captured.  When ``log_likelihood=True``
+        is requested, the Jacobian correction is added post-sampling.
+        """
+        idata_kwargs = idata_kwargs or {}
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            idata_kwargs=idata_kwargs,
+            **sample_kwargs,
+        )
+        if idata_kwargs.get("log_likelihood", False):
+            self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
+        return idata
+
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values.
 
@@ -316,6 +347,78 @@ class SEMPanelRE(SpatialPanelModel):
             pm.Potential("jacobian", logdet_fn(lam))
 
         return model
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
+        """Sample posterior and attach pointwise log-likelihood for IC metrics.
+
+        The SEM panel RE model uses ``pm.Potential`` for both the Gaussian
+        error log-likelihood and the Jacobian, so neither is auto-captured.
+        We compute the complete pointwise log-likelihood manually after
+        sampling, including the random effects ``alpha[unit_idx]``.
+        """
+        idata_kwargs = idata_kwargs or {}
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            idata_kwargs=idata_kwargs,
+            **sample_kwargs,
+        )
+
+        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
+            return idata
+
+        import pytensor
+        import pytensor.tensor as pt_ll
+        import xarray as xr
+
+        lam = idata.posterior["lam"].values
+        beta = idata.posterior["beta"].values
+        sigma = idata.posterior["sigma"].values
+        alpha = idata.posterior["alpha"].values
+
+        c, d = lam.shape
+        s = c * d
+        n = self._y.shape[0]
+        X = self._X
+        W = self._W_dense
+        unit_idx = self._unit_idx
+
+        lam_f = lam.reshape(s)
+        beta_f = beta.reshape(s, beta.shape[-1])
+        sigma_f = sigma.reshape(s)
+        alpha_f = alpha.reshape(s, alpha.shape[-1])  # (s, N)
+
+        # resid = y - X@beta - alpha[unit_idx]
+        resid = self._y[None, :] - beta_f @ X.T - alpha_f[:, unit_idx]
+        eps = resid - lam_f[:, None] * (resid @ W.T)
+
+        ll = -0.5 * (
+            (eps / sigma_f[:, None]) ** 2
+            + np.log(2.0 * np.pi)
+            + 2.0 * np.log(sigma_f[:, None])
+        )
+
+        # Eigenvalue-based Jacobian: log|I - lam*W| * T / n (pure numpy)
+        eigs = self._W_eigs.real.astype(np.float64)
+        jac = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_f]) * self._T  # (n_draws,)
+        ll = ll + jac[:, None] / n
+
+        ll = ll.reshape(c, d, n)
+        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
+        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        return idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values (on the observed y scale).

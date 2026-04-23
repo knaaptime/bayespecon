@@ -14,16 +14,6 @@ import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
-from ..diagnostics import (
-    DiagnosticResult,
-    arch_test,
-    bpagan_test,
-    ljung_box_q,
-    outlier_candidates,
-    rdiagnose_like,
-)
-from ..stats.core import moran as _moran_test
-
 
 def _parse_W(
     W: Union[Graph, sp.spmatrix],
@@ -406,6 +396,72 @@ class SpatialModel(ABC):
             )
         return self._idata
 
+    def _attach_jacobian_corrected_log_likelihood(
+        self,
+        idata: az.InferenceData,
+        spatial_param: str,
+        T: int = 1,
+    ) -> None:
+        """Add Jacobian correction to the auto-captured log-likelihood group.
+
+        For models that use ``pm.Normal("obs", observed=y)`` plus
+        ``pm.Potential("jacobian", logdet_fn(rho))``, PyMC auto-captures
+        the Gaussian part in the ``log_likelihood`` group but the Jacobian
+        term is absent.  This method adds the per-observation Jacobian
+        contribution ``log|I - ρW| * T / n`` to each pointwise LL value.
+
+        Parameters
+        ----------
+        idata : arviz.InferenceData
+            InferenceData with an existing ``log_likelihood`` group.
+        spatial_param : str
+            Name of the spatial autoregressive parameter (``"rho"`` or
+            ``"lam"``) in the posterior.
+        T : int, default 1
+            Panel time-period multiplier for the Jacobian.
+        """
+        import xarray as xr
+
+        if "log_likelihood" not in idata.groups():
+            return
+
+        n = self._y.shape[0]
+        param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
+
+        # Eigenvalue-based Jacobian: log|I - param*W| * T (pure numpy)
+        eigs = self._W_eigs.real.astype(np.float64)
+        jacobian = np.array([np.sum(np.log(np.abs(1.0 - v * eigs))) for v in param_draws]) * T  # (n_draws,)
+        ll_jac = jacobian[:, None] / n  # (n_draws, 1)
+
+        # Add Jacobian to each variable in the log_likelihood group
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        ll_jac_3d = ll_jac.reshape(n_chains, n_draws_per_chain, 1)  # broadcast over obs
+
+        new_vars = {}
+        for var_name in list(idata.log_likelihood.data_vars):
+            da = idata.log_likelihood[var_name]
+            # Use numpy addition + broadcast to avoid xarray alignment issues
+            # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
+            new_vals = da.values + ll_jac_3d
+            new_vars[var_name] = xr.DataArray(
+                new_vals, dims=da.dims, coords={k: v for k, v in da.coords.items() if k != da.dims[-1]}
+            )
+
+        idata["log_likelihood"] = xr.Dataset(new_vars)
+
+    @property
+    def inference_data(self) -> Optional[az.InferenceData]:
+        """Return the ArviZ InferenceData from the most recent fit.
+
+        Returns
+        -------
+        arviz.InferenceData or None
+            The inference data object, or ``None`` if the model has not
+            been fit yet.
+        """
+        return self._idata
+
     @property
     def pymc_model(self) -> Optional[pm.Model]:
         """Return the PyMC model object built for the most recent fit.
@@ -489,76 +545,6 @@ class SpatialModel(ABC):
                 "Pass W when constructing the model."
             )
 
-    @staticmethod
-    def _wrap_stats_result(
-        name: str,
-        raw: dict,
-        stat_key: str,
-        extra_keys: tuple[str, ...] = (),
-    ) -> DiagnosticResult:
-        """Convert a raw stats-function result dict to a DiagnosticResult.
-
-        Parameters
-        ----------
-        name : str
-            Short test identifier for the DiagnosticResult.
-        raw : dict
-            Raw result dictionary from a ``bayespecon.stats`` function.
-        stat_key : str
-            Key in *raw* that holds the test statistic value.
-        extra_keys : tuple of str, optional
-            Additional keys from *raw* to carry over into ``extra``.
-
-        Returns
-        -------
-        DiagnosticResult
-        """
-        extra = {k: raw[k] for k in extra_keys if k in raw}
-        return DiagnosticResult(
-            name=name,
-            statistic=raw[stat_key],
-            pvalue=raw["prob"],
-            extra=extra,
-        )
-
-    def moran_test(self) -> DiagnosticResult:
-        """Compute Moran's I test for spatial autocorrelation in OLS residuals.
-
-        Moran's I measures the degree of spatial clustering in the residuals
-        of an OLS regression.  A significantly positive value indicates that
-        nearby observations share similar unexplained variation, suggesting a
-        mis-specified model that omits spatial structure.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"moran"``
-
-            ``statistic`` : float — Moran's I value.
-
-            ``pvalue`` : float — two-tailed p-value under normality.
-
-            ``extra`` : dict with keys ``istat`` (standardised Moran's I),
-            ``imean`` (theoretical mean under H\\ :sub:`0`),
-            ``ivar`` (theoretical variance under H\\ :sub:`0`).
-
-        Notes
-        -----
-        H\\ :sub:`0`: no spatial autocorrelation in residuals.
-        The statistic is standardised to an asymptotically N(0, 1) variable
-        and a two-tailed p-value is reported.
-
-        References
-        ----------
-        .. [1] Moran, P. A. P. (1950). Notes on continuous stochastic phenomena.
-               *Biometrika*, 37(1/2), 17–23.
-        """
-        self._require_W()
-        raw = _moran_test(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result(
-            "moran", raw, "morani", extra_keys=("istat", "imean", "ivar")
-        )
-
     def _posterior_mean(self, var: str) -> np.ndarray:
         return self._idata.posterior[var].mean(("chain", "draw")).to_numpy()
 
@@ -583,95 +569,6 @@ class SpatialModel(ABC):
         """
         self._require_fit()
         return self._y - self.fitted_values()
-
-    def regression_diagnostics(self) -> dict:
-        """Compute OLS-style influence diagnostics.
-
-        Returns
-        -------
-        dict
-            Diagnostics from :func:`bayespecon.diagnostics.rdiagnose_like`.
-        """
-        self._require_fit()
-        resid = self.residuals()
-        return rdiagnose_like(self._y, self._X, resid)
-
-    def heteroskedasticity_diagnostics(self, arch_lags: int | list[int] = 5) -> dict:
-        """Compute heteroskedasticity diagnostics.
-
-        Parameters
-        ----------
-        arch_lags : int or list[int], default=5
-            Lag order(s) for ARCH test.
-
-        Returns
-        -------
-        dict
-            Dictionary with Breusch-Pagan and ARCH test outputs.
-        """
-        self._require_fit()
-        resid = self.residuals()
-        return {
-            "bpagan": bpagan_test(resid, self._X),
-            "arch": arch_test(resid, arch_lags),
-        }
-
-    def autocorrelation_diagnostics(self, lags: int | list[int] = 10) -> dict:
-        """Compute residual autocorrelation diagnostics.
-
-        Parameters
-        ----------
-        lags : int or list[int], default=10
-            Lag order(s) for Ljung-Box test.
-
-        Returns
-        -------
-        dict
-            Ljung-Box statistics and p-values.
-        """
-        self._require_fit()
-        resid = self.residuals()
-        return ljung_box_q(resid, lags)
-
-    def outlier_diagnostics(self) -> dict:
-        """Compute outlier candidate indices.
-
-        Returns
-        -------
-        dict
-            Candidate outlier indices based on leverage/r-student/DFFIT/DFBETA.
-        """
-        self._require_fit()
-        d = self.regression_diagnostics()
-        n, k = self._X.shape
-        return outlier_candidates(d, n=n, k=k)
-
-    def diagnostics(
-        self,
-        arch_lags: int | list[int] = 5,
-        autocorr_lags: int | list[int] = 10,
-    ) -> dict:
-        """Return a bundled set of standard model diagnostics.
-
-        Parameters
-        ----------
-        arch_lags : int or list[int], default=5
-            Lag order(s) for ARCH diagnostics.
-        autocorr_lags : int or list[int], default=10
-            Lag order(s) for Ljung-Box diagnostics.
-
-        Returns
-        -------
-        dict
-            Dictionary containing regression, heteroskedasticity,
-            autocorrelation, and outlier diagnostics.
-        """
-        return {
-            "regression": self.regression_diagnostics(),
-            "heteroskedasticity": self.heteroskedasticity_diagnostics(arch_lags=arch_lags),
-            "autocorrelation": self.autocorrelation_diagnostics(lags=autocorr_lags),
-            "outliers": self.outlier_diagnostics(),
-        }
 
     def __repr__(self) -> str:
         n, k = self._X.shape

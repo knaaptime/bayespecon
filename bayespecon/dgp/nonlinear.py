@@ -1,4 +1,9 @@
-"""Nonlinear and censored DGP functions."""
+"""Nonlinear and censored DGP functions.
+
+Simulates data from spatial Tobit and probit models, including left-censored
+SAR, SEM, and SDM Tobit variants, as well as spatial probit with regional
+random effects.
+"""
 
 from __future__ import annotations
 

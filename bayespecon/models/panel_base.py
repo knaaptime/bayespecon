@@ -14,17 +14,6 @@ import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
-from ..diagnostics import (
-    DiagnosticResult,
-    arch_test,
-    bpagan_test,
-    ljung_box_q,
-    outlier_candidates,
-    panel_residual_structure,
-    pesaran_cd_test,
-    rdiagnose_like,
-)
-
 
 def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
     """Apply panel demeaning transformation.
@@ -446,6 +435,72 @@ class SpatialPanelModel(ABC):
             )
         return self._idata
 
+    def _attach_jacobian_corrected_log_likelihood(
+        self,
+        idata: az.InferenceData,
+        spatial_param: str,
+        T: int = 1,
+    ) -> None:
+        """Add Jacobian correction to the auto-captured log-likelihood group.
+
+        For models that use ``pm.Normal("obs", observed=y)`` plus
+        ``pm.Potential("jacobian", logdet_fn(rho))``, PyMC auto-captures
+        the Gaussian part in the ``log_likelihood`` group but the Jacobian
+        term is absent.  This method adds the per-observation Jacobian
+        contribution ``log|I - ρW| * T / n`` to each pointwise LL value.
+
+        Parameters
+        ----------
+        idata : arviz.InferenceData
+            InferenceData with an existing ``log_likelihood`` group.
+        spatial_param : str
+            Name of the spatial autoregressive parameter (``"rho"`` or
+            ``"lam"``) in the posterior.
+        T : int, default 1
+            Panel time-period multiplier for the Jacobian.
+        """
+        import xarray as xr
+
+        if "log_likelihood" not in idata.groups():
+            return
+
+        n = self._y.shape[0]
+        param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
+
+        # Eigenvalue-based Jacobian: log|I - param*W| * T (pure numpy)
+        eigs = self._W_eigs.real.astype(np.float64)
+        jacobian = np.array([np.sum(np.log(np.abs(1.0 - v * eigs))) for v in param_draws]) * T  # (n_draws,)
+        ll_jac = jacobian[:, None] / n  # (n_draws, 1)
+
+        # Add Jacobian to each variable in the log_likelihood group
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        ll_jac_3d = ll_jac.reshape(n_chains, n_draws_per_chain, 1)  # broadcast over obs
+
+        new_vars = {}
+        for var_name in list(idata.log_likelihood.data_vars):
+            da = idata.log_likelihood[var_name]
+            # Use numpy addition + broadcast to avoid xarray alignment issues
+            # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
+            new_vals = da.values + ll_jac_3d
+            new_vars[var_name] = xr.DataArray(
+                new_vals, dims=da.dims, coords={k: v for k, v in da.coords.items() if k != da.dims[-1]}
+            )
+
+        idata["log_likelihood"] = xr.Dataset(new_vars)
+
+    @property
+    def inference_data(self) -> Optional[az.InferenceData]:
+        """Return the ArviZ InferenceData from the most recent fit.
+
+        Returns
+        -------
+        arviz.InferenceData or None
+            The inference data object, or ``None`` if the model has not
+            been fit yet.
+        """
+        return self._idata
+
     @property
     def pymc_model(self) -> Optional[pm.Model]:
         """Return the PyMC model object built for the most recent fit.
@@ -461,38 +516,6 @@ class SpatialPanelModel(ABC):
     def _require_fit(self):
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call .fit() first.")
-
-    @staticmethod
-    def _wrap_stats_result(
-        name: str,
-        raw: dict,
-        stat_key: str,
-        extra_keys: tuple[str, ...] = (),
-    ) -> DiagnosticResult:
-        """Convert a raw stats-function result dict to a DiagnosticResult.
-
-        Parameters
-        ----------
-        name : str
-            Short test identifier for the DiagnosticResult.
-        raw : dict
-            Raw result dictionary from a ``bayespecon.stats`` function.
-        stat_key : str
-            Key in *raw* that holds the test statistic value.
-        extra_keys : tuple of str, optional
-            Additional keys from *raw* to carry over into ``extra``.
-
-        Returns
-        -------
-        DiagnosticResult
-        """
-        extra = {k: raw[k] for k in extra_keys if k in raw}
-        return DiagnosticResult(
-            name=name,
-            statistic=raw[stat_key],
-            pvalue=raw["prob"],
-            extra=extra,
-        )
 
     def _posterior_mean(self, var: str) -> np.ndarray:
         return self._idata.posterior[var].mean(("chain", "draw")).to_numpy()
@@ -548,122 +571,6 @@ class SpatialPanelModel(ABC):
         """
         self._require_fit()
         return self._compute_spatial_effects()
-
-    def regression_diagnostics(self) -> dict:
-        """Compute rdiagnose-style influence diagnostics.
-
-        Returns
-        -------
-        dict
-            Influence diagnostics dictionary.
-        """
-        self._require_fit()
-        return rdiagnose_like(self._y, self._X, self.residuals())
-
-    def heteroskedasticity_diagnostics(self, arch_lags: int | list[int] = 5) -> dict:
-        """Compute BPagan and ARCH diagnostics.
-
-        Parameters
-        ----------
-        arch_lags : int or list[int], default=5
-            Lag order(s) for ARCH test.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys ``bpagan`` and ``arch``.
-        """
-        self._require_fit()
-        resid = self.residuals()
-        return {
-            "bpagan": bpagan_test(resid, self._X),
-            "arch": arch_test(resid, arch_lags),
-        }
-
-    def autocorrelation_diagnostics(self, lags: int | list[int] = 10) -> dict:
-        """Compute Ljung-Box residual autocorrelation diagnostics.
-
-        Parameters
-        ----------
-        lags : int or list[int], default=10
-            Lag order(s) for Ljung-Box test.
-
-        Returns
-        -------
-        dict
-            Ljung-Box test output dictionary.
-        """
-        self._require_fit()
-        return ljung_box_q(self.residuals(), lags)
-
-    def outlier_diagnostics(self) -> dict:
-        """Compute outlier candidate indices.
-
-        Returns
-        -------
-        dict
-            Indices flagged by leverage, r-student, DFFIT, and DFBETA rules.
-        """
-        self._require_fit()
-        n, k = self._X.shape
-        return outlier_candidates(self.regression_diagnostics(), n=n, k=k)
-
-    def panel_diagnostics(self, re_model=None) -> dict:
-        """Panel-specific diagnostics on transformed residuals.
-
-        Parameters
-        ----------
-        re_model : object, optional
-            Optional random-effects model comparator. If provided and the
-            current model implements ``hausman_test``, the Hausman FE-vs-RE
-            diagnostic is included under key ``"hausman"``.
-        """
-        self._require_fit()
-        resid = self.residuals()
-        out = {
-            "structure": panel_residual_structure(resid, N=self._N, T=self._T),
-            "pesaran_cd": pesaran_cd_test(resid, N=self._N, T=self._T),
-        }
-        if re_model is not None:
-            if not hasattr(self, "hausman_test"):
-                raise TypeError(
-                    f"{self.__class__.__name__} does not implement hausman_test(re_model)"
-                )
-            out["hausman"] = self.hausman_test(re_model)
-        return out
-
-    def diagnostics(
-        self,
-        arch_lags: int | list[int] = 5,
-        autocorr_lags: int | list[int] = 10,
-        re_model=None,
-    ) -> dict:
-        """Return a bundled set of panel model diagnostics.
-
-        Parameters
-        ----------
-        arch_lags : int or list[int], default=5
-            Lag order(s) for ARCH diagnostics.
-        autocorr_lags : int or list[int], default=10
-            Lag order(s) for Ljung-Box diagnostics.
-        re_model : object, optional
-            Optional random-effects model comparator used to add a Hausman
-            FE-vs-RE diagnostic inside the ``"panel"`` diagnostics group when
-            supported by the model class.
-
-        Returns
-        -------
-        dict
-            Dictionary containing regression, heteroskedasticity,
-            autocorrelation, outlier, and panel-specific diagnostics.
-        """
-        return {
-            "regression": self.regression_diagnostics(),
-            "heteroskedasticity": self.heteroskedasticity_diagnostics(arch_lags=arch_lags),
-            "autocorrelation": self.autocorrelation_diagnostics(lags=autocorr_lags),
-            "outliers": self.outlier_diagnostics(),
-            "panel": self.panel_diagnostics(re_model=re_model),
-        }
 
     def __repr__(self) -> str:
         n, k = self._X.shape

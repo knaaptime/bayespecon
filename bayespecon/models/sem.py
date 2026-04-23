@@ -8,12 +8,17 @@ Likelihood: epsilon ~ N(0, sigma^2 I), plus Jacobian log|I - lambda*W|.
 
 from __future__ import annotations
 
+from typing import Optional
+
+import arviz as az
 import numpy as np
 import pymc as pm
+import pytensor
 import pytensor.tensor as pt
+import xarray as xr
 
-from .base import SpatialModel
 from ..logdet import make_logdet_fn
+from .base import SpatialModel
 
 
 class SEM(SpatialModel):
@@ -36,6 +41,110 @@ class SEM(SpatialModel):
     sigma_sigma : float, default 10
     """
 
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: Optional[int] = None,
+        idata_kwargs: Optional[dict] = None,
+        **sample_kwargs,
+    ) -> "az.InferenceData":
+        r"""Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
+
+        Parameters
+        ----------
+        idata_kwargs : dict, optional
+            Passed to ``pm.sample`` for InferenceData creation. If contains
+            ``log_likelihood: True``, the complete pointwise log-likelihood
+            (including the Jacobian correction) is attached to the output.
+        Other parameters as in :class:`SpatialModel`.
+
+        Notes
+        -----
+        The log-likelihood for the SEM model is:
+
+        .. math::
+            \log p(y \mid \theta) =
+            \sum_{i=1}^{n} \log \mathcal{N}(\varepsilon_i \mid 0, \sigma^2)
+            + \log |I - \lambda W |
+
+        where :math:`\varepsilon = (I - \lambda W)(y - X\beta)`.
+
+        Because the SEM model uses ``pm.Potential`` for both the Gaussian
+        error log-likelihood and the Jacobian, neither term is auto-captured
+        in the ``log_likelihood`` group by PyMC.  We compute the complete
+        pointwise log-likelihood manually after sampling:
+
+        .. math::
+            \ell_i = -\frac{1}{2}\left(\frac{\varepsilon_i}{\sigma}\right)^2
+            - \log(\sigma) - \frac{1}{2}\log(2\pi)
+            + \frac{1}{n} \log |I - \lambda W |
+        """
+        idata_kwargs = idata_kwargs or {}
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+
+        model = self._build_pymc_model()
+        self._pymc_model = model
+        with model:
+            self._idata = pm.sample(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                target_accept=target_accept,
+                random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
+                **sample_kwargs,
+            )
+
+        # --- Compute complete pointwise log-likelihood ---
+        # SEM uses pm.Potential for both Gaussian and Jacobian terms,
+        # so nothing is auto-captured. We recompute from posterior draws.
+        if compute_log_likelihood:
+            import pytensor
+
+            idata = self._idata
+            n = self._y.shape[0]
+            W = self._W_dense
+
+            lam_draws = idata.posterior["lam"].values.reshape(-1)       # (n_draws,)
+            beta_draws = idata.posterior["beta"].values.reshape(-1, self._X.shape[1])  # (n_draws, k)
+            sigma_draws = idata.posterior["sigma"].values.reshape(-1)   # (n_draws,)
+
+            # Residuals: resid = y - X @ beta.T  => (n_draws, n)
+            resid = self._y[None, :] - (beta_draws @ self._X.T)  # (n_draws, n)
+
+            # Spatially filtered residuals: eps = resid - lam * W @ resid
+            eps = resid - lam_draws[:, None] * (resid @ W.T)  # (n_draws, n)
+
+            # Pointwise Gaussian log-likelihood for eps
+            ll_gauss = (
+                -0.5 * (eps / sigma_draws[:, None]) ** 2
+                - np.log(sigma_draws[:, None])
+                - 0.5 * np.log(2 * np.pi)
+            )  # (n_draws, n)
+
+            # Jacobian contribution per draw: log|I - lam*W| / n (pure numpy)
+            eigs = self._W_eigs.real.astype(np.float64)
+            jacobian = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_draws])  # (n_draws,)
+            ll_jac = jacobian[:, None] / n  # (n_draws, 1) broadcast to (n_draws, n)
+
+            ll_total = ll_gauss + ll_jac  # (n_draws, n)
+
+            # Reshape to (chains, draws, n)
+            n_chains = idata.posterior.sizes["chain"]
+            n_draws_per_chain = idata.posterior.sizes["draw"]
+            ll_array = ll_total.reshape(n_chains, n_draws_per_chain, n)
+
+            # Attach to idata — use explicit Dataset creation to ensure
+            # "obs" is a data variable, not a coordinate.
+            ll_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
+            ll_ds = xr.Dataset({"obs": ll_da})
+            idata["log_likelihood"] = ll_ds
+
+        return self._idata
+
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for SEM regression.
 
@@ -44,16 +153,18 @@ class SEM(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        k = self._X.shape[1]
-
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(self._W_eigs.real, method=self.logdet_method,
-                       rho_min=lam_lower, rho_max=lam_upper)
+        logdet_fn = make_logdet_fn(
+            self._W_eigs.real,
+            method=self.logdet_method,
+            rho_min=lam_lower,
+            rho_max=lam_upper,
+        )
         W_pt = pt.as_tensor_variable(self._W_dense)
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -61,16 +172,10 @@ class SEM(SpatialModel):
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            # epsilon = (I - lambda*W)(y - X@beta) = resid - lambda*(W @ resid)
-            # Avoid forming the dense (I - lam*W) matrix each step.
             resid = self._y - pt.dot(self._X, beta)
             eps = resid - lam * pt.dot(W_pt, resid)
-            # PyMC does not allow symbolic expressions as `observed`; encode
-            # the transformed-error likelihood directly as a Potential.
-            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-            pm.Potential("eps_loglik", logp_eps)
-
-            # Jacobian
+            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps)
+            pm.Potential("eps_loglik", logp_eps.sum())
             pm.Potential("jacobian", logdet_fn(lam))
 
         return model
@@ -104,110 +209,4 @@ class SEM(SpatialModel):
         beta = self._posterior_mean("beta")
         return self._X @ beta
 
-    # ------------------------------------------------------------------
-    # Spatial specification tests
-    # ------------------------------------------------------------------
 
-    def lm_lag_test(self) -> "DiagnosticResult":
-        """LM test for an omitted spatially lagged dependent variable.
-
-        From a SEM perspective, tests whether an additional lag on *y*
-        (i.e. a SAR or SARAR structure) is suggested by the data.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"lm_lag"``
-
-            ``statistic`` : float — LM statistic.
-
-            ``pvalue`` : float — p-value under :math:`\\chi^2(1)` null.
-
-        Notes
-        -----
-        H\\ :sub:`0`: no omitted spatial lag of the dependent variable.
-
-        References
-        ----------
-        .. [1] Anselin, L. (1988). *Spatial Econometrics: Methods and Models*.
-               Kluwer Academic Publishers.
-        """
-        from ..stats.core import lmlag
-        raw = lmlag(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result("lm_lag", raw, "lm")
-
-    def wald_error_test(self) -> "DiagnosticResult":
-        """Wald test for spatial error autocorrelation (:math:`\\lambda`).
-
-        Tests H\\ :sub:`0`: :math:`\\lambda = 0` (no spatial error structure)
-        using the Wald statistic derived from the SEM concentrated
-        maximum likelihood estimate.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"wald_error"``
-
-            ``statistic`` : float — Wald statistic.
-
-            ``pvalue`` : float — p-value under :math:`\\chi^2(1)` null.
-
-        References
-        ----------
-        .. [1] Anselin, L. (1988). *Spatial Econometrics: Methods and Models*.
-               Kluwer Academic Publishers.
-        """
-        from ..stats.core import walds
-        raw = walds(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result("wald_error", raw, "wald")
-
-    def lr_ratio_test(self) -> "DiagnosticResult":
-        """Likelihood ratio test comparing SEM against OLS.
-
-        Computes twice the log-likelihood difference between the SEM
-        concentrated MLE and the OLS model.  A significant result
-        supports the SEM specification over plain OLS.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"lr_ratio"``
-
-            ``statistic`` : float — LR statistic.
-
-            ``pvalue`` : float — p-value under :math:`\\chi^2(1)` null.
-
-        References
-        ----------
-        .. [1] Anselin, L. (1988). *Spatial Econometrics: Methods and Models*.
-               Kluwer Academic Publishers.
-        """
-        from ..stats.core import lratios
-        raw = lratios(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result("lr_ratio", raw, "lratio")
-
-    def spatial_specification_tests(self) -> dict:
-        """Run a battery of spatial specification tests on OLS residuals.
-
-        Combines Moran's I, LM-lag, Wald-error, and LR tests.
-        Useful for post-estimation model checking.
-
-        Returns
-        -------
-        dict[str, DiagnosticResult]
-            Keys: ``"moran"``, ``"lm_lag"``, ``"wald_error"``,
-            ``"lr_ratio"``.
-
-        See Also
-        --------
-        moran_test : Moran's I for residual spatial autocorrelation.
-        lm_lag_test : LM test for omitted spatial lag.
-        wald_error_test : Wald test for spatial error autocorrelation.
-        lr_ratio_test : LR test of SEM vs OLS.
-        """
-        return {
-            "moran": self.moran_test(),
-            "lm_lag": self.lm_lag_test(),
-            "wald_error": self.wald_error_test(),
-            "lr_ratio": self.lr_ratio_test(),
-        }

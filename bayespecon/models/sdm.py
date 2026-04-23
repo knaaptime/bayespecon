@@ -8,12 +8,15 @@ Jacobian log|I - rho*W| is required as in the SAR model.
 
 from __future__ import annotations
 
+from typing import Optional
+
+import arviz as az
 import numpy as np
 import pymc as pm
+import pytensor
 import pytensor.tensor as pt
 
 from .base import SpatialModel
-from ..logdet import make_logdet_fn
 
 
 class SDM(SpatialModel):
@@ -39,8 +42,14 @@ class SDM(SpatialModel):
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
-    def _build_pymc_model(self) -> pm.Model:
+    def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
         """Construct the PyMC model for SDM regression.
+
+        Parameters
+        ----------
+        compute_log_likelihood : bool, default False
+            If True, store pointwise log-likelihood (not used in SDM since
+            the Jacobian correction is applied post-sampling in ``fit()``).
 
         Returns
         -------
@@ -56,9 +65,6 @@ class SDM(SpatialModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(self._W_eigs.real, method=self.logdet_method,
-                       rho_min=rho_lower, rho_max=rho_upper)
-
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
@@ -66,9 +72,124 @@ class SDM(SpatialModel):
 
             mu = rho * self._Wy + pt.dot(Z, beta)
             pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
-            pm.Potential("jacobian", logdet_fn(rho))
+
+            # Jacobian: log|I - rho*W|
+            # Build the expression inline so pytensor can resolve rho as a graph input.
+            # eigs is a constant (no gradient w.r.t. it), so it does not cause
+            # MissingInputError — only rho does, and it's properly defined above.
+            eigs = self._W_eigs.real.astype(np.float64)
+            pm.Potential("jacobian", pt.sum(pt.log(pt.abs(1.0 - rho * pt.as_tensor_variable(eigs)))))
 
         return model
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: Optional[int] = None,
+        idata_kwargs: Optional[dict] = None,
+        **sample_kwargs,
+    ) -> "az.InferenceData":
+        r"""
+        Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
+
+        Parameters
+        ----------
+        idata_kwargs : dict, optional
+            Passed to ``pm.sample`` for InferenceData creation. If contains
+            ``log_likelihood: True``, the complete pointwise log-likelihood
+            (including the Jacobian correction) is attached to the output.
+        Other parameters as in :class:`SpatialModel`.
+
+        Notes
+        -----
+        The log-likelihood for the SDM model is:
+
+        .. math::
+            \log p(y \mid \theta) =
+            \sum_{i=1}^{n} \log \mathcal{N}(y_i \mid \mu_i, \sigma^2)
+            + \log |I - \rho W |
+
+        where :math:`\mu = \rho W y + Z \beta` and
+        :math:`Z = [X, WX]`.
+
+        As with the SAR model, ``pm.Normal`` with ``observed`` auto-captures
+        the Gaussian part, while the Jacobian :math:`\log |I - \rho W|` is
+        added via ``pm.Potential`` and is absent from the ``log_likelihood``
+        group.  To enable WAIC/LOO and Bayes factor comparison, we correct
+        the pointwise log-likelihood after sampling:
+
+        .. math::
+            \ell_i = -\frac{1}{2}\left(\frac{y_i - \mu_i}{\sigma}\right)^2
+            + \frac{1}{n} \log |I - \rho W |
+        """
+        from ..logdet import make_logdet_fn
+        idata_kwargs = idata_kwargs or {}
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+
+        model = self._build_pymc_model(compute_log_likelihood=compute_log_likelihood)
+        self._pymc_model = model
+
+        with model:
+            self._idata = pm.sample(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                target_accept=target_accept,
+                random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
+                **sample_kwargs,
+            )
+
+        # --- Correct log_likelihood: add Jacobian contribution ---
+        # The pm.Normal("obs") auto-captures the Gaussian part, but the
+        # Jacobian log|I - rho*W| (added via pm.Potential) is absent.
+        # We recompute the complete pointwise LL and overwrite the group.
+        if compute_log_likelihood and hasattr(self, "_idata"):
+            import xarray as xr
+
+            idata = self._idata
+            n = self._y.shape[0]
+            Z = np.hstack([self._X, self._WX])  # (n, 2k)
+
+            # Posterior draws: shape (chains, draws, ...)
+            rho_draws = idata.posterior["rho"].values.reshape(-1)    # (n_draws,)
+            beta_draws = idata.posterior["beta"].values.reshape(-1, Z.shape[1])  # (n_draws, 2k)
+            sigma_draws = idata.posterior["sigma"].values.reshape(-1)   # (n_draws,)
+
+            # Mean: mu = rho * Wy + Z @ beta.T  => (n_draws, n)
+            mu = rho_draws[:, None] * self._Wy[None, :] + (beta_draws @ Z.T)  # (n_draws, n)
+            resid = self._y[None, :] - mu  # (n_draws, n)
+
+            # Pointwise Gaussian log-likelihood
+            ll_gauss = -0.5 * (resid / sigma_draws[:, None]) ** 2 - np.log(sigma_draws[:, None]) - 0.5 * np.log(2 * np.pi)  # (n_draws, n)
+
+            # Jacobian contribution per draw: log|I - rho*W| / n (pure numpy)
+            eigs = self._W_eigs.real.astype(np.float64)
+            jacobian = np.array([np.sum(np.log(np.abs(1.0 - rv * eigs))) for rv in rho_draws])  # (n_draws,)
+            ll_jac = jacobian[:, None] / n  # (n_draws, 1) broadcast to (n_draws, n)
+
+            ll_total = ll_gauss + ll_jac  # (n_draws, n)
+
+            # Reshape to (chains, draws, n)
+            n_chains = idata.posterior.sizes["chain"]
+            n_draws_per_chain = idata.posterior.sizes["draw"]
+            ll_array = ll_total.reshape(n_chains, n_draws_per_chain, n)
+
+            # Attach to idata — replace the entire log_likelihood group with complete LL
+            # (pm.sample auto-captures Gaussian LL; we replace with complete LL)
+            #
+            # Use explicit Dataset creation to ensure "obs" is a data variable, not a coordinate.
+            # Assigning via idata["log_likelihood"] = xr.Dataset({"obs": da}) can silently
+            # treat "obs" as a dimension coordinate if da.dims includes "obs" as a dim name,
+            # causing data_vars to be empty and breaking az.loo() / az.waic().
+            ll_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
+            ll_ds = xr.Dataset({"obs": ll_da})
+            idata["log_likelihood"] = ll_ds
+
+        return self._idata
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         """Compute SDM direct/indirect/total effects.
@@ -131,107 +252,4 @@ class SDM(SpatialModel):
         Z = np.hstack([self._X, self._WX])
         return rho * self._Wy + Z @ beta
 
-    # ------------------------------------------------------------------
-    # Spatial specification tests
-    # ------------------------------------------------------------------
 
-    def lm_error_test(self) -> "DiagnosticResult":
-        """LM test for omitted spatial error autocorrelation.
-
-        Tests whether SDM residuals show additional spatial error structure,
-        suggesting a SARAR model may be more appropriate.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"lm_error"``
-
-            ``statistic`` : float — LM statistic.
-
-            ``pvalue`` : float — p-value under :math:`\\chi^2(1)` null.
-
-        Notes
-        -----
-        H\\ :sub:`0`: no spatial error autocorrelation in OLS residuals.
-
-        References
-        ----------
-        .. [1] Anselin, L. (1988). *Spatial Econometrics: Methods and Models*.
-               Kluwer Academic Publishers.
-        """
-        from ..stats.core import lmerror
-        raw = lmerror(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result("lm_error", raw, "lm")
-
-    def lm_rho_test(self) -> "DiagnosticResult":
-        """LM test for the SAR spatial autoregressive parameter :math:`\\rho`.
-
-        Tests H\\ :sub:`0`: :math:`\\rho = 0` from OLS residuals.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"lm_rho"``
-
-            ``statistic`` : float — LM statistic.
-
-            ``pvalue`` : float — p-value under :math:`\\chi^2(1)` null.
-
-        References
-        ----------
-        .. [1] Anselin, L. (1988). *Spatial Econometrics: Methods and Models*.
-               Kluwer Academic Publishers.
-        """
-        from ..stats.core import lmrho
-        raw = lmrho(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result("lm_rho", raw, "lmrho")
-
-    def lm_rho_robust_test(self) -> "DiagnosticResult":
-        """Robust LM test for the SAR parameter :math:`\\rho`.
-
-        Robust to the presence of spatial error autocorrelation under
-        the alternative.
-
-        Returns
-        -------
-        DiagnosticResult
-            ``name`` : ``"lm_rho_robust"``
-
-            ``statistic`` : float — robust LM statistic.
-
-            ``pvalue`` : float — p-value under :math:`\\chi^2(1)` null.
-
-        References
-        ----------
-        .. [1] Anselin et al. (1996). *Regional Science and Urban Economics*,
-               26(1), 77–104.
-        """
-        from ..stats.core import lmrhorob
-        raw = lmrhorob(self._y, self._X, self._W_sparse.toarray())
-        return self._wrap_stats_result("lm_rho_robust", raw, "lmrhorob")
-
-    def spatial_specification_tests(self) -> dict:
-        """Run a battery of spatial specification tests on OLS residuals.
-
-        Combines Moran's I, LM-error, LM-:math:`\\rho`, and its robust
-        version.
-
-        Returns
-        -------
-        dict[str, DiagnosticResult]
-            Keys: ``"moran"``, ``"lm_error"``, ``"lm_rho"``,
-            ``"lm_rho_robust"``.
-
-        See Also
-        --------
-        moran_test : Moran's I for residual spatial autocorrelation.
-        lm_error_test : LM test for spatial error dependence.
-        lm_rho_test : LM test for the SAR parameter.
-        lm_rho_robust_test : Robust LM test for the SAR parameter.
-        """
-        return {
-            "moran": self.moran_test(),
-            "lm_error": self.lm_error_test(),
-            "lm_rho": self.lm_rho_test(),
-            "lm_rho_robust": self.lm_rho_robust_test(),
-        }

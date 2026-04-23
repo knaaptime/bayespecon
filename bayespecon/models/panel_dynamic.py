@@ -162,6 +162,39 @@ class SDMRPanelFE(_DynamicPanelMixin, SpatialPanelModel):
 
         return model
 
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
+        """Sample posterior and attach Jacobian-corrected log-likelihood.
+
+        The SDMR panel model uses ``pm.Normal("obs", observed=y)`` which
+        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
+        Jacobian term that is not captured.  When ``log_likelihood=True``
+        is requested, the Jacobian correction is added post-sampling.
+        """
+        idata_kwargs = idata_kwargs or {}
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            idata_kwargs=idata_kwargs,
+            **sample_kwargs,
+        )
+        if idata_kwargs.get("log_likelihood", False):
+            self._attach_jacobian_corrected_log_likelihood(
+                idata, "rho", T=self._n_time_eff
+            )
+        return idata
+
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
         rho = float(self._posterior_mean("rho"))
@@ -265,6 +298,39 @@ class SDMUPanelFE(_DynamicPanelMixin, SpatialPanelModel):
             pm.Potential("jacobian", logdet_fn(rho))
 
         return model
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
+        """Sample posterior and attach Jacobian-corrected log-likelihood.
+
+        The SDMU panel model uses ``pm.Normal("obs", observed=y)`` which
+        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
+        Jacobian term that is not captured.  When ``log_likelihood=True``
+        is requested, the Jacobian correction is added post-sampling.
+        """
+        idata_kwargs = idata_kwargs or {}
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            idata_kwargs=idata_kwargs,
+            **sample_kwargs,
+        )
+        if idata_kwargs.get("log_likelihood", False):
+            self._attach_jacobian_corrected_log_likelihood(
+                idata, "rho", T=self._n_time_eff
+            )
+        return idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()

@@ -53,37 +53,6 @@ def test_ols_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     )
 
 
-@pytest.mark.slow
-def test_ols_panel_fe_hausman_vs_re_in_panel_diagnostics(rng, W_panel_dense, W_panel_graph):
-    """OLSPanelFE should expose Hausman FE-vs-RE under panel diagnostics."""
-    y, X, _ = make_panel_ols_data(
-        rng,
-        W_panel_dense,
-        PANEL_N,
-        PANEL_T,
-        beta=BETA_TRUE,
-        sigma=SIGMA_TRUE,
-        sigma_alpha=0.7,
-    )
-
-    sample_kwargs = dict(tune=300, draws=500, chains=2, random_seed=42, progressbar=False)
-
-    fe_model = OLSPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
-    re_model = OLSPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
-    fe_model.fit(**sample_kwargs)
-    re_model.fit(**sample_kwargs)
-
-    haus = fe_model.hausman_test(re_model)
-    assert haus.name == "hausman_fe_re"
-    assert np.isfinite(haus.statistic)
-    assert np.isfinite(haus.pvalue)
-    assert 0.0 <= haus.pvalue <= 1.0
-
-    panel_diag = fe_model.panel_diagnostics(re_model=re_model)
-    assert "hausman" in panel_diag
-    assert panel_diag["hausman"].name == "hausman_fe_re"
-
-
 # ---------------------------------------------------------------------------
 # SAR Panel FE
 # ---------------------------------------------------------------------------

@@ -6,15 +6,13 @@
 
 **Bayesian Spatial Econometric Models**
 
-Because Bayesians are cool but MATLAB is not
+The `bayespecon` package is designed to make it simpler to fit, diagnose, and interpret Bayesian spatial econometric regression models. It provides a suite of classes for building commmonly-used models using a straightforward API. Each model is implemented as a class that defines how spatial effects are represented, and the 'main' portion of the model specification is given using the familiar Wilkinson format via [`formulaic`](https://matthew.wardrop.casa/formulaic/latest/) (but you can pass design matrices if you prefer).
 
-Bayesian spatial models have excellent reference implementations in proprietary languages (e.g. MATLAB), but considerably less exposure in open-source languages. Python has a robust ecosystem for Bayesian inference, but fitting regression models with spatial effects traditionally requires a thorough knowledge of *both* probabilistic programming languages and spatial econometrics
+Each model class uses PySAL [`graph`](https://pysal.org/libpysal/stable/generated/libpysal.graph.Graph.html#libpysal.graph.Graph) objects to represent spatial weights, $W$, (or sparse matrices if you prefer) providing thorough integration with the scientific Python and spatial analysis ecosystems. Estimation is handled by [`pymc`](https://www.pymc.io/welcome.html).
 
-Thus, `bayespecon` provides a simple interface for generating `pymc.Model` objects that fit commonly-used spatial econometric models. This design makes relatively sophisticated models available to applied researchers in short order, giving the benefit of fully Bayesian estimation without learning a new syntax.
+This design makes it simple to build and iterate on spatial regression models using a straightforward notation while retaining all the benefits of a Bayesian framework. The resulting `pymc.Model` object is augmented to include the (correct) log-likelihood if requested, facilitating the use of Bayes Factors in model specification searches. The package also implements a suite of novel Bayesian spatial diagnostics.
 
-Models are specified using the familiar Wilkinson format via [`formulaic`](https://matthew.wardrop.casa/formulaic/latest/) (but you can pass design matrices if you prefer), and spatial weights matrices $W$ are represented by PySAL [`graph`](https://pysal.org/libpysal/stable/generated/libpysal.graph.Graph.html#libpysal.graph.Graph) objects (or sparse matrices if you prefer). Estimation is handled by [`pymc`](https://www.pymc.io/welcome.html)
-
-To ensure correctness, the vast majority of functionality is ported from and validated against Jim LeSage's [spatial econometrics toolbox](https://www.spatial-econometrics.com/).
+Because models are compiled to PyMC, you can use the classes to specify a common model, then inspect the `pymc_model` object to sketch out a more complex specification. The model classes use Jim LeSage's [spatial econometrics toolbox](https://www.spatial-econometrics.com/) as a reference implementation and test case.
 
 **Main Features**:
 
@@ -23,7 +21,7 @@ To ensure correctness, the vast majority of functionality is ported from and val
 - Models compile to PyMC for full customizability and [performant sampling options]()
 - Fast [log-determinant functions]() for evaluating spatial terms
 - Compute marginal (direct and indirect) effects for models with spatial terms
-- Full suite of spatial diagnostics
+- Full suite of Bayesian spatial diagnostics
 - Functions to generate synthetic datasets using a known DGP for each model
 
 ## Supported Models
