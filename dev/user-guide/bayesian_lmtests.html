@@ -1,0 +1,1758 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="nonlinear_panel_models.html">
+      
+      
+        <link rel="next" href="cross_sectional_spreg_comparison.html">
+      
+      
+      <link rel="icon" href="../_static/pysal_favicon.ico">
+    
+    
+      
+        <title>Bayesian LM Tests for SDM/SDEM Specification - bayespecon</title>
+      
+    
+    
+      
+        
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+        <link rel="stylesheet" type="text/css" href="../_static/sphinx_immaterial_theme.74c816e3f9967dd6e.min.css?v=6cfe2491" />
+        <link rel="stylesheet" type="text/css" href="../_static/mystnb.11b39860a7a0cbfd473a3ad8a317855267ff0bd372690045ca344a6b62be495e.css" />
+        <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+        <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=93c5fc88" />
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#background" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../index.html" title="bayespecon" class="md-header__button md-logo" aria-label="bayespecon" data-md-component="logo">
+      <img src="../_static/pysal_logo.svg" alt="logo">
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            bayespecon
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Bayesian LM Tests for SDM/SDEM Specification
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="red"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="red"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7M9 21v-1h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1m3-17a5 5 0 0 0-5 5c0 2.05 1.23 3.81 3 4.58V16h4v-2.42c1.77-.77 3-2.53 3-4.58a5 5 0 0 0-5-5"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pysal/bayespecon/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pysal/bayespecon
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../index.html" title="bayespecon" class="md-nav__button md-logo" aria-label="bayespecon" data-md-component="logo">
+      <img src="../_static/pysal_logo.svg" alt="logo">
+    </a>
+    bayespecon
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pysal/bayespecon/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pysal/bayespecon
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Home</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Installation</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>User Guide</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            <span>User Guide</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="pedagogical_spatial_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="pedagogical_panel_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Panel Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="nonlinear_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Nonlinear Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="nonlinear_panel_models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Nonlinear Panel Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="#" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary">
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Background</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Background">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#classical-lm-tests-koley-bera-2024" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Classical LM Tests <wbr>(Koley &amp; Bera, 2024)</span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayesian-robust-chi-squared-test-dogan-et-al-2021" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Bayesian Robust Chi-<wbr>Squared Test <wbr>(Dogan et al.<wbr>, 2021)</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generate-spatial-data" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>1.<wbr> Generate Spatial Data</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-null-models" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>2.<wbr> Fit Null Models</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-robust-bayesian-lm-tests" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>3.<wbr> Non-<wbr>Robust Bayesian LM Tests</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#robust-bayesian-lm-tests-neyman-orthogonal-score" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>4.<wbr> Robust Bayesian LM Tests <wbr>(Neyman Orthogonal Score)</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#posterior-distribution-of-lm-statistics" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>5.<wbr> Posterior Distribution of LM Statistics</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-classical-spreg-lm-tests" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>6.<wbr> Comparison with Classical spreg LM Tests</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision-framework" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>7.<wbr> Decision Framework</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Decision Framework">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-advantages-of-the-bayesian-approach" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Key Advantages of the Bayesian Approach</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>References</span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="cross_sectional_spreg_comparison.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Comparing bayespecon vs spreg</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="faithfulness_bayespecon.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Recovering Parameters</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="jgsy2024_replication_bayespecon.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Replicating Elhorst et al 2024</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="logdet_profiling.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Log-<wbr>Determinant Methods</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="sampling_backend_profiling.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Sampling Backends</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../references.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>References</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>API</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            <span>API</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>API reference</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    <span>For contributors</span>
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            <span>For contributors</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/pysal/bayespecon" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Git<wbr>Hub</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/pysal/bayespecon/releases" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Changelog</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary">
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Background</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Background">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#classical-lm-tests-koley-bera-2024" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Classical LM Tests <wbr>(Koley &amp; Bera, 2024)</span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayesian-robust-chi-squared-test-dogan-et-al-2021" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Bayesian Robust Chi-<wbr>Squared Test <wbr>(Dogan et al.<wbr>, 2021)</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generate-spatial-data" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>1.<wbr> Generate Spatial Data</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fit-null-models" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>2.<wbr> Fit Null Models</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-robust-bayesian-lm-tests" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>3.<wbr> Non-<wbr>Robust Bayesian LM Tests</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#robust-bayesian-lm-tests-neyman-orthogonal-score" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>4.<wbr> Robust Bayesian LM Tests <wbr>(Neyman Orthogonal Score)</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#posterior-distribution-of-lm-statistics" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>5.<wbr> Posterior Distribution of LM Statistics</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-classical-spreg-lm-tests" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>6.<wbr> Comparison with Classical spreg LM Tests</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision-framework" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>7.<wbr> Decision Framework</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Decision Framework">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-advantages-of-the-bayesian-approach" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Key Advantages of the Bayesian Approach</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>References</span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset" role="main">
+                
+                
+                  
+
+
+  
+    <a href="https://github.com/pysal/bayespecon/blob/main/docs/user-guide/bayesian_lmtests.ipynb" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.11.89-2 2-2m.12 13.5 3.74 3.74 1.42-1.41-2.33-2.33 2.33-2.33-1.42-1.41zm11.16 0-3.74-3.74-1.42 1.41 2.33 2.33-2.33 2.33 1.42 1.41z"/></svg>
+    </a>
+  
+  
+
+<h1 id="bayesian-lm-tests-for-sdm-sdem-specification">Bayesian LM Tests for SDM/SDEM Specification<a class="headerlink" href="#bayesian-lm-tests-for-sdm-sdem-specification" title="Link to this heading">¶</a></h1>
+<p>This notebook demonstrates the <strong>6 new Bayesian LM test functions</strong> in <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> for testing spatial model specification in the SDM (Spatial Durbin Model) and SDEM (Spatial Durbin Error Model) directions.</p>
+<h2 id="background">Background<a class="headerlink" href="#background" title="Link to this heading">¶</a></h2>
+<h3 id="classical-lm-tests-koley-bera-2024">Classical LM Tests (Koley &amp; Bera, 2024)<a class="headerlink" href="#classical-lm-tests-koley-bera-2024" title="Link to this heading">¶</a></h3>
+<p>The classical Lagrange Multiplier (LM) framework for spatial models tests:</p>
+<table class="docutils data align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Test</p></th>
+<th class="head"><p>H₀</p></th>
+<th class="head"><p>Alternative</p></th>
+<th class="head"><p>df</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>LM-Lag</p></td>
+<td><p>ρ = 0</p></td>
+<td><p>SAR</p></td>
+<td><p>1</p></td>
+</tr>
+<tr class="row-odd"><td><p>LM-Error</p></td>
+<td><p>λ = 0</p></td>
+<td><p>SEM</p></td>
+<td><p>1</p></td>
+</tr>
+<tr class="row-even"><td><p>LM-WX</p></td>
+<td><p>γ = 0</p></td>
+<td><p>SLX</p></td>
+<td><p><span class="math notranslate nohighlight">\(k_{wx}\)</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>LM-SDM (joint)</p></td>
+<td><p>ρ = 0, γ = 0</p></td>
+<td><p>SDM</p></td>
+<td><p><span class="math notranslate nohighlight">\(1 + k_{wx}\)</span></p></td>
+</tr>
+<tr class="row-even"><td><p>LM-SLX-Error (joint)</p></td>
+<td><p>λ = 0, γ = 0</p></td>
+<td><p>SDEM</p></td>
+<td><p><span class="math notranslate nohighlight">\(1 + k_{wx}\)</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>Robust LM-Lag-SDM</p></td>
+<td><p>ρ = 0 (robust to γ)</p></td>
+<td><p>SDM</p></td>
+<td><p>1</p></td>
+</tr>
+<tr class="row-even"><td><p>Robust LM-WX</p></td>
+<td><p>γ = 0 (robust to ρ)</p></td>
+<td><p>SDM</p></td>
+<td><p><span class="math notranslate nohighlight">\(k_{wx}\)</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>Robust LM-Error-SDEM</p></td>
+<td><p>λ = 0 (robust to γ)</p></td>
+<td><p>SDEM</p></td>
+<td><p>1</p></td>
+</tr>
+</tbody>
+</table>
+<h3 id="bayesian-robust-chi-squared-test-dogan-et-al-2021">Bayesian Robust Chi-Squared Test (Dogan et al., 2021)<a class="headerlink" href="#bayesian-robust-chi-squared-test-dogan-et-al-2021" title="Link to this heading">¶</a></h3>
+<p>The Bayesian analogue replaces the classical score with the <strong>posterior mean of the outer product of scores</strong> and uses the <strong>Neyman orthogonal score</strong> for robust tests:</p>
+<div class="math notranslate nohighlight">
+\[T_R = (g_\psi^*)^\top (V^*)^{-1} g_\psi^*\]</div>
+<p>where the Neyman-adjusted score is:</p>
+<div class="math notranslate nohighlight">
+\[g_\psi^* = g_\psi - J_{\psi\phi \cdot \sigma} \, J_{\phi\phi \cdot \sigma}^{-1} \, g_\phi\]</div>
+<p>This adjustment ensures the test is <strong>robust to local misspecification</strong> in the nuisance parameter φ, following Bera &amp; Yoon (1993) and Dogan et al. (2021, Proposition 3).</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">arviz</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">az</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">libpysal</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">SAR</span><span class="p">,</span>
+    <span class="n">SLX</span><span class="p">,</span>
+    <span class="n">OLS</span><span class="p">,</span>
+    <span class="n">bayesian_lm_lag_test</span><span class="p">,</span>
+    <span class="n">bayesian_lm_error_test</span><span class="p">,</span>
+    <span class="n">bayesian_lm_wx_test</span><span class="p">,</span>
+    <span class="n">bayesian_lm_sdm_joint_test</span><span class="p">,</span>
+    <span class="n">bayesian_lm_slx_error_joint_test</span><span class="p">,</span>
+    <span class="n">bayesian_robust_lm_lag_sdm_test</span><span class="p">,</span>
+    <span class="n">bayesian_robust_lm_wx_test</span><span class="p">,</span>
+    <span class="n">bayesian_robust_lm_error_sdem_test</span><span class="p">,</span>
+    <span class="n">summarize_bayesian_lm_test</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Optional: spreg for classical comparison</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">spreg</span><span class="w"> </span><span class="kn">import</span> <span class="n">LMtests</span> <span class="k">as</span> <span class="n">SpregLMtests</span><span class="p">,</span> <span class="n">OLS</span> <span class="k">as</span> <span class="n">SpregOLS</span>
+    <span class="n">HAS_SPREG</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">HAS_SPREG</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;spreg not available — classical comparison will be skipped&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;All bayespecon imports OK&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>All bayespecon imports OK
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="generate-spatial-data">1. Generate Spatial Data<a class="headerlink" href="#generate-spatial-data" title="Link to this heading">¶</a></h2>
+<p>We create a simple spatial DGP with known parameters to validate the tests. Under the null hypothesis (no spatial effects), the Bayesian LM statistics should be small with high p-values.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.weights</span><span class="w"> </span><span class="kn">import</span> <span class="n">Rook</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy.sparse</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sp</span>
+
+<span class="c1"># Generate data under H0: no spatial effects</span>
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+
+<span class="c1"># Load Columbus dataset for spatial weights</span>
+<span class="n">columbus_path</span> <span class="o">=</span> <span class="n">libpysal</span><span class="o">.</span><span class="n">examples</span><span class="o">.</span><span class="n">get_path</span><span class="p">(</span><span class="s2">&quot;columbus.shp&quot;</span><span class="p">)</span>
+<span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="n">columbus_path</span><span class="p">)</span>
+
+<span class="c1"># Create a Graph (modern libpysal API) for bayespecon models</span>
+<span class="c1"># Row-standardize the graph so spatial models work correctly</span>
+<span class="n">g</span> <span class="o">=</span> <span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">rook</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
+<span class="n">n</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">n</span>
+
+<span class="c1"># Also create legacy W for spreg comparison (if available)</span>
+<span class="n">w_spreg</span> <span class="o">=</span> <span class="n">Rook</span><span class="o">.</span><span class="n">from_shapefile</span><span class="p">(</span><span class="n">columbus_path</span><span class="p">)</span>
+<span class="n">w_spreg</span><span class="o">.</span><span class="n">transform</span> <span class="o">=</span> <span class="s2">&quot;r&quot;</span>
+
+<span class="c1"># Get sparse and dense W matrices</span>
+<span class="n">W_sparse</span> <span class="o">=</span> <span class="n">g</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">tocsr</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+<span class="n">W_dense</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">W_sparse</span><span class="o">.</span><span class="n">todense</span><span class="p">())</span>
+
+<span class="c1"># Design matrix</span>
+<span class="n">k</span> <span class="o">=</span> <span class="mi">3</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">k</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))])</span>
+<span class="n">beta_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.5</span><span class="p">])</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">X</span> <span class="o">@</span> <span class="n">beta_true</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">n</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;n = </span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">, k = </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;W shape: </span><span class="si">{</span><span class="n">W_sparse</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">, nnz: </span><span class="si">{</span><span class="n">W_sparse</span><span class="o">.</span><span class="n">nnz</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>n = 49, k = 3
+W shape: (49, 49), nnz: 200
+</code></pre></div>
+</div>
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/libpysal/io/iohandlers/pyShpIO.py:247: FutureWarning: Objects based on the `Geometry` class will deprecated and removed in a future version of libpysal.
+  shp = self.type(vertices)
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/libpysal/cg/shapes.py:1408: FutureWarning: Objects based on the `Geometry` class will deprecated and removed in a future version of libpysal.
+  self._part_rings = [Ring(vertices)]
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="fit-null-models">2. Fit Null Models<a class="headerlink" href="#fit-null-models" title="Link to this heading">¶</a></h2>
+<p>The Bayesian LM tests require posterior draws from the <strong>null model</strong> (the model under H₀). Different tests use different null models:</p>
+<ul class="simple">
+<li><p><strong>LM-WX test</strong>: SAR model (includes ρ but not γ)</p></li>
+<li><p><strong>LM-SDM joint test</strong>: OLS model (no spatial params)</p></li>
+<li><p><strong>LM-SLX-Error joint test</strong>: OLS model (no spatial params)</p></li>
+<li><p><strong>Robust LM-Lag-SDM</strong>: SLX model (includes γ but not ρ)</p></li>
+<li><p><strong>Robust LM-WX</strong>: SAR model (includes ρ but not γ)</p></li>
+<li><p><strong>Robust LM-Error-SDEM</strong>: SLX model (includes γ but not λ)</p></li>
+</ul>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Fit OLS model (null for joint tests)</span>
+<span class="n">ols_model</span> <span class="o">=</span> <span class="n">OLS</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
+<span class="n">ols_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;OLS model fitted&quot;</span><span class="p">)</span>
+
+<span class="c1"># Fit SAR model (null for LM-WX and robust LM-WX)</span>
+<span class="n">sar_model</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
+<span class="n">sar_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;SAR model fitted&quot;</span><span class="p">)</span>
+
+<span class="c1"># Fit SLX model (null for robust LM-Lag-SDM and robust LM-Error-SDEM)</span>
+<span class="n">slx_model</span> <span class="o">=</span> <span class="n">SLX</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">g</span><span class="p">)</span>
+<span class="n">slx_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;SLX model fitted&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [beta, sigma]
+Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draws total) took 20 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [rho, beta, sigma]
+Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draws total) took 22 seconds.
+Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [beta, sigma]
+Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draws total) took 21 seconds.
+</code></pre></div>
+</div>
+<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
+for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>OLS model fitted
+SAR model fitted
+SLX model fitted
+</code></pre></div>
+</div>
+<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
+for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
+for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div></div>
+</div>
+<h2 id="non-robust-bayesian-lm-tests">3. Non-Robust Bayesian LM Tests<a class="headerlink" href="#non-robust-bayesian-lm-tests" title="Link to this heading">¶</a></h2>
+<p>These tests assume the nuisance parameters are correctly specified (zero). They are the Bayesian analogues of the classical LM tests from Koley &amp; Bera (2024).</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># --- LM-Lag Test (from OLS posterior) ---</span>
+<span class="c1"># H0: rho = 0 (no spatial lag)</span>
+<span class="n">result_lag</span> <span class="o">=</span> <span class="n">bayesian_lm_lag_test</span><span class="p">(</span><span class="n">ols_model</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== Bayesian LM-Lag Test ===&quot;</span><span class="p">)</span>
+<span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result_lag</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  df = </span><span class="si">{</span><span class="n">result_lag</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">()</span>
+
+<span class="c1"># --- LM-Error Test (from OLS posterior) ---</span>
+<span class="c1"># H0: lambda = 0 (no spatial error)</span>
+<span class="n">result_error</span> <span class="o">=</span> <span class="n">bayesian_lm_error_test</span><span class="p">(</span><span class="n">ols_model</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== Bayesian LM-Error Test ===&quot;</span><span class="p">)</span>
+<span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result_error</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  df = </span><span class="si">{</span><span class="n">result_error</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">()</span>
+
+<span class="c1"># --- LM-WX Test (from SAR posterior) ---</span>
+<span class="c1"># H0: gamma = 0 (no WX effects), assuming rho is correctly specified</span>
+<span class="n">result_wx</span> <span class="o">=</span> <span class="n">bayesian_lm_wx_test</span><span class="p">(</span><span class="n">sar_model</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== Bayesian LM-WX Test ===&quot;</span><span class="p">)</span>
+<span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result_wx</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  df = </span><span class="si">{</span><span class="n">result_wx</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">()</span>
+
+<span class="c1"># --- LM-SDM Joint Test (from OLS posterior) ---</span>
+<span class="c1"># H0: rho = 0 AND gamma = 0 (joint test for SDM)</span>
+<span class="n">result_sdm</span> <span class="o">=</span> <span class="n">bayesian_lm_sdm_joint_test</span><span class="p">(</span><span class="n">ols_model</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== Bayesian LM-SDM Joint Test ===&quot;</span><span class="p">)</span>
+<span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result_sdm</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  df = </span><span class="si">{</span><span class="n">result_sdm</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">()</span>
+
+<span class="c1"># --- LM-SLX-Error Joint Test (from OLS posterior) ---</span>
+<span class="c1"># H0: lambda = 0 AND gamma = 0 (joint test for SDEM)</span>
+<span class="n">result_slx_err</span> <span class="o">=</span> <span class="n">bayesian_lm_slx_error_joint_test</span><span class="p">(</span><span class="n">ols_model</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== Bayesian LM-SLX-Error Joint Test ===&quot;</span><span class="p">)</span>
+<span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result_slx_err</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  df = </span><span class="si">{</span><span class="n">result_slx_err</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>=== Bayesian LM-Lag Test ===
+Bayesian LM Test (bayesian_lm_lag):
+  Degrees of freedom: 1
+  Mean: 0.922
+  Median: 0.590
+  95% Credible Interval: [0.002, 3.691]
+  Bayesian p-value: 0.337
+  df = 1
+
+=== Bayesian LM-Error Test ===
+Bayesian LM Test (bayesian_lm_error):
+  Degrees of freedom: 1
+  Mean: 2.382
+  Median: 2.463
+  95% Credible Interval: [0.060, 4.776]
+  Bayesian p-value: 0.123
+  df = 1
+
+=== Bayesian LM-WX Test ===
+Bayesian LM Test (bayesian_lm_wx):
+  Degrees of freedom: 2
+  Mean: 1.772
+  Median: 1.296
+  95% Credible Interval: [0.105, 6.309]
+  Bayesian p-value: 0.412
+  df = 2
+
+=== Bayesian LM-SDM Joint Test ===
+Bayesian LM Test (bayesian_lm_sdm_joint):
+  Degrees of freedom: 3
+  Mean: 3.023
+  Median: 2.446
+  95% Credible Interval: [0.432, 9.033]
+  Bayesian p-value: 0.388
+  df = 3
+
+=== Bayesian LM-SLX-Error Joint Test ===
+Bayesian LM Test (bayesian_lm_slx_error_joint):
+  Degrees of freedom: 3
+  Mean: 2.209
+  Median: 1.917
+  95% Credible Interval: [0.874, 5.073]
+  Bayesian p-value: 0.530
+  df = 3
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="robust-bayesian-lm-tests-neyman-orthogonal-score">4. Robust Bayesian LM Tests (Neyman Orthogonal Score)<a class="headerlink" href="#robust-bayesian-lm-tests-neyman-orthogonal-score" title="Link to this heading">¶</a></h2>
+<p>These tests use the <strong>Neyman orthogonal score adjustment</strong> from Dogan et al. (2021, Proposition 3) to ensure robustness against local misspecification in the nuisance parameter. This is the key innovation over the classical Bera-Yoon (1993) approach.</p>
+<p>The adjustment removes the correlation between the test parameter score and the nuisance parameter score:</p>
+<div class="math notranslate nohighlight">
+\[g_\psi^* = g_\psi - J_{\psi\phi \cdot \sigma} \, J_{\phi\phi \cdot \sigma}^{-1} \, g_\phi\]</div>
+<p>where <span class="math notranslate nohighlight">\(J_{\cdot \cdot \cdot \sigma}\)</span> denotes information matrix blocks partitioned on <span class="math notranslate nohighlight">\(\sigma^2\)</span>.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># --- Robust LM-Lag-SDM Test (from SLX posterior) ---</span>
+<span class="c1"># H0: rho = 0, robust to local misspecification in gamma</span>
+<span class="n">result_robust_lag</span> <span class="o">=</span> <span class="n">bayesian_robust_lm_lag_sdm_test</span><span class="p">(</span><span class="n">slx_model</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== Bayesian Robust LM-Lag-SDM Test ===&quot;</span><span class="p">)</span>
+<span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result_robust_lag</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  df = </span><span class="si">{</span><span class="n">result_robust_lag</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">()</span>
+
+<span class="c1"># --- Robust LM-WX Test (from SAR posterior) ---</span>
+<span class="c1"># H0: gamma = 0, robust to local misspecification in rho</span>
+<span class="n">result_robust_wx</span> <span class="o">=</span> <span class="n">bayesian_robust_lm_wx_test</span><span class="p">(</span><span class="n">sar_model</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== Bayesian Robust LM-WX Test ===&quot;</span><span class="p">)</span>
+<span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result_robust_wx</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  df = </span><span class="si">{</span><span class="n">result_robust_wx</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">()</span>
+
+<span class="c1"># --- Robust LM-Error-SDEM Test (from SLX posterior) ---</span>
+<span class="c1"># H0: lambda = 0, robust to local misspecification in gamma</span>
+<span class="n">result_robust_err</span> <span class="o">=</span> <span class="n">bayesian_robust_lm_error_sdem_test</span><span class="p">(</span><span class="n">slx_model</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;=== Bayesian Robust LM-Error-SDEM Test ===&quot;</span><span class="p">)</span>
+<span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result_robust_err</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  df = </span><span class="si">{</span><span class="n">result_robust_err</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>=== Bayesian Robust LM-Lag-SDM Test ===
+Bayesian LM Test (bayesian_robust_lm_lag_sdm):
+  Degrees of freedom: 1
+  Mean: 1.381
+  Median: 0.697
+  95% Credible Interval: [0.002, 6.449]
+  Bayesian p-value: 0.240
+  df = 1
+=== Bayesian Robust LM-WX Test ===
+Bayesian LM Test (bayesian_robust_lm_wx):
+  Degrees of freedom: 2
+  Mean: 2.854
+  Median: 1.914
+  95% Credible Interval: [0.205, 10.899]
+  Bayesian p-value: 0.240
+  df = 2
+
+=== Bayesian Robust LM-Error-SDEM Test ===
+Bayesian LM Test (bayesian_robust_lm_error_sdem):
+  Degrees of freedom: 1
+  Mean: 0.751
+  Median: 0.588
+  95% Credible Interval: [0.003, 2.653]
+  Bayesian p-value: 0.386
+  df = 1
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="posterior-distribution-of-lm-statistics">5. Posterior Distribution of LM Statistics<a class="headerlink" href="#posterior-distribution-of-lm-statistics" title="Link to this heading">¶</a></h2>
+<p>A key advantage of the Bayesian approach is that we get a <strong>full posterior distribution</strong> of the LM statistic, not just a point estimate. This allows us to compute credible intervals and posterior probabilities.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">scipy</span><span class="w"> </span><span class="kn">import</span> <span class="n">stats</span> <span class="k">as</span> <span class="n">sp_stats</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">18</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+
+<span class="n">results</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s2">&quot;LM-Lag&quot;</span><span class="p">,</span> <span class="n">result_lag</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;LM-Error&quot;</span><span class="p">,</span> <span class="n">result_error</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;LM-WX&quot;</span><span class="p">,</span> <span class="n">result_wx</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;LM-SDM Joint&quot;</span><span class="p">,</span> <span class="n">result_sdm</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;LM-SLX-Error Joint&quot;</span><span class="p">,</span> <span class="n">result_slx_err</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;Robust LM-Lag-SDM&quot;</span><span class="p">,</span> <span class="n">result_robust_lag</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;Robust LM-WX&quot;</span><span class="p">,</span> <span class="n">result_robust_wx</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;Robust LM-Error-SDEM&quot;</span><span class="p">,</span> <span class="n">result_robust_err</span><span class="p">),</span>
+<span class="p">]</span>
+
+<span class="k">for</span> <span class="n">ax</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">res</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">axes</span><span class="o">.</span><span class="n">flat</span><span class="p">,</span> <span class="n">results</span><span class="p">):</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">lm_samples</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;steelblue&quot;</span><span class="p">)</span>
+    <span class="n">chi2_ref</span> <span class="o">=</span> <span class="n">sp_stats</span><span class="o">.</span><span class="n">chi2</span><span class="o">.</span><span class="n">ppf</span><span class="p">(</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">res</span><span class="o">.</span><span class="n">df</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">chi2_ref</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;red&quot;</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s2">&quot;--&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;χ²(0.95, df=</span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">df</span><span class="si">}</span><span class="s2">) = </span><span class="si">{</span><span class="n">chi2_ref</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">mean</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;black&quot;</span><span class="p">,</span> <span class="n">linestyle</span><span class="o">=</span><span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Mean = </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">mean</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">7</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="s2">&quot;Posterior Distributions of Bayesian LM Statistics&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<img alt="../_images/fd2df733fb5446beb1757f2c019992ab8cca81bb2519d5ea5f622c73b1c64751.png" src="../_images/fd2df733fb5446beb1757f2c019992ab8cca81bb2519d5ea5f622c73b1c64751.png" />
+</div>
+</div>
+<h2 id="comparison-with-classical-spreg-lm-tests">6. Comparison with Classical spreg LM Tests<a class="headerlink" href="#comparison-with-classical-spreg-lm-tests" title="Link to this heading">¶</a></h2>
+<p>When <code class="docutils literal notranslate"><span class="pre">spreg</span></code> is available, we can compare the Bayesian LM statistics (posterior mean) with the classical point estimates. Under flat priors, the Bayesian and classical tests should converge.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">if</span> <span class="n">HAS_SPREG</span><span class="p">:</span>
+    <span class="c1"># Run classical spreg LM tests using spreg&#39;s OLS + LMtests</span>
+    <span class="n">ols_spreg</span> <span class="o">=</span> <span class="n">SpregOLS</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">)</span>
+    <span class="n">lm_spreg</span> <span class="o">=</span> <span class="n">SpregLMtests</span><span class="p">(</span><span class="n">ols_spreg</span><span class="p">,</span> <span class="n">w_spreg</span><span class="p">)</span>
+
+    <span class="n">spreg_results</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;LM-Lag&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">lml</span><span class="p">,</span>
+        <span class="s2">&quot;LM-Error&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">lme</span><span class="p">,</span>
+        <span class="s2">&quot;Robust LM-Lag&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">rlml</span><span class="p">,</span>
+        <span class="s2">&quot;Robust LM-Error&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">rlme</span><span class="p">,</span>
+        <span class="s2">&quot;LM-WX&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">lmwx</span><span class="p">,</span>
+        <span class="s2">&quot;Robust LM-WX&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">rlmwx</span><span class="p">,</span>
+        <span class="s2">&quot;LM-SDM Joint&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">lmspdurbin</span><span class="p">,</span>
+        <span class="s2">&quot;Robust LM-Lag-SDM&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">rlmdurlag</span><span class="p">,</span>
+        <span class="s2">&quot;LM-SLX-Error Joint&quot;</span><span class="p">:</span> <span class="n">lm_spreg</span><span class="o">.</span><span class="n">lmslxerr</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Classical spreg LM tests:&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">stat</span><span class="p">,</span> <span class="n">pval</span><span class="p">)</span> <span class="ow">in</span> <span class="n">spreg_results</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">&lt;30</span><span class="si">}</span><span class="s2"> stat=</span><span class="si">{</span><span class="n">stat</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  p=</span><span class="si">{</span><span class="n">pval</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Bayesian vs Classical comparison table</span>
+    <span class="n">bayes_tests</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">(</span><span class="s2">&quot;LM-Lag&quot;</span><span class="p">,</span> <span class="n">result_lag</span><span class="p">,</span> <span class="s2">&quot;LM-Lag&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;LM-Error&quot;</span><span class="p">,</span> <span class="n">result_error</span><span class="p">,</span> <span class="s2">&quot;LM-Error&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;LM-WX&quot;</span><span class="p">,</span> <span class="n">result_wx</span><span class="p">,</span> <span class="s2">&quot;LM-WX&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;LM-SDM Joint&quot;</span><span class="p">,</span> <span class="n">result_sdm</span><span class="p">,</span> <span class="s2">&quot;LM-SDM Joint&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;LM-SLX-Error Joint&quot;</span><span class="p">,</span> <span class="n">result_slx_err</span><span class="p">,</span> <span class="s2">&quot;LM-SLX-Error Joint&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;Robust LM-Lag-SDM&quot;</span><span class="p">,</span> <span class="n">result_robust_lag</span><span class="p">,</span> <span class="s2">&quot;Robust LM-Lag-SDM&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;Robust LM-WX&quot;</span><span class="p">,</span> <span class="n">result_robust_wx</span><span class="p">,</span> <span class="s2">&quot;Robust LM-WX&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;Robust LM-Error-SDEM&quot;</span><span class="p">,</span> <span class="n">result_robust_err</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+    <span class="p">]</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Bayesian vs Classical comparison:&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;Test&#39;</span><span class="si">:</span><span class="s2">&lt;30</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;Bayes Mean&#39;</span><span class="si">:</span><span class="s2">&gt;12</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;spreg stat&#39;</span><span class="si">:</span><span class="s2">&gt;12</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;Bayes p-val&#39;</span><span class="si">:</span><span class="s2">&gt;12</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;spreg p-val&#39;</span><span class="si">:</span><span class="s2">&gt;12</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;-&#39;</span><span class="o">*</span><span class="mi">78</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">bname</span><span class="p">,</span> <span class="n">res</span><span class="p">,</span> <span class="n">sname</span> <span class="ow">in</span> <span class="n">bayes_tests</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sname</span> <span class="ow">and</span> <span class="n">sname</span> <span class="ow">in</span> <span class="n">spreg_results</span><span class="p">:</span>
+            <span class="n">s_stat</span><span class="p">,</span> <span class="n">s_pval</span> <span class="o">=</span> <span class="n">spreg_results</span><span class="p">[</span><span class="n">sname</span><span class="p">]</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">bname</span><span class="si">:</span><span class="s2">&lt;30</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">mean</span><span class="si">:</span><span class="s2">&gt;12.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">s_stat</span><span class="si">:</span><span class="s2">&gt;12.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">bayes_pvalue</span><span class="si">:</span><span class="s2">&gt;12.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">s_pval</span><span class="si">:</span><span class="s2">&gt;12.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">bname</span><span class="si">:</span><span class="s2">&lt;30</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">mean</span><span class="si">:</span><span class="s2">&gt;12.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;N/A&#39;</span><span class="si">:</span><span class="s2">&gt;12</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">bayes_pvalue</span><span class="si">:</span><span class="s2">&gt;12.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;N/A&#39;</span><span class="si">:</span><span class="s2">&gt;12</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;spreg not available — skipping classical comparison</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Summary of Bayesian LM tests:&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;Test&#39;</span><span class="si">:</span><span class="s2">&lt;30</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;Mean&#39;</span><span class="si">:</span><span class="s2">&gt;10</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;Median&#39;</span><span class="si">:</span><span class="s2">&gt;10</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;95% CI&#39;</span><span class="si">:</span><span class="s2">&gt;20</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;p-value&#39;</span><span class="si">:</span><span class="s2">&gt;10</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="s1">&#39;df&#39;</span><span class="si">:</span><span class="s2">&gt;5</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="s1">&#39;-&#39;</span><span class="o">*</span><span class="mi">85</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">res</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+        <span class="n">ci_lo</span><span class="p">,</span> <span class="n">ci_hi</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">credible_interval</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">&lt;30</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">mean</span><span class="si">:</span><span class="s2">&gt;10.3f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">median</span><span class="si">:</span><span class="s2">&gt;10.3f</span><span class="si">}</span><span class="s2"> [</span><span class="si">{</span><span class="n">ci_lo</span><span class="si">:</span><span class="s2">&gt;7.2f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">ci_hi</span><span class="si">:</span><span class="s2">&gt;7.2f</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">bayes_pvalue</span><span class="si">:</span><span class="s2">&gt;10.3f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">res</span><span class="o">.</span><span class="n">df</span><span class="si">:</span><span class="s2">&gt;5</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Classical spreg LM tests:
+  LM-Lag                         stat=0.8861  p=0.3465
+  LM-Error                       stat=1.3416  p=0.2467
+  Robust LM-Lag                  stat=0.0578  p=0.8100
+  Robust LM-Error                stat=0.5134  p=0.4737
+  LM-WX                          stat=0.6161  p=0.7349
+  Robust LM-WX                   stat=1.0717  p=0.5852
+  LM-SDM Joint                   stat=1.9577  p=0.5812
+  Robust LM-Lag-SDM              stat=1.3416  p=0.2467
+  LM-SLX-Error Joint             stat=1.9577  p=0.5812
+
+Bayesian vs Classical comparison:
+  Test                             Bayes Mean   spreg stat  Bayes p-val  spreg p-val
+  ------------------------------------------------------------------------------
+  LM-Lag                               0.9216       0.8861       0.3370       0.3465
+  LM-Error                             2.3821       1.3416       0.1227       0.2467
+  LM-WX                                1.7716       0.6161       0.4124       0.7349
+  LM-SDM Joint                         3.0233       1.9577       0.3880       0.5812
+  LM-SLX-Error Joint                   2.2089       1.9577       0.5302       0.5812
+  Robust LM-Lag-SDM                    1.3812       1.3416       0.2399       0.2467
+  Robust LM-WX                         2.8535       1.0717       0.2401       0.5852
+  Robust LM-Error-SDEM                 0.7507          N/A       0.3863          N/A
+</code></pre></div>
+</div>
+</div>
+</div>
+<p>The divergence in the error and WX tests is expected because the Bayesian LM statistics use the information matrix (not <span class="math notranslate nohighlight">\(E[gg']\)</span>), which gives different variance estimates than the classical approach. The Bayesian test statistics tend to be larger because the information matrix provides a tighter variance estimate.</p>
+<h2 id="decision-framework">7. Decision Framework<a class="headerlink" href="#decision-framework" title="Link to this heading">¶</a></h2>
+<p>The Bayesian LM tests provide a principled decision framework for choosing between spatial model specifications:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code>                    ┌─────────────────────┐
+                    │  Fit OLS, SAR, SLX   │
+                    │  (null models)        │
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  LM-SDM Joint Test   │──── Significant ────┐
+                    │  (H₀: ρ=0, γ=0)     │                    │
+                    └──────────┬──────────┘                    │
+                               │ Not significant                 │
+                               ▼                                ▼
+                    ┌──────────────────┐           ┌────────────────────┐
+                    │  LM-SLX-Error    │           │  Robust LM-Lag-SDM │
+                    │  Joint Test      │           │  vs Robust LM-WX   │
+                    │  (H₀: λ=0, γ=0) │           │                    │
+                    └────────┬─────────┘           └────────┬───────────┘
+                             │                              │
+                    Significant ──► SDEM           Lag wins ──► SAR/SDM
+                    Not sig ──► OLS               WX wins ──► SLX/SDM
+</code></pre></div>
+</div>
+<h3 id="key-advantages-of-the-bayesian-approach">Key Advantages of the Bayesian Approach<a class="headerlink" href="#key-advantages-of-the-bayesian-approach" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p><strong>Full posterior distribution</strong>: Credible intervals instead of just point estimates</p></li>
+<li><p><strong>Robust to local misspecification</strong>: Neyman orthogonal score ensures valid inference</p></li>
+<li><p><strong>Prior incorporation</strong>: Informative priors can improve test power</p></li>
+<li><p><strong>Model-specific posteriors</strong>: Each test uses the appropriate null model</p></li>
+</ol>
+<h2 id="references">References<a class="headerlink" href="#references" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p><strong>Dogan, O., Taşpınar, S., Bera, A.K.</strong> (2021). “A Bayesian robust chi-squared test for testing simple hypotheses.” <em>Journal of Econometrics</em>, 222(2), 933-958.</p></li>
+<li><p><strong>Koley, T., Bera, A.K.</strong> (2024). “Spatial lag vs spatial error: A robust LM test.” <em>Journal of Econometrics</em>, 240(1), 105729.</p></li>
+<li><p><strong>Bera, A.K., Yoon, M.J.</strong> (1993). “Specification testing with locally misspecified alternatives.” <em>Econometric Theory</em>, 9(4), 649-658.</p></li>
+<li><p><strong>Anselin, L.</strong> (1996). “The Moran Scatterplot as an ESDA Tool to Assess Local Instability in Spatial Association.” <em>Spatial Analytical Perspectives on GIS</em>, 111-125.</p></li>
+<li><p><strong>Anselin, L., Bera, A.K., Florax, R., Yoon, M.J.</strong> (1996). “Simple diagnostic tests for spatial dependence.” <em>Regional Science and Urban Economics</em>, 26(1), 77-104.</p></li>
+</ol>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  
+  
+  <div class="md-footer-meta md-typeset">
+    
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-footer-copyright__highlight">
+        &#169; Copyright 2018-, pysal developers.
+        
+    </div>
+  
+    Created using
+    <a href="https://www.sphinx-doc.org/" target="_blank" rel="noopener">Sphinx</a>
+    8.2.3.
+     and
+    <a href="https://github.com/jbms/sphinx-immaterial/" target="_blank" rel="noopener">Sphinx-Immaterial</a>
+  
+</div>
+      
+    </div>
+    
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.sections", "navigation.top", "search.share", "search.suggest", "toc.follow", "toc.sticky", "content.code.copy", "content.action.edit"], "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike", "staticVersions": null, "versionPath": "https://pysal.org/bayespecon/versions.json"}}</script>
+    
+      
+        <script src="../_static/sphinx_immaterial_theme.32136f45f91ae6956.min.js?v=a7a9472a"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+        <script id="MathJax-script" src="../_static/mathjax/tex-mml-chtml.js"></script>
+    
+  </body>
+</html>

@@ -14,19 +14,10 @@
    .. autosummary::
    
       ~OLS.__init__
-      ~OLS.autocorrelation_diagnostics
-      ~OLS.diagnostics
       ~OLS.fit
       ~OLS.fitted_values
-      ~OLS.heteroskedasticity_diagnostics
-      ~OLS.lm_error_test
-      ~OLS.lm_lag_test
-      ~OLS.moran_test
-      ~OLS.outlier_diagnostics
-      ~OLS.regression_diagnostics
       ~OLS.residuals
       ~OLS.spatial_effects
-      ~OLS.spatial_specification_tests
       ~OLS.summary
    
    
@@ -37,6 +28,7 @@
 
    .. autosummary::
    
+      ~OLS.inference_data
       ~OLS.pymc_model
    
    

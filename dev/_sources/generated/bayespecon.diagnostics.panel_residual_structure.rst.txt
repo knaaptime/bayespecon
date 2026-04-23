@@ -1,6 +1,0 @@
-﻿bayespecon.diagnostics.panel\_residual\_structure
-=================================================
-
-.. currentmodule:: bayespecon.diagnostics
-
-.. autofunction:: panel_residual_structure

@@ -14,20 +14,10 @@
    .. autosummary::
    
       ~SAR.__init__
-      ~SAR.autocorrelation_diagnostics
-      ~SAR.diagnostics
       ~SAR.fit
       ~SAR.fitted_values
-      ~SAR.heteroskedasticity_diagnostics
-      ~SAR.lm_error_test
-      ~SAR.lm_rho_robust_test
-      ~SAR.lm_rho_test
-      ~SAR.moran_test
-      ~SAR.outlier_diagnostics
-      ~SAR.regression_diagnostics
       ~SAR.residuals
       ~SAR.spatial_effects
-      ~SAR.spatial_specification_tests
       ~SAR.summary
    
    
@@ -38,6 +28,7 @@
 
    .. autosummary::
    
+      ~SAR.inference_data
       ~SAR.pymc_model
    
    

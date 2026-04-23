@@ -1,6 +1,0 @@
-﻿bayespecon.stats.lratios
-========================
-
-.. currentmodule:: bayespecon.stats
-
-.. autofunction:: lratios

@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.bayesfactor.bic\_to\_bf
+==============================================
+
+.. currentmodule:: bayespecon.diagnostics.bayesfactor
+
+.. autofunction:: bic_to_bf

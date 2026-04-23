@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.bayesfactor.post\_prob
+=============================================
+
+.. currentmodule:: bayespecon.diagnostics.bayesfactor
+
+.. autofunction:: post_prob

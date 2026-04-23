@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.bayesian\_lmtests.bayesian\_robust\_lm\_lag\_sdm\_test
+=============================================================================
+
+.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
+
+.. autofunction:: bayesian_robust_lm_lag_sdm_test

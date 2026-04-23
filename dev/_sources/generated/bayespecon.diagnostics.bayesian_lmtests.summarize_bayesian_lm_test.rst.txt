@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.bayesian\_lmtests.summarize\_bayesian\_lm\_test
+======================================================================
+
+.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
+
+.. autofunction:: summarize_bayesian_lm_test

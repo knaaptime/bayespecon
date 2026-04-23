@@ -1,6 +1,0 @@
-﻿bayespecon.stats.lmsar
-======================
-
-.. currentmodule:: bayespecon.stats
-
-.. autofunction:: lmsar

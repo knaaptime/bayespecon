@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.bayesfactor.bayes\_factor\_compare\_models
+=================================================================
+
+.. currentmodule:: bayespecon.diagnostics.bayesfactor
+
+.. autofunction:: bayes_factor_compare_models

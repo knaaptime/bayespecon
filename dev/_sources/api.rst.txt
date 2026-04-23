@@ -107,61 +107,34 @@ Panel Spatial Models (Tobit)
    SEMPanelTobit
 
 
-Regression Diagnostics
-----------------------
-
-.. currentmodule:: bayespecon.diagnostics
-
-.. autosummary::
-   :toctree: generated/
-
-   DiagnosticResult
-   rdiagnose_like
-   bpagan_test
-   arch_test
-   ljung_box_q
-   hausman_fe_re_test
-   outlier_candidates
-   panel_residual_structure
-   pesaran_cd_test
-
-
-Spatial Stats Helpers
+Bayesian Diagnostics
 ---------------------
 
-.. currentmodule:: bayespecon.stats
+.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
 
 .. autosummary::
    :toctree: generated/
 
-   lmerror
-   lmlag
-   lmrho
-   lmrhorob
-   lmsar
-   lratios
-   moran
-   walds
-   trans_tslow
-   f_sarpanel
-   f2_sarpanel
-   f_sempanel
-   f2_sempanel
-   f_sarar_panel
-   f2_sarar_panel
-   sar_panel_FE_LY
-   sem_panel_FE_LY
-   sarar_panel_FE_LY
-   lm_f_err
-   lm_f_sar
-   lm_f_joint
-   lm_f_err_c
-   lm_f_sar_c
-   lr_f_err
-   lr_f_sar
-   lr_f_joint
-   lr_f_err_c
-   lr_f_sar_c
+   BayesianLMTestResult
+   bayesian_lm_lag_test
+   bayesian_lm_error_test
+   bayesian_lm_wx_test
+   bayesian_lm_sdm_joint_test
+   bayesian_lm_slx_error_joint_test
+   bayesian_robust_lm_lag_sdm_test
+   bayesian_robust_lm_wx_test
+   bayesian_robust_lm_error_sdem_test
+   summarize_bayesian_lm_test
+
+.. currentmodule:: bayespecon.diagnostics.bayesfactor
+
+.. autosummary::
+   :toctree: generated/
+
+   bayes_factor_compare_models
+   bic_to_bf
+   compile_log_posterior
+   post_prob
 
 
 Data Generating Processes

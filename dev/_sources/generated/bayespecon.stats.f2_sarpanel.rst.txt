@@ -1,6 +1,0 @@
-﻿bayespecon.stats.f2\_sarpanel
-=============================
-
-.. currentmodule:: bayespecon.stats
-
-.. autofunction:: f2_sarpanel

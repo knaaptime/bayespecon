@@ -14,21 +14,10 @@
    .. autosummary::
    
       ~OLSPanelFE.__init__
-      ~OLSPanelFE.autocorrelation_diagnostics
-      ~OLSPanelFE.diagnostics
       ~OLSPanelFE.fit
       ~OLSPanelFE.fitted_values
-      ~OLSPanelFE.hausman_test
-      ~OLSPanelFE.heteroskedasticity_diagnostics
-      ~OLSPanelFE.lm_error_test
-      ~OLSPanelFE.lm_joint_test
-      ~OLSPanelFE.lm_sar_test
-      ~OLSPanelFE.outlier_diagnostics
-      ~OLSPanelFE.panel_diagnostics
-      ~OLSPanelFE.regression_diagnostics
       ~OLSPanelFE.residuals
       ~OLSPanelFE.spatial_effects
-      ~OLSPanelFE.spatial_specification_tests
       ~OLSPanelFE.summary
    
    
@@ -39,6 +28,7 @@
 
    .. autosummary::
    
+      ~OLSPanelFE.inference_data
       ~OLSPanelFE.pymc_model
    
    

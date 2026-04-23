@@ -1,6 +1,0 @@
-﻿bayespecon.stats.moran
-======================
-
-.. currentmodule:: bayespecon.stats
-
-.. autofunction:: moran

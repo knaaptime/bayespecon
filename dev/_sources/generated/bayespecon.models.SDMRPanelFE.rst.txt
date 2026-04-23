@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~SDMRPanelFE.__init__
-      ~SDMRPanelFE.autocorrelation_diagnostics
-      ~SDMRPanelFE.diagnostics
       ~SDMRPanelFE.fit
       ~SDMRPanelFE.fitted_values
-      ~SDMRPanelFE.heteroskedasticity_diagnostics
-      ~SDMRPanelFE.outlier_diagnostics
-      ~SDMRPanelFE.panel_diagnostics
-      ~SDMRPanelFE.regression_diagnostics
       ~SDMRPanelFE.residuals
       ~SDMRPanelFE.spatial_effects
       ~SDMRPanelFE.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~SDMRPanelFE.inference_data
       ~SDMRPanelFE.pymc_model
    
    

@@ -1,0 +1,35 @@
+﻿bayespecon.diagnostics.bayesian\_lmtests.BayesianLMTestResult
+=============================================================
+
+.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
+
+.. autoclass:: BayesianLMTestResult
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~BayesianLMTestResult.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~BayesianLMTestResult.details
+      ~BayesianLMTestResult.df
+      ~BayesianLMTestResult.lm_samples
+      ~BayesianLMTestResult.mean
+      ~BayesianLMTestResult.median
+      ~BayesianLMTestResult.credible_interval
+      ~BayesianLMTestResult.bayes_pvalue
+      ~BayesianLMTestResult.test_type
+   
+   

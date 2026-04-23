@@ -14,21 +14,11 @@
    .. autosummary::
    
       ~SEM.__init__
-      ~SEM.autocorrelation_diagnostics
-      ~SEM.diagnostics
       ~SEM.fit
       ~SEM.fitted_values
-      ~SEM.heteroskedasticity_diagnostics
-      ~SEM.lm_lag_test
-      ~SEM.lr_ratio_test
-      ~SEM.moran_test
-      ~SEM.outlier_diagnostics
-      ~SEM.regression_diagnostics
       ~SEM.residuals
       ~SEM.spatial_effects
-      ~SEM.spatial_specification_tests
       ~SEM.summary
-      ~SEM.wald_error_test
    
    
 
@@ -38,6 +28,7 @@
 
    .. autosummary::
    
+      ~SEM.inference_data
       ~SEM.pymc_model
    
    

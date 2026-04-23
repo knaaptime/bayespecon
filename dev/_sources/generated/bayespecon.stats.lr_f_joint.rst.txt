@@ -1,6 +1,0 @@
-﻿bayespecon.stats.lr\_f\_joint
-=============================
-
-.. currentmodule:: bayespecon.stats
-
-.. autofunction:: lr_f_joint

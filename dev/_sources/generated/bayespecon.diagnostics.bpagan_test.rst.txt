@@ -1,6 +1,0 @@
-﻿bayespecon.diagnostics.bpagan\_test
-===================================
-
-.. currentmodule:: bayespecon.diagnostics
-
-.. autofunction:: bpagan_test

@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~SEMPanelRE.__init__
-      ~SEMPanelRE.autocorrelation_diagnostics
-      ~SEMPanelRE.diagnostics
       ~SEMPanelRE.fit
       ~SEMPanelRE.fitted_values
-      ~SEMPanelRE.heteroskedasticity_diagnostics
-      ~SEMPanelRE.outlier_diagnostics
-      ~SEMPanelRE.panel_diagnostics
-      ~SEMPanelRE.regression_diagnostics
       ~SEMPanelRE.residuals
       ~SEMPanelRE.spatial_effects
       ~SEMPanelRE.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~SEMPanelRE.inference_data
       ~SEMPanelRE.pymc_model
    
    

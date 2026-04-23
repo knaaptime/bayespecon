@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~SARPanelRE.__init__
-      ~SARPanelRE.autocorrelation_diagnostics
-      ~SARPanelRE.diagnostics
       ~SARPanelRE.fit
       ~SARPanelRE.fitted_values
-      ~SARPanelRE.heteroskedasticity_diagnostics
-      ~SARPanelRE.outlier_diagnostics
-      ~SARPanelRE.panel_diagnostics
-      ~SARPanelRE.regression_diagnostics
       ~SARPanelRE.residuals
       ~SARPanelRE.spatial_effects
       ~SARPanelRE.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~SARPanelRE.inference_data
       ~SARPanelRE.pymc_model
    
    

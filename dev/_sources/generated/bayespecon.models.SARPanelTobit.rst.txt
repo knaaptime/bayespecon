@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~SARPanelTobit.__init__
-      ~SARPanelTobit.autocorrelation_diagnostics
-      ~SARPanelTobit.diagnostics
       ~SARPanelTobit.fit
       ~SARPanelTobit.fitted_values
-      ~SARPanelTobit.heteroskedasticity_diagnostics
-      ~SARPanelTobit.outlier_diagnostics
-      ~SARPanelTobit.panel_diagnostics
-      ~SARPanelTobit.regression_diagnostics
       ~SARPanelTobit.residuals
       ~SARPanelTobit.spatial_effects
       ~SARPanelTobit.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~SARPanelTobit.inference_data
       ~SARPanelTobit.pymc_model
    
    

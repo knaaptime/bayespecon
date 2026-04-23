@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.bayesian\_lmtests.bayesian\_lm\_lag\_test
+================================================================
+
+.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
+
+.. autofunction:: bayesian_lm_lag_test

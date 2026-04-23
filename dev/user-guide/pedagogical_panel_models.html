@@ -21,7 +21,7 @@
     
     
       
-        <title>Bayesian Spatial Panel Models and Diagnostics - bayespecon</title>
+        <title>Bayesian Spatial Panel Models - bayespecon</title>
       
     
     
@@ -109,7 +109,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Bayesian Spatial Panel Models and Diagnostics
+              Bayesian Spatial Panel Models
             
           </span>
         </div>
@@ -509,16 +509,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#panel-fe-spatial-specification-diagnostics-new-api" class="md-nav__link">
-    
-    <span class="md-ellipsis">
-      <span>Panel FE Spatial Specification Diagnostics <wbr>(New API)</span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#random-effects-panel-models" class="md-nav__link">
     
     <span class="md-ellipsis">
@@ -561,16 +551,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#matlab-style-diagnostics-across-fe-and-re-models" class="md-nav__link">
-    
-    <span class="md-ellipsis">
-      <span>MATLAB-<wbr>Style Diagnostics Across FE and RE Models</span>
-    </span>
-  </a>
   
 </li>
       
@@ -641,6 +621,30 @@
   
   <span class="md-ellipsis">
     <span>Nonlinear Panel Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="bayesian_lmtests.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Bayesian Spatial Diagnostics</span>
     
   </span>
   
@@ -1077,16 +1081,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#panel-fe-spatial-specification-diagnostics-new-api" class="md-nav__link">
-    
-    <span class="md-ellipsis">
-      <span>Panel FE Spatial Specification Diagnostics <wbr>(New API)</span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#random-effects-panel-models" class="md-nav__link">
     
     <span class="md-ellipsis">
@@ -1129,16 +1123,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#matlab-style-diagnostics-across-fe-and-re-models" class="md-nav__link">
-    
-    <span class="md-ellipsis">
-      <span>MATLAB-<wbr>Style Diagnostics Across FE and RE Models</span>
-    </span>
-  </a>
   
 </li>
       
@@ -1186,20 +1170,13 @@
   
   
 
-<h1 id="bayesian-spatial-panel-models-and-diagnostics">Bayesian Spatial Panel Models and Diagnostics<a class="headerlink" href="#bayesian-spatial-panel-models-and-diagnostics" title="Link to this heading">¶</a></h1>
+<h1 id="bayesian-spatial-panel-models">Bayesian Spatial Panel Models<a class="headerlink" href="#bayesian-spatial-panel-models" title="Link to this heading">¶</a></h1>
 <p>This notebook demonstrates the panel-model classes in <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code>:</p>
 <ul class="simple">
 <li><p>Fixed effects / pooled panel models: <code class="docutils literal notranslate"><span class="pre">OLSPanelFE</span></code>, <code class="docutils literal notranslate"><span class="pre">SARPanelFE</span></code>, <code class="docutils literal notranslate"><span class="pre">SEMPanelFE</span></code>, <code class="docutils literal notranslate"><span class="pre">SDMPanelFE</span></code>, <code class="docutils literal notranslate"><span class="pre">SDEMPanelFE</span></code></p></li>
 <li><p>Random effects panel models: <code class="docutils literal notranslate"><span class="pre">OLSPanelRE</span></code>, <code class="docutils literal notranslate"><span class="pre">SARPanelRE</span></code>, <code class="docutils literal notranslate"><span class="pre">SEMPanelRE</span></code></p></li>
 </ul>
-<p>It also demonstrates diagnostics inspired by the MATLAB reference code:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">rdiagnose</span></code>-style influence diagnostics</p></li>
-<li><p>Breusch-Pagan test</p></li>
-<li><p>ARCH test</p></li>
-<li><p>Ljung-Box Q test</p></li>
-<li><p>Panel-specific diagnostics (<code class="docutils literal notranslate"><span class="pre">panel_residual_structure</span></code>, <code class="docutils literal notranslate"><span class="pre">pesaran_cd_test</span></code>)</p></li>
-</ul>
+<p>It also demonstrates Bayesian model comparison via WAIC, LOO-CV, and Bayes factors.</p>
 <h2 id="panel-model-equations">Panel Model Equations<a class="headerlink" href="#panel-model-equations" title="Link to this heading">¶</a></h2>
 <p>Let observations be stacked by time, then unit (panel_g convention).</p>
 <p>Fixed-effects / pooled classes:</p>
@@ -1226,19 +1203,11 @@
 <p>The RE classes are hierarchical models with unit-level random intercepts, so they internally use the pooled design and estimate <code class="docutils literal notranslate"><span class="pre">sigma_alpha</span></code> directly.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">arviz</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">az</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">arviz</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">az</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">display</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
-
-<span class="n">repo_root</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span>
-<span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">:</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">))</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">OLSPanelFE</span><span class="p">,</span>
@@ -1300,6 +1269,11 @@
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">fit_panel_model</span><span class="p">(</span><span class="n">model_cls</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fit a panel model and return (model, summary, effects_df).</span>
+
+<span class="sd">    Uses minimal MCMC settings for pedagogical demonstration.</span>
+<span class="sd">    Increase draws/tune for real analyses.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">model_cls</span><span class="p">(</span>
         <span class="n">formula</span><span class="o">=</span><span class="n">formula</span><span class="p">,</span>
         <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
@@ -1309,8 +1283,7 @@
         <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
         <span class="n">logdet_method</span><span class="o">=</span><span class="s2">&quot;eigenvalue&quot;</span><span class="p">,</span>
     <span class="p">)</span>
-
-    <span class="n">idata</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+    <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
         <span class="n">draws</span><span class="o">=</span><span class="n">draws</span><span class="p">,</span>
         <span class="n">tune</span><span class="o">=</span><span class="n">tune</span><span class="p">,</span>
         <span class="n">chains</span><span class="o">=</span><span class="n">chains</span><span class="p">,</span>
@@ -1319,25 +1292,19 @@
         <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">idata_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;log_likelihood&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
     <span class="p">)</span>
-
     <span class="n">summary</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
-    <span class="n">effects</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">()</span>
-    <span class="n">effects_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
-        <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;feature_names&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;direct&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;direct&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;indirect&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;indirect&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;total&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;total&quot;</span><span class="p">],</span>
-    <span class="p">})</span>
-
-    <span class="k">return</span> <span class="n">m</span><span class="p">,</span> <span class="n">idata</span><span class="p">,</span> <span class="n">summary</span><span class="p">,</span> <span class="n">effects_df</span>
+    <span class="n">effects_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">m</span><span class="p">,</span> <span class="n">summary</span><span class="p">,</span> <span class="n">effects_df</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">diagnostics_table</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Show key MCMC diagnostics for the given parameters.&quot;&quot;&quot;</span>
     <span class="n">cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;sd&quot;</span><span class="p">,</span> <span class="s2">&quot;ess_bulk&quot;</span><span class="p">,</span> <span class="s2">&quot;ess_tail&quot;</span><span class="p">,</span> <span class="s2">&quot;r_hat&quot;</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">az</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="n">var_names</span><span class="p">,</span> <span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)[</span><span class="n">cols</span><span class="p">]</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">show_trace</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">,</span> <span class="n">title</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Plot trace plots for the given parameters.&quot;&quot;&quot;</span>
     <span class="n">az</span><span class="o">.</span><span class="n">plot_trace</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="n">var_names</span><span class="p">)</span>
     <span class="n">plt</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">1.02</span><span class="p">)</span>
     <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
@@ -1350,13 +1317,13 @@
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">formula</span> <span class="o">=</span> <span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span>
-<span class="n">ols_panel</span><span class="p">,</span> <span class="n">idata_ols</span><span class="p">,</span> <span class="n">summary_ols</span><span class="p">,</span> <span class="n">effects_ols</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+<span class="n">ols_panel</span><span class="p">,</span> <span class="n">summary_ols</span><span class="p">,</span> <span class="n">effects_ols</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
     <span class="n">OLSPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">summary_ols</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">effects_ols</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_ols</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_ols</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;OLSPanelFE trace&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">ols_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">ols_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;OLSPanelFE trace&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -1367,7 +1334,7 @@ NUTS: [beta, sigma]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_6195/3755175936.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_6572/3515888290.py:40: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -1493,47 +1460,47 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>Intercept</td>
       <td>4469.980201</td>
       <td>0.0</td>
       <td>4469.980201</td>
+      <td>Intercept</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>poverty</td>
       <td>-0.779711</td>
       <td>0.0</td>
       <td>-0.779711</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>rev_rating</td>
       <td>0.621883</td>
       <td>0.0</td>
       <td>0.621883</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>num_spots</td>
       <td>0.399134</td>
       <td>0.0</td>
       <td>0.399134</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>crowded</td>
       <td>-0.483840</td>
       <td>0.0</td>
       <td>-0.483840</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -1619,13 +1586,13 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
 <h2 id="fit-sarpanelfe">Fit: SARPanelFE<a class="headerlink" href="#fit-sarpanelfe" title="Link to this heading">¶</a></h2>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sar_panel</span><span class="p">,</span> <span class="n">idata_sar</span><span class="p">,</span> <span class="n">summary_sar</span><span class="p">,</span> <span class="n">effects_sar</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sar_panel</span><span class="p">,</span> <span class="n">summary_sar</span><span class="p">,</span> <span class="n">effects_sar</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
     <span class="n">SARPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">summary_sar</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">effects_sar</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SARPanelFE trace&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sar_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sar_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SARPanelFE trace&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -1636,7 +1603,7 @@ NUTS: [rho, beta, sigma]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_6195/3755175936.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_6572/3515888290.py:40: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -1774,47 +1741,47 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>Intercept</td>
       <td>-22181.722659</td>
       <td>-6934.337037</td>
       <td>-29116.059696</td>
+      <td>Intercept</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>poverty</td>
       <td>-0.793534</td>
       <td>-0.248070</td>
       <td>-1.041604</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>rev_rating</td>
       <td>0.628086</td>
       <td>0.196349</td>
       <td>0.824435</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>num_spots</td>
       <td>0.377510</td>
       <td>0.118015</td>
       <td>0.495526</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>crowded</td>
       <td>-0.498857</td>
       <td>-0.155950</td>
       <td>-0.654807</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -1908,13 +1875,13 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
 <h2 id="fit-sempanelfe">Fit: SEMPanelFE<a class="headerlink" href="#fit-sempanelfe" title="Link to this heading">¶</a></h2>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sem_panel</span><span class="p">,</span> <span class="n">idata_sem</span><span class="p">,</span> <span class="n">summary_sem</span><span class="p">,</span> <span class="n">effects_sem</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sem_panel</span><span class="p">,</span> <span class="n">summary_sem</span><span class="p">,</span> <span class="n">effects_sem</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
     <span class="n">SEMPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">summary_sem</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">effects_sem</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SEMPanelFE trace&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sem_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sem_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SEMPanelFE trace&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -1925,7 +1892,7 @@ NUTS: [lam, beta, sigma]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_6195/3755175936.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_6572/3515888290.py:40: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -2063,47 +2030,47 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>Intercept</td>
       <td>35273.518807</td>
       <td>0.0</td>
       <td>35273.518807</td>
+      <td>Intercept</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>poverty</td>
       <td>-0.774995</td>
       <td>0.0</td>
       <td>-0.774995</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>rev_rating</td>
       <td>0.600163</td>
       <td>0.0</td>
       <td>0.600163</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>num_spots</td>
       <td>0.361613</td>
       <td>0.0</td>
       <td>0.361613</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>crowded</td>
       <td>-0.496180</td>
       <td>0.0</td>
       <td>-0.496180</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -2197,13 +2164,13 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
 <h2 id="fit-sdmpanelfe">Fit: SDMPanelFE<a class="headerlink" href="#fit-sdmpanelfe" title="Link to this heading">¶</a></h2>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdm_panel</span><span class="p">,</span> <span class="n">idata_sdm</span><span class="p">,</span> <span class="n">summary_sdm</span><span class="p">,</span> <span class="n">effects_sdm</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdm_panel</span><span class="p">,</span> <span class="n">summary_sdm</span><span class="p">,</span> <span class="n">effects_sdm</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
     <span class="n">SDMPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">summary_sdm</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">effects_sdm</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDMPanelFE trace&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sdm_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sdm_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDMPanelFE trace&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -2213,7 +2180,7 @@ Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-/tmp/ipykernel_6195/3755175936.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_6572/3515888290.py:40: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -2399,40 +2366,40 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>poverty</td>
       <td>-0.779588</td>
       <td>-0.145836</td>
       <td>-0.925424</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>rev_rating</td>
       <td>0.658412</td>
       <td>0.473328</td>
       <td>1.131740</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>num_spots</td>
       <td>0.380227</td>
       <td>0.604088</td>
       <td>0.984315</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>crowded</td>
       <td>-0.481868</td>
       <td>0.138296</td>
       <td>-0.343571</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -2558,13 +2525,13 @@ We recommend running at least 4 chains for robust computation of convergence dia
 <h2 id="fit-sdempanelfe">Fit: SDEMPanelFE<a class="headerlink" href="#fit-sdempanelfe" title="Link to this heading">¶</a></h2>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdem_panel</span><span class="p">,</span> <span class="n">idata_sdem</span><span class="p">,</span> <span class="n">summary_sdem</span><span class="p">,</span> <span class="n">effects_sdem</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdem_panel</span><span class="p">,</span> <span class="n">summary_sdem</span><span class="p">,</span> <span class="n">effects_sdem</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
     <span class="n">SDEMPanelFE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">3</span>
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">summary_sdem</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">effects_sdem</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sdem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sdem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDEMPanelFE trace&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sdem_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sdem_panel</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDEMPanelFE trace&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -2575,7 +2542,7 @@ NUTS: [lam, beta, sigma]
 Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_6195/3755175936.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_6572/3515888290.py:40: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -2761,40 +2728,40 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>poverty</td>
       <td>-0.782301</td>
       <td>-0.149689</td>
       <td>-0.931990</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>rev_rating</td>
       <td>0.654859</td>
       <td>0.420024</td>
       <td>1.074883</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>num_spots</td>
       <td>0.385399</td>
       <td>0.606900</td>
       <td>0.992299</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>crowded</td>
       <td>-0.487322</td>
       <td>0.110211</td>
       <td>-0.377111</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -2917,190 +2884,18 @@ The rhat statistic is larger than 1.01 for some parameters. This indicates probl
 </div></div><img alt="../_images/0ff7fd1723ba26670e79ab144c69673bf37dffb0ecec66932bded79d2bf11703.png" src="../_images/0ff7fd1723ba26670e79ab144c69673bf37dffb0ecec66932bded79d2bf11703.png" />
 </div>
 </div>
-<h2 id="panel-fe-spatial-specification-diagnostics-new-api">Panel FE Spatial Specification Diagnostics (New API)<a class="headerlink" href="#panel-fe-spatial-specification-diagnostics-new-api" title="Link to this heading">¶</a></h2>
-<p>For fixed-effects panel models, the new diagnostics API provides targeted LM/LR tests for omitted spatial structure.</p>
-<p>The examples below use:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">OLSPanelFE.spatial_specification_tests()</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SARPanelFE.spatial_specification_tests()</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SEMPanelFE.spatial_specification_tests()</span></code></p></li>
-</ul>
-<p>Each entry is returned as a <code class="docutils literal notranslate"><span class="pre">DiagnosticResult</span></code> with consistent fields (<code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">statistic</span></code>, <code class="docutils literal notranslate"><span class="pre">pvalue</span></code>, <code class="docutils literal notranslate"><span class="pre">extra</span></code>).</p>
-<div class="cell docutils container">
-<div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">panel_diagnostic_to_row</span><span class="p">(</span><span class="n">result</span><span class="p">):</span>
-    <span class="n">row</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;diagnostic&quot;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-        <span class="s2">&quot;statistic&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">statistic</span><span class="p">),</span>
-        <span class="s2">&quot;pvalue&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-    <span class="p">}</span>
-    <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">extra</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">extra</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">row</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">number</span><span class="p">))</span> <span class="k">else</span> <span class="n">v</span>
-    <span class="k">return</span> <span class="n">row</span>
-
-
-<span class="n">panel_spec_models</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;OLSPanelFE&quot;</span><span class="p">:</span> <span class="n">ols_panel</span><span class="p">,</span>
-    <span class="s2">&quot;SARPanelFE&quot;</span><span class="p">:</span> <span class="n">sar_panel</span><span class="p">,</span>
-    <span class="s2">&quot;SEMPanelFE&quot;</span><span class="p">:</span> <span class="n">sem_panel</span><span class="p">,</span>
-<span class="p">}</span>
-
-<span class="n">panel_spec_tables</span> <span class="o">=</span> <span class="p">{}</span>
-<span class="k">for</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">model_obj</span> <span class="ow">in</span> <span class="n">panel_spec_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">tests</span> <span class="o">=</span> <span class="n">model_obj</span><span class="o">.</span><span class="n">spatial_specification_tests</span><span class="p">()</span>
-    <span class="n">table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span><span class="n">panel_diagnostic_to_row</span><span class="p">(</span><span class="n">dr</span><span class="p">)</span> <span class="k">for</span> <span class="n">dr</span> <span class="ow">in</span> <span class="n">tests</span><span class="o">.</span><span class="n">values</span><span class="p">()])</span>
-    <span class="n">panel_spec_tables</span><span class="p">[</span><span class="n">model_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;diagnostic&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="k">for</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">table</span> <span class="ow">in</span> <span class="n">panel_spec_tables</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">model_name</span><span class="p">)</span>
-    <span class="n">display</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">()</span>
-</code></pre></div>
-</div>
-</div>
-<div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>OLSPanelFE
-
-SARPanelFE
-
-SEMPanelFE
-</code></pre></div>
-</div>
-<div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>lm_f_error</td>
-      <td>4.130593</td>
-      <td>0.042115</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>lm_f_joint</td>
-      <td>7.106416</td>
-      <td>0.028633</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>lm_f_sar</td>
-      <td>7.089408</td>
-      <td>0.007754</td>
-    </tr>
-  </tbody>
-</table>
-</div></div><div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>lm_f_error_c</td>
-      <td>9.871381e+13</td>
-      <td>0.000000</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>lr_f_sar</td>
-      <td>6.798052e+00</td>
-      <td>0.009126</td>
-    </tr>
-  </tbody>
-</table>
-</div></div><div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>lm_f_sar_c</td>
-      <td>0.002540</td>
-      <td>0.959801</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>lr_f_error</td>
-      <td>4.071431</td>
-      <td>0.043614</td>
-    </tr>
-  </tbody>
-</table>
-</div></div></div>
-</div>
 <h2 id="random-effects-panel-models">Random-Effects Panel Models<a class="headerlink" href="#random-effects-panel-models" title="Link to this heading">¶</a></h2>
 <p>The random-effects models replace deterministic unit fixed effects with latent unit intercepts <span class="math notranslate nohighlight">\(\alpha_i \sim N(0, \sigma_\alpha^2)\)</span>. That lets the notebook estimate the variance of unit heterogeneity directly and compare FE and RE behavior on the same synthetic balanced panel.</p>
 <h3 id="fit-olspanelre">Fit: OLSPanelRE<a class="headerlink" href="#fit-olspanelre" title="Link to this heading">¶</a></h3>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">ols_panel_re</span><span class="p">,</span> <span class="n">idata_ols_re</span><span class="p">,</span> <span class="n">summary_ols_re</span><span class="p">,</span> <span class="n">effects_ols_re</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">ols_panel_re</span><span class="p">,</span> <span class="n">summary_ols_re</span><span class="p">,</span> <span class="n">effects_ols_re</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
     <span class="n">OLSPanelRE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">0</span>
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">summary_ols_re</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">effects_ols_re</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_ols_re</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_ols_re</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">],</span> <span class="s2">&quot;OLSPanelRE trace&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">ols_panel_re</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">ols_panel_re</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">],</span> <span class="s2">&quot;OLSPanelRE trace&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -3112,7 +2907,7 @@ Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) t
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_6195/3755175936.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_6572/3515888290.py:40: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -3299,47 +3094,47 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>Intercept</td>
       <td>2.305741</td>
       <td>0.0</td>
       <td>2.305741</td>
+      <td>Intercept</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>poverty</td>
       <td>-0.824634</td>
       <td>0.0</td>
       <td>-0.824634</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>rev_rating</td>
       <td>0.635404</td>
       <td>0.0</td>
       <td>0.635404</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>num_spots</td>
       <td>0.418216</td>
       <td>0.0</td>
       <td>0.418216</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>crowded</td>
       <td>-0.466801</td>
       <td>0.0</td>
       <td>-0.466801</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -3433,13 +3228,13 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
 <h3 id="fit-sarpanelre">Fit: SARPanelRE<a class="headerlink" href="#fit-sarpanelre" title="Link to this heading">¶</a></h3>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sar_panel_re</span><span class="p">,</span> <span class="n">idata_sar_re</span><span class="p">,</span> <span class="n">summary_sar_re</span><span class="p">,</span> <span class="n">effects_sar_re</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sar_panel_re</span><span class="p">,</span> <span class="n">summary_sar_re</span><span class="p">,</span> <span class="n">effects_sar_re</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
     <span class="n">SARPanelRE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">0</span>
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">summary_sar_re</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">effects_sar_re</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sar_re</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sar_re</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">],</span> <span class="s2">&quot;SARPanelRE trace&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sar_panel_re</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sar_panel_re</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">],</span> <span class="s2">&quot;SARPanelRE trace&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -3451,7 +3246,7 @@ Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) t
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_6195/3755175936.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_6572/3515888290.py:40: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -3638,47 +3433,47 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>Intercept</td>
       <td>1.595543</td>
       <td>0.678241</td>
       <td>2.273784</td>
+      <td>Intercept</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>poverty</td>
       <td>-0.836770</td>
       <td>-0.355698</td>
       <td>-1.192468</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>rev_rating</td>
       <td>0.649458</td>
       <td>0.276074</td>
       <td>0.925532</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>num_spots</td>
       <td>0.396597</td>
       <td>0.168587</td>
       <td>0.565184</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>crowded</td>
       <td>-0.480148</td>
       <td>-0.204104</td>
       <td>-0.684252</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -3780,13 +3575,13 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
 <h3 id="fit-sempanelre">Fit: SEMPanelRE<a class="headerlink" href="#fit-sempanelre" title="Link to this heading">¶</a></h3>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sem_panel_re</span><span class="p">,</span> <span class="n">idata_sem_re</span><span class="p">,</span> <span class="n">summary_sem_re</span><span class="p">,</span> <span class="n">effects_sem_re</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sem_panel_re</span><span class="p">,</span> <span class="n">summary_sem_re</span><span class="p">,</span> <span class="n">effects_sem_re</span> <span class="o">=</span> <span class="n">fit_panel_model</span><span class="p">(</span>
     <span class="n">SEMPanelRE</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">panel</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="mi">0</span>
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">summary_sem_re</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">effects_sem_re</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sem_re</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sem_re</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">],</span> <span class="s2">&quot;SEMPanelRE trace&quot;</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sem_panel_re</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sem_panel_re</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_alpha&quot;</span><span class="p">],</span> <span class="s2">&quot;SEMPanelRE trace&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -3798,7 +3593,7 @@ Sampling 2 chains for 300 tune and 300 draw iterations (600 + 600 draws total) t
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 The effective sample size per chain is smaller than 100 for some parameters.  A higher number is needed for reliable rhat and ess computation. See https://arxiv.org/abs/1903.08008 for details
-/tmp/ipykernel_6195/3755175936.py:42: UserWarning: The figure layout has changed to tight
+/tmp/ipykernel_6572/3515888290.py:40: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -3985,47 +3780,47 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>Intercept</td>
       <td>2.313768</td>
       <td>0.0</td>
       <td>2.313768</td>
+      <td>Intercept</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>poverty</td>
       <td>-0.811014</td>
       <td>0.0</td>
       <td>-0.811014</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>rev_rating</td>
       <td>0.615176</td>
       <td>0.0</td>
       <td>0.615176</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>num_spots</td>
       <td>0.382180</td>
       <td>0.0</td>
       <td>0.382180</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>crowded</td>
       <td>-0.478021</td>
       <td>0.0</td>
       <td>-0.478021</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -4124,10 +3919,11 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
 </div></div><img alt="../_images/1bf2f365943a5a16b303967c750dd65c2bc27a1364f7459e8a9222f1bc79509a.png" src="../_images/1bf2f365943a5a16b303967c750dd65c2bc27a1364f7459e8a9222f1bc79509a.png" />
 </div>
 </div>
-<h2 id="matlab-style-diagnostics-across-fe-and-re-models">MATLAB-Style Diagnostics Across FE and RE Models<a class="headerlink" href="#matlab-style-diagnostics-across-fe-and-re-models" title="Link to this heading">¶</a></h2>
+<h2 id="model-comparison-waic-and-loo-across-fe-and-re-models">Model Comparison (WAIC and LOO) Across FE and RE Models<a class="headerlink" href="#model-comparison-waic-and-loo-across-fe-and-re-models" title="Link to this heading">¶</a></h2>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">panel_models</span> <span class="o">=</span> <span class="p">{</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Collect all fitted panel models for comparison</span>
+<span class="n">panel_models</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;OLSPanelFE&quot;</span><span class="p">:</span> <span class="n">ols_panel</span><span class="p">,</span>
     <span class="s2">&quot;SARPanelFE&quot;</span><span class="p">:</span> <span class="n">sar_panel</span><span class="p">,</span>
     <span class="s2">&quot;SEMPanelFE&quot;</span><span class="p">:</span> <span class="n">sem_panel</span><span class="p">,</span>
@@ -4137,255 +3933,45 @@ The effective sample size per chain is smaller than 100 for some parameters.  A 
     <span class="s2">&quot;SARPanelRE&quot;</span><span class="p">:</span> <span class="n">sar_panel_re</span><span class="p">,</span>
     <span class="s2">&quot;SEMPanelRE&quot;</span><span class="p">:</span> <span class="n">sem_panel_re</span><span class="p">,</span>
 <span class="p">}</span>
+<span class="n">idata_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">m</span><span class="o">.</span><span class="n">inference_data</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">panel_models</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
+<span class="c1"># WAIC and LOO comparison</span>
+<span class="k">for</span> <span class="n">ic</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;waic&quot;</span><span class="p">,</span> <span class="s2">&quot;loo&quot;</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cmp</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">idata_dict</span><span class="p">,</span> <span class="n">ic</span><span class="o">=</span><span class="n">ic</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;BB-pseudo-BMA&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison&quot;</span><span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">cmp</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison not available: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_last_value</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-    <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">arr</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
-
-
+<span class="c1"># Per-model IC table</span>
 <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">panel_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">het</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">heteroskedasticity_diagnostics</span><span class="p">(</span><span class="n">arch_lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
-    <span class="n">ac</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">autocorrelation_diagnostics</span><span class="p">(</span><span class="n">lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">outlier_diagnostics</span><span class="p">()</span>
-    <span class="n">pdiag</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">panel_diagnostics</span><span class="p">()</span>
-
-    <span class="n">bp</span> <span class="o">=</span> <span class="n">het</span><span class="p">[</span><span class="s2">&quot;bpagan&quot;</span><span class="p">]</span>
-    <span class="n">arch</span> <span class="o">=</span> <span class="n">het</span><span class="p">[</span><span class="s2">&quot;arch&quot;</span><span class="p">]</span>
-    <span class="n">cd</span> <span class="o">=</span> <span class="n">pdiag</span><span class="p">[</span><span class="s2">&quot;pesaran_cd&quot;</span><span class="p">]</span>
-
-    <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
-        <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
-        <span class="s2">&quot;bpagan_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">bp</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-        <span class="s2">&quot;arch_lag4_p&quot;</span><span class="p">:</span> <span class="n">_last_value</span><span class="p">(</span><span class="n">arch</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-        <span class="s2">&quot;lb_lag4_p&quot;</span><span class="p">:</span> <span class="n">_last_value</span><span class="p">(</span><span class="n">ac</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-        <span class="s2">&quot;pesaran_cd&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">cd</span><span class="o">.</span><span class="n">statistic</span><span class="p">),</span>
-        <span class="s2">&quot;pesaran_cd_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">cd</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-        <span class="s2">&quot;n_leverage_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;leverage_idx&quot;</span><span class="p">])),</span>
-        <span class="s2">&quot;n_rstudent_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;rstudent_idx&quot;</span><span class="p">])),</span>
-        <span class="s2">&quot;n_dffit_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;dffit_idx&quot;</span><span class="p">])),</span>
-        <span class="s2">&quot;n_dfbeta_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;dfbeta_idx&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
-    <span class="p">})</span>
-
-<span class="n">diag_panel_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diag_panel_table</span><span class="p">)</span>
-</code></pre></div>
-</div>
-</div>
-<div class="cell_output docutils container">
-<div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>model</th>
-      <th>bpagan_p</th>
-      <th>arch_lag4_p</th>
-      <th>lb_lag4_p</th>
-      <th>pesaran_cd</th>
-      <th>pesaran_cd_p</th>
-      <th>n_leverage_flags</th>
-      <th>n_rstudent_flags</th>
-      <th>n_dffit_flags</th>
-      <th>n_dfbeta_flags</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>OLSPanelFE</td>
-      <td>0.510665</td>
-      <td>0.109050</td>
-      <td>0.015687</td>
-      <td>-1.327236</td>
-      <td>0.184431</td>
-      <td>11</td>
-      <td>18</td>
-      <td>10</td>
-      <td>67</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>OLSPanelRE</td>
-      <td>0.756466</td>
-      <td>0.571063</td>
-      <td>0.054815</td>
-      <td>-1.193440</td>
-      <td>0.232697</td>
-      <td>14</td>
-      <td>17</td>
-      <td>16</td>
-      <td>83</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>SARPanelFE</td>
-      <td>0.492336</td>
-      <td>0.084088</td>
-      <td>0.161024</td>
-      <td>-1.314183</td>
-      <td>0.188784</td>
-      <td>11</td>
-      <td>15</td>
-      <td>13</td>
-      <td>64</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>SARPanelRE</td>
-      <td>0.840711</td>
-      <td>0.306749</td>
-      <td>0.502756</td>
-      <td>-1.275456</td>
-      <td>0.202148</td>
-      <td>14</td>
-      <td>16</td>
-      <td>12</td>
-      <td>83</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>SDEMPanelFE</td>
-      <td>0.344890</td>
-      <td>0.109966</td>
-      <td>0.025760</td>
-      <td>-1.348583</td>
-      <td>0.177471</td>
-      <td>11</td>
-      <td>15</td>
-      <td>13</td>
-      <td>68</td>
-    </tr>
-    <tr>
-      <th>5</th>
-      <td>SDMPanelFE</td>
-      <td>0.485155</td>
-      <td>0.107915</td>
-      <td>0.141401</td>
-      <td>-1.213634</td>
-      <td>0.224887</td>
-      <td>11</td>
-      <td>14</td>
-      <td>13</td>
-      <td>67</td>
-    </tr>
-    <tr>
-      <th>6</th>
-      <td>SEMPanelFE</td>
-      <td>0.578085</td>
-      <td>0.099384</td>
-      <td>0.011506</td>
-      <td>-1.317461</td>
-      <td>0.187684</td>
-      <td>11</td>
-      <td>18</td>
-      <td>11</td>
-      <td>68</td>
-    </tr>
-    <tr>
-      <th>7</th>
-      <td>SEMPanelRE</td>
-      <td>0.808052</td>
-      <td>0.753116</td>
-      <td>0.016362</td>
-      <td>-1.160278</td>
-      <td>0.245936</td>
-      <td>14</td>
-      <td>17</td>
-      <td>16</td>
-      <td>77</td>
-    </tr>
-  </tbody>
-</table>
-</div></div></div>
-</div>
-<h2 id="model-comparison-waic-and-loo-across-fe-and-re-models">Model Comparison (WAIC and LOO) Across FE and RE Models<a class="headerlink" href="#model-comparison-waic-and-loo-across-fe-and-re-models" title="Link to this heading">¶</a></h2>
-<div class="cell docutils container">
-<div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">idata_dict</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;OLSPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_ols</span><span class="p">,</span>
-    <span class="s2">&quot;SARPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_sar</span><span class="p">,</span>
-    <span class="s2">&quot;SEMPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_sem</span><span class="p">,</span>
-    <span class="s2">&quot;SDMPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_sdm</span><span class="p">,</span>
-    <span class="s2">&quot;SDEMPanelFE&quot;</span><span class="p">:</span> <span class="n">idata_sdem</span><span class="p">,</span>
-    <span class="s2">&quot;OLSPanelRE&quot;</span><span class="p">:</span> <span class="n">idata_ols_re</span><span class="p">,</span>
-    <span class="s2">&quot;SARPanelRE&quot;</span><span class="p">:</span> <span class="n">idata_sar_re</span><span class="p">,</span>
-    <span class="s2">&quot;SEMPanelRE&quot;</span><span class="p">:</span> <span class="n">idata_sem_re</span><span class="p">,</span>
-<span class="p">}</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">):</span>
-    <span class="k">if</span> <span class="s2">&quot;log_likelihood&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">idata</span><span class="o">.</span><span class="n">groups</span><span class="p">():</span>
-        <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">idata</span><span class="o">.</span><span class="n">log_likelihood</span><span class="o">.</span><span class="n">data_vars</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mi">0</span>
-
-
-<span class="n">valid_for_compare</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">idata</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">)}</span>
-<span class="n">missing_loglik</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">)]</span>
-
-<span class="k">if</span> <span class="n">missing_loglik</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Skipped (no log_likelihood group):&quot;</span><span class="p">,</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">missing_loglik</span><span class="p">))</span>
-
-<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">valid_for_compare</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Need at least two models with valid log_likelihood for WAIC/LOO compare.&quot;</span><span class="p">)</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="k">for</span> <span class="n">ic</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;waic&quot;</span><span class="p">,</span> <span class="s2">&quot;loo&quot;</span><span class="p">):</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">cmp</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">valid_for_compare</span><span class="p">,</span> <span class="n">ic</span><span class="o">=</span><span class="n">ic</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;BB-pseudo-BMA&quot;</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison&quot;</span><span class="p">)</span>
-            <span class="n">display</span><span class="p">(</span><span class="n">cmp</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison not available: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># Always provide per-model IC attempts so the cell remains informative.</span>
-<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">model</span> <span class="ow">in</span> <span class="n">panel_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">inference_data</span>
     <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">}</span>
-
     <span class="k">try</span><span class="p">:</span>
         <span class="n">waic_res</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">waic</span><span class="p">(</span><span class="n">idata</span><span class="p">)</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">waic_res</span><span class="o">.</span><span class="n">elpd_waic</span><span class="p">)</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">waic_res</span><span class="o">.</span><span class="n">p_waic</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;waic_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-
     <span class="k">try</span><span class="p">:</span>
         <span class="n">loo_res</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">loo</span><span class="p">(</span><span class="n">idata</span><span class="p">)</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">loo_res</span><span class="o">.</span><span class="n">elpd_loo</span><span class="p">)</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">loo_res</span><span class="o">.</span><span class="n">p_loo</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;loo_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-
     <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
 
-<span class="n">ic_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">ic_table</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Skipped (no log_likelihood group): SEMPanelRE
-WAIC comparison
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>WAIC comparison
+
 LOO comparison
 </code></pre></div>
 </div>
@@ -4407,12 +3993,14 @@ See http://arxiv.org/abs/1507.04544 for details
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
 See http://arxiv.org/abs/1507.04544 for details
   warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:782: UserWarning: Estimated shape parameter of Pareto distribution is greater than 0.64 for one or more samples. You should consider using a more robust model, this is because importance sampling is less likely to work well if the marginal posterior and LOO posterior are very different. This is more likely to happen with a non-robust model and highly influential observations.
   warnings.warn(
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:782: UserWarning: Estimated shape parameter of Pareto distribution is greater than 0.64 for one or more samples. You should consider using a more robust model, this is because importance sampling is less likely to work well if the marginal posterior and LOO posterior are very different. This is more likely to happen with a non-robust model and highly influential observations.
   warnings.warn(
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
-See http://arxiv.org/abs/1507.04544 for details
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:782: UserWarning: Estimated shape parameter of Pareto distribution is greater than 0.64 for one or more samples. You should consider using a more robust model, this is because importance sampling is less likely to work well if the marginal posterior and LOO posterior are very different. This is more likely to happen with a non-robust model and highly influential observations.
   warnings.warn(
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
 See http://arxiv.org/abs/1507.04544 for details
@@ -4422,6 +4010,14 @@ See http://arxiv.org/abs/1507.04544 for details
   warnings.warn(
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
 See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:782: UserWarning: Estimated shape parameter of Pareto distribution is greater than 0.64 for one or more samples. You should consider using a more robust model, this is because importance sampling is less likely to work well if the marginal posterior and LOO posterior are very different. This is more likely to happen with a non-robust model and highly influential observations.
   warnings.warn(
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
 See http://arxiv.org/abs/1507.04544 for details
@@ -4466,38 +4062,38 @@ See http://arxiv.org/abs/1507.04544 for details
   </thead>
   <tbody>
     <tr>
-      <th>SDMPanelFE</th>
+      <th>SDEMPanelFE</th>
       <td>0</td>
-      <td>-339.395304</td>
-      <td>9.311013</td>
+      <td>-339.566775</td>
+      <td>8.929896</td>
       <td>0.000000</td>
-      <td>3.437313e-01</td>
-      <td>11.976780</td>
+      <td>5.327694e-01</td>
+      <td>11.520440</td>
       <td>0.000000</td>
       <td>True</td>
       <td>log</td>
     </tr>
     <tr>
-      <th>SDEMPanelFE</th>
+      <th>SDMPanelFE</th>
       <td>1</td>
-      <td>-339.566775</td>
-      <td>8.929896</td>
-      <td>0.171472</td>
-      <td>3.080544e-01</td>
-      <td>11.891572</td>
-      <td>0.561971</td>
+      <td>-340.533526</td>
+      <td>9.307454</td>
+      <td>0.966750</td>
+      <td>2.042226e-01</td>
+      <td>11.563395</td>
+      <td>0.560832</td>
       <td>True</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SARPanelFE</th>
       <td>2</td>
-      <td>-340.223552</td>
-      <td>5.850386</td>
-      <td>0.828249</td>
-      <td>2.914517e-01</td>
-      <td>11.839531</td>
-      <td>2.822815</td>
+      <td>-341.718297</td>
+      <td>5.848315</td>
+      <td>2.151521</td>
+      <td>1.633164e-01</td>
+      <td>11.421236</td>
+      <td>2.967481</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -4506,10 +4102,10 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>3</td>
       <td>-343.455754</td>
       <td>5.710553</td>
-      <td>4.060451</td>
-      <td>4.034168e-02</td>
-      <td>11.965474</td>
-      <td>3.468584</td>
+      <td>3.888979</td>
+      <td>7.097398e-02</td>
+      <td>11.560071</td>
+      <td>3.624481</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -4518,34 +4114,46 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>4</td>
       <td>-345.359753</td>
       <td>5.139489</td>
-      <td>5.964449</td>
-      <td>1.642097e-02</td>
-      <td>12.068226</td>
-      <td>3.917338</td>
+      <td>5.792978</td>
+      <td>2.871751e-02</td>
+      <td>11.640209</td>
+      <td>4.151616</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SARPanelRE</th>
       <td>5</td>
-      <td>-393.614756</td>
-      <td>33.745732</td>
-      <td>54.219452</td>
-      <td>2.523676e-14</td>
-      <td>12.051345</td>
-      <td>7.290140</td>
+      <td>-395.935964</td>
+      <td>33.745352</td>
+      <td>56.369189</td>
+      <td>1.141790e-18</td>
+      <td>11.432671</td>
+      <td>7.301554</td>
+      <td>True</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SEMPanelRE</th>
+      <td>6</td>
+      <td>-400.764837</td>
+      <td>33.331427</td>
+      <td>61.198062</td>
+      <td>7.966814e-21</td>
+      <td>11.609964</td>
+      <td>7.857173</td>
       <td>True</td>
       <td>log</td>
     </tr>
     <tr>
       <th>OLSPanelRE</th>
-      <td>6</td>
+      <td>7</td>
       <td>-401.533418</td>
       <td>36.094738</td>
-      <td>62.138114</td>
-      <td>7.432457e-18</td>
-      <td>12.392672</td>
-      <td>7.541410</td>
+      <td>61.966643</td>
+      <td>2.336558e-20</td>
+      <td>11.746626</td>
+      <td>7.630282</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -4582,38 +4190,38 @@ See http://arxiv.org/abs/1507.04544 for details
   </thead>
   <tbody>
     <tr>
-      <th>SDMPanelFE</th>
+      <th>SDEMPanelFE</th>
       <td>0</td>
-      <td>-339.488031</td>
-      <td>9.403740</td>
+      <td>-339.644530</td>
+      <td>9.007651</td>
       <td>0.000000</td>
-      <td>3.354272e-01</td>
-      <td>11.728670</td>
+      <td>5.248837e-01</td>
+      <td>11.184114</td>
       <td>0.000000</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
-      <th>SDEMPanelFE</th>
+      <th>SDMPanelFE</th>
       <td>1</td>
-      <td>-339.644530</td>
-      <td>9.007651</td>
-      <td>0.156500</td>
-      <td>3.098250e-01</td>
-      <td>11.663503</td>
-      <td>0.567503</td>
+      <td>-340.626175</td>
+      <td>9.400104</td>
+      <td>0.981645</td>
+      <td>1.960571e-01</td>
+      <td>11.259284</td>
+      <td>0.566247</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SARPanelFE</th>
       <td>2</td>
-      <td>-340.270739</td>
-      <td>5.897573</td>
-      <td>0.782708</td>
-      <td>3.004283e-01</td>
-      <td>11.621131</td>
-      <td>2.826137</td>
+      <td>-341.765300</td>
+      <td>5.895318</td>
+      <td>2.120770</td>
+      <td>1.736490e-01</td>
+      <td>11.029927</td>
+      <td>2.967288</td>
       <td>False</td>
       <td>log</td>
     </tr>
@@ -4622,10 +4230,10 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>3</td>
       <td>-343.497736</td>
       <td>5.752535</td>
-      <td>4.009705</td>
-      <td>3.713335e-02</td>
-      <td>11.874538</td>
-      <td>3.470943</td>
+      <td>3.853206</td>
+      <td>7.093754e-02</td>
+      <td>11.289463</td>
+      <td>3.629070</td>
       <td>False</td>
       <td>log</td>
     </tr>
@@ -4634,34 +4242,46 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>4</td>
       <td>-345.392961</td>
       <td>5.172696</td>
-      <td>5.904930</td>
-      <td>1.718608e-02</td>
-      <td>11.886657</td>
-      <td>3.918013</td>
+      <td>5.748430</td>
+      <td>3.447263e-02</td>
+      <td>11.384721</td>
+      <td>4.156918</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SARPanelRE</th>
       <td>5</td>
-      <td>-394.241540</td>
-      <td>34.372516</td>
-      <td>54.753509</td>
-      <td>1.470550e-17</td>
-      <td>11.974323</td>
-      <td>7.290470</td>
+      <td>-396.559968</td>
+      <td>34.369355</td>
+      <td>56.915437</td>
+      <td>1.991022e-20</td>
+      <td>11.326781</td>
+      <td>7.297245</td>
+      <td>True</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SEMPanelRE</th>
+      <td>6</td>
+      <td>-401.424738</td>
+      <td>33.991328</td>
+      <td>61.780208</td>
+      <td>2.673438e-21</td>
+      <td>11.648846</td>
+      <td>7.851546</td>
       <td>True</td>
       <td>log</td>
     </tr>
     <tr>
       <th>OLSPanelRE</th>
-      <td>6</td>
+      <td>7</td>
       <td>-402.168361</td>
       <td>36.729682</td>
-      <td>62.680331</td>
-      <td>2.089307e-21</td>
-      <td>12.431179</td>
-      <td>7.557007</td>
+      <td>62.523831</td>
+      <td>4.004419e-22</td>
+      <td>11.761386</td>
+      <td>7.646004</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -4690,8 +4310,6 @@ See http://arxiv.org/abs/1507.04544 for details
       <th>p_waic</th>
       <th>elpd_loo</th>
       <th>p_loo</th>
-      <th>waic_error</th>
-      <th>loo_error</th>
     </tr>
   </thead>
   <tbody>
@@ -4702,8 +4320,6 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>5.139489</td>
       <td>-345.392961</td>
       <td>5.172696</td>
-      <td>NaN</td>
-      <td>NaN</td>
     </tr>
     <tr>
       <th>1</th>
@@ -4712,28 +4328,22 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>36.094738</td>
       <td>-402.168361</td>
       <td>36.729682</td>
-      <td>NaN</td>
-      <td>NaN</td>
     </tr>
     <tr>
       <th>2</th>
       <td>SARPanelFE</td>
-      <td>-340.223552</td>
-      <td>5.850386</td>
-      <td>-340.270739</td>
-      <td>5.897573</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <td>-341.718297</td>
+      <td>5.848315</td>
+      <td>-341.765300</td>
+      <td>5.895318</td>
     </tr>
     <tr>
       <th>3</th>
       <td>SARPanelRE</td>
-      <td>-393.614756</td>
-      <td>33.745732</td>
-      <td>-394.241540</td>
-      <td>34.372516</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <td>-395.935964</td>
+      <td>33.745352</td>
+      <td>-396.559968</td>
+      <td>34.369355</td>
     </tr>
     <tr>
       <th>4</th>
@@ -4742,18 +4352,14 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>8.929896</td>
       <td>-339.644530</td>
       <td>9.007651</td>
-      <td>NaN</td>
-      <td>NaN</td>
     </tr>
     <tr>
       <th>5</th>
       <td>SDMPanelFE</td>
-      <td>-339.395304</td>
-      <td>9.311013</td>
-      <td>-339.488031</td>
-      <td>9.403740</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <td>-340.533526</td>
+      <td>9.307454</td>
+      <td>-340.626175</td>
+      <td>9.400104</td>
     </tr>
     <tr>
       <th>6</th>
@@ -4762,18 +4368,14 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>5.710553</td>
       <td>-343.497736</td>
       <td>5.752535</td>
-      <td>NaN</td>
-      <td>NaN</td>
     </tr>
     <tr>
       <th>7</th>
       <td>SEMPanelRE</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>log likelihood not found in inference data object</td>
-      <td>log likelihood not found in inference data object</td>
+      <td>-400.764837</td>
+      <td>33.331427</td>
+      <td>-401.424738</td>
+      <td>33.991328</td>
     </tr>
   </tbody>
 </table>

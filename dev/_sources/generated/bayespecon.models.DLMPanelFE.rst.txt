@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~DLMPanelFE.__init__
-      ~DLMPanelFE.autocorrelation_diagnostics
-      ~DLMPanelFE.diagnostics
       ~DLMPanelFE.fit
       ~DLMPanelFE.fitted_values
-      ~DLMPanelFE.heteroskedasticity_diagnostics
-      ~DLMPanelFE.outlier_diagnostics
-      ~DLMPanelFE.panel_diagnostics
-      ~DLMPanelFE.regression_diagnostics
       ~DLMPanelFE.residuals
       ~DLMPanelFE.spatial_effects
       ~DLMPanelFE.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~DLMPanelFE.inference_data
       ~DLMPanelFE.pymc_model
    
    

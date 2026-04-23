@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~SpatialModel.__init__
-      ~SpatialModel.autocorrelation_diagnostics
-      ~SpatialModel.diagnostics
       ~SpatialModel.fit
       ~SpatialModel.fitted_values
-      ~SpatialModel.heteroskedasticity_diagnostics
-      ~SpatialModel.moran_test
-      ~SpatialModel.outlier_diagnostics
-      ~SpatialModel.regression_diagnostics
       ~SpatialModel.residuals
       ~SpatialModel.spatial_effects
       ~SpatialModel.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~SpatialModel.inference_data
       ~SpatialModel.pymc_model
    
    

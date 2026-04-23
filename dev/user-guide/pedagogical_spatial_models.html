@@ -435,6 +435,16 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ols-what-could-go-wrong" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>0) OLS:<wbr> What could go wrong?</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#slx-spatially-lagged-covariates-only" class="md-nav__link">
     
     <span class="md-ellipsis">
@@ -485,10 +495,46 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#spatial-specification-diagnostics-new-api" class="md-nav__link">
+  <a href="#model-comparison" class="md-nav__link">
     
     <span class="md-ellipsis">
-      <span>Spatial Specification Diagnostics <wbr>(New API)</span>
+      <span>Model Comparison</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bayes-factor-model-comparison" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Bayes Factor Model Comparison</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bayes Factor Model Comparison">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bridge-sampling-vs-bic" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Bridge Sampling vs.<wbr> BIC</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bayesian-lm-specification-tests" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Bayesian LM Specification Tests</span>
     </span>
   </a>
   
@@ -509,16 +555,6 @@
     
     <span class="md-ellipsis">
       <span>Model Comparison:<wbr> WAIC and LOO</span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#matlab-style-residual-diagnostics-per-model" class="md-nav__link">
-    
-    <span class="md-ellipsis">
-      <span>MATLAB-<wbr>Style Residual Diagnostics <wbr>(Per Model)</span>
     </span>
   </a>
   
@@ -615,6 +651,30 @@
   
   <span class="md-ellipsis">
     <span>Nonlinear Panel Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="bayesian_lmtests.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Bayesian Spatial Diagnostics</span>
     
   </span>
   
@@ -1001,6 +1061,16 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ols-what-could-go-wrong" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>0) OLS:<wbr> What could go wrong?</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#slx-spatially-lagged-covariates-only" class="md-nav__link">
     
     <span class="md-ellipsis">
@@ -1051,10 +1121,46 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#spatial-specification-diagnostics-new-api" class="md-nav__link">
+  <a href="#model-comparison" class="md-nav__link">
     
     <span class="md-ellipsis">
-      <span>Spatial Specification Diagnostics <wbr>(New API)</span>
+      <span>Model Comparison</span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bayes-factor-model-comparison" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Bayes Factor Model Comparison</span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bayes Factor Model Comparison">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bridge-sampling-vs-bic" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Bridge Sampling vs.<wbr> BIC</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bayesian-lm-specification-tests" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Bayesian LM Specification Tests</span>
     </span>
   </a>
   
@@ -1075,16 +1181,6 @@
     
     <span class="md-ellipsis">
       <span>Model Comparison:<wbr> WAIC and LOO</span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#matlab-style-residual-diagnostics-per-model" class="md-nav__link">
-    
-    <span class="md-ellipsis">
-      <span>MATLAB-<wbr>Style Residual Diagnostics <wbr>(Per Model)</span>
     </span>
   </a>
   
@@ -1163,12 +1259,21 @@
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">arviz</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">az</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">geodatasets</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">geopandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">gpd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">display</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">SLX</span><span class="p">,</span> <span class="n">SAR</span><span class="p">,</span> <span class="n">SEM</span><span class="p">,</span> <span class="n">SDM</span><span class="p">,</span> <span class="n">SDEM</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">OLS</span><span class="p">,</span> <span class="n">SLX</span><span class="p">,</span> <span class="n">SAR</span><span class="p">,</span> <span class="n">SEM</span><span class="p">,</span> <span class="n">SDM</span><span class="p">,</span> <span class="n">SDEM</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon.diagnostics</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">bayesian_lm_lag_test</span><span class="p">,</span>
+    <span class="n">bayesian_lm_error_test</span><span class="p">,</span>
+    <span class="n">bayesian_lm_wx_test</span><span class="p">,</span>
+    <span class="n">bayesian_lm_sdm_joint_test</span><span class="p">,</span>
+    <span class="n">bayesian_lm_slx_error_joint_test</span><span class="p">,</span>
+    <span class="n">summarize_bayesian_lm_test</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon.diagnostics.bayesfactor</span><span class="w"> </span><span class="kn">import</span> <span class="n">bayes_factor_compare_models</span>
 
 <span class="n">az</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s2">&quot;arviz-white&quot;</span><span class="p">)</span>
 </code></pre></div>
@@ -1215,14 +1320,13 @@ Predictors: [&#39;poverty&#39;, &#39;rev_rating&#39;, &#39;num_spots&#39;, &#39;
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">fit_and_report</span><span class="p">(</span><span class="n">model_cls</span><span class="p">,</span> <span class="n">formula</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">42</span><span class="p">):</span>
-    <span class="n">model</span> <span class="o">=</span> <span class="n">model_cls</span><span class="p">(</span>
-        <span class="n">formula</span><span class="o">=</span><span class="n">formula</span><span class="p">,</span>
-        <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span>
-        <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
-        <span class="n">logdet_method</span><span class="o">=</span><span class="s2">&quot;eigenvalue&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fit a spatial model and return (model, summary, effects_df).</span>
 
-    <span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+<span class="sd">    Uses minimal MCMC settings for pedagogical demonstration.</span>
+<span class="sd">    Increase draws/tune for real analyses.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">model_cls</span><span class="p">(</span><span class="n">formula</span><span class="o">=</span><span class="n">formula</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">logdet_method</span><span class="o">=</span><span class="s2">&quot;eigenvalue&quot;</span><span class="p">)</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
         <span class="n">draws</span><span class="o">=</span><span class="n">draws</span><span class="p">,</span>
         <span class="n">tune</span><span class="o">=</span><span class="n">tune</span><span class="p">,</span>
         <span class="n">chains</span><span class="o">=</span><span class="n">chains</span><span class="p">,</span>
@@ -1231,17 +1335,9 @@ Predictors: [&#39;poverty&#39;, &#39;rev_rating&#39;, &#39;num_spots&#39;, &#39;
         <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">idata_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;log_likelihood&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
     <span class="p">)</span>
-
     <span class="n">summary</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
-    <span class="n">effects</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">()</span>
-    <span class="n">effects_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
-        <span class="s2">&quot;feature&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;feature_names&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;direct&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;direct&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;indirect&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;indirect&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;total&quot;</span><span class="p">:</span> <span class="n">effects</span><span class="p">[</span><span class="s2">&quot;total&quot;</span><span class="p">],</span>
-    <span class="p">})</span>
-
-    <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">idata</span><span class="p">,</span> <span class="n">summary</span><span class="p">,</span> <span class="n">effects_df</span>
+    <span class="n">effects_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">summary</span><span class="p">,</span> <span class="n">effects_df</span>
 </code></pre></div>
 </div>
 </div>
@@ -1255,15 +1351,14 @@ Predictors: [&#39;poverty&#39;, &#39;rev_rating&#39;, &#39;num_spots&#39;, &#39;
 </ul>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">diagnostics_table</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">):</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">diagnostics_table</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Show key MCMC diagnostics for the given parameters.&quot;&quot;&quot;</span>
     <span class="n">cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;sd&quot;</span><span class="p">,</span> <span class="s2">&quot;ess_bulk&quot;</span><span class="p">,</span> <span class="s2">&quot;ess_tail&quot;</span><span class="p">,</span> <span class="s2">&quot;r_hat&quot;</span><span class="p">]</span>
     <span class="k">return</span> <span class="n">az</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="n">var_names</span><span class="p">,</span> <span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)[</span><span class="n">cols</span><span class="p">]</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">show_trace</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="p">,</span> <span class="n">title</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Plot trace plots for the given parameters.&quot;&quot;&quot;</span>
     <span class="n">az</span><span class="o">.</span><span class="n">plot_trace</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="n">var_names</span><span class="p">)</span>
     <span class="n">plt</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="mf">1.02</span><span class="p">)</span>
     <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
@@ -1271,6 +1366,151 @@ Predictors: [&#39;poverty&#39;, &#39;rev_rating&#39;, &#39;num_spots&#39;, &#39;
 </code></pre></div>
 </div>
 </div>
+</div>
+<h2 id="ols-what-could-go-wrong">0) OLS: What could go wrong?<a class="headerlink" href="#ols-what-could-go-wrong" title="Link to this heading">¶</a></h2>
+<p>Model:</p>
+<div class="math notranslate nohighlight">
+\[
+y = X\beta + \epsilon
+\]</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">ols</span> <span class="o">=</span> <span class="n">OLS</span><span class="p">(</span>
+    <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
+    <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
+    <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">olsfit</span> <span class="o">=</span> <span class="n">ols</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+    <span class="n">draws</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">target_accept</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+    <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">idata_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;log_likelihood&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+<span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [beta, sigma]
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
+  return 0.5 * np.dot(x, v_out)
+Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws total) took 17 seconds.
+</code></pre></div>
+</div>
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">ols</span><span class="o">.</span><span class="n">summary</span><span class="p">()</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>mean</th>
+      <th>sd</th>
+      <th>hdi_3%</th>
+      <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Intercept</th>
+      <td>-3.922</td>
+      <td>87.414</td>
+      <td>-173.156</td>
+      <td>159.941</td>
+      <td>3.412</td>
+      <td>2.274</td>
+      <td>660.0</td>
+      <td>745.0</td>
+      <td>1.00</td>
+    </tr>
+    <tr>
+      <th>poverty</th>
+      <td>0.272</td>
+      <td>0.327</td>
+      <td>-0.297</td>
+      <td>0.922</td>
+      <td>0.010</td>
+      <td>0.008</td>
+      <td>984.0</td>
+      <td>1007.0</td>
+      <td>1.00</td>
+    </tr>
+    <tr>
+      <th>rev_rating</th>
+      <td>0.790</td>
+      <td>0.921</td>
+      <td>-1.044</td>
+      <td>2.502</td>
+      <td>0.036</td>
+      <td>0.024</td>
+      <td>669.0</td>
+      <td>794.0</td>
+      <td>1.00</td>
+    </tr>
+    <tr>
+      <th>num_spots</th>
+      <td>0.120</td>
+      <td>0.024</td>
+      <td>0.079</td>
+      <td>0.164</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>1381.0</td>
+      <td>1128.0</td>
+      <td>1.00</td>
+    </tr>
+    <tr>
+      <th>crowded</th>
+      <td>-2.295</td>
+      <td>0.902</td>
+      <td>-4.033</td>
+      <td>-0.665</td>
+      <td>0.027</td>
+      <td>0.023</td>
+      <td>1150.0</td>
+      <td>1066.0</td>
+      <td>1.00</td>
+    </tr>
+    <tr>
+      <th>sigma</th>
+      <td>26.398</td>
+      <td>2.131</td>
+      <td>22.378</td>
+      <td>30.346</td>
+      <td>0.057</td>
+      <td>0.055</td>
+      <td>1389.0</td>
+      <td>1035.0</td>
+      <td>1.01</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
 </div>
 <h2 id="slx-spatially-lagged-covariates-only">1) SLX: Spatially Lagged Covariates Only<a class="headerlink" href="#slx-spatially-lagged-covariates-only" title="Link to this heading">¶</a></h2>
 <p>Model:</p>
@@ -1286,7 +1526,7 @@ y = X\beta + WX\theta + \epsilon
 </ul>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">slx</span><span class="p">,</span> <span class="n">idata_slx</span><span class="p">,</span> <span class="n">summary_slx</span><span class="p">,</span> <span class="n">effects_slx</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">slx</span><span class="p">,</span> <span class="n">summary_slx</span><span class="p">,</span> <span class="n">effects_slx</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
     <span class="n">SLX</span><span class="p">,</span>
     <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
     <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
@@ -1476,40 +1716,40 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>poverty</td>
       <td>-0.674834</td>
       <td>1.183429</td>
       <td>0.508595</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>rev_rating</td>
       <td>0.342909</td>
       <td>-1.762965</td>
       <td>-1.420056</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>num_spots</td>
       <td>0.020759</td>
       <td>0.201125</td>
       <td>0.221883</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>crowded</td>
       <td>-1.029607</td>
       <td>-1.434761</td>
       <td>-2.464368</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -1517,9 +1757,9 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">idata_slx</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_slx</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_slx</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SLX Trace: sigma&quot;</span><span class="p">)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">slx</span><span class="o">.</span><span class="n">inference_data</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">slx</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">slx</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SLX Trace: sigma&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -1632,7 +1872,7 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
     </tr>
   </tbody>
 </table>
-</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_6811/3308626596.py:12: UserWarning: The figure layout has changed to tight
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7124/3581438262.py:11: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -1653,7 +1893,7 @@ y = \rho Wy + X\beta + \epsilon
 </ul>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sar</span><span class="p">,</span> <span class="n">idata_sar</span><span class="p">,</span> <span class="n">summary_sar</span><span class="p">,</span> <span class="n">effects_sar</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sar</span><span class="p">,</span> <span class="n">summary_sar</span><span class="p">,</span> <span class="n">effects_sar</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
     <span class="n">SAR</span><span class="p">,</span>
     <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
     <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
@@ -1809,47 +2049,47 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>Intercept</td>
       <td>-45.966610</td>
       <td>-31.787402</td>
       <td>-77.754013</td>
+      <td>Intercept</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>poverty</td>
       <td>0.105276</td>
       <td>0.072802</td>
       <td>0.178078</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>rev_rating</td>
       <td>0.961842</td>
       <td>0.665145</td>
       <td>1.626987</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>num_spots</td>
       <td>0.080965</td>
       <td>0.055990</td>
       <td>0.136955</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>crowded</td>
       <td>-1.841092</td>
       <td>-1.273175</td>
       <td>-3.114267</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -1857,9 +2097,9 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sar</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SAR Trace: rho, sigma&quot;</span><span class="p">)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">sar</span><span class="o">.</span><span class="n">inference_data</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sar</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sar</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SAR Trace: rho, sigma&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -1948,7 +2188,7 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
     </tr>
   </tbody>
 </table>
-</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_6811/3308626596.py:12: UserWarning: The figure layout has changed to tight
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7124/3581438262.py:11: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -1969,7 +2209,7 @@ y = X\beta + u, \quad u = \lambda Wu + \epsilon
 </ul>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sem</span><span class="p">,</span> <span class="n">idata_sem</span><span class="p">,</span> <span class="n">summary_sem</span><span class="p">,</span> <span class="n">effects_sem</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sem</span><span class="p">,</span> <span class="n">summary_sem</span><span class="p">,</span> <span class="n">effects_sem</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
     <span class="n">SEM</span><span class="p">,</span>
     <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
     <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
@@ -2126,47 +2366,47 @@ There were 8 divergences after tuning. Increase `target_accept` or reparameteriz
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>Intercept</td>
       <td>-25.897833</td>
       <td>0.0</td>
       <td>-25.897833</td>
+      <td>Intercept</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>poverty</td>
       <td>-0.129780</td>
       <td>0.0</td>
       <td>-0.129780</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>rev_rating</td>
       <td>1.111085</td>
       <td>0.0</td>
       <td>1.111085</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>num_spots</td>
       <td>0.071510</td>
       <td>0.0</td>
       <td>0.071510</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>crowded</td>
       <td>-1.838412</td>
       <td>0.0</td>
       <td>-1.838412</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -2174,8 +2414,9 @@ There were 8 divergences after tuning. Increase `target_accept` or reparameteriz
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SEM Trace: lam, sigma&quot;</span><span class="p">)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">sem</span><span class="o">.</span><span class="n">inference_data</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sem</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sem</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SEM Trace: lam, sigma&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -2264,10 +2505,11 @@ There were 8 divergences after tuning. Increase `target_accept` or reparameteriz
     </tr>
   </tbody>
 </table>
-</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_6811/3308626596.py:12: UserWarning: The figure layout has changed to tight
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7124/3581438262.py:11: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
+<img alt="../_images/2f143f8769928f44a2033d9ba415862f6220cb187fd7ed743bde80b722388352.png" src="../_images/2f143f8769928f44a2033d9ba415862f6220cb187fd7ed743bde80b722388352.png" />
 <img alt="../_images/6a28908d2d5530f151732e007786974efcce66405f8efc7a4a22feabc786ab52.png" src="../_images/6a28908d2d5530f151732e007786974efcce66405f8efc7a4a22feabc786ab52.png" />
 </div>
 </div>
@@ -2284,7 +2526,7 @@ y = \rho Wy + X\beta + WX\theta + \epsilon
 </ul>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdm</span><span class="p">,</span> <span class="n">idata_sdm</span><span class="p">,</span> <span class="n">summary_sdm</span><span class="p">,</span> <span class="n">effects_sdm</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdm</span><span class="p">,</span> <span class="n">summary_sdm</span><span class="p">,</span> <span class="n">effects_sdm</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
     <span class="n">SDM</span><span class="p">,</span>
     <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
     <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
@@ -2488,40 +2730,40 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>poverty</td>
       <td>-0.641021</td>
       <td>1.077593</td>
       <td>0.436572</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>rev_rating</td>
       <td>0.298605</td>
       <td>-2.398687</td>
       <td>-2.100081</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>num_spots</td>
       <td>0.026245</td>
       <td>0.213668</td>
       <td>0.239914</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>crowded</td>
       <td>-1.103543</td>
       <td>-1.485779</td>
       <td>-2.589322</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -2529,9 +2771,9 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sdm</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDM Trace: rho, sigma&quot;</span><span class="p">)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">sdm</span><span class="o">.</span><span class="n">inference_data</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sdm</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sdm</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;rho&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDM Trace: rho, sigma&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -2652,7 +2894,7 @@ Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws tota
     </tr>
   </tbody>
 </table>
-</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_6811/3308626596.py:12: UserWarning: The figure layout has changed to tight
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7124/3581438262.py:11: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
@@ -2673,7 +2915,7 @@ y = X\beta + WX\theta + u, \quad u = \lambda Wu + \epsilon
 </ul>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdem</span><span class="p">,</span> <span class="n">idata_sdem</span><span class="p">,</span> <span class="n">summary_sdem</span><span class="p">,</span> <span class="n">effects_sdem</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">sdem</span><span class="p">,</span> <span class="n">summary_sdem</span><span class="p">,</span> <span class="n">effects_sdem</span> <span class="o">=</span> <span class="n">fit_and_report</span><span class="p">(</span>
     <span class="n">SDEM</span><span class="p">,</span>
     <span class="n">formula</span><span class="o">=</span><span class="s2">&quot;price_pp ~ poverty + rev_rating + num_spots + crowded&quot;</span><span class="p">,</span>
     <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span>
@@ -2692,7 +2934,7 @@ NUTS: [lam, beta, sigma]
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws total) took 31 seconds.
+Sampling 4 chains for 400 tune and 400 draw iterations (1_600 + 1_600 draws total) took 32 seconds.
 There were 7 divergences after tuning. Increase `target_accept` or reparameterize.
 </code></pre></div>
 </div>
@@ -2878,40 +3120,40 @@ There were 7 divergences after tuning. Increase `target_accept` or reparameteriz
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>feature</th>
       <th>direct</th>
       <th>indirect</th>
       <th>total</th>
+      <th>feature_names</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>poverty</td>
       <td>-0.657320</td>
       <td>0.992134</td>
       <td>0.334814</td>
+      <td>poverty</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>rev_rating</td>
       <td>0.264837</td>
       <td>-2.300681</td>
       <td>-2.035844</td>
+      <td>rev_rating</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>num_spots</td>
       <td>0.027076</td>
       <td>0.188380</td>
       <td>0.215457</td>
+      <td>num_spots</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>crowded</td>
       <td>-1.062503</td>
       <td>-1.672535</td>
       <td>-2.735037</td>
+      <td>crowded</td>
     </tr>
   </tbody>
 </table>
@@ -2919,8 +3161,9 @@ There were 7 divergences after tuning. Increase `target_accept` or reparameteriz
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">idata_sdem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
-<span class="n">show_trace</span><span class="p">(</span><span class="n">idata_sdem</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDEM Trace: lam, sigma&quot;</span><span class="p">)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">az</span><span class="o">.</span><span class="n">plot_forest</span><span class="p">(</span><span class="n">sdem</span><span class="o">.</span><span class="n">inference_data</span><span class="p">)</span>
+<span class="n">display</span><span class="p">(</span><span class="n">diagnostics_table</span><span class="p">(</span><span class="n">sdem</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">]))</span>
+<span class="n">show_trace</span><span class="p">(</span><span class="n">sdem</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;lam&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">],</span> <span class="s2">&quot;SDEM Trace: lam, sigma&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -3041,67 +3284,67 @@ There were 7 divergences after tuning. Increase `target_accept` or reparameteriz
     </tr>
   </tbody>
 </table>
-</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_6811/3308626596.py:12: UserWarning: The figure layout has changed to tight
+</div></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7124/3581438262.py:11: UserWarning: The figure layout has changed to tight
   plt.tight_layout()
 </code></pre></div>
 </div>
+<img alt="../_images/dfa203c87a9d9bfb22b21509f6cd2d46a0579c4e584c1ec06e861b698e927368.png" src="../_images/dfa203c87a9d9bfb22b21509f6cd2d46a0579c4e584c1ec06e861b698e927368.png" />
 <img alt="../_images/fa55840ad1b87dab7a0bba13afbdd05f0a85b084ce52428bb0057750acb4962a.png" src="../_images/fa55840ad1b87dab7a0bba13afbdd05f0a85b084ce52428bb0057750acb4962a.png" />
 </div>
 </div>
-<h2 id="spatial-specification-diagnostics-new-api">Spatial Specification Diagnostics (New API)<a class="headerlink" href="#spatial-specification-diagnostics-new-api" title="Link to this heading">¶</a></h2>
-<p>The model classes now expose dedicated specification diagnostics that return a structured <code class="docutils literal notranslate"><span class="pre">DiagnosticResult</span></code> object.</p>
-<p>Below we run each model’s <code class="docutils literal notranslate"><span class="pre">spatial_specification_tests()</span></code> battery and tabulate:</p>
-<ul class="simple">
-<li><p>test name</p></li>
-<li><p>statistic</p></li>
-<li><p>p-value</p></li>
-<li><p>any extra test-specific metadata</p></li>
-</ul>
+<h2 id="model-comparison">Model Comparison<a class="headerlink" href="#model-comparison" title="Link to this heading">¶</a></h2>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">diagnostic_to_row</span><span class="p">(</span><span class="n">result</span><span class="p">):</span>
-    <span class="n">row</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;diagnostic&quot;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-        <span class="s2">&quot;statistic&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">statistic</span><span class="p">),</span>
-        <span class="s2">&quot;pvalue&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-    <span class="p">}</span>
-    <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">extra</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">extra</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">row</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">number</span><span class="p">))</span> <span class="k">else</span> <span class="n">v</span>
-    <span class="k">return</span> <span class="n">row</span>
-
-
-<span class="n">spec_models</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">slx</span><span class="p">,</span>
-    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">sar</span><span class="p">,</span>
-    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">sem</span><span class="p">,</span>
-    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">sdm</span><span class="p">,</span>
-    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">sdem</span><span class="p">,</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Collect all fitted models for comparison</span>
+<span class="n">model_dict</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;OLS&quot;</span><span class="p">:</span> <span class="n">ols</span><span class="p">,</span> <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">slx</span><span class="p">,</span> <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">sar</span><span class="p">,</span> <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">sem</span><span class="p">,</span> <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">sdm</span><span class="p">,</span> <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">sdem</span><span class="p">,</span>
 <span class="p">}</span>
-
-<span class="n">spec_tables</span> <span class="o">=</span> <span class="p">{}</span>
-<span class="k">for</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">model_obj</span> <span class="ow">in</span> <span class="n">spec_models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">tests</span> <span class="o">=</span> <span class="n">model_obj</span><span class="o">.</span><span class="n">spatial_specification_tests</span><span class="p">()</span>
-    <span class="n">table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span><span class="n">diagnostic_to_row</span><span class="p">(</span><span class="n">dr</span><span class="p">)</span> <span class="k">for</span> <span class="n">dr</span> <span class="ow">in</span> <span class="n">tests</span><span class="o">.</span><span class="n">values</span><span class="p">()])</span>
-    <span class="n">spec_tables</span><span class="p">[</span><span class="n">model_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;diagnostic&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="k">for</span> <span class="n">model_name</span><span class="p">,</span> <span class="n">table</span> <span class="ow">in</span> <span class="n">spec_tables</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">model_name</span><span class="p">)</span>
-    <span class="n">display</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">()</span>
+<span class="n">idata_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">m</span><span class="o">.</span><span class="n">inference_data</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">model_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="bayes-factor-model-comparison">Bayes Factor Model Comparison<a class="headerlink" href="#bayes-factor-model-comparison" title="Link to this heading">¶</a></h2>
+<p>Bayes factors provide an alternative to information criteria for comparing competing models. While WAIC and LOO assess <em>predictive</em> performance, Bayes factors compare <em>marginal likelihoods</em> — the probability of the data under each model, integrated over all parameter values weighted by the prior:</p>
+<div class="math notranslate nohighlight">
+\[BF_{ij} = \frac{p(y \mid \mathcal{M}_i)}{p(y \mid \mathcal{M}_j)} = \frac{ML_i}{ML_j}\]</div>
+<p>This makes Bayes factors sensitive to the <em>prior</em>: models with diffuse priors on unnecessary parameters are penalized more heavily, because the marginal likelihood averages over all possible parameter values weighted by the prior. In spatial models, this means that models with many WX coefficients under wide priors (e.g., SLX, SDM, SDEM) can receive substantially lower marginal likelihoods than more parsimonious alternatives (e.g., OLS, SAR, SEM) — even if their log-likelihoods are similar.</p>
+<p><strong>Interpreting Bayes factors</strong> (Jeffreys, 1961; Kass &amp; Raftery, 1995):</p>
+<table class="docutils data align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>BF range</p></th>
+<th class="head"><p>Evidence strength</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1 – 3</p></td>
+<td><p>Anecdotal</p></td>
+</tr>
+<tr class="row-odd"><td><p>3 – 10</p></td>
+<td><p>Moderate</p></td>
+</tr>
+<tr class="row-even"><td><p>10 – 30</p></td>
+<td><p>Strong</p></td>
+</tr>
+<tr class="row-odd"><td><p>30 – 100</p></td>
+<td><p>Very strong</p></td>
+</tr>
+<tr class="row-even"><td><p>&gt; 100</p></td>
+<td><p>Extreme</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Method.</strong> We use bridge sampling (Meng &amp; Wong, 1996) to estimate each model’s log marginal likelihood, following the R <code class="docutils literal notranslate"><span class="pre">bridgesampling</span></code> package (Gronau et al., 2020). The implementation uses ESS weighting, two-phase convergence, and MCSE diagnostics. For reliable estimates, 40,000+ posterior samples are recommended.</p>
+<p><strong>Important caveat.</strong> Bayes factors can be very sensitive to prior specification. Models with diffuse priors on many parameters will tend to have lower marginal likelihoods. This is by design — it is the Bayesian Occam’s razor at work — but it means that Bayes factors and information criteria may disagree when priors are uninformative.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">bayes_factor_compare_models</span><span class="p">(</span><span class="n">model_dict</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;bridge&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>SLX
-
-SAR
-
-SEM
-
-SDM
-
-SDEM
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7124/3295012235.py:1: UserWarning: Bridge sampling with 1600 posterior samples for &#39;OLS&#39; may yield imprecise marginal-likelihood estimates. A conservative rule of thumb is 40,000+ samples (Gronau, Singmann, &amp; Wagenmakers, 2017).
+  bayes_factor_compare_models(model_dict, method=&quot;bridge&quot;).round(3)
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -3122,296 +3365,263 @@ SDEM
   <thead>
     <tr style="text-align: right;">
       <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-      <th>istat</th>
-      <th>imean</th>
-      <th>ivar</th>
+      <th>OLS</th>
+      <th>SLX</th>
+      <th>SAR</th>
+      <th>SEM</th>
+      <th>SDM</th>
+      <th>SDEM</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <th>0</th>
-      <td>lm_error</td>
-      <td>2.070013</td>
-      <td>0.150220</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <th>OLS</th>
+      <td>1.000</td>
+      <td>5.865577e+20</td>
+      <td>0.065</td>
+      <td>0.174</td>
+      <td>1.028850e+21</td>
+      <td>5.638516e+20</td>
     </tr>
     <tr>
-      <th>1</th>
-      <td>lm_lag</td>
-      <td>7.846885</td>
-      <td>0.005091</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <th>SLX</th>
+      <td>0.000</td>
+      <td>1.000000e+00</td>
+      <td>0.000</td>
+      <td>0.000</td>
+      <td>1.754000e+00</td>
+      <td>9.610000e-01</td>
     </tr>
     <tr>
-      <th>2</th>
-      <td>moran</td>
-      <td>0.121793</td>
-      <td>0.042568</td>
-      <td>2.027922</td>
-      <td>-0.039648</td>
-      <td>0.006338</td>
-    </tr>
-  </tbody>
-</table>
-</div></div><div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-      <th>istat</th>
-      <th>imean</th>
-      <th>ivar</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>lm_error</td>
-      <td>2.070013e+00</td>
-      <td>0.150220</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <th>SAR</th>
+      <td>15.384</td>
+      <td>9.023744e+21</td>
+      <td>1.000</td>
+      <td>2.677</td>
+      <td>1.582808e+22</td>
+      <td>8.674428e+21</td>
     </tr>
     <tr>
-      <th>1</th>
-      <td>lm_rho</td>
-      <td>6.719408e+00</td>
-      <td>0.009537</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <th>SEM</th>
+      <td>5.748</td>
+      <td>3.371429e+21</td>
+      <td>0.374</td>
+      <td>1.000</td>
+      <td>5.913646e+21</td>
+      <td>3.240918e+21</td>
     </tr>
     <tr>
-      <th>2</th>
-      <td>lm_rho_robust</td>
-      <td>3.751420e+06</td>
-      <td>0.000000</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <th>SDM</th>
+      <td>0.000</td>
+      <td>5.700000e-01</td>
+      <td>0.000</td>
+      <td>0.000</td>
+      <td>1.000000e+00</td>
+      <td>5.480000e-01</td>
     </tr>
     <tr>
-      <th>3</th>
-      <td>moran</td>
-      <td>1.217933e-01</td>
-      <td>0.042568</td>
-      <td>2.027922</td>
-      <td>-0.039648</td>
-      <td>0.006338</td>
-    </tr>
-  </tbody>
-</table>
-</div></div><div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-      <th>istat</th>
-      <th>imean</th>
-      <th>ivar</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>lm_lag</td>
-      <td>7.846885</td>
-      <td>0.005091</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>lr_ratio</td>
-      <td>3.686049</td>
-      <td>0.054869</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>moran</td>
-      <td>0.121793</td>
-      <td>0.042568</td>
-      <td>2.027922</td>
-      <td>-0.039648</td>
-      <td>0.006338</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>wald_error</td>
-      <td>10.681677</td>
-      <td>0.001082</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-  </tbody>
-</table>
-</div></div><div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-      <th>istat</th>
-      <th>imean</th>
-      <th>ivar</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>lm_error</td>
-      <td>2.070013e+00</td>
-      <td>0.150220</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>lm_rho</td>
-      <td>6.719408e+00</td>
-      <td>0.009537</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>lm_rho_robust</td>
-      <td>3.751420e+06</td>
-      <td>0.000000</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>moran</td>
-      <td>1.217933e-01</td>
-      <td>0.042568</td>
-      <td>2.027922</td>
-      <td>-0.039648</td>
-      <td>0.006338</td>
-    </tr>
-  </tbody>
-</table>
-</div></div><div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-      <th>istat</th>
-      <th>imean</th>
-      <th>ivar</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>lm_lag</td>
-      <td>7.846885</td>
-      <td>0.005091</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>moran</td>
-      <td>0.121793</td>
-      <td>0.042568</td>
-      <td>2.027922</td>
-      <td>-0.039648</td>
-      <td>0.006338</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>wald_error</td>
-      <td>10.681677</td>
-      <td>0.001082</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <th>SDEM</th>
+      <td>0.000</td>
+      <td>1.040000e+00</td>
+      <td>0.000</td>
+      <td>0.000</td>
+      <td>1.825000e+00</td>
+      <td>1.000000e+00</td>
     </tr>
   </tbody>
 </table>
 </div></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">bayes_factor_compare_models</span><span class="p">(</span><span class="n">model_dict</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;bic&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>OLS</th>
+      <th>SLX</th>
+      <th>SAR</th>
+      <th>SEM</th>
+      <th>SDM</th>
+      <th>SDEM</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>OLS</th>
+      <td>1.000</td>
+      <td>0.426</td>
+      <td>0.123</td>
+      <td>1.480</td>
+      <td>0.966</td>
+      <td>1.551</td>
+    </tr>
+    <tr>
+      <th>SLX</th>
+      <td>2.346</td>
+      <td>1.000</td>
+      <td>0.289</td>
+      <td>3.472</td>
+      <td>2.266</td>
+      <td>3.639</td>
+    </tr>
+    <tr>
+      <th>SAR</th>
+      <td>8.120</td>
+      <td>3.461</td>
+      <td>1.000</td>
+      <td>12.017</td>
+      <td>7.841</td>
+      <td>12.594</td>
+    </tr>
+    <tr>
+      <th>SEM</th>
+      <td>0.676</td>
+      <td>0.288</td>
+      <td>0.083</td>
+      <td>1.000</td>
+      <td>0.652</td>
+      <td>1.048</td>
+    </tr>
+    <tr>
+      <th>SDM</th>
+      <td>1.036</td>
+      <td>0.441</td>
+      <td>0.128</td>
+      <td>1.533</td>
+      <td>1.000</td>
+      <td>1.606</td>
+    </tr>
+    <tr>
+      <th>SDEM</th>
+      <td>0.645</td>
+      <td>0.275</td>
+      <td>0.079</td>
+      <td>0.954</td>
+      <td>0.623</td>
+      <td>1.000</td>
+    </tr>
+  </tbody>
+</table>
+</div></div></div>
+</div>
+<h3 id="bridge-sampling-vs-bic">Bridge Sampling vs. BIC<a class="headerlink" href="#bridge-sampling-vs-bic" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>BIC: SAR &gt; SLX &gt; OLS &gt; SEM (SAR wins, SLX is moderate, SEM is worst)</p></li>
+<li><p>Bridge: SAR &gt; SEM &gt; OLS (SAR wins, SEM is moderate)</p></li>
+</ul>
+<p>The two methods can produce qualitatively different model rankings. This is expected and reflects a fundamental difference in what they assume about priors:</p>
+<ul class="simple">
+<li><p><strong>BIC</strong> approximates <span class="math notranslate nohighlight">\(\log(ML) \approx \hat\ell_{\max} - \frac{k}{2}\log(n)\)</span>, which assumes <em>unit-information priors</em> (priors containing as much information as a single observation). The penalty per parameter is fixed at <span class="math notranslate nohighlight">\(\frac{1}{2}\log(n) \approx 2.1\)</span> for <span class="math notranslate nohighlight">\(n = 77\)</span>.</p></li>
+<li><p><strong>Bridge sampling</strong> integrates over the <em>actual</em> priors in the model. When priors are wide (e.g., <code class="docutils literal notranslate"><span class="pre">Normal(0,</span> <span class="pre">100)</span></code> on WX coefficients), the marginal likelihood penalizes each such parameter by roughly <span class="math notranslate nohighlight">\(\log(\sigma_{\text{prior}} / \sigma_{\text{post}})\)</span>, which can be 5–10× larger than the BIC penalty.</p></li>
+</ul>
+<p>This is why models with many WX terms (SLX, SDM, SDEM) may look reasonable under BIC but receive extreme Bayes factors under bridge sampling: the wide priors on the WX coefficients are “wasted” — they spread probability mass over implausible parameter values, reducing the marginal likelihood. This is <strong>Bayesian Occam’s razor</strong> at work, and bridge sampling is generally more trustworthy because it accounts for the actual prior specification.</p>
+<h2 id="bayesian-lm-specification-tests">Bayesian LM Specification Tests<a class="headerlink" href="#bayesian-lm-specification-tests" title="Link to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">bayespecon.diagnostics</span></code> module provides Bayesian Lagrange-multiplier tests that operate on posterior draws rather than point estimates. These replace the frequentist LM tests that were previously available.</p>
+<p>Below we run the Bayesian LM tests from the fitted OLS model:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">bayesian_lm_lag_test</span></code> — tests <span class="math notranslate nohighlight">\(H_0: \\rho = 0\)</span> (no spatial lag)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bayesian_lm_error_test</span></code> — tests <span class="math notranslate nohighlight">\(H_0: \\lambda = 0\)</span> (no spatial error)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bayesian_lm_wx_test</span></code> — tests <span class="math notranslate nohighlight">\(H_0: \\gamma = 0\)</span> (no WX, from SAR null)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bayesian_lm_sdm_joint_test</span></code> — joint test for SDM (<span class="math notranslate nohighlight">\(H_0: \\rho = 0\)</span> and <span class="math notranslate nohighlight">\(\\gamma = 0\)</span>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bayesian_lm_slx_error_joint_test</span></code> — joint test for SDEM (<span class="math notranslate nohighlight">\(H_0: \\lambda = 0\)</span> and <span class="math notranslate nohighlight">\(\\gamma = 0\)</span>)</p></li>
+</ul>
+<p>Each returns a <code class="docutils literal notranslate"><span class="pre">BayesianLMTestResult</span></code> with posterior summary statistics and a Bayesian p-value.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Bayesian LM specification tests</span>
+<span class="c1"># Each test uses a different null model depending on the hypothesis</span>
+<span class="n">lm_tests</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;LM Lag (H₀: ρ=0)&quot;</span><span class="p">:</span> <span class="n">bayesian_lm_lag_test</span><span class="p">(</span><span class="n">ols</span><span class="p">),</span>
+    <span class="s2">&quot;LM Error (H₀: λ=0)&quot;</span><span class="p">:</span> <span class="n">bayesian_lm_error_test</span><span class="p">(</span><span class="n">ols</span><span class="p">),</span>
+    <span class="s2">&quot;LM WX (H₀: γ=0, SAR null)&quot;</span><span class="p">:</span> <span class="n">bayesian_lm_wx_test</span><span class="p">(</span><span class="n">sar</span><span class="p">),</span>
+    <span class="s2">&quot;LM SDM Joint (H₀: ρ=0 and γ=0)&quot;</span><span class="p">:</span> <span class="n">bayesian_lm_sdm_joint_test</span><span class="p">(</span><span class="n">ols</span><span class="p">),</span>
+    <span class="s2">&quot;LM SDEM Joint (H₀: λ=0 and γ=0)&quot;</span><span class="p">:</span> <span class="n">bayesian_lm_slx_error_joint_test</span><span class="p">(</span><span class="n">ols</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">lm_tests</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">=== </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2"> ===&quot;</span><span class="p">)</span>
+    <span class="n">display</span><span class="p">(</span><span class="n">summarize_bayesian_lm_test</span><span class="p">(</span><span class="n">result</span><span class="p">))</span>
+</code></pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>=== LM Lag (H₀: ρ=0) ===
+Bayesian LM Test (bayesian_lm_lag):
+  Degrees of freedom: 1
+  Mean: 1.043
+  Median: 0.487
+  95% Credible Interval: [0.001, 5.151]
+  Bayesian p-value: 0.307
+
+=== LM Error (H₀: λ=0) ===
+Bayesian LM Test (bayesian_lm_error):
+  Degrees of freedom: 1
+  Mean: 4.387
+  Median: 3.442
+  95% Credible Interval: [0.771, 13.533]
+  Bayesian p-value: 0.036
+
+=== LM WX (H₀: γ=0, SAR null) ===
+Bayesian LM Test (bayesian_lm_wx):
+  Degrees of freedom: 4
+  Mean: 2399840.953
+  Median: 2152487.553
+  95% Credible Interval: [445374.368, 6049129.236]
+  Bayesian p-value: 0.000
+
+=== LM SDM Joint (H₀: ρ=0 and γ=0) ===
+Bayesian LM Test (bayesian_lm_sdm_joint):
+  Degrees of freedom: 5
+  Mean: 5215857.011
+  Median: 4873211.601
+  95% Credible Interval: [1795047.235, 10696517.376]
+  Bayesian p-value: 0.000
+
+=== LM SDEM Joint (H₀: λ=0 and γ=0) ===
+Bayesian LM Test (bayesian_lm_slx_error_joint):
+  Degrees of freedom: 5
+  Mean: 6350729.748
+  Median: 5611159.112
+  95% Credible Interval: [1645005.959, 15451396.020]
+  Bayesian p-value: 0.000
+</code></pre></div>
+</div>
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>None
+</code></pre></div>
+</div>
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>None
+</code></pre></div>
+</div>
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>None
+</code></pre></div>
+</div>
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>None
+</code></pre></div>
+</div>
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>None
+</code></pre></div>
+</div>
+</div>
 </div>
 <h2 id="compare-spatial-parameters-across-models">Compare Spatial Parameters Across Models<a class="headerlink" href="#compare-spatial-parameters-across-models" title="Link to this heading">¶</a></h2>
 <p>This cell compares posterior means/intervals for the spatial scalar where present:</p>
@@ -3421,31 +3631,20 @@ SDEM
 </ul>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">pull_scalar</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var_name</span><span class="p">):</span>
-    <span class="k">if</span> <span class="n">var_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">idata</span><span class="o">.</span><span class="n">posterior</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">None</span>
-    <span class="n">vals</span> <span class="o">=</span> <span class="n">idata</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="n">var_name</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">return</span> <span class="p">{</span>
-        <span class="s2">&quot;mean&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">vals</span><span class="p">)),</span>
-        <span class="s2">&quot;sd&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">vals</span><span class="p">)),</span>
-        <span class="s2">&quot;hdi_3%&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="mf">0.03</span><span class="p">)),</span>
-        <span class="s2">&quot;hdi_97%&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="mf">0.97</span><span class="p">)),</span>
-    <span class="p">}</span>
-
-<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span><span class="p">,</span> <span class="n">var</span> <span class="ow">in</span> <span class="p">[</span>
-    <span class="p">(</span><span class="s2">&quot;SAR&quot;</span><span class="p">,</span> <span class="n">idata_sar</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;SEM&quot;</span><span class="p">,</span> <span class="n">idata_sem</span><span class="p">,</span> <span class="s2">&quot;lam&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;SDM&quot;</span><span class="p">,</span> <span class="n">idata_sdm</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">),</span>
-    <span class="p">(</span><span class="s2">&quot;SDEM&quot;</span><span class="p">,</span> <span class="n">idata_sdem</span><span class="p">,</span> <span class="s2">&quot;lam&quot;</span><span class="p">),</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Compare spatial parameters across models</span>
+<span class="n">spatial_rows</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">var</span> <span class="ow">in</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s2">&quot;SAR&quot;</span><span class="p">,</span> <span class="n">sar</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;SEM&quot;</span><span class="p">,</span> <span class="n">sem</span><span class="p">,</span> <span class="s2">&quot;lam&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;SDM&quot;</span><span class="p">,</span> <span class="n">sdm</span><span class="p">,</span> <span class="s2">&quot;rho&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;SDEM&quot;</span><span class="p">,</span> <span class="n">sdem</span><span class="p">,</span> <span class="s2">&quot;lam&quot;</span><span class="p">),</span>
 <span class="p">]:</span>
-    <span class="n">stats</span> <span class="o">=</span> <span class="n">pull_scalar</span><span class="p">(</span><span class="n">idata</span><span class="p">,</span> <span class="n">var</span><span class="p">)</span>
-    <span class="n">stats</span><span class="p">[</span><span class="s2">&quot;model&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">name</span>
-    <span class="n">stats</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">var</span>
-    <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stats</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">inference_data</span><span class="o">.</span><span class="n">posterior</span><span class="p">:</span>
+        <span class="n">summary</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">inference_data</span><span class="p">,</span> <span class="n">var_names</span><span class="o">=</span><span class="p">[</span><span class="n">var</span><span class="p">],</span> <span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">summary</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="n">spatial_rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">summary</span><span class="p">)</span>
 
-<span class="n">spatial_param_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)[[</span><span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="s2">&quot;parameter&quot;</span><span class="p">,</span> <span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;sd&quot;</span><span class="p">,</span> <span class="s2">&quot;hdi_3%&quot;</span><span class="p">,</span> <span class="s2">&quot;hdi_97%&quot;</span><span class="p">]]</span>
-<span class="n">display</span><span class="p">(</span><span class="n">spatial_param_table</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">spatial_rows</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -3469,49 +3668,69 @@ SDEM
     <tr style="text-align: right;">
       <th></th>
       <th>model</th>
-      <th>parameter</th>
       <th>mean</th>
       <th>sd</th>
       <th>hdi_3%</th>
       <th>hdi_97%</th>
+      <th>mcse_mean</th>
+      <th>mcse_sd</th>
+      <th>ess_bulk</th>
+      <th>ess_tail</th>
+      <th>r_hat</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <th>0</th>
+      <th>rho</th>
       <td>SAR</td>
-      <td>rho</td>
-      <td>0.438613</td>
-      <td>0.139854</td>
-      <td>0.165298</td>
-      <td>0.690116</td>
+      <td>0.439</td>
+      <td>0.140</td>
+      <td>0.170</td>
+      <td>0.694</td>
+      <td>0.004</td>
+      <td>0.004</td>
+      <td>1251.185</td>
+      <td>938.602</td>
+      <td>1.009</td>
     </tr>
     <tr>
-      <th>1</th>
+      <th>lam</th>
       <td>SEM</td>
-      <td>lam</td>
-      <td>0.508609</td>
-      <td>0.183146</td>
-      <td>0.120760</td>
-      <td>0.822417</td>
+      <td>0.509</td>
+      <td>0.183</td>
+      <td>0.172</td>
+      <td>0.861</td>
+      <td>0.008</td>
+      <td>0.007</td>
+      <td>554.812</td>
+      <td>277.570</td>
+      <td>1.003</td>
     </tr>
     <tr>
-      <th>2</th>
+      <th>rho</th>
       <td>SDM</td>
-      <td>rho</td>
-      <td>0.239389</td>
-      <td>0.162165</td>
-      <td>-0.079836</td>
-      <td>0.535577</td>
+      <td>0.239</td>
+      <td>0.162</td>
+      <td>-0.062</td>
+      <td>0.551</td>
+      <td>0.005</td>
+      <td>0.004</td>
+      <td>1275.488</td>
+      <td>1187.169</td>
+      <td>1.002</td>
     </tr>
     <tr>
-      <th>3</th>
+      <th>lam</th>
       <td>SDEM</td>
-      <td>lam</td>
-      <td>0.327971</td>
-      <td>0.186286</td>
-      <td>-0.028236</td>
-      <td>0.671812</td>
+      <td>0.328</td>
+      <td>0.186</td>
+      <td>-0.013</td>
+      <td>0.687</td>
+      <td>0.006</td>
+      <td>0.005</td>
+      <td>862.536</td>
+      <td>911.323</td>
+      <td>1.007</td>
     </tr>
   </tbody>
 </table>
@@ -3524,75 +3743,46 @@ Lower values are better on these scales.</p>
 <ul class="simple">
 <li><p>These comparisons are only meaningful when models are fit to the same data.</p></li>
 <li><p>For robust results, increase <code class="docutils literal notranslate"><span class="pre">draws</span></code> and <code class="docutils literal notranslate"><span class="pre">tune</span></code> beyond this pedagogical setup.</p></li>
-<li><p>Some model formulations may not expose pointwise <code class="docutils literal notranslate"><span class="pre">log_likelihood</span></code>; those are skipped in the joint comparison and still reported in per-model attempts.</p></li>
 </ul>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">idata_dict</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">idata_slx</span><span class="p">,</span>
-    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">idata_sar</span><span class="p">,</span>
-    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">idata_sem</span><span class="p">,</span>
-    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">idata_sdm</span><span class="p">,</span>
-    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">idata_sdem</span><span class="p">,</span>
-<span class="p">}</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># WAIC and LOO comparison</span>
+<span class="k">for</span> <span class="n">ic</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;waic&quot;</span><span class="p">,</span> <span class="s2">&quot;loo&quot;</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cmp</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">idata_dict</span><span class="p">,</span> <span class="n">ic</span><span class="o">=</span><span class="n">ic</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;BB-pseudo-BMA&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison&quot;</span><span class="p">)</span>
+        <span class="n">display</span><span class="p">(</span><span class="n">cmp</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison not available: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">):</span>
-    <span class="k">if</span> <span class="s2">&quot;log_likelihood&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">idata</span><span class="o">.</span><span class="n">groups</span><span class="p">():</span>
-        <span class="k">return</span> <span class="kc">False</span>
-    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">idata</span><span class="o">.</span><span class="n">log_likelihood</span><span class="o">.</span><span class="n">data_vars</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mi">0</span>
-
-
-<span class="n">valid_for_compare</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">idata</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">)}</span>
-<span class="n">missing_loglik</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">_has_loglik</span><span class="p">(</span><span class="n">idata</span><span class="p">)]</span>
-
-<span class="k">if</span> <span class="n">missing_loglik</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Skipped (no log_likelihood group):&quot;</span><span class="p">,</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">missing_loglik</span><span class="p">))</span>
-
-<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">valid_for_compare</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Need at least two models with valid log_likelihood for WAIC/LOO compare.&quot;</span><span class="p">)</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="k">for</span> <span class="n">ic</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;waic&quot;</span><span class="p">,</span> <span class="s2">&quot;loo&quot;</span><span class="p">):</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">cmp</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span><span class="n">valid_for_compare</span><span class="p">,</span> <span class="n">ic</span><span class="o">=</span><span class="n">ic</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;BB-pseudo-BMA&quot;</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison&quot;</span><span class="p">)</span>
-            <span class="n">display</span><span class="p">(</span><span class="n">cmp</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ic</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> comparison not available: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="c1"># Always provide per-model IC attempts so the cell remains informative.</span>
+<span class="c1"># Per-model IC table</span>
 <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">idata</span> <span class="ow">in</span> <span class="n">idata_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">model</span> <span class="ow">in</span> <span class="n">model_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">inference_data</span>
     <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">}</span>
-
     <span class="k">try</span><span class="p">:</span>
         <span class="n">waic_res</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">waic</span><span class="p">(</span><span class="n">idata</span><span class="p">)</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">waic_res</span><span class="o">.</span><span class="n">elpd_waic</span><span class="p">)</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">waic_res</span><span class="o">.</span><span class="n">p_waic</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_waic&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;waic_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-
     <span class="k">try</span><span class="p">:</span>
         <span class="n">loo_res</span> <span class="o">=</span> <span class="n">az</span><span class="o">.</span><span class="n">loo</span><span class="p">(</span><span class="n">idata</span><span class="p">)</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">loo_res</span><span class="o">.</span><span class="n">elpd_loo</span><span class="p">)</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">loo_res</span><span class="o">.</span><span class="n">p_loo</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;elpd_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
         <span class="n">row</span><span class="p">[</span><span class="s2">&quot;p_loo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-        <span class="n">row</span><span class="p">[</span><span class="s2">&quot;loo_error&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-
     <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
 
-<span class="n">ic_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="n">display</span><span class="p">(</span><span class="n">ic_table</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Skipped (no log_likelihood group): SEM, SDEM
-WAIC comparison
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>WAIC comparison
+
 LOO comparison
 </code></pre></div>
 </div>
@@ -3614,6 +3804,28 @@ See http://arxiv.org/abs/1507.04544 for details
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
 See http://arxiv.org/abs/1507.04544 for details
   warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:782: UserWarning: Estimated shape parameter of Pareto distribution is greater than 0.69 for one or more samples. You should consider using a more robust model, this is because importance sampling is less likely to work well if the marginal posterior and LOO posterior are very different. This is more likely to happen with a non-robust model and highly influential observations.
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:1652: UserWarning: For one or more samples the posterior variance of the log predictive densities exceeds 0.4. This could be indication of WAIC starting to fail. 
+See http://arxiv.org/abs/1507.04544 for details
+  warnings.warn(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/stats/stats.py:782: UserWarning: Estimated shape parameter of Pareto distribution is greater than 0.69 for one or more samples. You should consider using a more robust model, this is because importance sampling is less likely to work well if the marginal posterior and LOO posterior are very different. This is more likely to happen with a non-robust model and highly influential observations.
+  warnings.warn(
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -3649,11 +3861,11 @@ See http://arxiv.org/abs/1507.04544 for details
     <tr>
       <th>SDM</th>
       <td>0</td>
-      <td>-313.403244</td>
-      <td>10.204040</td>
+      <td>-314.097546</td>
+      <td>10.201293</td>
       <td>0.000000</td>
-      <td>0.578619</td>
-      <td>8.213346</td>
+      <td>0.424097</td>
+      <td>8.625133</td>
       <td>0.000000</td>
       <td>True</td>
       <td>log</td>
@@ -3663,22 +3875,58 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>1</td>
       <td>-314.677063</td>
       <td>9.908099</td>
-      <td>1.273819</td>
-      <td>0.199123</td>
-      <td>8.074359</td>
-      <td>1.058572</td>
+      <td>0.579516</td>
+      <td>0.259987</td>
+      <td>8.367417</td>
+      <td>1.065562</td>
+      <td>True</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SDEM</th>
+      <td>2</td>
+      <td>-315.066469</td>
+      <td>10.377520</td>
+      <td>0.968923</td>
+      <td>0.179875</td>
+      <td>8.849983</td>
+      <td>0.583390</td>
       <td>True</td>
       <td>log</td>
     </tr>
     <tr>
       <th>SAR</th>
-      <td>2</td>
-      <td>-315.358505</td>
-      <td>7.352979</td>
-      <td>1.955261</td>
-      <td>0.222258</td>
-      <td>7.468135</td>
-      <td>2.578512</td>
+      <td>3</td>
+      <td>-317.225999</td>
+      <td>7.335075</td>
+      <td>3.128452</td>
+      <td>0.069017</td>
+      <td>7.674031</td>
+      <td>2.571853</td>
+      <td>True</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SEM</th>
+      <td>4</td>
+      <td>-319.633376</td>
+      <td>6.884574</td>
+      <td>5.535830</td>
+      <td>0.025607</td>
+      <td>7.272794</td>
+      <td>3.535010</td>
+      <td>True</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>OLS</th>
+      <td>5</td>
+      <td>-320.865167</td>
+      <td>6.889473</td>
+      <td>6.767620</td>
+      <td>0.041417</td>
+      <td>7.353052</td>
+      <td>4.781339</td>
       <td>True</td>
       <td>log</td>
     </tr>
@@ -3717,11 +3965,11 @@ See http://arxiv.org/abs/1507.04544 for details
     <tr>
       <th>SDM</th>
       <td>0</td>
-      <td>-313.734415</td>
-      <td>10.535212</td>
+      <td>-314.432422</td>
+      <td>10.536169</td>
       <td>0.000000</td>
-      <td>0.560319</td>
-      <td>8.155069</td>
+      <td>0.415245</td>
+      <td>8.214114</td>
       <td>0.000000</td>
       <td>False</td>
       <td>log</td>
@@ -3731,22 +3979,58 @@ See http://arxiv.org/abs/1507.04544 for details
       <td>1</td>
       <td>-314.861513</td>
       <td>10.092549</td>
-      <td>1.127098</td>
-      <td>0.199118</td>
-      <td>7.942002</td>
-      <td>1.074014</td>
+      <td>0.429091</td>
+      <td>0.282063</td>
+      <td>8.024918</td>
+      <td>1.082130</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
-      <th>SAR</th>
+      <th>SDEM</th>
       <td>2</td>
-      <td>-315.528165</td>
-      <td>7.522640</td>
-      <td>1.793750</td>
-      <td>0.240563</td>
-      <td>7.459813</td>
-      <td>2.612835</td>
+      <td>-315.466854</td>
+      <td>10.777904</td>
+      <td>1.034431</td>
+      <td>0.166533</td>
+      <td>8.430172</td>
+      <td>0.605700</td>
+      <td>True</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SAR</th>
+      <td>3</td>
+      <td>-317.393185</td>
+      <td>7.502261</td>
+      <td>2.960763</td>
+      <td>0.070570</td>
+      <td>7.461781</td>
+      <td>2.606718</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>SEM</th>
+      <td>4</td>
+      <td>-319.801094</td>
+      <td>7.052292</td>
+      <td>5.368672</td>
+      <td>0.027320</td>
+      <td>7.170451</td>
+      <td>3.541468</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>OLS</th>
+      <td>5</td>
+      <td>-321.031176</td>
+      <td>7.055483</td>
+      <td>6.598753</td>
+      <td>0.038269</td>
+      <td>7.684543</td>
+      <td>4.816854</td>
       <td>False</td>
       <td>log</td>
     </tr>
@@ -3775,367 +4059,56 @@ See http://arxiv.org/abs/1507.04544 for details
       <th>p_waic</th>
       <th>elpd_loo</th>
       <th>p_loo</th>
-      <th>waic_error</th>
-      <th>loo_error</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>SAR</td>
-      <td>-315.358505</td>
-      <td>7.352979</td>
-      <td>-315.528165</td>
-      <td>7.522640</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <td>OLS</td>
+      <td>-320.865167</td>
+      <td>6.889473</td>
+      <td>-321.031176</td>
+      <td>7.055483</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>SDEM</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>log likelihood not found in inference data object</td>
-      <td>log likelihood not found in inference data object</td>
+      <td>SAR</td>
+      <td>-317.225999</td>
+      <td>7.335075</td>
+      <td>-317.393185</td>
+      <td>7.502261</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>SDM</td>
-      <td>-313.403244</td>
-      <td>10.204040</td>
-      <td>-313.734415</td>
-      <td>10.535212</td>
-      <td>NaN</td>
-      <td>NaN</td>
+      <td>SDEM</td>
+      <td>-315.066469</td>
+      <td>10.377520</td>
+      <td>-315.466854</td>
+      <td>10.777904</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>SEM</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>log likelihood not found in inference data object</td>
-      <td>log likelihood not found in inference data object</td>
+      <td>SDM</td>
+      <td>-314.097546</td>
+      <td>10.201293</td>
+      <td>-314.432422</td>
+      <td>10.536169</td>
     </tr>
     <tr>
       <th>4</th>
+      <td>SEM</td>
+      <td>-319.633376</td>
+      <td>6.884574</td>
+      <td>-319.801094</td>
+      <td>7.052292</td>
+    </tr>
+    <tr>
+      <th>5</th>
       <td>SLX</td>
       <td>-314.677063</td>
       <td>9.908099</td>
       <td>-314.861513</td>
       <td>10.092549</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-  </tbody>
-</table>
-</div></div></div>
-</div>
-<h2 id="matlab-style-residual-diagnostics-per-model">MATLAB-Style Residual Diagnostics (Per Model)<a class="headerlink" href="#matlab-style-residual-diagnostics-per-model" title="Link to this heading">¶</a></h2>
-<p>This section mirrors the MATLAB reference diagnostics module:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">rdiagnose</span></code>-style influence and outlier diagnostics</p></li>
-<li><p>Breusch-Pagan heteroskedasticity test (<code class="docutils literal notranslate"><span class="pre">bpagan</span></code>)</p></li>
-<li><p>ARCH test (<code class="docutils literal notranslate"><span class="pre">arch</span></code>)</p></li>
-<li><p>Ljung-Box residual autocorrelation test (<code class="docutils literal notranslate"><span class="pre">qstat2</span></code>)</p></li>
-</ul>
-<p>Interpretation quick guide:</p>
-<ul class="simple">
-<li><p>Smaller p-values for BPagan/ARCH/Ljung-Box suggest diagnostics concerns.</p></li>
-<li><p>Outlier counters are threshold-based candidate flags, not automatic exclusions.</p></li>
-</ul>
-<div class="cell docutils container">
-<div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">slx</span><span class="o">.</span><span class="n">spatial_effects</span><span class="p">())</span>
-</code></pre></div>
-</div>
-</div>
-<div class="cell_output docutils container">
-<div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>direct</th>
-      <th>indirect</th>
-      <th>total</th>
-      <th>feature_names</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>-0.674834</td>
-      <td>1.183429</td>
-      <td>0.508595</td>
-      <td>poverty</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>0.342909</td>
-      <td>-1.762965</td>
-      <td>-1.420056</td>
-      <td>rev_rating</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>0.020759</td>
-      <td>0.201125</td>
-      <td>0.221883</td>
-      <td>num_spots</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>-1.029607</td>
-      <td>-1.434761</td>
-      <td>-2.464368</td>
-      <td>crowded</td>
-    </tr>
-  </tbody>
-</table>
-</div></div></div>
-</div>
-<div class="cell docutils container">
-<div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">models</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">slx</span><span class="p">,</span>
-    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">sar</span><span class="p">,</span>
-    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">sem</span><span class="p">,</span>
-    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">sdm</span><span class="p">,</span>
-    <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">sdem</span><span class="p">,</span>
-<span class="p">}</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_last_value</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-    <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">arr</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">arr</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
-
-
-<span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">het</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">heteroskedasticity_diagnostics</span><span class="p">(</span><span class="n">arch_lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
-        <span class="n">ac</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">autocorrelation_diagnostics</span><span class="p">(</span><span class="n">lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">outlier_diagnostics</span><span class="p">()</span>
-
-        <span class="n">bp</span> <span class="o">=</span> <span class="n">het</span><span class="p">[</span><span class="s2">&quot;bpagan&quot;</span><span class="p">]</span>
-        <span class="n">arch</span> <span class="o">=</span> <span class="n">het</span><span class="p">[</span><span class="s2">&quot;arch&quot;</span><span class="p">]</span>
-
-        <span class="c1"># Keep one compact row per model for quick pedagogical comparison.</span>
-        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
-            <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
-            <span class="s2">&quot;bpagan_lm&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">bp</span><span class="o">.</span><span class="n">statistic</span><span class="p">),</span>
-            <span class="s2">&quot;bpagan_p&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">bp</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-            <span class="s2">&quot;arch_lag4_stat&quot;</span><span class="p">:</span> <span class="n">_last_value</span><span class="p">(</span><span class="n">arch</span><span class="o">.</span><span class="n">statistic</span><span class="p">),</span>
-            <span class="s2">&quot;arch_lag4_p&quot;</span><span class="p">:</span> <span class="n">_last_value</span><span class="p">(</span><span class="n">arch</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-            <span class="s2">&quot;lb_lag4_q&quot;</span><span class="p">:</span> <span class="n">_last_value</span><span class="p">(</span><span class="n">ac</span><span class="o">.</span><span class="n">statistic</span><span class="p">),</span>
-            <span class="s2">&quot;lb_lag4_p&quot;</span><span class="p">:</span> <span class="n">_last_value</span><span class="p">(</span><span class="n">ac</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-            <span class="s2">&quot;n_leverage_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;leverage_idx&quot;</span><span class="p">])),</span>
-            <span class="s2">&quot;n_rstudent_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;rstudent_idx&quot;</span><span class="p">])),</span>
-            <span class="s2">&quot;n_dffit_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;dffit_idx&quot;</span><span class="p">])),</span>
-            <span class="s2">&quot;n_dfbeta_flags&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;dfbeta_idx&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
-        <span class="p">})</span>
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> failed: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="k">if</span> <span class="n">rows</span><span class="p">:</span>
-    <span class="n">diag_summary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;model&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">else</span><span class="p">:</span>
-    <span class="n">diag_summary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span>
-        <span class="s2">&quot;model&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;bpagan_lm&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;bpagan_p&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;arch_lag4_stat&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;arch_lag4_p&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;lb_lag4_q&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;lb_lag4_p&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;n_leverage_flags&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;n_rstudent_flags&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;n_dffit_flags&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;n_dfbeta_flags&quot;</span><span class="p">,</span>
-    <span class="p">])</span>
-
-<span class="n">display</span><span class="p">(</span><span class="n">diag_summary</span><span class="p">)</span>
-
-<span class="c1"># Optional deep dive for one model</span>
-<span class="n">example</span> <span class="o">=</span> <span class="s2">&quot;SAR&quot;</span>
-<span class="n">rd</span> <span class="o">=</span> <span class="n">models</span><span class="p">[</span><span class="n">example</span><span class="p">]</span><span class="o">.</span><span class="n">regression_diagnostics</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Detailed rdiagnose-style outputs available for </span><span class="si">{</span><span class="n">example</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">rd</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
-</code></pre></div>
-</div>
-</div>
-<div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>SLX failed: ValueError: Unexpected beta dimension for SLX fitted mean.
-Detailed rdiagnose-style outputs available for SAR: [&#39;cookd&#39;, &#39;dfbeta&#39;, &#39;dffit&#39;, &#39;hatdi&#39;, &#39;meth&#39;, &#39;press&#39;, &#39;pstat&#39;, &#39;resid&#39;, &#39;rstud&#39;, &#39;stdr&#39;, &#39;stud&#39;]
-</code></pre></div>
-</div>
-<div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>model</th>
-      <th>bpagan_lm</th>
-      <th>bpagan_p</th>
-      <th>arch_lag4_stat</th>
-      <th>arch_lag4_p</th>
-      <th>lb_lag4_q</th>
-      <th>lb_lag4_p</th>
-      <th>n_leverage_flags</th>
-      <th>n_rstudent_flags</th>
-      <th>n_dffit_flags</th>
-      <th>n_dfbeta_flags</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>SAR</td>
-      <td>10.842871</td>
-      <td>0.028388</td>
-      <td>2.547293</td>
-      <td>0.636188</td>
-      <td>1.978660</td>
-      <td>0.739684</td>
-      <td>7</td>
-      <td>3</td>
-      <td>7</td>
-      <td>21</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>SDEM</td>
-      <td>13.708378</td>
-      <td>0.008286</td>
-      <td>3.292940</td>
-      <td>0.510052</td>
-      <td>2.691592</td>
-      <td>0.610687</td>
-      <td>7</td>
-      <td>4</td>
-      <td>7</td>
-      <td>20</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>SDM</td>
-      <td>14.266674</td>
-      <td>0.006491</td>
-      <td>3.425010</td>
-      <td>0.489372</td>
-      <td>1.952230</td>
-      <td>0.744545</td>
-      <td>7</td>
-      <td>4</td>
-      <td>6</td>
-      <td>18</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>SEM</td>
-      <td>6.600101</td>
-      <td>0.158592</td>
-      <td>2.178515</td>
-      <td>0.702964</td>
-      <td>3.142788</td>
-      <td>0.534221</td>
-      <td>7</td>
-      <td>4</td>
-      <td>4</td>
-      <td>23</td>
-    </tr>
-  </tbody>
-</table>
-</div></div></div>
-</div>
-<div class="cell docutils container">
-<div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">het_sar</span> <span class="o">=</span> <span class="n">sar</span><span class="o">.</span><span class="n">heteroskedasticity_diagnostics</span><span class="p">(</span><span class="n">arch_lags</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
-
-<span class="n">sar_het_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span>
-    <span class="p">{</span>
-        <span class="s2">&quot;diagnostic&quot;</span><span class="p">:</span> <span class="s2">&quot;bpagan&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;statistic&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">het_sar</span><span class="p">[</span><span class="s2">&quot;bpagan&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">statistic</span><span class="p">),</span>
-        <span class="s2">&quot;pvalue&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">het_sar</span><span class="p">[</span><span class="s2">&quot;bpagan&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-    <span class="p">},</span>
-    <span class="p">{</span>
-        <span class="s2">&quot;diagnostic&quot;</span><span class="p">:</span> <span class="s2">&quot;arch_lag4&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;statistic&quot;</span><span class="p">:</span> <span class="n">_last_value</span><span class="p">(</span><span class="n">het_sar</span><span class="p">[</span><span class="s2">&quot;arch&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">statistic</span><span class="p">),</span>
-        <span class="s2">&quot;pvalue&quot;</span><span class="p">:</span> <span class="n">_last_value</span><span class="p">(</span><span class="n">het_sar</span><span class="p">[</span><span class="s2">&quot;arch&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">pvalue</span><span class="p">),</span>
-    <span class="p">},</span>
-<span class="p">])</span>
-
-<span class="n">sar_het_table</span>
-</code></pre></div>
-</div>
-</div>
-<div class="cell_output docutils container">
-<div class="output text_html"><div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>diagnostic</th>
-      <th>statistic</th>
-      <th>pvalue</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>bpagan</td>
-      <td>10.842871</td>
-      <td>0.028388</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>arch_lag4</td>
-      <td>2.547293</td>
-      <td>0.636188</td>
     </tr>
   </tbody>
 </table>
@@ -4149,7 +4122,7 @@ Detailed rdiagnose-style outputs available for SAR: [&#39;cookd&#39;, &#39;dfbet
 <span class="n">X</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">xcols</span><span class="p">]</span>
 
 <span class="n">sar_matrix</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
-<span class="n">idata_sar_matrix</span> <span class="o">=</span> <span class="n">sar_matrix</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">sar_matrix</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">draws</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">random_seed</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">progressbar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">sar_matrix</span><span class="o">.</span><span class="n">summary</span><span class="p">(</span><span class="n">round_to</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
 </code></pre></div>
 </div>

@@ -48,12 +48,21 @@
     "import arviz as az\n",
     "import geodatasets\n",
     "import geopandas as gpd\n",
+    "import matplotlib.pyplot as plt\n",
     "import numpy as np\n",
     "import pandas as pd\n",
-    "from IPython.display import display\n",
     "from libpysal.graph import Graph\n",
     "\n",
-    "from bayespecon import SLX, SAR, SEM, SDM, SDEM\n",
+    "from bayespecon import OLS, SLX, SAR, SEM, SDM, SDEM\n",
+    "from bayespecon.diagnostics import (\n",
+    "    bayesian_lm_lag_test,\n",
+    "    bayesian_lm_error_test,\n",
+    "    bayesian_lm_wx_test,\n",
+    "    bayesian_lm_sdm_joint_test,\n",
+    "    bayesian_lm_slx_error_joint_test,\n",
+    "    summarize_bayesian_lm_test,\n",
+    ")\n",
+    "from bayespecon.diagnostics.bayesfactor import bayes_factor_compare_models\n",
     "\n",
     "az.style.use(\"arviz-white\")"
    ]
@@ -101,14 +110,13 @@
    "outputs": [],
    "source": [
     "def fit_and_report(model_cls, formula, data, W, draws=400, tune=400, chains=4, seed=42):\n",
-    "    model = model_cls(\n",
-    "        formula=formula,\n",
-    "        data=data,\n",
-    "        W=W,\n",
-    "        logdet_method=\"eigenvalue\",\n",
-    "    )\n",
+    "    \"\"\"Fit a spatial model and return (model, summary, effects_df).\n",
     "\n",
-    "    idata = model.fit(\n",
+    "    Uses minimal MCMC settings for pedagogical demonstration.\n",
+    "    Increase draws/tune for real analyses.\n",
+    "    \"\"\"\n",
+    "    model = model_cls(formula=formula, data=data, W=W, logdet_method=\"eigenvalue\")\n",
+    "    model.fit(\n",
     "        draws=draws,\n",
     "        tune=tune,\n",
     "        chains=chains,\n",
@@ -117,17 +125,9 @@
     "        progressbar=False,\n",
     "        idata_kwargs={\"log_likelihood\": True},\n",
     "    )\n",
-    "\n",
     "    summary = model.summary(round_to=3)\n",
-    "    effects = model.spatial_effects()\n",
-    "    effects_df = pd.DataFrame({\n",
-    "        \"feature\": effects[\"feature_names\"],\n",
-    "        \"direct\": effects[\"direct\"],\n",
-    "        \"indirect\": effects[\"indirect\"],\n",
-    "        \"total\": effects[\"total\"],\n",
-    "    })\n",
-    "\n",
-    "    return model, idata, summary, effects_df"
+    "    effects_df = pd.DataFrame(model.spatial_effects())\n",
+    "    return model, summary, effects_df"
    ]
   },
   {
@@ -150,19 +150,67 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "import matplotlib.pyplot as plt\n",
-    "\n",
-    "\n",
     "def diagnostics_table(idata, var_names):\n",
+    "    \"\"\"Show key MCMC diagnostics for the given parameters.\"\"\"\n",
     "    cols = [\"mean\", \"sd\", \"ess_bulk\", \"ess_tail\", \"r_hat\"]\n",
     "    return az.summary(idata, var_names=var_names, round_to=3)[cols]\n",
     "\n",
     "\n",
     "def show_trace(idata, var_names, title):\n",
+    "    \"\"\"Plot trace plots for the given parameters.\"\"\"\n",
     "    az.plot_trace(idata, var_names=var_names)\n",
     "    plt.suptitle(title, y=1.02)\n",
     "    plt.tight_layout()\n",
     "    plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "66682e85",
+   "metadata": {},
+   "source": [
+    "## 0) OLS: What could go wrong?"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "0c32f560",
+   "metadata": {},
+   "source": [
+    "Model:\n",
+    "\n",
+    "$$\n",
+    "y = X\\beta + \\epsilon\n",
+    "$$"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "2d3c41c0",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "ols = OLS(\n",
+    "    formula=\"price_pp ~ poverty + rev_rating + num_spots + crowded\",\n",
+    "    data=gdf,\n",
+    "    W=W,\n",
+    ")\n",
+    "olsfit = ols.fit(\n",
+    "    draws=400, tune=400, chains=4, target_accept=0.9,\n",
+    "    random_seed=42, progressbar=False,\n",
+    "    idata_kwargs={\"log_likelihood\": True},\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "0614576f",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "ols.summary()"
    ]
   },
   {
@@ -191,14 +239,14 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "slx, idata_slx, summary_slx, effects_slx = fit_and_report(\n",
+    "slx, summary_slx, effects_slx = fit_and_report(\n",
     "    SLX,\n",
     "    formula=\"price_pp ~ poverty + rev_rating + num_spots + crowded\",\n",
     "    data=gdf,\n",
     "    W=W,\n",
     ")\n",
     "display(summary_slx)\n",
-    "display(effects_slx)\n"
+    "display(effects_slx)"
    ]
   },
   {
@@ -208,9 +256,9 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "az.plot_forest(idata_slx)\n",
-    "display(diagnostics_table(idata_slx, [\"beta\", \"sigma\"]))\n",
-    "show_trace(idata_slx, [\"sigma\"], \"SLX Trace: sigma\")"
+    "az.plot_forest(slx.inference_data)\n",
+    "display(diagnostics_table(slx.inference_data, [\"beta\", \"sigma\"]))\n",
+    "show_trace(slx.inference_data, [\"sigma\"], \"SLX Trace: sigma\")"
    ]
   },
   {
@@ -238,7 +286,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "sar, idata_sar, summary_sar, effects_sar = fit_and_report(\n",
+    "sar, summary_sar, effects_sar = fit_and_report(\n",
     "    SAR,\n",
     "    formula=\"price_pp ~ poverty + rev_rating + num_spots + crowded\",\n",
     "    data=gdf,\n",
@@ -255,9 +303,9 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "az.plot_forest(idata_sar)\n",
-    "display(diagnostics_table(idata_sar, [\"rho\", \"beta\", \"sigma\"]))\n",
-    "show_trace(idata_sar, [\"rho\", \"sigma\"], \"SAR Trace: rho, sigma\")"
+    "az.plot_forest(sar.inference_data)\n",
+    "display(diagnostics_table(sar.inference_data, [\"rho\", \"beta\", \"sigma\"]))\n",
+    "show_trace(sar.inference_data, [\"rho\", \"sigma\"], \"SAR Trace: rho, sigma\")"
    ]
   },
   {
@@ -285,7 +333,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "sem, idata_sem, summary_sem, effects_sem = fit_and_report(\n",
+    "sem, summary_sem, effects_sem = fit_and_report(\n",
     "    SEM,\n",
     "    formula=\"price_pp ~ poverty + rev_rating + num_spots + crowded\",\n",
     "    data=gdf,\n",
@@ -302,8 +350,9 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "display(diagnostics_table(idata_sem, [\"lam\", \"beta\", \"sigma\"]))\n",
-    "show_trace(idata_sem, [\"lam\", \"sigma\"], \"SEM Trace: lam, sigma\")"
+    "az.plot_forest(sem.inference_data)\n",
+    "display(diagnostics_table(sem.inference_data, [\"lam\", \"beta\", \"sigma\"]))\n",
+    "show_trace(sem.inference_data, [\"lam\", \"sigma\"], \"SEM Trace: lam, sigma\")"
    ]
   },
   {
@@ -331,7 +380,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "sdm, idata_sdm, summary_sdm, effects_sdm = fit_and_report(\n",
+    "sdm, summary_sdm, effects_sdm = fit_and_report(\n",
     "    SDM,\n",
     "    formula=\"price_pp ~ poverty + rev_rating + num_spots + crowded\",\n",
     "    data=gdf,\n",
@@ -348,9 +397,9 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "az.plot_forest(idata_sdm)\n",
-    "display(diagnostics_table(idata_sdm, [\"rho\", \"beta\", \"sigma\"]))\n",
-    "show_trace(idata_sdm, [\"rho\", \"sigma\"], \"SDM Trace: rho, sigma\")"
+    "az.plot_forest(sdm.inference_data)\n",
+    "display(diagnostics_table(sdm.inference_data, [\"rho\", \"beta\", \"sigma\"]))\n",
+    "show_trace(sdm.inference_data, [\"rho\", \"sigma\"], \"SDM Trace: rho, sigma\")"
    ]
   },
   {
@@ -378,7 +427,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "sdem, idata_sdem, summary_sdem, effects_sdem = fit_and_report(\n",
+    "sdem, summary_sdem, effects_sdem = fit_and_report(\n",
     "    SDEM,\n",
     "    formula=\"price_pp ~ poverty + rev_rating + num_spots + crowded\",\n",
     "    data=gdf,\n",
@@ -395,8 +444,98 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "display(diagnostics_table(idata_sdem, [\"lam\", \"beta\", \"sigma\"]))\n",
-    "show_trace(idata_sdem, [\"lam\", \"sigma\"], \"SDEM Trace: lam, sigma\")"
+    "az.plot_forest(sdem.inference_data)\n",
+    "display(diagnostics_table(sdem.inference_data, [\"lam\", \"beta\", \"sigma\"]))\n",
+    "show_trace(sdem.inference_data, [\"lam\", \"sigma\"], \"SDEM Trace: lam, sigma\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "8e60fc33",
+   "metadata": {},
+   "source": [
+    "## Model Comparison"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "003b100f",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Collect all fitted models for comparison\n",
+    "model_dict = {\n",
+    "    \"OLS\": ols, \"SLX\": slx, \"SAR\": sar, \"SEM\": sem, \"SDM\": sdm, \"SDEM\": sdem,\n",
+    "}\n",
+    "idata_dict = {name: m.inference_data for name, m in model_dict.items()}"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "e775f96f",
+   "metadata": {},
+   "source": [
+    "## Bayes Factor Model Comparison\n",
+    "\n",
+    "Bayes factors provide an alternative to information criteria for comparing competing models. While WAIC and LOO assess *predictive* performance, Bayes factors compare *marginal likelihoods* — the probability of the data under each model, integrated over all parameter values weighted by the prior:\n",
+    "\n",
+    "$$BF_{ij} = \\frac{p(y \\mid \\mathcal{M}_i)}{p(y \\mid \\mathcal{M}_j)} = \\frac{ML_i}{ML_j}$$\n",
+    "\n",
+    "This makes Bayes factors sensitive to the *prior*: models with diffuse priors on unnecessary parameters are penalized more heavily, because the marginal likelihood averages over all possible parameter values weighted by the prior. In spatial models, this means that models with many WX coefficients under wide priors (e.g., SLX, SDM, SDEM) can receive substantially lower marginal likelihoods than more parsimonious alternatives (e.g., OLS, SAR, SEM) — even if their log-likelihoods are similar.\n",
+    "\n",
+    "**Interpreting Bayes factors** (Jeffreys, 1961; Kass & Raftery, 1995):\n",
+    "\n",
+    "| BF range | Evidence strength |\n",
+    "|---|---|\n",
+    "| 1 – 3 | Anecdotal |\n",
+    "| 3 – 10 | Moderate |\n",
+    "| 10 – 30 | Strong |\n",
+    "| 30 – 100 | Very strong |\n",
+    "| > 100 | Extreme |\n",
+    "\n",
+    "**Method.** We use bridge sampling (Meng & Wong, 1996) to estimate each model's log marginal likelihood, following the R `bridgesampling` package (Gronau et al., 2020). The implementation uses ESS weighting, two-phase convergence, and MCSE diagnostics. For reliable estimates, 40,000+ posterior samples are recommended.\n",
+    "\n",
+    "**Important caveat.** Bayes factors can be very sensitive to prior specification. Models with diffuse priors on many parameters will tend to have lower marginal likelihoods. This is by design — it is the Bayesian Occam's razor at work — but it means that Bayes factors and information criteria may disagree when priors are uninformative."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "a4424321",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bayes_factor_compare_models(model_dict, method=\"bridge\").round(3)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "79b341e9",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bayes_factor_compare_models(model_dict, method=\"bic\").round(3)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "c724854b",
+   "metadata": {},
+   "source": [
+    "### Bridge Sampling vs. BIC\n",
+    "\n",
+    "- BIC: SAR > SLX > OLS > SEM (SAR wins, SLX is moderate, SEM is worst)\n",
+    "- Bridge: SAR > SEM > OLS (SAR wins, SEM is moderate)\n",
+    "\n",
+    "The two methods can produce qualitatively different model rankings. This is expected and reflects a fundamental difference in what they assume about priors:\n",
+    "\n",
+    "- **BIC** approximates $\\log(ML) \\approx \\hat\\ell_{\\max} - \\frac{k}{2}\\log(n)$, which assumes *unit-information priors* (priors containing as much information as a single observation). The penalty per parameter is fixed at $\\frac{1}{2}\\log(n) \\approx 2.1$ for $n = 77$.\n",
+    "\n",
+    "- **Bridge sampling** integrates over the *actual* priors in the model. When priors are wide (e.g., `Normal(0, 100)` on WX coefficients), the marginal likelihood penalizes each such parameter by roughly $\\log(\\sigma_{\\text{prior}} / \\sigma_{\\text{post}})$, which can be 5–10× larger than the BIC penalty.\n",
+    "\n",
+    "This is why models with many WX terms (SLX, SDM, SDEM) may look reasonable under BIC but receive extreme Bayes factors under bridge sampling: the wide priors on the WX coefficients are \"wasted\" — they spread probability mass over implausible parameter values, reducing the marginal likelihood. This is **Bayesian Occam's razor** at work, and bridge sampling is generally more trustworthy because it accounts for the actual prior specification."
    ]
   },
   {
@@ -404,15 +543,18 @@
    "id": "26aa5671",
    "metadata": {},
    "source": [
-    "## Spatial Specification Diagnostics (New API)\n",
+    "## Bayesian LM Specification Tests\n",
     "\n",
-    "The model classes now expose dedicated specification diagnostics that return a structured `DiagnosticResult` object.\n",
+    "The `bayespecon.diagnostics` module provides Bayesian Lagrange-multiplier tests that operate on posterior draws rather than point estimates. These replace the frequentist LM tests that were previously available.\n",
     "\n",
-    "Below we run each model's `spatial_specification_tests()` battery and tabulate:\n",
-    "- test name\n",
-    "- statistic\n",
-    "- p-value\n",
-    "- any extra test-specific metadata"
+    "Below we run the Bayesian LM tests from the fitted OLS model:\n",
+    "- `bayesian_lm_lag_test` — tests $H_0: \\\\rho = 0$ (no spatial lag)\n",
+    "- `bayesian_lm_error_test` — tests $H_0: \\\\lambda = 0$ (no spatial error)\n",
+    "- `bayesian_lm_wx_test` — tests $H_0: \\\\gamma = 0$ (no WX, from SAR null)\n",
+    "- `bayesian_lm_sdm_joint_test` — joint test for SDM ($H_0: \\\\rho = 0$ and $\\\\gamma = 0$)\n",
+    "- `bayesian_lm_slx_error_joint_test` — joint test for SDEM ($H_0: \\\\lambda = 0$ and $\\\\gamma = 0$)\n",
+    "\n",
+    "Each returns a `BayesianLMTestResult` with posterior summary statistics and a Bayesian p-value."
    ]
   },
   {
@@ -422,36 +564,19 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "def diagnostic_to_row(result):\n",
-    "    row = {\n",
-    "        \"diagnostic\": result.name,\n",
-    "        \"statistic\": float(result.statistic),\n",
-    "        \"pvalue\": float(result.pvalue),\n",
-    "    }\n",
-    "    if result.extra:\n",
-    "        for k, v in result.extra.items():\n",
-    "            row[k] = float(v) if isinstance(v, (int, float, np.number)) else v\n",
-    "    return row\n",
-    "\n",
-    "\n",
-    "spec_models = {\n",
-    "    \"SLX\": slx,\n",
-    "    \"SAR\": sar,\n",
-    "    \"SEM\": sem,\n",
-    "    \"SDM\": sdm,\n",
-    "    \"SDEM\": sdem,\n",
+    "# Bayesian LM specification tests\n",
+    "# Each test uses a different null model depending on the hypothesis\n",
+    "lm_tests = {\n",
+    "    \"LM Lag (H₀: ρ=0)\": bayesian_lm_lag_test(ols),\n",
+    "    \"LM Error (H₀: λ=0)\": bayesian_lm_error_test(ols),\n",
+    "    \"LM WX (H₀: γ=0, SAR null)\": bayesian_lm_wx_test(sar),\n",
+    "    \"LM SDM Joint (H₀: ρ=0 and γ=0)\": bayesian_lm_sdm_joint_test(ols),\n",
+    "    \"LM SDEM Joint (H₀: λ=0 and γ=0)\": bayesian_lm_slx_error_joint_test(ols),\n",
     "}\n",
     "\n",
-    "spec_tables = {}\n",
-    "for model_name, model_obj in spec_models.items():\n",
-    "    tests = model_obj.spatial_specification_tests()\n",
-    "    table = pd.DataFrame([diagnostic_to_row(dr) for dr in tests.values()])\n",
-    "    spec_tables[model_name] = table.sort_values(\"diagnostic\").reset_index(drop=True)\n",
-    "\n",
-    "for model_name, table in spec_tables.items():\n",
-    "    print(model_name)\n",
-    "    display(table)\n",
-    "    print()"
+    "for label, result in lm_tests.items():\n",
+    "    print(f\"\\n=== {label} ===\")\n",
+    "    display(summarize_bayesian_lm_test(result))"
    ]
   },
   {
@@ -473,31 +598,20 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "def pull_scalar(idata, var_name):\n",
-    "    if var_name not in idata.posterior:\n",
-    "        return None\n",
-    "    vals = idata.posterior[var_name].values.reshape(-1)\n",
-    "    return {\n",
-    "        \"mean\": float(np.mean(vals)),\n",
-    "        \"sd\": float(np.std(vals)),\n",
-    "        \"hdi_3%\": float(np.quantile(vals, 0.03)),\n",
-    "        \"hdi_97%\": float(np.quantile(vals, 0.97)),\n",
-    "    }\n",
-    "\n",
-    "rows = []\n",
-    "for name, idata, var in [\n",
-    "    (\"SAR\", idata_sar, \"rho\"),\n",
-    "    (\"SEM\", idata_sem, \"lam\"),\n",
-    "    (\"SDM\", idata_sdm, \"rho\"),\n",
-    "    (\"SDEM\", idata_sdem, \"lam\"),\n",
+    "# Compare spatial parameters across models\n",
+    "spatial_rows = []\n",
+    "for name, model, var in [\n",
+    "    (\"SAR\", sar, \"rho\"),\n",
+    "    (\"SEM\", sem, \"lam\"),\n",
+    "    (\"SDM\", sdm, \"rho\"),\n",
+    "    (\"SDEM\", sdem, \"lam\"),\n",
     "]:\n",
-    "    stats = pull_scalar(idata, var)\n",
-    "    stats[\"model\"] = name\n",
-    "    stats[\"parameter\"] = var\n",
-    "    rows.append(stats)\n",
+    "    if var in model.inference_data.posterior:\n",
+    "        summary = az.summary(model.inference_data, var_names=[var], round_to=3)\n",
+    "        summary.insert(0, \"model\", name)\n",
+    "        spatial_rows.append(summary)\n",
     "\n",
-    "spatial_param_table = pd.DataFrame(rows)[[\"model\", \"parameter\", \"mean\", \"sd\", \"hdi_3%\", \"hdi_97%\"]]\n",
-    "display(spatial_param_table)"
+    "pd.concat(spatial_rows)"
    ]
   },
   {
@@ -512,8 +626,7 @@
     "\n",
     "Notes:\n",
     "- These comparisons are only meaningful when models are fit to the same data.\n",
-    "- For robust results, increase `draws` and `tune` beyond this pedagogical setup.\n",
-    "- Some model formulations may not expose pointwise `log_likelihood`; those are skipped in the joint comparison and still reported in per-model attempts."
+    "- For robust results, increase `draws` and `tune` beyond this pedagogical setup."
    ]
   },
   {
@@ -523,193 +636,37 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "idata_dict = {\n",
-    "    \"SLX\": idata_slx,\n",
-    "    \"SAR\": idata_sar,\n",
-    "    \"SEM\": idata_sem,\n",
-    "    \"SDM\": idata_sdm,\n",
-    "    \"SDEM\": idata_sdem,\n",
-    "}\n",
+    "# WAIC and LOO comparison\n",
+    "for ic in (\"waic\", \"loo\"):\n",
+    "    try:\n",
+    "        cmp = az.compare(idata_dict, ic=ic, method=\"BB-pseudo-BMA\")\n",
+    "        print(f\"\\n{ic.upper()} comparison\")\n",
+    "        display(cmp)\n",
+    "    except Exception as e:\n",
+    "        print(f\"{ic.upper()} comparison not available: {type(e).__name__}: {e}\")\n",
     "\n",
-    "\n",
-    "def _has_loglik(idata):\n",
-    "    if \"log_likelihood\" not in idata.groups():\n",
-    "        return False\n",
-    "    return len(list(idata.log_likelihood.data_vars)) > 0\n",
-    "\n",
-    "\n",
-    "valid_for_compare = {name: idata for name, idata in idata_dict.items() if _has_loglik(idata)}\n",
-    "missing_loglik = [name for name, idata in idata_dict.items() if not _has_loglik(idata)]\n",
-    "\n",
-    "if missing_loglik:\n",
-    "    print(\"Skipped (no log_likelihood group):\", \", \".join(missing_loglik))\n",
-    "\n",
-    "if len(valid_for_compare) < 2:\n",
-    "    print(\"Need at least two models with valid log_likelihood for WAIC/LOO compare.\")\n",
-    "else:\n",
-    "    for ic in (\"waic\", \"loo\"):\n",
-    "        try:\n",
-    "            cmp = az.compare(valid_for_compare, ic=ic, method=\"BB-pseudo-BMA\")\n",
-    "            print(f\"{ic.upper()} comparison\")\n",
-    "            display(cmp)\n",
-    "        except Exception as e:\n",
-    "            print(f\"{ic.upper()} comparison not available: {type(e).__name__}: {e}\")\n",
-    "\n",
-    "# Always provide per-model IC attempts so the cell remains informative.\n",
+    "# Per-model IC table\n",
     "rows = []\n",
-    "for name, idata in idata_dict.items():\n",
+    "for name, model in model_dict.items():\n",
+    "    idata = model.inference_data\n",
     "    row = {\"model\": name}\n",
-    "\n",
     "    try:\n",
     "        waic_res = az.waic(idata)\n",
     "        row[\"elpd_waic\"] = float(waic_res.elpd_waic)\n",
     "        row[\"p_waic\"] = float(waic_res.p_waic)\n",
-    "    except Exception as e:\n",
+    "    except Exception:\n",
     "        row[\"elpd_waic\"] = np.nan\n",
     "        row[\"p_waic\"] = np.nan\n",
-    "        row[\"waic_error\"] = str(e).split(\"\\n\", 1)[0]\n",
-    "\n",
     "    try:\n",
     "        loo_res = az.loo(idata)\n",
     "        row[\"elpd_loo\"] = float(loo_res.elpd_loo)\n",
     "        row[\"p_loo\"] = float(loo_res.p_loo)\n",
-    "    except Exception as e:\n",
+    "    except Exception:\n",
     "        row[\"elpd_loo\"] = np.nan\n",
     "        row[\"p_loo\"] = np.nan\n",
-    "        row[\"loo_error\"] = str(e).split(\"\\n\", 1)[0]\n",
-    "\n",
     "    rows.append(row)\n",
     "\n",
-    "ic_table = pd.DataFrame(rows).sort_values(\"model\").reset_index(drop=True)\n",
-    "display(ic_table)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "d09d0eba",
-   "metadata": {},
-   "source": [
-    "## MATLAB-Style Residual Diagnostics (Per Model)\n",
-    "\n",
-    "This section mirrors the MATLAB reference diagnostics module:\n",
-    "- `rdiagnose`-style influence and outlier diagnostics\n",
-    "- Breusch-Pagan heteroskedasticity test (`bpagan`)\n",
-    "- ARCH test (`arch`)\n",
-    "- Ljung-Box residual autocorrelation test (`qstat2`)\n",
-    "\n",
-    "Interpretation quick guide:\n",
-    "- Smaller p-values for BPagan/ARCH/Ljung-Box suggest diagnostics concerns.\n",
-    "- Outlier counters are threshold-based candidate flags, not automatic exclusions."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "ca9538b6-a978-4cf2-bcd0-b252c6a8693b",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "pd.DataFrame(slx.spatial_effects())"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "ae1fdc35",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "models = {\n",
-    "    \"SLX\": slx,\n",
-    "    \"SAR\": sar,\n",
-    "    \"SEM\": sem,\n",
-    "    \"SDM\": sdm,\n",
-    "    \"SDEM\": sdem,\n",
-    "}\n",
-    "\n",
-    "\n",
-    "def _last_value(x):\n",
-    "    arr = np.asarray(x)\n",
-    "    if arr.size == 0:\n",
-    "        return np.nan\n",
-    "    return float(arr.reshape(-1)[-1])\n",
-    "\n",
-    "\n",
-    "rows = []\n",
-    "for name, m in models.items():\n",
-    "    try:\n",
-    "        het = m.heteroskedasticity_diagnostics(arch_lags=[1, 2, 4])\n",
-    "        ac = m.autocorrelation_diagnostics(lags=[1, 2, 4])\n",
-    "        out = m.outlier_diagnostics()\n",
-    "\n",
-    "        bp = het[\"bpagan\"]\n",
-    "        arch = het[\"arch\"]\n",
-    "\n",
-    "        # Keep one compact row per model for quick pedagogical comparison.\n",
-    "        rows.append({\n",
-    "            \"model\": name,\n",
-    "            \"bpagan_lm\": float(bp.statistic),\n",
-    "            \"bpagan_p\": float(bp.pvalue),\n",
-    "            \"arch_lag4_stat\": _last_value(arch.statistic),\n",
-    "            \"arch_lag4_p\": _last_value(arch.pvalue),\n",
-    "            \"lb_lag4_q\": _last_value(ac.statistic),\n",
-    "            \"lb_lag4_p\": _last_value(ac.pvalue),\n",
-    "            \"n_leverage_flags\": int(len(out[\"leverage_idx\"])),\n",
-    "            \"n_rstudent_flags\": int(len(out[\"rstudent_idx\"])),\n",
-    "            \"n_dffit_flags\": int(len(out[\"dffit_idx\"])),\n",
-    "            \"n_dfbeta_flags\": int(out[\"dfbeta_idx\"].shape[0]),\n",
-    "        })\n",
-    "    except Exception as e:\n",
-    "        print(f\"{name} failed: {type(e).__name__}: {e}\")\n",
-    "\n",
-    "if rows:\n",
-    "    diag_summary = pd.DataFrame(rows).sort_values(\"model\").reset_index(drop=True)\n",
-    "else:\n",
-    "    diag_summary = pd.DataFrame(columns=[\n",
-    "        \"model\",\n",
-    "        \"bpagan_lm\",\n",
-    "        \"bpagan_p\",\n",
-    "        \"arch_lag4_stat\",\n",
-    "        \"arch_lag4_p\",\n",
-    "        \"lb_lag4_q\",\n",
-    "        \"lb_lag4_p\",\n",
-    "        \"n_leverage_flags\",\n",
-    "        \"n_rstudent_flags\",\n",
-    "        \"n_dffit_flags\",\n",
-    "        \"n_dfbeta_flags\",\n",
-    "    ])\n",
-    "\n",
-    "display(diag_summary)\n",
-    "\n",
-    "# Optional deep dive for one model\n",
-    "example = \"SAR\"\n",
-    "rd = models[example].regression_diagnostics()\n",
-    "print(f\"Detailed rdiagnose-style outputs available for {example}:\", sorted(rd.keys()))"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "a227b00c-5ec3-4567-b228-e3fce1e4ac2e",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "het_sar = sar.heteroskedasticity_diagnostics(arch_lags=[1, 2, 4])\n",
-    "\n",
-    "sar_het_table = pd.DataFrame([\n",
-    "    {\n",
-    "        \"diagnostic\": \"bpagan\",\n",
-    "        \"statistic\": float(het_sar[\"bpagan\"].statistic),\n",
-    "        \"pvalue\": float(het_sar[\"bpagan\"].pvalue),\n",
-    "    },\n",
-    "    {\n",
-    "        \"diagnostic\": \"arch_lag4\",\n",
-    "        \"statistic\": _last_value(het_sar[\"arch\"].statistic),\n",
-    "        \"pvalue\": _last_value(het_sar[\"arch\"].pvalue),\n",
-    "    },\n",
-    "])\n",
-    "\n",
-    "sar_het_table"
+    "pd.DataFrame(rows).sort_values(\"model\").reset_index(drop=True)"
    ]
   },
   {
@@ -733,7 +690,7 @@
     "X = gdf[xcols]\n",
     "\n",
     "sar_matrix = SAR(y=y, X=X, W=W)\n",
-    "idata_sar_matrix = sar_matrix.fit(draws=200, tune=200, chains=2, random_seed=7, progressbar=False)\n",
+    "sar_matrix.fit(draws=200, tune=200, chains=2, random_seed=7, progressbar=False)\n",
     "display(sar_matrix.summary(round_to=3))"
    ]
   },
@@ -753,9 +710,9 @@
  ],
  "metadata": {
   "kernelspec": {
-   "display_name": "Python [conda env:bayespecon]",
+   "display_name": "bayespreg",
    "language": "python",
-   "name": "conda-env-bayespecon-py"
+   "name": "python3"
   },
   "language_info": {
    "codemirror_mode": {

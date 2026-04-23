@@ -458,6 +458,30 @@
   
   
     <li class="md-nav__item">
+      <a href="user-guide/bayesian_lmtests.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="user-guide/cross_sectional_spreg_comparison.html" class="md-nav__link">
         
   
@@ -1129,11 +1153,10 @@
 <p><a class="reference external" href="https://github.com/knaaptime/bayespecon/actions/workflows/unittests.yml"><img alt="Continuous Integration" src="https://github.com/knaaptime/bayespecon/actions/workflows/unittests.yml/badge.svg" /></a>
 <a class="reference external" href="https://codecov.io/gh/knaaptime/bayespecon"><img alt="codecov" src="https://codecov.io/gh/knaaptime/bayespecon/branch/main/graph/badge.svg?token=XO4SilfBEb" /></a></p>
 <p><strong>Bayesian Spatial Econometric Models</strong></p>
-<p>Because Bayesians are cool but MATLAB is not</p>
-<p>Bayesian spatial models have excellent reference implementations in proprietary languages (e.g. MATLAB), but considerably less exposure in open-source languages. Python has a robust ecosystem for Bayesian inference, but fitting regression models with spatial effects traditionally requires a thorough knowledge of <em>both</em> probabilistic programming languages and spatial econometrics</p>
-<p>Thus, <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> provides a simple interface for generating <code class="docutils literal notranslate"><span class="pre">pymc.Model</span></code> objects that fit commonly-used spatial econometric models. This design makes relatively sophisticated models available to applied researchers in short order, giving the benefit of fully Bayesian estimation without learning a new syntax.</p>
-<p>Models are specified using the familiar Wilkinson format via <a class="reference external" href="https://matthew.wardrop.casa/formulaic/latest/"><code class="docutils literal notranslate"><span class="pre">formulaic</span></code></a> (but you can pass design matrices if you prefer), and spatial weights matrices <span class="math notranslate nohighlight">\(W\)</span> are represented by PySAL <a class="reference external" href="https://pysal.org/libpysal/stable/generated/libpysal.graph.Graph.html#libpysal.graph.Graph"><code class="docutils literal notranslate"><span class="pre">graph</span></code></a> objects (or sparse matrices if you prefer). Estimation is handled by <a class="reference external" href="https://www.pymc.io/welcome.html"><code class="docutils literal notranslate"><span class="pre">pymc</span></code></a></p>
-<p>To ensure correctness, the vast majority of functionality is ported from and validated against Jim LeSage’s <a class="reference external" href="https://www.spatial-econometrics.com/">spatial econometrics toolbox</a>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> package is designed to make it simpler to fit, diagnose, and interpret Bayesian spatial econometric regression models. It provides a suite of classes for building commmonly-used models using a straightforward API. Each model is implemented as a class that defines how spatial effects are represented, and the ‘main’ portion of the model specification is given using the familiar Wilkinson format via <a class="reference external" href="https://matthew.wardrop.casa/formulaic/latest/"><code class="docutils literal notranslate"><span class="pre">formulaic</span></code></a> (but you can pass design matrices if you prefer).</p>
+<p>Each model class uses PySAL <a class="reference external" href="https://pysal.org/libpysal/stable/generated/libpysal.graph.Graph.html#libpysal.graph.Graph"><code class="docutils literal notranslate"><span class="pre">graph</span></code></a> objects to represent spatial weights, <span class="math notranslate nohighlight">\(W\)</span>, (or sparse matrices if you prefer) providing thorough integration with the scientific Python and spatial analysis ecosystems. Estimation is handled by <a class="reference external" href="https://www.pymc.io/welcome.html"><code class="docutils literal notranslate"><span class="pre">pymc</span></code></a>.</p>
+<p>This design makes it simple to build and iterate on spatial regression models using a straightforward notation while retaining all the benefits of a Bayesian framework. The resulting <code class="docutils literal notranslate"><span class="pre">pymc.Model</span></code> object is augmented to include the (correct) log-likelihood if requested, facilitating the use of Bayes Factors in model specification searches. The package also implements a suite of novel Bayesian spatial diagnostics.</p>
+<p>Because models are compiled to PyMC, you can use the classes to specify a common model, then inspect the <code class="docutils literal notranslate"><span class="pre">pymc_model</span></code> object to sketch out a more complex specification. The model classes use Jim LeSage’s <a class="reference external" href="https://www.spatial-econometrics.com/">spatial econometrics toolbox</a> as a reference implementation and test case.</p>
 <p><strong>Main Features</strong>:</p>
 <ul class="simple">
 <li><p>Fit models using Wilkinson formulas and PySAL <code class="docutils literal notranslate"><span class="pre">Graph</span></code> objects</p></li>
@@ -1141,7 +1164,7 @@
 <li><p>Models compile to PyMC for full customizability and <a class="reference internal" href="#"><span class="xref myst">performant sampling options</span></a></p></li>
 <li><p>Fast <a class="reference internal" href="#"><span class="xref myst">log-determinant functions</span></a> for evaluating spatial terms</p></li>
 <li><p>Compute marginal (direct and indirect) effects for models with spatial terms</p></li>
-<li><p>Full suite of spatial diagnostics</p></li>
+<li><p>Full suite of Bayesian spatial diagnostics</p></li>
 <li><p>Functions to generate synthetic datasets using a known DGP for each model</p></li>
 </ul>
 <h2 id="supported-models">Supported Models<a class="headerlink" href="#supported-models" title="Link to this heading">¶</a></h2>

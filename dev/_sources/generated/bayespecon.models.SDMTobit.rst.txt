@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~SDMTobit.__init__
-      ~SDMTobit.autocorrelation_diagnostics
-      ~SDMTobit.diagnostics
       ~SDMTobit.fit
       ~SDMTobit.fitted_values
-      ~SDMTobit.heteroskedasticity_diagnostics
-      ~SDMTobit.moran_test
-      ~SDMTobit.outlier_diagnostics
-      ~SDMTobit.regression_diagnostics
       ~SDMTobit.residuals
       ~SDMTobit.spatial_effects
       ~SDMTobit.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~SDMTobit.inference_data
       ~SDMTobit.pymc_model
    
    

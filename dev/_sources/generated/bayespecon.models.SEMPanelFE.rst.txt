@@ -14,19 +14,10 @@
    .. autosummary::
    
       ~SEMPanelFE.__init__
-      ~SEMPanelFE.autocorrelation_diagnostics
-      ~SEMPanelFE.diagnostics
       ~SEMPanelFE.fit
       ~SEMPanelFE.fitted_values
-      ~SEMPanelFE.heteroskedasticity_diagnostics
-      ~SEMPanelFE.lm_sar_conditional_test
-      ~SEMPanelFE.lr_error_test
-      ~SEMPanelFE.outlier_diagnostics
-      ~SEMPanelFE.panel_diagnostics
-      ~SEMPanelFE.regression_diagnostics
       ~SEMPanelFE.residuals
       ~SEMPanelFE.spatial_effects
-      ~SEMPanelFE.spatial_specification_tests
       ~SEMPanelFE.summary
    
    
@@ -37,6 +28,7 @@
 
    .. autosummary::
    
+      ~SEMPanelFE.inference_data
       ~SEMPanelFE.pymc_model
    
    

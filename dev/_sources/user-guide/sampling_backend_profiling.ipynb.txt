@@ -278,8 +278,8 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "# Second Example: Larger 20×20 Grid (400 obs)\n",
-    "# This benchmark repeats the backend comparison on a larger polygon grid.\n"
+    "# Second Example: Larger 40×40 Grid (1600 obs)\n",
+    "# This benchmark repeats the backend comparison on a larger polygon grid."
    ]
   },
   {
@@ -300,8 +300,8 @@
     "    edgecolor=\"white\",\n",
     "    figsize=(7, 7),\n",
     ")\n",
-    "ax.set_title('Simulated y on 40×40 polygon grid (400 obs)')\n",
-    "ax.set_axis_off()\n",
+    "plt.title('Simulated y on 40×40 polygon grid (1600 obs)')\n",
+    "plt.axis('off')\n",
     "plt.show()\n",
     "\n",
     "rows_full = []\n",
@@ -343,7 +343,7 @@
     "        ok_full['rho_abs_error'],\n",
     "        color=['#4c78a8', '#f58518', '#54a24b', '#e45756'][: len(ok_full)],\n",
     "    )\n",
-    "    axes[1].set_title('Absolute Error in rho (20×20 grid)')\n",
+    "    axes[1].set_title('Absolute Error in rho (40×40 grid)')\n",
     "    axes[1].set_ylabel('|rho_hat - rho_true|')\n",
     "else:\n",
     "    axes[0].text(0.5, 0.5, 'No successful backend runs', ha='center', va='center')\n",
@@ -352,7 +352,7 @@
     "    axes[1].set_axis_off()\n",
     "\n",
     "plt.tight_layout()\n",
-    "plt.show()\n"
+    "plt.show()"
    ]
   },
   {
@@ -364,10 +364,7 @@
     "\n",
     "Interpret the tables and plots with two constraints in mind:\n",
     "\n",
-    "- these settings are still benchmark-sized, even on the larger 20×20 grid\n",
-    "- JAX-backed samplers often pay an upfront compilation cost that can dominate shorter runs\n",
-    "\n",
-    "For heavier benchmarks, increase `draws`, `tune`, or `n_side` in `PROFILE_CFG`.\n"
+    "- these settings are still benchmark-sized, even on the larger 40×40 grid"
    ]
   },
   {

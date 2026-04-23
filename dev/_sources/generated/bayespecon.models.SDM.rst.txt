@@ -14,20 +14,10 @@
    .. autosummary::
    
       ~SDM.__init__
-      ~SDM.autocorrelation_diagnostics
-      ~SDM.diagnostics
       ~SDM.fit
       ~SDM.fitted_values
-      ~SDM.heteroskedasticity_diagnostics
-      ~SDM.lm_error_test
-      ~SDM.lm_rho_robust_test
-      ~SDM.lm_rho_test
-      ~SDM.moran_test
-      ~SDM.outlier_diagnostics
-      ~SDM.regression_diagnostics
       ~SDM.residuals
       ~SDM.spatial_effects
-      ~SDM.spatial_specification_tests
       ~SDM.summary
    
    
@@ -38,6 +28,7 @@
 
    .. autosummary::
    
+      ~SDM.inference_data
       ~SDM.pymc_model
    
    

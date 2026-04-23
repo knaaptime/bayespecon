@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~SEMTobit.__init__
-      ~SEMTobit.autocorrelation_diagnostics
-      ~SEMTobit.diagnostics
       ~SEMTobit.fit
       ~SEMTobit.fitted_values
-      ~SEMTobit.heteroskedasticity_diagnostics
-      ~SEMTobit.moran_test
-      ~SEMTobit.outlier_diagnostics
-      ~SEMTobit.regression_diagnostics
       ~SEMTobit.residuals
       ~SEMTobit.spatial_effects
       ~SEMTobit.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~SEMTobit.inference_data
       ~SEMTobit.pymc_model
    
    

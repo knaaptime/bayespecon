@@ -454,6 +454,30 @@
   
   
     <li class="md-nav__item">
+      <a href="bayesian_lmtests.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="cross_sectional_spreg_comparison.html" class="md-nav__link">
         
   
@@ -991,21 +1015,13 @@
 <p>Note: <code class="docutils literal notranslate"><span class="pre">sdemo_programs/chapter4</span></code> convex-combination estimators (with unknown gamma weights over multiple W matrices) are not currently implemented in <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code>. This notebook uses examples that are exactly representable by current <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> classes.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">scipy.sparse</span><span class="w"> </span><span class="kn">import</span> <span class="n">csr_matrix</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">libpysal.graph</span><span class="w"> </span><span class="kn">import</span> <span class="n">Graph</span>
 
-<span class="n">repo_root</span> <span class="o">=</span> <span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span>
-<span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">:</span>
-    <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">repo_root</span><span class="p">))</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">dgp</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">SDM</span><span class="p">,</span> <span class="n">SDEM</span><span class="p">,</span> <span class="n">SDEMPanelFE</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">dgp</span><span class="p">,</span> <span class="n">SDM</span><span class="p">,</span> <span class="n">SDEM</span><span class="p">,</span> <span class="n">SDEMPanelFE</span>
 </code></pre></div>
 </div>
 </div>
@@ -1087,7 +1103,7 @@
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Sequential sampling (1 chains in 1 job)
 NUTS: [lam, beta, sigma]
-Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 16 seconds.
+Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 17 seconds.
 Only one chain was sampled, this makes it impossible to run some convergence checks
 arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape: (chains=2, draws=4)
 </code></pre></div>
@@ -1605,7 +1621,7 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Sequential sampling (1 chains in 1 job)
 NUTS: [lam, beta, sigma]
-Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 35 seconds.
+Sampling 1 chain for 160 tune and 160 draw iterations (160 + 160 draws total) took 39 seconds.
 Only one chain was sampled, this makes it impossible to run some convergence checks
 arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape: (chains=2, draws=4)
 </code></pre></div>
@@ -1934,7 +1950,7 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <p>Unlike MATLAB <code class="docutils literal notranslate"><span class="pre">semip_g</span></code>, this demonstration uses homoskedastic observation-level probit variance (no <code class="docutils literal notranslate"><span class="pre">v_i/r</span></code> hierarchy).</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpatialProbit</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">bayespecon</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpatialProbit</span>
 
 <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">707</span><span class="p">)</span>
 
@@ -1978,7 +1994,7 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 160), minimum_shape:
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Sequential sampling (1 chains in 1 job)
 NUTS: [rho, beta, sigma_a, a_raw]
-Sampling 1 chain for 220 tune and 220 draw iterations (220 + 220 draws total) took 7 seconds.
+Sampling 1 chain for 220 tune and 220 draw iterations (220 + 220 draws total) took 8 seconds.
 Only one chain was sampled, this makes it impossible to run some convergence checks
 arviz - WARNING - Shape validation failed: input_shape: (1, 220), minimum_shape: (chains=2, draws=4)
 </code></pre></div>

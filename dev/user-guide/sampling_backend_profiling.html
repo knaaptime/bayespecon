@@ -454,6 +454,30 @@
   
   
     <li class="md-nav__item">
+      <a href="bayesian_lmtests.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="cross_sectional_spreg_comparison.html" class="md-nav__link">
         
   
@@ -1084,23 +1108,23 @@ Profiling backend=numpyro...
 Profiling backend=blackjax...
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7461/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7894/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
   model = SAR(
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
-/tmp/ipykernel_7461/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
+/tmp/ipykernel_7894/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
   model = SAR(
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
-/tmp/ipykernel_7461/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
+/tmp/ipykernel_7894/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
   model = SAR(
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
   from .autonotebook import tqdm as notebook_tqdm
-/tmp/ipykernel_7461/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
+/tmp/ipykernel_7894/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
   model = SAR(
 </code></pre></div>
 </div>
@@ -1140,7 +1164,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>0</th>
       <td>blackjax</td>
       <td>True</td>
-      <td>3.259539</td>
+      <td>3.424133</td>
       <td>0.134816</td>
       <td>0.764376</td>
       <td>0.762518</td>
@@ -1154,7 +1178,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>1</th>
       <td>numpyro</td>
       <td>True</td>
-      <td>4.246601</td>
+      <td>4.387888</td>
       <td>0.149716</td>
       <td>0.674024</td>
       <td>0.758521</td>
@@ -1168,7 +1192,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>2</th>
       <td>c</td>
       <td>True</td>
-      <td>11.929322</td>
+      <td>12.358649</td>
       <td>0.129851</td>
       <td>0.799025</td>
       <td>0.758267</td>
@@ -1182,7 +1206,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>3</th>
       <td>numba</td>
       <td>True</td>
-      <td>16.740341</td>
+      <td>17.467769</td>
       <td>0.125851</td>
       <td>0.824733</td>
       <td>0.760592</td>
@@ -1246,7 +1270,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>0</th>
       <td>blackjax</td>
       <td>True</td>
-      <td>3.260</td>
+      <td>3.424</td>
       <td>0.135</td>
       <td>0.215</td>
       <td>0.141</td>
@@ -1257,7 +1281,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>1</th>
       <td>numpyro</td>
       <td>True</td>
-      <td>4.247</td>
+      <td>4.388</td>
       <td>0.150</td>
       <td>0.200</td>
       <td>0.193</td>
@@ -1268,7 +1292,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>2</th>
       <td>c</td>
       <td>True</td>
-      <td>11.929</td>
+      <td>12.359</td>
       <td>0.130</td>
       <td>0.220</td>
       <td>0.123</td>
@@ -1279,7 +1303,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>3</th>
       <td>numba</td>
       <td>True</td>
-      <td>16.740</td>
+      <td>17.468</td>
       <td>0.126</td>
       <td>0.224</td>
       <td>0.109</td>
@@ -1315,12 +1339,12 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/a74d42212693c3ba0d3c485cc5a13cbf2568b82c65352aa9c307a2145bd59e0b.png" src="../_images/a74d42212693c3ba0d3c485cc5a13cbf2568b82c65352aa9c307a2145bd59e0b.png" />
+<img alt="../_images/e7c664cddb1f29f6bf8d436b9066540ed4c04fa3d5fa4f76e2adba54a5479a15.png" src="../_images/e7c664cddb1f29f6bf8d436b9066540ed4c04fa3d5fa4f76e2adba54a5479a15.png" />
 </div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Second Example: Larger 20×20 Grid (400 obs)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Second Example: Larger 40×40 Grid (1600 obs)</span>
 <span class="c1"># This benchmark repeats the backend comparison on a larger polygon grid.</span>
 </code></pre></div>
 </div>
@@ -1339,8 +1363,8 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
     <span class="n">edgecolor</span><span class="o">=</span><span class="s2">&quot;white&quot;</span><span class="p">,</span>
     <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span>
 <span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Simulated y on 40×40 polygon grid (400 obs)&#39;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_axis_off</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s1">&#39;Simulated y on 40×40 polygon grid (1600 obs)&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s1">&#39;off&#39;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 
 <span class="n">rows_full</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1360,28 +1384,28 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/0c958c244706570597edb19bf9707ad40cc3e4de8447041c1f7c0eebbbf97be3.png" src="../_images/0c958c244706570597edb19bf9707ad40cc3e4de8447041c1f7c0eebbbf97be3.png" />
+<img alt="../_images/fb71cc5b83de600594bb01887a903412bd8f8d099eac1945be235859854d52d6.png" src="../_images/fb71cc5b83de600594bb01887a903412bd8f8d099eac1945be235859854d52d6.png" />
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Profiling backend=c on 40×40 grid...
 Profiling backend=numba on 40×40 grid...
 Profiling backend=numpyro on 40×40 grid...
 Profiling backend=blackjax on 40×40 grid...
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7461/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_7894/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
   model = SAR(
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 13 seconds.
-/tmp/ipykernel_7461/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
+/tmp/ipykernel_7894/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
   model = SAR(
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 11 seconds.
-/tmp/ipykernel_7461/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
+/tmp/ipykernel_7894/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
   model = SAR(
-/tmp/ipykernel_7461/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
+/tmp/ipykernel_7894/2834277931.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
   model = SAR(
 </code></pre></div>
 </div>
@@ -1418,7 +1442,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>0</th>
       <td>blackjax</td>
       <td>True</td>
-      <td>5.066</td>
+      <td>5.307</td>
       <td>0.138</td>
       <td>0.212</td>
       <td>0.157</td>
@@ -1429,7 +1453,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>1</th>
       <td>numpyro</td>
       <td>True</td>
-      <td>5.682</td>
+      <td>5.792</td>
       <td>0.156</td>
       <td>0.194</td>
       <td>0.224</td>
@@ -1440,7 +1464,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>2</th>
       <td>numba</td>
       <td>True</td>
-      <td>13.690</td>
+      <td>14.056</td>
       <td>0.139</td>
       <td>0.211</td>
       <td>0.161</td>
@@ -1451,7 +1475,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
       <th>3</th>
       <td>c</td>
       <td>True</td>
-      <td>14.566</td>
+      <td>14.840</td>
       <td>0.129</td>
       <td>0.221</td>
       <td>0.125</td>
@@ -1481,7 +1505,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
         <span class="n">ok_full</span><span class="p">[</span><span class="s1">&#39;rho_abs_error&#39;</span><span class="p">],</span>
         <span class="n">color</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;#4c78a8&#39;</span><span class="p">,</span> <span class="s1">&#39;#f58518&#39;</span><span class="p">,</span> <span class="s1">&#39;#54a24b&#39;</span><span class="p">,</span> <span class="s1">&#39;#e45756&#39;</span><span class="p">][:</span> <span class="nb">len</span><span class="p">(</span><span class="n">ok_full</span><span class="p">)],</span>
     <span class="p">)</span>
-    <span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Absolute Error in rho (20×20 grid)&#39;</span><span class="p">)</span>
+    <span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;Absolute Error in rho (40×40 grid)&#39;</span><span class="p">)</span>
     <span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;|rho_hat - rho_true|&#39;</span><span class="p">)</span>
 <span class="k">else</span><span class="p">:</span>
     <span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="s1">&#39;No successful backend runs&#39;</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">)</span>
@@ -1495,16 +1519,14 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/6e44d52c8687418b28f70d861c4d78c445cc15c4d6ba1fd4cea84a990d24172d.png" src="../_images/6e44d52c8687418b28f70d861c4d78c445cc15c4d6ba1fd4cea84a990d24172d.png" />
+<img alt="../_images/e592f8a655a88fb037e67c225bc455067993734a44e8af7c24a6fcbfc6b21e56.png" src="../_images/e592f8a655a88fb037e67c225bc455067993734a44e8af7c24a6fcbfc6b21e56.png" />
 </div>
 </div>
 <h2 id="reading-the-results">Reading The Results<a class="headerlink" href="#reading-the-results" title="Link to this heading">¶</a></h2>
 <p>Interpret the tables and plots with two constraints in mind:</p>
 <ul class="simple">
-<li><p>these settings are still benchmark-sized, even on the larger 20×20 grid</p></li>
-<li><p>JAX-backed samplers often pay an upfront compilation cost that can dominate shorter runs</p></li>
+<li><p>these settings are still benchmark-sized, even on the larger 40×40 grid</p></li>
 </ul>
-<p>For heavier benchmarks, increase <code class="docutils literal notranslate"><span class="pre">draws</span></code>, <code class="docutils literal notranslate"><span class="pre">tune</span></code>, or <code class="docutils literal notranslate"><span class="pre">n_side</span></code> in <code class="docutils literal notranslate"><span class="pre">PROFILE_CFG</span></code>.</p>
 
 
 

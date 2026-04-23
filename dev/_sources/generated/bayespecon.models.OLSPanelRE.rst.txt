@@ -14,14 +14,8 @@
    .. autosummary::
    
       ~OLSPanelRE.__init__
-      ~OLSPanelRE.autocorrelation_diagnostics
-      ~OLSPanelRE.diagnostics
       ~OLSPanelRE.fit
       ~OLSPanelRE.fitted_values
-      ~OLSPanelRE.heteroskedasticity_diagnostics
-      ~OLSPanelRE.outlier_diagnostics
-      ~OLSPanelRE.panel_diagnostics
-      ~OLSPanelRE.regression_diagnostics
       ~OLSPanelRE.residuals
       ~OLSPanelRE.spatial_effects
       ~OLSPanelRE.summary
@@ -34,6 +28,7 @@
 
    .. autosummary::
    
+      ~OLSPanelRE.inference_data
       ~OLSPanelRE.pymc_model
    
    
