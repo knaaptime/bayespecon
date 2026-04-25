@@ -23,8 +23,16 @@ Recovering Parameters <user-guide/faithfulness_bayespecon>
 Replicating Elhorst et al 2024 <user-guide/jgsy2024_replication_bayespecon>
 Log-Determinant Methods <user-guide/logdet_profiling>
 Sampling Backends <user-guide/sampling_backend_profiling>
-references
 ```
+
+```{toctree}
+:hidden:
+:caption: References
+:maxdepth: 1
+
+References <references>
+```
+
 
 ```{toctree}
 :hidden:

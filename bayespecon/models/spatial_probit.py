@@ -69,6 +69,13 @@ class SpatialProbit:
     - ``rho_lower``, ``rho_upper``: bounds for ``rho`` (default ``-0.95, 0.95``)
     - ``beta_mu``, ``beta_sigma``: Normal prior for ``beta``
     - ``sigma_a_sigma``: HalfNormal scale for ``sigma_a``
+
+    **Robust regression**
+
+    ``robust=True`` is not supported for SpatialProbit. The probit link
+    function uses a Normal CDF; a robust version would require a Student-t
+    CDF link, which is not yet implemented. Use ``robust=True`` with
+    Gaussian models (OLS, SAR, SEM, etc.) instead.
     """
 
     def __init__(
@@ -82,11 +89,13 @@ class SpatialProbit:
         region_ids: Optional[Union[np.ndarray, pd.Series]] = None,
         mobs: Optional[Union[np.ndarray, list[int]]] = None,
         priors: Optional[dict] = None,
+        robust: bool = False,
     ):
         if W is None:
             raise ValueError("W is required.")
 
         self.priors = priors or {}
+        self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
 
@@ -225,6 +234,15 @@ class SpatialProbit:
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
         sigma_a_sigma = self.priors.get("sigma_a_sigma", 2.0)
+
+        if self.robust:
+            raise NotImplementedError(
+                "Robust (Student-t) error distribution is not supported for "
+                "SpatialProbit. The probit link function uses a Normal CDF; "
+                "a robust version would require a t-link (Student-t CDF) which "
+                "is not yet implemented. Use robust=True with Gaussian models "
+                "(OLS, SAR, SEM, etc.) instead."
+            )
 
         W_pt = pt.as_tensor_variable(self._W_dense)
         I_pt = pt.eye(self._m)

@@ -10,6 +10,7 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
+import pytensor.tensor as pt
 import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
@@ -91,7 +92,9 @@ def _parse_W(
 
 
 class SpatialModel(ABC):
-    """Base class for Bayesian spatial regression models.
+    """Base class for Bayesian spatial regression models. Models follow the notation
+    of :cite:p:`anselin1988SpatialEconometrics` and :cite:p:`lesage2009IntroductionSpatial`.
+    The API supports both formula and matrix input modes.
 
     Parameters
     ----------
@@ -126,6 +129,13 @@ class SpatialModel(ABC):
         ``"int"`` uses sparse-LU + spline interpolation (``lndetint``);
         ``"mc"`` uses Monte Carlo trace approximation (``lndetmc``);
         ``"ichol"`` uses ILU-based approximation (``lndetichol`` analog).
+    robust : bool, default False
+        If True, use a Student-t error distribution instead of Normal,
+        yielding a model that is robust to heavy-tailed outliers. When
+        ``robust=True``, a ``nu`` (degrees of freedom) parameter is added
+        to the model with an :math:`\\mathrm{Exp}(\\lambda_\\nu)` prior (default
+        ``nu_lam = 1/30``, mean ≈ 30). The ``nu`` prior can be controlled
+        via the ``priors`` dict with key ``nu_lam``.
     w_vars : list of str, optional
         Names of X columns to spatially lag. Only relevant for models that
         include ``WX`` terms (SLX, SDM, SDEM and their panel/Tobit variants).
@@ -143,10 +153,12 @@ class SpatialModel(ABC):
         W: Optional[Union[Graph, sp.spmatrix]] = None,
         priors: Optional[dict] = None,
         logdet_method: str = "eigenvalue",
+        robust: bool = False,
         w_vars: Optional[list] = None,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
+        self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._W_dense_cache: Optional[np.ndarray] = None
@@ -300,6 +312,28 @@ class SpatialModel(ABC):
     # ------------------------------------------------------------------
     # Abstract interface
     # ------------------------------------------------------------------
+
+    def _add_nu_prior(self, model: pm.Model) -> pm.Model:
+        """Add the degrees-of-freedom prior for robust (Student-t) models.
+
+        Called inside ``_build_pymc_model`` when ``self.robust`` is True.
+        Uses an :math:`\\mathrm{Exp}(\\lambda_\\nu)` prior on ``nu`` with rate ``nu_lam`` (default
+        1/30, giving mean ≈ 30, favouring near-Normal tails). A lower
+        bound of 2 is enforced so that the variance exists.
+
+        Parameters
+        ----------
+        model : pymc.Model
+            The model context in which to add the ``nu`` prior.
+
+        Returns
+        -------
+        pymc.Model
+            The same model context (``nu`` is added as a side effect).
+        """
+        nu_lam = self.priors.get("nu_lam", 1.0 / 30.0)
+        pm.Truncated("nu", pm.Exponential.dist(lam=nu_lam), lower=2.0)
+        return model
 
     @abstractmethod
     def _build_pymc_model(self) -> pm.Model:
@@ -497,7 +531,7 @@ class SpatialModel(ABC):
         """Compute posterior direct, indirect, and total impacts.
 
         Models without a spatial lag on y do not exhibit global
-        feedback propagation through :math:`(I-\rho W)^{-1}`. However,
+        feedback propagation through :math:`(I-\\rho W)^{-1}`. However,
         models with spatially lagged covariates (SLX, SDEM) can still
         have non-zero neighbour spillovers captured in the indirect term.
 
@@ -573,5 +607,3 @@ class SpatialModel(ABC):
     def __repr__(self) -> str:
         n, k = self._X.shape
         return f"{self.__class__.__name__}(n={n}, k={k}, features={self._feature_names})"
-
-

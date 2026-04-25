@@ -6,7 +6,9 @@ LeSage/Pace spatial panel routines, cast as hierarchical Bayesian models.
 Model structure for all three classes
 --------------------------------------
 .. math::
-    y_{it} = \\text{(spatial/non-spatial mean)} + \\alpha_i + \\varepsilon_{it}
+    y_{it} = \\mu_{it} + \\alpha_i + \\varepsilon_{it}
+
+where :math:`\\mu_{it}` is the spatial or non-spatial mean depending on the model.
 
     \\alpha_i \\sim N(0, \\sigma_\\alpha^2), \\quad
     \\varepsilon_{it} \\sim N(0, \\sigma^2)
@@ -65,6 +67,20 @@ class OLSPanelRE(SpatialPanelModel):
     Data are **not** demeaned — the random effects absorb the unit-level
     mean structure probabilistically.  This is the Bayesian analogue of
     the classical GLS random-effects estimator in ``prandom.m``.
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_{it} \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def __init__(self, **kwargs):
@@ -99,7 +115,12 @@ class OLSPanelRE(SpatialPanelModel):
             alpha = pm.Normal("alpha", mu=0.0, sigma=sigma_alpha, dims="unit")
 
             mu = pt.dot(self._X, beta) + alpha[unit_idx]
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
 
         return model
 
@@ -145,13 +166,29 @@ class SARPanelRE(SpatialPanelModel):
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
         ``model`` is forced to 0 (no within-transform demeaning).
 
-    Priors (``priors`` dict keys)
-    ------------------------------
-    rho_lower, rho_upper : float, default -1, 1
-    beta_mu : float, default 0
-    beta_sigma : float, default 1e6
-    sigma_sigma : float, default 10
-    sigma_alpha_sigma : float, default 10
+    Notes
+    -----
+    The ``priors`` dict supports the following keys:
+
+    - ``rho_lower, rho_upper`` (float, default -1, 1): Bounds for the Uniform prior on rho.
+    - ``beta_mu`` (float, default 0): Prior mean for beta.
+    - ``beta_sigma`` (float, default 1e6): Prior std for beta.
+    - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior on sigma.
+    - ``sigma_alpha_sigma`` (float, default 10): Scale for HalfNormal prior on sigma_alpha.
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_{it} \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def __init__(self, **kwargs):
@@ -193,7 +230,12 @@ class SARPanelRE(SpatialPanelModel):
             alpha = pm.Normal("alpha", mu=0.0, sigma=sigma_alpha, dims="unit")
 
             mu = rho * self._Wy + pt.dot(self._X, beta) + alpha[unit_idx]
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
             pm.Potential("jacobian", logdet_fn(rho))
 
         return model
@@ -290,13 +332,30 @@ class SEMPanelRE(SpatialPanelModel):
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
         ``model`` is forced to 0.
 
-    Priors (``priors`` dict keys)
-    ------------------------------
-    lam_lower, lam_upper : float, default -1, 1
-    beta_mu : float, default 0
-    beta_sigma : float, default 1e6
-    sigma_sigma : float, default 10
-    sigma_alpha_sigma : float, default 10
+    Notes
+    -----
+    The ``priors`` dict supports the following keys:
+
+    - ``lam_lower, lam_upper`` (float, default -1, 1): Bounds for the Uniform prior on lambda.
+    - ``beta_mu`` (float, default 0): Prior mean for beta.
+    - ``beta_sigma`` (float, default 1e6): Prior std for beta.
+    - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior on sigma.
+    - ``sigma_alpha_sigma`` (float, default 10): Scale for HalfNormal prior on sigma_alpha.
+
+    **Robust regression**
+
+    When ``robust=True``, the spatially-filtered error distribution is
+    changed from Normal to Student-t, yielding a model that is robust to
+    heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_{it} = (I - \\lambda W)(y - X\\beta - \\alpha_i) \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def __init__(self, **kwargs):
@@ -342,7 +401,12 @@ class SEMPanelRE(SpatialPanelModel):
             #         = resid - lam * W @ resid
             resid = self._y - pt.dot(self._X, beta) - alpha[unit_idx]
             eps = resid - lam * pt.dot(W_pt, resid)
-            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+            else:
+                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
             pm.Potential("jacobian", logdet_fn(lam))
 
@@ -404,11 +468,23 @@ class SEMPanelRE(SpatialPanelModel):
         resid = self._y[None, :] - beta_f @ X.T - alpha_f[:, unit_idx]
         eps = resid - lam_f[:, None] * (resid @ W.T)
 
-        ll = -0.5 * (
-            (eps / sigma_f[:, None]) ** 2
-            + np.log(2.0 * np.pi)
-            + 2.0 * np.log(sigma_f[:, None])
-        )
+        if self.robust:
+            nu_f = idata.posterior["nu"].values.reshape(s)
+            from scipy.special import gammaln
+            ll = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - ((nu_f[:, None] + 1) / 2)
+                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
+            )
+        else:
+            ll = -0.5 * (
+                (eps / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
 
         # Eigenvalue-based Jacobian: log|I - lam*W| * T / n (pure numpy)
         eigs = self._W_eigs.real.astype(np.float64)

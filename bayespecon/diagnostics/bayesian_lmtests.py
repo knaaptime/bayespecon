@@ -1,11 +1,11 @@
 """
-Bayesian LM-type diagnostics for spatial models (Dogan et al., 2021).
+Bayesian LM-type diagnostics for spatial models :cite:p:`dogan2021BayesianRobust`.
 
 Implements Bayesian LM tests for omitted spatial lag (SAR) and error (SEM)
 models, as well as SDM/SDEM variant tests (WX, joint, and robust),
-following the formulas in Dogan et al. (2021) and Koley & Bera (2024).
+following the formulas in :cite:t:`dogan2021BayesianRobust` and :cite:t:`koley2024UseNot`.
 
-Panel variants follow Anselin (2008) and Elhorst (2014) for the
+Panel variants follow :cite:t:`anselin2008SpatialPanel` and :cite:t:`elhorst2014SpatialEconometrics` for the
 information-matrix adjustment (T multiplier, Wb'MWb term).
 """
 
@@ -34,7 +34,7 @@ class BayesianLMTestResult:
     bayes_pvalue : float
         P-value computed at the posterior mean of the LM statistic,
         ``1 - chi2.cdf(mean, df)``. Under H₀ the LM statistic follows
-        a :math:`\\chi^2` distribution (Dogan et al., 2021, Proposition 1).
+        a :math:`\\chi^2` distribution (:cite:p:`dogan2021BayesianRobust`, Proposition 1).
     test_type : str
         Label identifying the test (e.g. ``"bayesian_lm_lag"``).
     df : int
@@ -84,31 +84,31 @@ def bayesian_lm_lag_test(
     beta_name: str = "beta",
     test_type: str = "lag",
 ) -> BayesianLMTestResult:
-    r"""Bayesian LM test for omitted spatial lag (SAR) model.
+    """Bayesian LM test for omitted spatial lag (SAR) model.
 
-    Follows Dogan et al. (2021). Implements the Bayesian LM test for
+    Follows :cite:t:`dogan2021BayesianRobust`. Implements the Bayesian LM test for
     omitted spatial lag (SAR) effects.
 
     The test statistic for each posterior draw is:
 
     .. math::
-        S = \mathbf{e}^\top W \mathbf{y}
+        S = \\mathbf{e}^\\top W \\mathbf{y}
 
-    where :math:`\mathbf{e}` are residuals, :math:`W` is the spatial
-    weights matrix, and :math:`\mathbf{y}` is the outcome vector.
+    where :math:`\\mathbf{e}` are residuals, :math:`W` is the spatial
+    weights matrix, and :math:`\\mathbf{y}` is the outcome vector.
 
     The variance is:
 
     .. math::
-        V = \mathbb{E}\left[ \sum_{i} (e_i W y_i)^2 \right]
+        V = \\mathbb{E}\\left[ \\sum_{i} (e_i W y_i)^2 \\right]
 
     The LM statistic is:
 
     .. math::
-        \mathrm{LM} = \frac{S^2}{V}
+        \\mathrm{LM} = \\frac{S^2}{V}
 
     The Bayesian p-value is computed at the posterior mean of the LM
-    statistic: ``1 - chi2.cdf(mean, df)`` (Dogan et al., 2021).
+    statistic: ``1 - chi2.cdf(mean, df)`` (:cite:p:`dogan2021BayesianRobust`).
 
     Parameters
     ----------
@@ -124,11 +124,6 @@ def bayesian_lm_lag_test(
     BayesianLMTestResult
         Dataclass containing LM samples, summary statistics, and metadata.
 
-    References
-    ----------
-    Dogan, O., LeSage, J.P., Parent, O. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
     """
     y = model._y
     idata = model.inference_data
@@ -170,31 +165,31 @@ def bayesian_lm_error_test(
     beta_name: str = "beta",
     test_type: str = "error",
 ) -> BayesianLMTestResult:
-    r"""Bayesian LM test for omitted spatial error (SEM) model.
+    """Bayesian LM test for omitted spatial error (SEM) model.
 
-    Follows Dogan et al. (2021). Implements the Bayesian LM test for
+    Follows :cite:t:`dogan2021BayesianRobust`. Implements the Bayesian LM test for
     omitted spatial error (SEM) effects.
 
     For each posterior draw, the test statistic is:
 
     .. math::
-        S = \sum_{i} e_i (W \mathbf{e})_i
+        S = \\sum_{i} e_i (W \\mathbf{e})_i
 
-    where :math:`\mathbf{e}` are residuals and :math:`W` is the spatial
+    where :math:`\\mathbf{e}` are residuals and :math:`W` is the spatial
     weights matrix.
 
     The variance is:
 
     .. math::
-        V = \mathbb{E}\left[ \sum_{i} (e_i (W \mathbf{e})_i)^2 \right]
+        V = \\mathbb{E}\\left[ \\sum_{i} (e_i (W \\mathbf{e})_i)^2 \\right]
 
     The LM statistic is:
 
     .. math::
-        \mathrm{LM} = \frac{S^2}{V}
+        \\mathrm{LM} = \\frac{S^2}{V}
 
     The Bayesian p-value is computed at the posterior mean of the LM
-    statistic: ``1 - chi2.cdf(mean, df)`` (Dogan et al., 2021).
+    statistic: ``1 - chi2.cdf(mean, df)`` (:cite:p:`dogan2021BayesianRobust`).
 
     Parameters
     ----------
@@ -210,11 +205,6 @@ def bayesian_lm_error_test(
     BayesianLMTestResult
         Dataclass containing LM samples, summary statistics, and metadata.
 
-    References
-    ----------
-    Dogan, O., LeSage, J.P., Parent, O. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
     """
     y = model._y
     # Use sparse matrix for We = W @ resid (avoids dense materialisation)
@@ -257,38 +247,37 @@ def bayesian_lm_wx_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian LM test for WX coefficients (H₀: γ = 0).
+    """Bayesian LM test for WX coefficients (H₀: γ = 0).
 
     Tests whether spatially lagged covariates (WX) should be added to a
     SAR model, i.e., whether the SAR model should be extended to an SDM
     specification. Follows the multi-parameter Bayesian LM test framework
-    of Dogan et al. (2021) and the classical LM-WX test of Koley & Bera
-    (2024).
+    of :cite:t:`dogan2021BayesianRobust` and the classical LM-WX test of :cite:t:`koley2024UseNot`.
 
     The null model is SAR (includes ρ but not γ). For each posterior draw
     from the SAR model, residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - \rho W \mathbf{y} - X \beta
+        \\mathbf{e} = \\mathbf{y} - \\rho W \\mathbf{y} - X \\beta
 
     The score vector for the WX coefficients is:
 
     .. math::
-        \mathbf{g}_\gamma = (WX)^\top \mathbf{e}
+        \\mathbf{g}_\\gamma = (WX)^\\top \\mathbf{e}
 
-    a :math:`k_{wx} \times 1` vector for each draw. The concentration
+    a :math:`k_{wx} \\times 1` vector for each draw. The concentration
     matrix is the information matrix evaluated at the posterior mean:
 
     .. math::
-        J_{\gamma\gamma} = \frac{1}{\bar{\sigma}^2} (WX)^\top (WX)
+        J_{\\gamma\\gamma} = \\frac{1}{\\bar{\\sigma}^2} (WX)^\\top (WX)
 
-    where :math:`\bar{\sigma}^2` is the posterior mean of :math:`\sigma^2`.
+    where :math:`\\bar{\\sigma}^2` is the posterior mean of :math:`\\sigma^2`.
     The LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM} = \mathbf{g}_\gamma^\top J_{\gamma\gamma}^{-1} \mathbf{g}_\gamma
+        \\mathrm{LM} = \\mathbf{g}_\\gamma^\\top J_{\\gamma\\gamma}^{-1} \\mathbf{g}_\\gamma
 
-    which is distributed as :math:`\chi^2_{k_{wx}}` under H₀.
+    which is distributed as :math:`\\chi^2_{k_{wx}}` under H₀.
 
     Parameters
     ----------
@@ -304,14 +293,6 @@ def bayesian_lm_wx_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to :math:`k_{wx}` (number of WX columns).
 
-    References
-    ----------
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
-
-    Koley, T., Bera, A.K. (2024). "Spatial lag vs spatial error:
-    A robust LM test." Journal of Econometrics, 240(1), 105729.
     """
     y = model._y
     X = model._X
@@ -372,43 +353,43 @@ def bayesian_lm_sdm_joint_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian joint LM test for SDM (H₀: ρ = 0 AND γ = 0).
+    """Bayesian joint LM test for SDM (H₀: ρ = 0 AND γ = 0).
 
     Tests the joint null hypothesis that both the spatial lag coefficient
     and the WX coefficients are zero, i.e., whether the OLS model should
     be extended to an SDM specification. Follows the multi-parameter
-    Bayesian LM test framework of Dogan et al. (2021) and the classical
-    joint LM-SDM test of Koley & Bera (2024).
+    Bayesian LM test framework of :cite:t:`dogan2021BayesianRobust` and the classical
+    joint LM-SDM test of :cite:t:`koley2024UseNot`.
 
     The null model is OLS. For each posterior draw from the OLS model,
     residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - X \beta
+        \\mathbf{e} = \\mathbf{y} - X \\beta
 
     The joint score vector is:
 
     .. math::
-        \mathbf{g} = \begin{pmatrix} \mathbf{e}^\top W \mathbf{y} \\
-        (WX)^\top \mathbf{e} \end{pmatrix}
+        \\mathbf{g} = \\begin{pmatrix} \\mathbf{e}^\\top W \\mathbf{y} \\\\
+        (WX)^\\top \\mathbf{e} \\end{pmatrix}
 
-    a :math:`(1 + k_{wx}) \times 1` vector for each draw. The concentration
+    a :math:`(1 + k_{wx}) \\times 1` vector for each draw. The concentration
     matrix is the information matrix evaluated at the posterior mean:
 
     .. math::
-        J = \frac{1}{\bar{\sigma}^2}
-        \begin{pmatrix}
-        (W\mathbf{y})^\top (W\mathbf{y}) & (W\mathbf{y})^\top (WX) \\
-        (WX)^\top (W\mathbf{y}) & (WX)^\top (WX)
-        \end{pmatrix}
+        J = \\frac{1}{\\bar{\\sigma}^2}
+        \\begin{pmatrix}
+        (W\\mathbf{y})^\\top (W\\mathbf{y}) & (W\\mathbf{y})^\\top (WX) \\\\
+        (WX)^\\top (W\\mathbf{y}) & (WX)^\\top (WX)
+        \\end{pmatrix}
 
-    where :math:`\bar{\sigma}^2` is the posterior mean of :math:`\sigma^2`.
+    where :math:`\\bar{\\sigma}^2` is the posterior mean of :math:`\\sigma^2`.
     The LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM} = \mathbf{g}^\top J^{-1} \mathbf{g}
+        \\mathrm{LM} = \\mathbf{g}^\\top J^{-1} \\mathbf{g}
 
-    which is distributed as :math:`\chi^2_{1 + k_{wx}}` under H₀.
+    which is distributed as :math:`\\chi^2_{1 + k_{wx}}` under H₀.
 
     Parameters
     ----------
@@ -424,14 +405,6 @@ def bayesian_lm_sdm_joint_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to :math:`1 + k_{wx}`.
 
-    References
-    ----------
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
-
-    Koley, T., Bera, A.K. (2024). "Spatial lag vs spatial error:
-    A robust LM test." Journal of Econometrics, 240(1), 105729.
     """
     y = model._y
     X = model._X
@@ -495,43 +468,43 @@ def bayesian_lm_slx_error_joint_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian joint LM test for SDEM (H₀: λ = 0 AND γ = 0).
+    """Bayesian joint LM test for SDEM (H₀: λ = 0 AND γ = 0).
 
     Tests the joint null hypothesis that both the spatial error coefficient
     and the WX coefficients are zero, i.e., whether the OLS model should
     be extended to an SDEM specification. Follows the multi-parameter
-    Bayesian LM test framework of Dogan et al. (2021) and the classical
-    joint LM-SLX-Error test of Koley & Bera (2024).
+    Bayesian LM test framework of :cite:t:`dogan2021BayesianRobust` and the classical
+    joint LM-SLX-Error test of :cite:t:`koley2024UseNot`.
 
     The null model is OLS. For each posterior draw from the OLS model,
     residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - X \beta
+        \\mathbf{e} = \\mathbf{y} - X \\beta
 
     The joint score vector is:
 
     .. math::
-        \mathbf{g} = \begin{pmatrix} \mathbf{e}^\top W \mathbf{e} \\
-        (WX)^\top \mathbf{e} \end{pmatrix}
+        \\mathbf{g} = \\begin{pmatrix} \\mathbf{e}^\\top W \\mathbf{e} \\\\
+        (WX)^\\top \\mathbf{e} \\end{pmatrix}
 
-    a :math:`(1 + k_{wx}) \times 1` vector for each draw. The concentration
+    a :math:`(1 + k_{wx}) \\times 1` vector for each draw. The concentration
     matrix is the information matrix evaluated at the posterior mean:
 
     .. math::
-        J = \begin{pmatrix}
-        \mathrm{tr}(W'W + W^2) & 0 \\
-        0 & \frac{1}{\bar{\sigma}^2} (WX)^\top (WX)
-        \end{pmatrix}
+        J = \\begin{pmatrix}
+        \\mathrm{tr}(W'W + W^2) & 0 \\\\
+        0 & \\frac{1}{\\bar{\\sigma}^2} (WX)^\\top (WX)
+        \\end{pmatrix}
 
-    where :math:`\bar{\sigma}^2` is the posterior mean of :math:`\sigma^2`.
+    where :math:`\\bar{\\sigma}^2` is the posterior mean of :math:`\\sigma^2`.
     The off-diagonal blocks are zero under H₀ (spherical errors).
     The LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM} = \mathbf{g}^\top J^{-1} \mathbf{g}
+        \\mathrm{LM} = \\mathbf{g}^\\top J^{-1} \\mathbf{g}
 
-    which is distributed as :math:`\chi^2_{1 + k_{wx}}` under H₀.
+    which is distributed as :math:`\\chi^2_{1 + k_{wx}}` under H₀.
 
     Parameters
     ----------
@@ -547,14 +520,6 @@ def bayesian_lm_slx_error_joint_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to :math:`1 + k_{wx}`.
 
-    References
-    ----------
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
-
-    Koley, T., Bera, A.K. (2024). "Spatial lag vs spatial error:
-    A robust LM test." Journal of Econometrics, 240(1), 105729.
     """
     y = model._y
     X = model._X
@@ -647,23 +612,23 @@ def _info_matrix_blocks_sdm(
     sigma2: float,
     Wy_hat: np.ndarray | None = None,
 ) -> dict:
-    r"""Compute partitioned information matrix blocks for SDM specification.
+    """Compute partitioned information matrix blocks for SDM specification.
 
     Computes the blocks of the information matrix :math:`J` needed for the
     Neyman orthogonal score adjustment in the SDM context, following
-    Koley & Bera (2024) and Anselin et al. (1996).
+    :cite:t:`koley2024UseNot` and :cite:t:`anselin1996SimpleDiagnostic`.
 
-    The parameter vector is :math:`\theta = (\beta', \sigma^2, \rho, \gamma)'`
-    where :math:`\gamma` are the WX coefficients. The relevant blocks
-    (partitioned on :math:`\sigma^2`) are:
+    The parameter vector is :math:`\\theta = (\\beta', \\sigma^2, \\rho, \\gamma)'`
+    where :math:`\\gamma` are the WX coefficients. The relevant blocks
+    (partitioned on :math:`\\sigma^2`) are:
 
     .. math::
-        J_{\rho\rho \cdot \sigma} &= n + \mathrm{tr}(W'W + W^2) \\
-        J_{\rho\gamma \cdot \sigma} &= (W\hat{y})' (WX) / \sigma^2 \\
-        J_{\gamma\gamma \cdot \sigma} &= (WX)' (WX) / \sigma^2
+        J_{\\rho\\rho \\cdot \\sigma} &= n + \\mathrm{tr}(W'W + W^2) \\\\
+        J_{\\rho\\gamma \\cdot \\sigma} &= (W\\hat{y})' (WX) / \\sigma^2 \\\\
+        J_{\\gamma\\gamma \\cdot \\sigma} &= (WX)' (WX) / \\sigma^2
 
-    where :math:`\hat{y} = X\bar{\beta}` is the fitted values under H₀
-    (posterior mean), and :math:`W\hat{y}` is the spatially lagged fitted values.
+    where :math:`\\hat{y} = X\\bar{\\beta}` is the fitted values under H₀
+    (posterior mean), and :math:`W\\hat{y}` is the spatially lagged fitted values.
 
     Parameters
     ----------
@@ -728,14 +693,14 @@ def _info_matrix_blocks_sdem(
     W_sparse,
     sigma2: float,
 ) -> dict:
-    r"""Compute partitioned information matrix blocks for SDEM specification.
+    """Compute partitioned information matrix blocks for SDEM specification.
 
     Computes the blocks of the information matrix needed for the Neyman
     orthogonal score adjustment in the SDEM context, following
-    Koley & Bera (2024).
+    :cite:t:`koley2024UseNot`.
 
-    For the SDEM model, the testing parameter is :math:`\lambda` (spatial
-    error) and the nuisance parameter is :math:`\gamma` (WX coefficients).
+    For the SDEM model, the testing parameter is :math:`\\lambda` (spatial
+    error) and the nuisance parameter is :math:`\\gamma` (WX coefficients).
 
     Parameters
     ----------
@@ -790,45 +755,45 @@ def bayesian_robust_lm_lag_sdm_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian robust LM-Lag test in SDM context (H₀: ρ = 0, robust to γ).
+    """Bayesian robust LM-Lag test in SDM context (H₀: ρ = 0, robust to γ).
 
     Tests the null hypothesis that the spatial lag coefficient is zero,
     robust to the local presence of WX effects (γ). Uses the Neyman
-    orthogonal score adjustment from Dogan et al. (2021, Proposition 3),
+    orthogonal score adjustment from :cite:t:`dogan2021BayesianRobust`, Proposition 3,
     which is the Bayesian analogue of the robust LM-Lag-SDM test in
-    Koley & Bera (2024).
+    :cite:t:`koley2024UseNot`.
 
     The alternative model is SLX (includes γ but not ρ). For each
     posterior draw from the SLX model, residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - X\beta_1 - WX\beta_2
+        \\mathbf{e} = \\mathbf{y} - X\\beta_1 - WX\\beta_2
 
     The unadjusted scores are:
 
     .. math::
-        g_\rho &= \mathbf{e}^\top W \mathbf{y} \\
-        \boldsymbol{g}_\gamma &= (WX)^\top \mathbf{e}
+        g_\\rho &= \\mathbf{e}^\\top W \\mathbf{y} \\\\
+        \\boldsymbol{g}_\\gamma &= (WX)^\\top \\mathbf{e}
 
     The Neyman-adjusted score for ρ is:
 
     .. math::
-        g_\rho^* = g_\rho - J_{\rho\gamma \cdot \sigma}
-        J_{\gamma\gamma \cdot \sigma}^{-1} \boldsymbol{g}_\gamma
+        g_\\rho^* = g_\\rho - J_{\\rho\\gamma \\cdot \\sigma}
+        J_{\\gamma\\gamma \\cdot \\sigma}^{-1} \\boldsymbol{g}_\\gamma
 
     The adjusted variance is:
 
     .. math::
-        V^* = J_{\rho\rho \cdot \sigma} - J_{\rho\gamma \cdot \sigma}
-        J_{\gamma\gamma \cdot \sigma}^{-1} J_{\gamma\rho \cdot \sigma}
+        V^* = J_{\\rho\\rho \\cdot \\sigma} - J_{\\rho\\gamma \\cdot \\sigma}
+        J_{\\gamma\\gamma \\cdot \\sigma}^{-1} J_{\\gamma\\rho \\cdot \\sigma}
 
     The robust LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM}_R = \frac{(g_\rho^*)^2}{V^*}
+        \\mathrm{LM}_R = \\frac{(g_\\rho^*)^2}{V^*}
 
-    which is distributed as :math:`\chi^2_1` under H₀, irrespective of
-    local misspecification in γ (Dogan et al., 2021, Proposition 3).
+    which is distributed as :math:`\\chi^2_1` under H₀, irrespective of
+    local misspecification in γ (:cite:p:`dogan2021BayesianRobust`, Proposition 3).
 
     Parameters
     ----------
@@ -844,17 +809,6 @@ def bayesian_robust_lm_lag_sdm_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to 1.
 
-    References
-    ----------
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
-
-    Koley, T., Bera, A.K. (2024). "Spatial lag vs spatial error:
-    A robust LM test." Journal of Econometrics, 240(1), 105729.
-
-    Bera, A.K., Yoon, M.J. (1993). "Specification testing with
-    locally misspecified alternatives." Econometric Theory, 9(4), 649-658.
     """
     y = model._y
     X = model._X
@@ -934,50 +888,50 @@ def bayesian_robust_lm_wx_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian robust LM-WX test (H₀: γ = 0, robust to ρ).
+    """Bayesian robust LM-WX test (H₀: γ = 0, robust to ρ).
 
     Tests the null hypothesis that the WX coefficients are zero,
     robust to the local presence of a spatial lag (ρ). Uses the Neyman
-    orthogonal score adjustment from Dogan et al. (2021, Proposition 3),
+    orthogonal score adjustment from :cite:t:`dogan2021BayesianRobust`, Proposition 3,
     which is the Bayesian analogue of the robust LM-WX test in
-    Koley & Bera (2024).
+    :cite:t:`koley2024UseNot`.
 
     The alternative model is SAR (includes ρ but not γ). For each
     posterior draw from the SAR model, residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - \rho W \mathbf{y} - X\beta
+        \\mathbf{e} = \\mathbf{y} - \\rho W \\mathbf{y} - X\\beta
 
     The unadjusted scores are:
 
     .. math::
-        g_\rho &= \mathbf{e}^\top W \mathbf{y} \\
-        \boldsymbol{g}_\gamma &= (WX)^\top \mathbf{e}
+        g_\\rho &= \\mathbf{e}^\\top W \\mathbf{y} \\\\
+        \\boldsymbol{g}_\\gamma &= (WX)^\\top \\mathbf{e}
 
     The Neyman-adjusted score for γ is:
 
     .. math::
-        \boldsymbol{g}_\gamma^* = \boldsymbol{g}_\gamma -
-        J_{\gamma\rho \cdot \sigma} J_{\rho\rho \cdot \sigma}^{-1} g_\rho
+        \\boldsymbol{g}_\\gamma^* = \\boldsymbol{g}_\\gamma -
+        J_{\\gamma\\rho \\cdot \\sigma} J_{\\rho\\rho \\cdot \\sigma}^{-1} g_\\rho
 
     The adjusted weight matrix is:
 
     .. math::
-        C_{\gamma\gamma}^* = P_{\gamma\gamma} J_{\gamma \cdot \rho}
+        C_{\\gamma\\gamma}^* = P_{\\gamma\\gamma} J_{\\gamma \\cdot \\rho}
 
-    where :math:`P_{\gamma\gamma} = I - J_{\gamma\rho \cdot \sigma}
-    J_{\rho\rho \cdot \sigma}^{-1} J_{\rho\gamma \cdot \sigma}
-    J_{\gamma \cdot \rho}^{-1}` and :math:`J_{\gamma \cdot \rho} =
-    J_{\gamma\gamma \cdot \sigma} - J_{\gamma\rho \cdot \sigma}
-    J_{\rho\rho \cdot \sigma}^{-1} J_{\rho\gamma \cdot \sigma}`.
+    where :math:`P_{\\gamma\\gamma} = I - J_{\\gamma\\rho \\cdot \\sigma}
+    J_{\\rho\\rho \\cdot \\sigma}^{-1} J_{\\rho\\gamma \\cdot \\sigma}
+    J_{\\gamma \\cdot \\rho}^{-1}` and :math:`J_{\\gamma \\cdot \\rho} =
+    J_{\\gamma\\gamma \\cdot \\sigma} - J_{\\gamma\\rho \\cdot \\sigma}
+    J_{\\rho\\rho \\cdot \\sigma}^{-1} J_{\\rho\\gamma \\cdot \\sigma}`.
 
     The robust LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM}_R = (\boldsymbol{g}_\gamma^*)^\top
-        (C_{\gamma\gamma}^*)^{-1} \boldsymbol{g}_\gamma^*
+        \\mathrm{LM}_R = (\\boldsymbol{g}_\\gamma^*)^\\top
+        (C_{\\gamma\\gamma}^*)^{-1} \\boldsymbol{g}_\\gamma^*
 
-    which is distributed as :math:`\chi^2_{k_{wx}}` under H₀.
+    which is distributed as :math:`\\chi^2_{k_{wx}}` under H₀.
 
     Parameters
     ----------
@@ -993,17 +947,6 @@ def bayesian_robust_lm_wx_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to :math:`k_{wx}`.
 
-    References
-    ----------
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
-
-    Koley, T., Bera, A.K. (2024). "Spatial lag vs spatial error:
-    A robust LM test." Journal of Econometrics, 240(1), 105729.
-
-    Bera, A.K., Yoon, M.J. (1993). "Specification testing with
-    locally misspecified alternatives." Econometric Theory, 9(4), 649-658.
     """
     y = model._y
     X = model._X
@@ -1102,11 +1045,11 @@ def bayesian_robust_lm_error_sdem_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian robust LM-Error test in SDEM context (H₀: λ = 0, robust to γ).
+    """Bayesian robust LM-Error test in SDEM context (H₀: λ = 0, robust to γ).
 
     Tests the null hypothesis that the spatial error coefficient is zero,
     robust to the local presence of WX effects (γ). Uses the Neyman
-    orthogonal score adjustment from Dogan et al. (2021, Proposition 3),
+    orthogonal score adjustment from :cite:t:`dogan2021BayesianRobust`, Proposition 3,
     which is the Bayesian analogue of the robust LM-Error test in the
     SDEM context.
 
@@ -1114,32 +1057,32 @@ def bayesian_robust_lm_error_sdem_test(
     posterior draw from the SLX model, residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - X\beta_1 - WX\beta_2
+        \\mathbf{e} = \\mathbf{y} - X\\beta_1 - WX\\beta_2
 
     The unadjusted scores are:
 
     .. math::
-        g_\lambda &= \mathbf{e}^\top W \mathbf{e} \\
-        \boldsymbol{g}_\gamma &= (WX)^\top \mathbf{e}
+        g_\\lambda &= \\mathbf{e}^\\top W \\mathbf{e} \\\\
+        \\boldsymbol{g}_\\gamma &= (WX)^\\top \\mathbf{e}
 
     The Neyman-adjusted score for λ is:
 
     .. math::
-        g_\lambda^* = g_\lambda - J_{\lambda\gamma \cdot \sigma}
-        J_{\gamma\gamma \cdot \sigma}^{-1} \boldsymbol{g}_\gamma
+        g_\\lambda^* = g_\\lambda - J_{\\lambda\\gamma \\cdot \\sigma}
+        J_{\\gamma\\gamma \\cdot \\sigma}^{-1} \\boldsymbol{g}_\\gamma
 
     The adjusted variance is:
 
     .. math::
-        V^* = J_{\lambda\lambda \cdot \sigma} - J_{\lambda\gamma \cdot \sigma}
-        J_{\gamma\gamma \cdot \sigma}^{-1} J_{\gamma\lambda \cdot \sigma}
+        V^* = J_{\\lambda\\lambda \\cdot \\sigma} - J_{\\lambda\\gamma \\cdot \\sigma}
+        J_{\\gamma\\gamma \\cdot \\sigma}^{-1} J_{\\gamma\\lambda \\cdot \\sigma}
 
     The robust LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM}_R = \frac{(g_\lambda^*)^2}{V^*}
+        \\mathrm{LM}_R = \\frac{(g_\\lambda^*)^2}{V^*}
 
-    which is distributed as :math:`\chi^2_1` under H₀, irrespective of
+    which is distributed as :math:`\\chi^2_1` under H₀, irrespective of
     local misspecification in γ.
 
     Parameters
@@ -1156,17 +1099,6 @@ def bayesian_robust_lm_error_sdem_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to 1.
 
-    References
-    ----------
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
-
-    Koley, T., Bera, A.K. (2024). "Spatial lag vs spatial error:
-    A robust LM test." Journal of Econometrics, 240(1), 105729.
-
-    Bera, A.K., Yoon, M.J. (1993). "Specification testing with
-    locally misspecified alternatives." Econometric Theory, 9(4), 649-658.
     """
     y = model._y
     X = model._X
@@ -1344,23 +1276,23 @@ def _panel_info_matrix_blocks(
     y_hat: np.ndarray | None = None,
     Wy_hat: np.ndarray | None = None,
 ) -> dict:
-    r"""Compute partitioned information matrix blocks for panel models.
+    """Compute partitioned information matrix blocks for panel models.
 
     Computes the blocks of the information matrix :math:`J` needed for
-    panel LM tests, following Anselin (2008) and Elhorst (2014).
+    panel LM tests, following :cite:t:`anselin2008SpatialPanel` and :cite:t:`elhorst2014SpatialEconometrics`.
 
     The key difference from cross-sectional is the T multiplier on the
     trace term and the Wb'MWb term in J_{ρρ}:
 
     .. math::
-        J_{\rho\rho \cdot \sigma} &= \frac{1}{\sigma^2}
-        \left( (W\hat{y})^\top M (W\hat{y}) + T \cdot \mathrm{tr}(W'W + W^2)
-        \right) \\
-        J_{\lambda\lambda \cdot \sigma} &= T \cdot \mathrm{tr}(W'W + W^2) \\
-        J_{\rho\lambda \cdot \sigma} &= T \cdot \mathrm{tr}(W'W + W^2)
+        J_{\\rho\\rho \\cdot \\sigma} &= \\frac{1}{\\sigma^2}
+        \\left( (W\\hat{y})^\\top M (W\\hat{y}) + T \\cdot \\mathrm{tr}(W'W + W^2)
+        \\right) \\\\
+        J_{\\lambda\\lambda \\cdot \\sigma} &= T \\cdot \\mathrm{tr}(W'W + W^2) \\\\
+        J_{\\rho\\lambda \\cdot \\sigma} &= T \\cdot \\mathrm{tr}(W'W + W^2)
 
-    where :math:`M = I - X(X^\top X)^{-1} X^\top` is the annihilator
-    matrix and :math:`\hat{y} = X\bar{\beta}`.
+    where :math:`M = I - X(X^\\top X)^{-1} X^\\top` is the annihilator
+    matrix and :math:`\\hat{y} = X\\bar{\\beta}`.
 
     Parameters
     ----------
@@ -1442,7 +1374,7 @@ def _panel_info_matrix_blocks(
 
 
 # ---------------------------------------------------------------------------
-# Panel Bayesian LM tests — lag and error (Anselin 2008, Elhorst 2014)
+# Panel Bayesian LM tests — lag and error (Anselin et al. 2008, Elhorst 2014)
 # ---------------------------------------------------------------------------
 
 
@@ -1450,9 +1382,9 @@ def bayesian_panel_lm_lag_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel LM test for omitted spatial lag (H₀: ρ = 0).
+    """Bayesian panel LM test for omitted spatial lag (H₀: ρ = 0).
 
-    Follows Anselin (2008) and the Bayesian framework of Dogan et al.
+    Follows :cite:t:`anselin2008SpatialPanel` and the Bayesian framework of :cite:t:`dogan2021BayesianRobust`.
     (2021). Tests whether a spatial lag term should be added to a panel
     regression.
 
@@ -1460,34 +1392,34 @@ def bayesian_panel_lm_lag_test(
     residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - X \beta
+        \\mathbf{e} = \\mathbf{y} - X \\beta
 
     (demeaned for FE models; with alpha subtracted for RE models).
 
     The score for each draw is:
 
     .. math::
-        S = \mathbf{e}^\top W_{NT} \mathbf{y}
+        S = \\mathbf{e}^\\top W_{NT} \\mathbf{y}
 
-    where :math:`W_{NT} = W \otimes I_T` is the block-diagonal panel
+    where :math:`W_{NT} = W \\otimes I_T` is the block-diagonal panel
     weights matrix.
 
-    The information matrix (Anselin 2008) is:
+    The information matrix (:cite:t:`anselin2008SpatialPanel`) is:
 
     .. math::
-        J = \frac{1}{\sigma^2} \left(
-        (W\hat{y})^\top M (W\hat{y}) + T \cdot \mathrm{tr}(W'W + W^2)
-        \right)
+        J = \\frac{1}{\\sigma^2} \\left(
+        (W\\hat{y})^\\top M (W\\hat{y}) + T \\cdot \\mathrm{tr}(W'W + W^2)
+        \\right)
 
-    where :math:`M = I - X(X^\top X)^{-1} X^\top` and
-    :math:`\hat{y} = X\bar{\beta}`.
+    where :math:`M = I - X(X^\\top X)^{-1} X^\\top` and
+    :math:`\\hat{y} = X\\bar{\\beta}`.
 
     The LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM} = \frac{S^2}{\sigma^2 \cdot J}
+        \\mathrm{LM} = \\frac{S^2}{\\sigma^2 \\cdot J}
 
-    which is distributed as :math:`\chi^2_1` under H₀.
+    which is distributed as :math:`\\chi^2_1` under H₀.
 
     Parameters
     ----------
@@ -1503,14 +1435,6 @@ def bayesian_panel_lm_lag_test(
     BayesianLMTestResult
         Dataclass containing LM samples, summary statistics, and metadata.
 
-    References
-    ----------
-    Anselin, L. (2008). "Spatial Econometrics: Methods and Models."
-    Springer.
-
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
     """
     y = model._y
     X = model._X
@@ -1529,7 +1453,7 @@ def bayesian_panel_lm_lag_test(
     # Score: S = e'Wy for each draw
     S = np.dot(resid, Wy)  # (draws,)
 
-    # Compute information matrix for panel LM-lag (Anselin 2008)
+    # Compute information matrix for panel LM-lag (Anselin et al. 2008)
     # J = (Wb'MWb + T*tr(W'W+W²)*σ²) / σ²
     # LM = (e'Wy)² / (σ² * J) = (e'Wy)² / (Wb'MWb + T*tr*σ²)
     beta_mean = np.mean(beta_draws, axis=0)  # (k,)
@@ -1577,9 +1501,9 @@ def bayesian_panel_lm_error_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel LM test for omitted spatial error (H₀: λ = 0).
+    """Bayesian panel LM test for omitted spatial error (H₀: λ = 0).
 
-    Follows Anselin (2008) and the Bayesian framework of Dogan et al.
+    Follows :cite:t:`anselin2008SpatialPanel` and the Bayesian framework of :cite:t:`dogan2021BayesianRobust`.
     (2021). Tests whether a spatial error term should be added to a panel
     regression.
 
@@ -1589,19 +1513,19 @@ def bayesian_panel_lm_error_test(
     The score for each draw is:
 
     .. math::
-        S = \mathbf{e}^\top W_{NT} \mathbf{e}
+        S = \\mathbf{e}^\\top W_{NT} \\mathbf{e}
 
     The variance is:
 
     .. math::
-        V = \sigma^4 \cdot T \cdot \mathrm{tr}(W'W + W^2)
+        V = \\sigma^4 \\cdot T \\cdot \\mathrm{tr}(W'W + W^2)
 
     The LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM} = \frac{S^2}{V}
+        \\mathrm{LM} = \\frac{S^2}{V}
 
-    which is distributed as :math:`\chi^2_1` under H₀.
+    which is distributed as :math:`\\chi^2_1` under H₀.
 
     Parameters
     ----------
@@ -1617,14 +1541,6 @@ def bayesian_panel_lm_error_test(
     BayesianLMTestResult
         Dataclass containing LM samples, summary statistics, and metadata.
 
-    References
-    ----------
-    Anselin, L. (2008). "Spatial Econometrics: Methods and Models."
-    Springer.
-
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
     """
     y = model._y
     X = model._X
@@ -1675,24 +1591,24 @@ def bayesian_panel_robust_lm_lag_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel robust LM-Lag test (H₀: ρ = 0, robust to λ).
+    """Bayesian panel robust LM-Lag test (H₀: ρ = 0, robust to λ).
 
-    Follows Elhorst (2014). Tests the null hypothesis that the spatial
+    Follows :cite:t:`elhorst2014SpatialEconometrics`. Tests the null hypothesis that the spatial
     lag coefficient is zero, robust to the local presence of spatial
     error autocorrelation.
 
     The null model is a pooled/FE panel OLS. The robust LM statistic is:
 
     .. math::
-        \mathrm{LM}_R = \frac{
-        \left( \frac{\mathbf{e}^\top W \mathbf{y}}{\sigma^2}
-        - \frac{\mathbf{e}^\top W \mathbf{e}}{\sigma^2} \right)^2
-        }{J - T \cdot \mathrm{tr}(W'W + W^2)}
+        \\mathrm{LM}_R = \\frac{
+        \\left( \\frac{\\mathbf{e}^\\top W \\mathbf{y}}{\\sigma^2}
+        - \\frac{\\mathbf{e}^\\top W \\mathbf{e}}{\\sigma^2} \\right)^2
+        }{J - T \\cdot \\mathrm{tr}(W'W + W^2)}
 
     where :math:`J` is the information matrix from the panel LM-lag test
-    and :math:`\mathrm{tr}` denotes :math:`\mathrm{tr}(W'W + W^2)`.
+    and :math:`\\mathrm{tr}` denotes :math:`\\mathrm{tr}(W'W + W^2)`.
 
-    This is distributed as :math:`\chi^2_1` under H₀.
+    This is distributed as :math:`\\chi^2_1` under H₀.
 
     Parameters
     ----------
@@ -1707,14 +1623,6 @@ def bayesian_panel_robust_lm_lag_test(
     BayesianLMTestResult
         Dataclass containing LM samples, summary statistics, and metadata.
 
-    References
-    ----------
-    Elhorst, J.P. (2014). "Spatial Econometrics: From Cross-Sectional
-    Data to Spatial Panels." Springer.
-
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
     """
     y = model._y
     X = model._X
@@ -1779,27 +1687,27 @@ def bayesian_panel_robust_lm_error_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel robust LM-Error test (H₀: λ = 0, robust to ρ).
+    """Bayesian panel robust LM-Error test (H₀: λ = 0, robust to ρ).
 
-    Follows Elhorst (2014). Tests the null hypothesis that the spatial
+    Follows :cite:t:`elhorst2014SpatialEconometrics`. Tests the null hypothesis that the spatial
     error coefficient is zero, robust to the local presence of a spatial
     lag.
 
     The null model is a pooled/FE panel OLS. The robust LM statistic is:
 
     .. math::
-        \mathrm{LM}_R = \frac{
-        \left( \frac{\mathbf{e}^\top W \mathbf{e}}{\sigma^2}
-        - \frac{T \cdot \mathrm{tr}}{J} \cdot
-        \frac{\mathbf{e}^\top W \mathbf{y}}{\sigma^2} \right)^2
+        \\mathrm{LM}_R = \\frac{
+        \\left( \\frac{\\mathbf{e}^\\top W \\mathbf{e}}{\\sigma^2}
+        - \\frac{T \\cdot \\mathrm{tr}}{J} \\cdot
+        \\frac{\\mathbf{e}^\\top W \\mathbf{y}}{\\sigma^2} \\right)^2
         }{
-        T \cdot \mathrm{tr} \cdot \left(1 - \frac{T \cdot \mathrm{tr}}{J}\right)
+        T \\cdot \\mathrm{tr} \\cdot \\left(1 - \\frac{T \\cdot \\mathrm{tr}}{J}\\right)
         }
 
     where :math:`J` is the information matrix from the panel LM-lag test
-    and :math:`\mathrm{tr} = \mathrm{tr}(W'W + W^2)`.
+    and :math:`\\mathrm{tr} = \\mathrm{tr}(W'W + W^2)`.
 
-    This is distributed as :math:`\chi^2_1` under H₀.
+    This is distributed as :math:`\\chi^2_1` under H₀.
 
     Parameters
     ----------
@@ -1814,14 +1722,6 @@ def bayesian_panel_robust_lm_error_test(
     BayesianLMTestResult
         Dataclass containing LM samples, summary statistics, and metadata.
 
-    References
-    ----------
-    Elhorst, J.P. (2014). "Spatial Econometrics: From Cross-Sectional
-    Data to Spatial Panels." Springer.
-
-    Dogan, O., Taşpınar, S., Bera, A.K. (2021). "A Bayesian robust
-    chi-squared test for testing simple hypotheses." Journal of
-    Econometrics, 222(2), 933-958.
     """
     y = model._y
     X = model._X
@@ -1895,36 +1795,36 @@ def bayesian_panel_lm_wx_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel LM test for WX coefficients (H₀: γ = 0).
+    """Bayesian panel LM test for WX coefficients (H₀: γ = 0).
 
     Tests whether spatially lagged covariates (WX) should be added to a
     SAR panel model, i.e., whether SAR should be extended to SDM.
     Follows the multi-parameter Bayesian LM test framework of
-    Dogan et al. (2021) and Koley & Bera (2024).
+    :cite:t:`dogan2021BayesianRobust` and :cite:t:`koley2024UseNot`.
 
     The null model is a SAR panel (includes ρ but not γ). For each
     posterior draw from the SAR model, residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - \rho W \mathbf{y} - X \beta
+        \\mathbf{e} = \\mathbf{y} - \\rho W \\mathbf{y} - X \\beta
 
     The score vector for the WX coefficients is:
 
     .. math::
-        \mathbf{g}_\gamma = (WX)^\top \mathbf{e}
+        \\mathbf{g}_\\gamma = (WX)^\\top \\mathbf{e}
 
     The concentration matrix is:
 
     .. math::
-        J_{\gamma\gamma} = \frac{1}{\bar{\sigma}^2} (WX)^\top (WX)
+        J_{\\gamma\\gamma} = \\frac{1}{\\bar{\\sigma}^2} (WX)^\\top (WX)
 
     The LM statistic for each draw is:
 
     .. math::
-        \mathrm{LM} = \mathbf{g}_\gamma^\top J_{\gamma\gamma}^{-1}
-        \mathbf{g}_\gamma
+        \\mathrm{LM} = \\mathbf{g}_\\gamma^\\top J_{\\gamma\\gamma}^{-1}
+        \\mathbf{g}_\\gamma
 
-    distributed as :math:`\chi^2_{k_{wx}}` under H₀.
+    distributed as :math:`\\chi^2_{k_{wx}}` under H₀.
 
     Parameters
     ----------
@@ -2002,7 +1902,7 @@ def bayesian_panel_lm_sdm_joint_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel joint LM test for SDM (H₀: ρ = 0 AND γ = 0).
+    """Bayesian panel joint LM test for SDM (H₀: ρ = 0 AND γ = 0).
 
     Tests the joint null hypothesis that both the spatial lag coefficient
     and the WX coefficients are zero, i.e., whether the OLS panel model
@@ -2011,19 +1911,19 @@ def bayesian_panel_lm_sdm_joint_test(
     The null model is OLS panel. The joint score vector is:
 
     .. math::
-        \mathbf{g} = \begin{pmatrix} \mathbf{e}^\top W \mathbf{y} \\
-        (WX)^\top \mathbf{e} \end{pmatrix}
+        \\mathbf{g} = \\begin{pmatrix} \\mathbf{e}^\\top W \\mathbf{y} \\\\
+        (WX)^\\top \\mathbf{e} \\end{pmatrix}
 
-    a :math:`(1 + k_{wx}) \times 1` vector for each draw. The
+    a :math:`(1 + k_{wx}) \\times 1` vector for each draw. The
     concentration matrix uses panel-adjusted J_{ρρ}:
 
     .. math::
-        J = \begin{pmatrix}
-        J_{\rho\rho} & J_{\rho\gamma} \\
-        J_{\gamma\rho} & J_{\gamma\gamma}
-        \end{pmatrix}
+        J = \\begin{pmatrix}
+        J_{\\rho\\rho} & J_{\\rho\\gamma} \\\\
+        J_{\\gamma\\rho} & J_{\\gamma\\gamma}
+        \\end{pmatrix}
 
-    The LM statistic is :math:`\chi^2_{1 + k_{wx}}` under H₀.
+    The LM statistic is :math:`\\chi^2_{1 + k_{wx}}` under H₀.
 
     Parameters
     ----------
@@ -2105,7 +2005,7 @@ def bayesian_panel_lm_slx_error_joint_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel joint LM test for SDEM (H₀: λ = 0 AND γ = 0).
+    """Bayesian panel joint LM test for SDEM (H₀: λ = 0 AND γ = 0).
 
     Tests the joint null hypothesis that both the spatial error coefficient
     and the WX coefficients are zero, i.e., whether the OLS panel model
@@ -2114,19 +2014,19 @@ def bayesian_panel_lm_slx_error_joint_test(
     The null model is OLS panel. The joint score vector is:
 
     .. math::
-        \mathbf{g} = \begin{pmatrix} \mathbf{e}^\top W \mathbf{e} \\
-        (WX)^\top \mathbf{e} \end{pmatrix}
+        \\mathbf{g} = \\begin{pmatrix} \\mathbf{e}^\\top W \\mathbf{e} \\\\
+        (WX)^\\top \\mathbf{e} \\end{pmatrix}
 
     The concentration matrix has zero off-diagonal blocks under H₀
     (spherical errors):
 
     .. math::
-        J = \begin{pmatrix}
-        T \cdot \mathrm{tr}(W'W + W^2) & 0 \\
-        0 & \frac{1}{\bar{\sigma}^2} (WX)^\top (WX)
-        \end{pmatrix}
+        J = \\begin{pmatrix}
+        T \\cdot \\mathrm{tr}(W'W + W^2) & 0 \\\\
+        0 & \\frac{1}{\\bar{\\sigma}^2} (WX)^\\top (WX)
+        \\end{pmatrix}
 
-    The LM statistic is :math:`\chi^2_{1 + k_{wx}}` under H₀.
+    The LM statistic is :math:`\\chi^2_{1 + k_{wx}}` under H₀.
 
     Parameters
     ----------
@@ -2209,25 +2109,25 @@ def bayesian_panel_robust_lm_lag_sdm_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel robust LM-Lag test in SDM context (H₀: ρ = 0, robust to γ).
+    """Bayesian panel robust LM-Lag test in SDM context (H₀: ρ = 0, robust to γ).
 
     Tests the null hypothesis that the spatial lag coefficient is zero,
     robust to the local presence of WX effects (γ). Uses the Neyman
-    orthogonal score adjustment from Dogan et al. (2021, Proposition 3).
+    orthogonal score adjustment from :cite:t:`dogan2021BayesianRobust`, Proposition 3.
 
     The alternative model is SLX panel (includes γ but not ρ). For each
     posterior draw from the SLX model, residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - X\beta_1 - WX\beta_2
+        \\mathbf{e} = \\mathbf{y} - X\\beta_1 - WX\\beta_2
 
     The Neyman-adjusted score for ρ is:
 
     .. math::
-        g_\rho^* = g_\rho - J_{\rho\gamma \cdot \sigma}
-        J_{\gamma\gamma \cdot \sigma}^{-1} \boldsymbol{g}_\gamma
+        g_\\rho^* = g_\\rho - J_{\\rho\\gamma \\cdot \\sigma}
+        J_{\\gamma\\gamma \\cdot \\sigma}^{-1} \\boldsymbol{g}_\\gamma
 
-    The robust LM statistic is :math:`\chi^2_1` under H₀.
+    The robust LM statistic is :math:`\\chi^2_1` under H₀.
 
     Parameters
     ----------
@@ -2316,25 +2216,25 @@ def bayesian_panel_robust_lm_wx_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel robust LM-WX test (H₀: γ = 0, robust to ρ).
+    """Bayesian panel robust LM-WX test (H₀: γ = 0, robust to ρ).
 
     Tests the null hypothesis that the WX coefficients are zero,
     robust to the local presence of a spatial lag (ρ). Uses the Neyman
-    orthogonal score adjustment from Dogan et al. (2021, Proposition 3).
+    orthogonal score adjustment from :cite:t:`dogan2021BayesianRobust`, Proposition 3.
 
     The alternative model is SAR panel (includes ρ but not γ). For each
     posterior draw from the SAR model, residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - \rho W \mathbf{y} - X\beta
+        \\mathbf{e} = \\mathbf{y} - \\rho W \\mathbf{y} - X\\beta
 
     The Neyman-adjusted score for γ is:
 
     .. math::
-        \boldsymbol{g}_\gamma^* = \boldsymbol{g}_\gamma -
-        J_{\gamma\rho \cdot \sigma} J_{\rho\rho \cdot \sigma}^{-1} g_\rho
+        \\boldsymbol{g}_\\gamma^* = \\boldsymbol{g}_\\gamma -
+        J_{\\gamma\\rho \\cdot \\sigma} J_{\\rho\\rho \\cdot \\sigma}^{-1} g_\\rho
 
-    The robust LM statistic is :math:`\chi^2_{k_{wx}}` under H₀.
+    The robust LM statistic is :math:`\\chi^2_{k_{wx}}` under H₀.
 
     Parameters
     ----------
@@ -2443,29 +2343,29 @@ def bayesian_panel_robust_lm_error_sdem_test(
     model,
     beta_name: str = "beta",
 ) -> BayesianLMTestResult:
-    r"""Bayesian panel robust LM-Error test in SDEM context (H₀: λ = 0, robust to γ).
+    """Bayesian panel robust LM-Error test in SDEM context (H₀: λ = 0, robust to γ).
 
     Tests the null hypothesis that the spatial error coefficient is zero,
     robust to the local presence of WX effects (γ). Uses the Neyman
-    orthogonal score adjustment from Dogan et al. (2021, Proposition 3).
+    orthogonal score adjustment from :cite:t:`dogan2021BayesianRobust`, Proposition 3.
 
     The alternative model is SLX panel (includes γ but not λ). For each
     posterior draw from the SLX model, residuals are:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - X\beta_1 - WX\beta_2
+        \\mathbf{e} = \\mathbf{y} - X\\beta_1 - WX\\beta_2
 
     The Neyman-adjusted score for λ is:
 
     .. math::
-        g_\lambda^* = g_\lambda - J_{\lambda\gamma \cdot \sigma}
-        J_{\gamma\gamma \cdot \sigma}^{-1} \boldsymbol{g}_\gamma
+        g_\\lambda^* = g_\\lambda - J_{\\lambda\\gamma \\cdot \\sigma}
+        J_{\\gamma\\gamma \\cdot \\sigma}^{-1} \\boldsymbol{g}_\\gamma
 
-    Under H₀, :math:`J_{\lambda\gamma \cdot \sigma} = 0` (odd moments
+    Under H₀, :math:`J_{\\lambda\\gamma \\cdot \\sigma} = 0` (odd moments
     vanish for normal errors), so the adjustment is a no-op and the
     robust test equals the non-robust test.
 
-    The robust LM statistic is :math:`\chi^2_1` under H₀.
+    The robust LM statistic is :math:`\\chi^2_1` under H₀.
 
     Parameters
     ----------

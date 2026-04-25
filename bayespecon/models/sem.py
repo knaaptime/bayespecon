@@ -32,13 +32,31 @@ class SEM(SpatialModel):
     formula, data, y, X, W, priors, logdet_method
         See :class:`SpatialModel`.
 
-    Priors (``priors`` dict keys)
-    ------------------------------
-    lam_lower, lam_upper : float, default -1, 1
-        Bounds for the Uniform prior on lambda.
-    beta_mu : float, default 0
-    beta_sigma : float, default 1e6
-    sigma_sigma : float, default 10
+    Notes
+    -----
+    The ``priors`` dict supports the following keys:
+
+    - ``lam_lower, lam_upper`` (float, default -1, 1): Bounds for the Uniform prior on lambda.
+    - ``beta_mu`` (float, default 0): Prior mean for beta.
+    - ``beta_sigma`` (float, default 1e6): Prior std for beta.
+    - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior on sigma.
+    - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
+      :math:`\\nu` (only used when ``robust=True``).
+
+    **Robust regression**
+
+    When ``robust=True``, the spatially-filtered error distribution is
+    changed from Normal to Student-t, yielding a model that is robust to
+    heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon = (I - \\lambda W)(y - X\\beta) \\sim t_\\nu(0, \\sigma^2 I)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def fit(
@@ -51,7 +69,7 @@ class SEM(SpatialModel):
         idata_kwargs: Optional[dict] = None,
         **sample_kwargs,
     ) -> "az.InferenceData":
-        r"""Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
+        """Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
 
         Parameters
         ----------
@@ -66,11 +84,11 @@ class SEM(SpatialModel):
         The log-likelihood for the SEM model is:
 
         .. math::
-            \log p(y \mid \theta) =
-            \sum_{i=1}^{n} \log \mathcal{N}(\varepsilon_i \mid 0, \sigma^2)
-            + \log |I - \lambda W |
+            \\log p(y \\mid \\theta) =
+            \\sum_{i=1}^{n} \\log \\mathcal{N}(\\varepsilon_i \\mid 0, \\sigma^2)
+            + \\log |I - \\lambda W |
 
-        where :math:`\varepsilon = (I - \lambda W)(y - X\beta)`.
+        where :math:`\\varepsilon = (I - \\lambda W)(y - X\\beta)`.
 
         Because the SEM model uses ``pm.Potential`` for both the Gaussian
         error log-likelihood and the Jacobian, neither term is auto-captured
@@ -78,9 +96,9 @@ class SEM(SpatialModel):
         pointwise log-likelihood manually after sampling:
 
         .. math::
-            \ell_i = -\frac{1}{2}\left(\frac{\varepsilon_i}{\sigma}\right)^2
-            - \log(\sigma) - \frac{1}{2}\log(2\pi)
-            + \frac{1}{n} \log |I - \lambda W |
+            \\ell_i = -\\frac{1}{2}\\left(\\frac{\\varepsilon_i}{\\sigma}\\right)^2
+            - \\log(\\sigma) - \\frac{1}{2}\\log(2\\pi)
+            + \\frac{1}{n} \\log |I - \\lambda W |
         """
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
@@ -118,12 +136,24 @@ class SEM(SpatialModel):
             # Spatially filtered residuals: eps = resid - lam * W @ resid
             eps = resid - lam_draws[:, None] * (resid @ W.T)  # (n_draws, n)
 
-            # Pointwise Gaussian log-likelihood for eps
-            ll_gauss = (
-                -0.5 * (eps / sigma_draws[:, None]) ** 2
-                - np.log(sigma_draws[:, None])
-                - 0.5 * np.log(2 * np.pi)
-            )  # (n_draws, n)
+            # Pointwise log-likelihood for eps
+            if self.robust:
+                nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
+                from scipy.special import gammaln
+                ll_gauss = (
+                    gammaln((nu_draws[:, None] + 1) / 2)
+                    - gammaln(nu_draws[:, None] / 2)
+                    - 0.5 * np.log(nu_draws[:, None] * np.pi)
+                    - np.log(sigma_draws[:, None])
+                    - ((nu_draws[:, None] + 1) / 2)
+                    * np.log1p((eps / sigma_draws[:, None]) ** 2 / nu_draws[:, None])
+                )  # (n_draws, n)
+            else:
+                ll_gauss = (
+                    -0.5 * (eps / sigma_draws[:, None]) ** 2
+                    - np.log(sigma_draws[:, None])
+                    - 0.5 * np.log(2 * np.pi)
+                )  # (n_draws, n)
 
             # Jacobian contribution per draw: log|I - lam*W| / n (pure numpy)
             eigs = self._W_eigs.real.astype(np.float64)
@@ -174,7 +204,12 @@ class SEM(SpatialModel):
 
             resid = self._y - pt.dot(self._X, beta)
             eps = resid - lam * pt.dot(W_pt, resid)
-            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps)
+            else:
+                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps)
             pm.Potential("eps_loglik", logp_eps.sum())
             pm.Potential("jacobian", logdet_fn(lam))
 

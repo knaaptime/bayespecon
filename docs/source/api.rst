@@ -150,15 +150,15 @@ Panel Bayesian LM Tests
    bayesian_panel_robust_lm_wx_test
    bayesian_panel_robust_lm_error_sdem_test
 
+
+Bayesian Model Comparison
+^^^^^^^^^^^^^^^^^^^^^^^^^
 .. currentmodule:: bayespecon.diagnostics.bayesfactor
 
 .. autosummary::
    :toctree: generated/
 
    bayes_factor_compare_models
-   bic_to_bf
-   compile_log_posterior
-   post_prob
 
 
 Data Generating Processes

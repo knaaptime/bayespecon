@@ -27,14 +27,29 @@ class SLX(SpatialModel):
         See :class:`SpatialModel`. Use ``w_vars`` to restrict which X columns
         are spatially lagged.
 
-    Priors (``priors`` dict keys)
-    ------------------------------
-    beta_mu : float, default 0
-        Prior mean for all beta coefficients.
-    beta_sigma : float, default 1e6
-        Prior std for all beta coefficients (diffuse Normal).
-    sigma_sigma : float, default 10
-        Scale for HalfNormal prior on sigma.
+    Notes
+    -----
+    The ``priors`` dict supports the following keys:
+
+    - ``beta_mu`` (float, default 0): Prior mean for all beta coefficients.
+    - ``beta_sigma`` (float, default 1e6): Prior std for all beta coefficients (diffuse Normal).
+    - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior on sigma.
+    - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
+      :math:`\\nu` (only used when ``robust=True``).
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon \\sim t_\\nu(0, \\sigma^2 I)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _beta_names(self) -> list[str]:
@@ -61,7 +76,12 @@ class SLX(SpatialModel):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             mu = pt.dot(Z, beta)
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
 
         return model
 

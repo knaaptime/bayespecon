@@ -38,6 +38,22 @@ class SAR(SpatialModel):
     - ``beta_mu`` (float, default 0): Prior mean for beta.
     - ``beta_sigma`` (float, default 1e6): Prior std for beta.
     - ``sigma_sigma`` (float, default 10): Prior std for sigma.
+    - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
+      :math:`\\nu` (only used when ``robust=True``).
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon \\sim t_\\nu(0, \\sigma^2 I)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
@@ -69,7 +85,12 @@ class SAR(SpatialModel):
 
             # mu = rho*Wy + X@beta  (Wy is fixed observed data here)
             mu = rho * self._Wy + pt.dot(self._X, beta)
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
 
             # Jacobian: log|I - rho*W|
             # Build the expression inline so pytensor can resolve rho as a graph input.
@@ -90,7 +111,7 @@ class SAR(SpatialModel):
         idata_kwargs: Optional[dict] = None,
         **sample_kwargs,
     ) -> "az.InferenceData":
-        r"""
+        """
         Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
 
         Parameters
@@ -106,13 +127,13 @@ class SAR(SpatialModel):
         The log-likelihood for the SAR model is:
 
         .. math::
-            \log p(y \mid \theta) =
-            \sum_{i=1}^{n} \log \mathcal{N}(y_i \mid \mu_i, \sigma^2)
-            + \log |I - \rho W |
+            \\log p(y \\mid \\theta) =
+            \\sum_{i=1}^{n} \\log \\mathcal{N}(y_i \\mid \\mu_i, \\sigma^2)
+            + \\log |I - \\rho W |
 
         The ``pm.Normal`` with ``observed=self._y`` automatically captures
         the first term (the Gaussian log-likelihood) in ``log_likelihood``.
-        However, the Jacobian term :math:`\log |I - \rho W|` is added via
+        However, the Jacobian term :math:`\\log |I - \\rho W|` is added via
         ``pm.Potential`` and does **not** appear in the auto-computed
         ``log_likelihood`` group.
 
@@ -121,12 +142,12 @@ class SAR(SpatialModel):
         pointwise log-likelihood manually after sampling:
 
         .. math::
-            \ell_i = -\frac{1}{2}\left(\frac{y_i - \mu_i}{\sigma}\right)^2
-            + \frac{1}{n} \log |I - \rho W |
+            \\ell_i = -\\frac{1}{2}\\left(\\frac{y_i - \\mu_i}{\\sigma}\\right)^2
+            + \\frac{1}{n} \\log |I - \\rho W |
 
-        where :math:`\mu_i = \rho (Wy)_i + x_i' \beta` and the Jacobian
+        where :math:`\\mu_i = \\rho (Wy)_i + x_i' \\beta` and the Jacobian
         contribution is divided by :math:`n` so that
-        :math:`\sum_{i=1}^{n} \ell_i` equals the total log-likelihood
+        :math:`\\sum_{i=1}^{n} \\ell_i` equals the total log-likelihood
         used for sampling.
         """
         from ..logdet import make_logdet_fn
@@ -170,8 +191,20 @@ class SAR(SpatialModel):
             mu = rho_draws[:, None] * self._Wy[None, :] + (beta_draws @ self._X.T)  # (n_draws, n)
             resid = self._y[None, :] - mu  # (n_draws, n)
 
-            # Pointwise Gaussian log-likelihood
-            ll_gauss = -0.5 * (resid / sigma_draws[:, None]) ** 2 - np.log(sigma_draws[:, None]) - 0.5 * np.log(2 * np.pi)  # (n_draws, n)
+            # Pointwise log-likelihood
+            if self.robust:
+                nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
+                from scipy.special import gammaln
+                ll_gauss = (
+                    gammaln((nu_draws[:, None] + 1) / 2)
+                    - gammaln(nu_draws[:, None] / 2)
+                    - 0.5 * np.log(nu_draws[:, None] * np.pi)
+                    - np.log(sigma_draws[:, None])
+                    - ((nu_draws[:, None] + 1) / 2)
+                    * np.log1p((resid / sigma_draws[:, None]) ** 2 / nu_draws[:, None])
+                )  # (n_draws, n)
+            else:
+                ll_gauss = -0.5 * (resid / sigma_draws[:, None]) ** 2 - np.log(sigma_draws[:, None]) - 0.5 * np.log(2 * np.pi)  # (n_draws, n)
 
             # Jacobian contribution per draw: log|I - rho*W| / n (pure numpy)
             eigs = self._W_eigs.real.astype(np.float64)

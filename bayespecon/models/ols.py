@@ -30,6 +30,21 @@ class OLS(SpatialModel):
     ``W`` is **optional**.  If supplied, Bayesian LM tests can be run on
     the OLS posterior to guide model selection.
 
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon \\sim t_\\nu(0, \\sigma^2 I)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.  The ``nu_lam`` rate can be controlled via
+    ``priors={"nu_lam": value}``.
+
     Parameters
     ----------
     formula : str, optional
@@ -51,9 +66,13 @@ class OLS(SpatialModel):
         - ``beta_sigma`` (float, default 1e6): Prior std for :math:`\\beta`.
         - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior
           on :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
+          :math:`\\nu` (only used when ``robust=True``).
     logdet_method : str, optional
         Unused for OLS (no spatial lag); kept for API compatibility with
         :class:`SpatialModel`.
+    robust : bool, default False
+        If True, use a Student-t error distribution instead of Normal.
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -62,7 +81,8 @@ class OLS(SpatialModel):
         Returns
         -------
         pymc.Model
-            Compiled probabilistic model object with Normal likelihood.
+            Compiled probabilistic model object with Normal or Student-t
+            likelihood depending on ``self.robust``.
         """
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
@@ -72,7 +92,12 @@ class OLS(SpatialModel):
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             mu = pt.dot(self._X, beta)
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
 
         return model
 

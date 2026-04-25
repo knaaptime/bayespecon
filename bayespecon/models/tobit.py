@@ -49,17 +49,37 @@ class _SpatialTobitBase(SpatialModel):
 
 
 class SARTobit(_SpatialTobitBase):
-    r"""Bayesian spatial autoregressive Tobit model.
+    """Bayesian spatial autoregressive Tobit model.
 
     .. math::
-        y^* = \rho W y^* + X\beta + \varepsilon,\quad \varepsilon \sim N(0,\sigma^2 I),
+        y^* = \\rho W y^* + X\\beta + \\varepsilon,\\quad \\varepsilon \\sim N(0,\\sigma^2 I),
 
     with observed outcome
 
     .. math::
-        y = \max(c, y^*)
+        y = \\max(c, y^*)
 
     where ``c`` is the left-censoring point (default: ``0``).
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t.  For uncensored observations the density becomes:
+
+    .. math::
+
+        f(y^*_i \\mid \\mu_i, \\sigma, \\nu) =
+        \\frac{1}{\\sigma} \\, t_\\nu\\!\\left(\\frac{y^*_i - \\mu_i}{\\sigma}\\right)
+
+    and for censored observations the probability becomes:
+
+    .. math::
+
+        P(y^*_i \\le c) = T_\\nu\\!\\left(\\frac{c - \\mu_i}{\\sigma}\\right)
+
+    where :math:`T_\\nu` is the Student-t CDF with :math:`\\nu` degrees of
+    freedom, and :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30.
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -84,7 +104,12 @@ class SARTobit(_SpatialTobitBase):
 
             y_lat = self._latent_y_tensor()
             resid = y_lat - rho * pt.dot(W_pt, y_lat) - pt.dot(self._X, beta)
-            logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                logp_resid = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid).sum()
+            else:
+                logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
             pm.Potential("resid_loglik", logp_resid)
             pm.Potential("jacobian", logdet_fn(rho))
 
@@ -181,16 +206,38 @@ class SARTobit(_SpatialTobitBase):
         # Tobit pointwise log-likelihood
         ll = np.empty((s, n), dtype=np.float64)
         uncens = ~censored
-        # Uncensored: log N(y | mu, sigma^2)
-        ll[:, uncens] = -0.5 * (
-            ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-            + np.log(2.0 * np.pi)
-            + 2.0 * np.log(sigma_f[:, None])
-        )
-        # Censored: log Phi((c - mu) / sigma)
-        ll[:, censored] = norm.logcdf(
-            (censoring - mu[:, censored]) / sigma_f[:, None]
-        )
+        if self.robust:
+            nu_f = idata.posterior["nu"].values.reshape(s)
+            from scipy.special import gammaln
+            from scipy.stats import t as t_dist
+            # Uncensored: log t(y | mu, sigma, nu)
+            ll[:, uncens] = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - ((nu_f[:, None] + 1) / 2)
+                * np.log1p(
+                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                    / nu_f[:, None]
+                )
+            )
+            # Censored: log T_cdf((c - mu) / sigma, nu)
+            ll[:, censored] = t_dist.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None],
+                df=nu_f[:, None],
+            )
+        else:
+            # Uncensored: log N(y | mu, sigma^2)
+            ll[:, uncens] = -0.5 * (
+                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
+            # Censored: log Phi((c - mu) / sigma)
+            ll[:, censored] = norm.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None]
+            )
 
         # Eigenvalue-based Jacobian: log|I - rho*W| / n (pure numpy)
         eigs = self._W_eigs.real.astype(np.float64)
@@ -204,13 +251,32 @@ class SARTobit(_SpatialTobitBase):
 
 
 class SEMTobit(_SpatialTobitBase):
-    r"""Bayesian spatial error Tobit model.
+    """Bayesian spatial error Tobit model.
 
     .. math::
-        y^* = X\beta + u,\quad u = \lambda W u + \varepsilon,
-        \quad \varepsilon \sim N(0,\sigma^2 I)
+        y^* = X\\beta + u,\\quad u = \\lambda W u + \\varepsilon,
+        \\quad \\varepsilon \\sim N(0,\\sigma^2 I)
 
     with observed outcome ``y = max(c, y*)``.
+
+    **Robust regression**
+
+    When ``robust=True``, the spatially-filtered error distribution is
+    changed from Normal to Student-t.  For uncensored observations:
+
+    .. math::
+
+        f(y^*_i \\mid \\mu_i, \\sigma, \\nu) =
+        \\frac{1}{\\sigma} \\, t_\\nu\\!\\left(\\frac{y^*_i - \\mu_i}{\\sigma}\\right)
+
+    and for censored observations:
+
+    .. math::
+
+        P(y^*_i \\le c) = T_\\nu\\!\\left(\\frac{c - \\mu_i}{\\sigma}\\right)
+
+    where :math:`T_\\nu` is the Student-t CDF and
+    :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -236,7 +302,12 @@ class SEMTobit(_SpatialTobitBase):
             y_lat = self._latent_y_tensor()
             resid = y_lat - pt.dot(self._X, beta)
             eps = resid - lam * pt.dot(W_pt, resid)
-            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+            else:
+                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
             pm.Potential("jacobian", logdet_fn(lam))
 
@@ -318,14 +389,34 @@ class SEMTobit(_SpatialTobitBase):
         # Tobit pointwise log-likelihood
         ll = np.empty((s, n), dtype=np.float64)
         uncens = ~censored
-        ll[:, uncens] = -0.5 * (
-            ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-            + np.log(2.0 * np.pi)
-            + 2.0 * np.log(sigma_f[:, None])
-        )
-        ll[:, censored] = norm.logcdf(
-            (censoring - mu[:, censored]) / sigma_f[:, None]
-        )
+        if self.robust:
+            nu_f = idata.posterior["nu"].values.reshape(s)
+            from scipy.special import gammaln
+            from scipy.stats import t as t_dist
+            ll[:, uncens] = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - ((nu_f[:, None] + 1) / 2)
+                * np.log1p(
+                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                    / nu_f[:, None]
+                )
+            )
+            ll[:, censored] = t_dist.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None],
+                df=nu_f[:, None],
+            )
+        else:
+            ll[:, uncens] = -0.5 * (
+                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
+            ll[:, censored] = norm.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None]
+            )
 
         # Eigenvalue-based Jacobian: log|I - lam*W| / n (pure numpy)
         eigs = self._W_eigs.real.astype(np.float64)
@@ -339,13 +430,32 @@ class SEMTobit(_SpatialTobitBase):
 
 
 class SDMTobit(_SpatialTobitBase):
-    r"""Bayesian spatial Durbin Tobit model.
+    """Bayesian spatial Durbin Tobit model.
 
     .. math::
-        y^* = \rho Wy^* + X\beta_1 + WX\beta_2 + \varepsilon,
-        \quad \varepsilon \sim N(0,\sigma^2 I)
+        y^* = \\rho Wy^* + X\\beta_1 + WX\\beta_2 + \\varepsilon,
+        \\quad \\varepsilon \\sim N(0,\\sigma^2 I)
 
     with observed outcome ``y = max(c, y*)``.
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t.  For uncensored observations the density becomes:
+
+    .. math::
+
+        f(y^*_i \\mid \\mu_i, \\sigma, \\nu) =
+        \\frac{1}{\\sigma} \\, t_\\nu\\!\\left(\\frac{y^*_i - \\mu_i}{\\sigma}\\right)
+
+    and for censored observations:
+
+    .. math::
+
+        P(y^*_i \\le c) = T_\\nu\\!\\left(\\frac{c - \\mu_i}{\\sigma}\\right)
+
+    where :math:`T_\\nu` is the Student-t CDF and
+    :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
 
     def _beta_names(self) -> list[str]:
@@ -375,7 +485,12 @@ class SDMTobit(_SpatialTobitBase):
 
             y_lat = self._latent_y_tensor()
             resid = y_lat - rho * pt.dot(W_pt, y_lat) - pt.dot(Z, beta)
-            logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                logp_resid = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid).sum()
+            else:
+                logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
             pm.Potential("resid_loglik", logp_resid)
             pm.Potential("jacobian", logdet_fn(rho))
 
@@ -489,14 +604,34 @@ class SDMTobit(_SpatialTobitBase):
         # Tobit pointwise log-likelihood
         ll = np.empty((s, n), dtype=np.float64)
         uncens = ~censored
-        ll[:, uncens] = -0.5 * (
-            ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-            + np.log(2.0 * np.pi)
-            + 2.0 * np.log(sigma_f[:, None])
-        )
-        ll[:, censored] = norm.logcdf(
-            (censoring - mu[:, censored]) / sigma_f[:, None]
-        )
+        if self.robust:
+            nu_f = idata.posterior["nu"].values.reshape(s)
+            from scipy.special import gammaln
+            from scipy.stats import t as t_dist
+            ll[:, uncens] = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - ((nu_f[:, None] + 1) / 2)
+                * np.log1p(
+                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                    / nu_f[:, None]
+                )
+            )
+            ll[:, censored] = t_dist.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None],
+                df=nu_f[:, None],
+            )
+        else:
+            ll[:, uncens] = -0.5 * (
+                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
+            ll[:, censored] = norm.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None]
+            )
 
         # Eigenvalue-based Jacobian: log|I - rho*W| / n (pure numpy)
         eigs = self._W_eigs.real.astype(np.float64)

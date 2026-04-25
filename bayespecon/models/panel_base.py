@@ -187,6 +187,13 @@ class SpatialPanelModel(ABC):
         Required in matrix mode if not inferable.
     model
         0 pooled, 1 unit FE, 2 time FE, 3 two-way FE.
+    robust : bool, default False
+        If True, use a Student-t error distribution instead of Normal,
+        yielding a model that is robust to heavy-tailed outliers. When
+        ``robust=True``, a ``nu`` (degrees of freedom) parameter is added
+        to the model with an ``Exponential(lam=nu_lam)`` prior (default
+        ``nu_lam = 1/30``, mean ≈ 30). The ``nu`` prior can be controlled
+        via the ``priors`` dict with key ``nu_lam``.
     """
 
     def __init__(
@@ -203,6 +210,7 @@ class SpatialPanelModel(ABC):
         model: int = 0,
         priors: Optional[dict] = None,
         logdet_method: str = "eigenvalue",
+        robust: bool = False,
     ):
         if W is None:
             raise ValueError("W is required.")
@@ -210,6 +218,7 @@ class SpatialPanelModel(ABC):
         self.priors = priors or {}
         self.logdet_method = logdet_method
         self.model = int(model)
+        self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._W_dense_cache: Optional[np.ndarray] = None
@@ -334,6 +343,28 @@ class SpatialPanelModel(ABC):
             if not (is_named_intercept or is_constant):
                 indices.append(j)
         return indices
+
+    def _add_nu_prior(self, model: pm.Model) -> pm.Model:
+        """Add the degrees-of-freedom prior for robust (Student-t) models.
+
+        Called inside ``_build_pymc_model`` when ``self.robust`` is True.
+        Uses an :math:`\\mathrm{Exp}(\\lambda_\\nu)` prior on ``nu`` with rate ``nu_lam`` (default
+        1/30, giving mean ≈ 30, favouring near-Normal tails). A lower
+        bound of 2 is enforced so that the variance exists.
+
+        Parameters
+        ----------
+        model : pymc.Model
+            The model context in which to add the ``nu`` prior.
+
+        Returns
+        -------
+        pymc.Model
+            The same model context (``nu`` is added as a side effect).
+        """
+        nu_lam = self.priors.get("nu_lam", 1.0 / 30.0)
+        pm.Truncated("nu", pm.Exponential.dist(lam=nu_lam), lower=2.0)
+        return model
 
     @abstractmethod
     def _build_pymc_model(self) -> pm.Model:

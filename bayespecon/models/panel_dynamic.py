@@ -75,6 +75,20 @@ class DLMPanelFE(_DynamicPanelMixin, SpatialPanelModel):
 
     Model:
     ``y_t = phi * y_{t-1} + X_t * beta + W*X_t * gamma + e_t``.
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_t \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -91,7 +105,12 @@ class DLMPanelFE(_DynamicPanelMixin, SpatialPanelModel):
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             mu = phi * self._y_lag + pt.dot(self._Z_dyn, beta)
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
 
         return model
 
@@ -135,6 +154,20 @@ class SDMRPanelFE(_DynamicPanelMixin, SpatialPanelModel):
 
     Model:
     ``y_t = phi*y_{t-1} + rho*W*y_t - rho*phi*W*y_{t-1} + X_t*beta + W*X_t*gamma + e_t``.
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_t \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -168,7 +201,12 @@ class SDMRPanelFE(_DynamicPanelMixin, SpatialPanelModel):
                 - rho * phi * self._Wy_lag
                 + pt.dot(self._Z_dyn, beta)
             )
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
             pm.Potential("jacobian", logdet_fn(rho))
 
         return model
@@ -269,6 +307,20 @@ class SDMUPanelFE(_DynamicPanelMixin, SpatialPanelModel):
 
     Model:
     ``y_t = phi*y_{t-1} + rho*W*y_t + theta*W*y_{t-1} + X_t*beta + W*X_t*gamma + e_t``.
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_t \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -305,7 +357,12 @@ class SDMUPanelFE(_DynamicPanelMixin, SpatialPanelModel):
                 + theta * self._Wy_lag
                 + pt.dot(self._Z_dyn, beta)
             )
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
             pm.Potential("jacobian", logdet_fn(rho))
 
         return model
@@ -413,6 +470,20 @@ class SARPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
     time-lagged dependent variable but no WX terms (no Durbin component).
     The Jacobian ``|I - rho*W|^(T-1)`` accounts for the contemporaneous
     spatial lag.
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_t \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -441,7 +512,12 @@ class SARPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             mu = phi * self._y_lag + rho * self._Wy_dyn + pt.dot(self._X_dyn, beta)
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
             pm.Potential("jacobian", logdet_fn(rho))
 
         return model
@@ -515,6 +591,21 @@ class SEMPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
     This is the dynamic analogue of :class:`SEMPanelFE`. The likelihood
     uses transformed residuals ``(I - lambda*W)(y_t - phi*y_{t-1} - X_t*beta)``
     with a Jacobian ``|I - lambda*W|^(T-1)``.
+
+    **Robust regression**
+
+    When ``robust=True``, the spatially-filtered error distribution is
+    changed from Normal to Student-t, yielding a model that is robust to
+    heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_t = (I - \\lambda W)(y_t - \\phi y_{t-1} - X_t \\beta) \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -546,7 +637,12 @@ class SEMPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
             resid = self._y_dyn - phi * self._y_lag - pt.dot(self._X_dyn, beta)
             eps = resid - lam * pt.dot(W_pt, resid)
-            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+            else:
+                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
             pm.Potential("jacobian", logdet_fn(lam))
 
@@ -598,11 +694,23 @@ class SEMPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
         resid = self._y_dyn[None, :] - phi_f[:, None] * self._y_lag[None, :] - beta_f @ X.T
         eps = resid - lam_f[:, None] * (resid @ W.T)
 
-        ll = -0.5 * (
-            (eps / sigma_f[:, None]) ** 2
-            + np.log(2.0 * np.pi)
-            + 2.0 * np.log(sigma_f[:, None])
-        )
+        if self.robust:
+            nu_f = idata.posterior["nu"].values.reshape(s)
+            from scipy.special import gammaln
+            ll = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - ((nu_f[:, None] + 1) / 2)
+                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
+            )
+        else:
+            ll = -0.5 * (
+                (eps / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
 
         eigs = self._W_eigs.real.astype(np.float64)
         jac = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_f]) * self._n_time_eff
@@ -638,6 +746,21 @@ class SDEMPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     This is the dynamic analogue of :class:`SDEMPanelFE`. The likelihood
     uses transformed residuals with a Jacobian ``|I - lambda*W|^(T-1)``.
+
+    **Robust regression**
+
+    When ``robust=True``, the spatially-filtered error distribution is
+    changed from Normal to Student-t, yielding a model that is robust to
+    heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_t = (I - \\lambda W)(y_t - \\phi y_{t-1} - X_t \\beta_1 - WX_t \\beta_2) \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _beta_names(self) -> list[str]:
@@ -676,7 +799,12 @@ class SDEMPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
             resid = self._y_dyn - phi * self._y_lag - pt.dot(Z, beta)
             eps = resid - lam * pt.dot(W_pt, resid)
-            logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+            else:
+                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
             pm.Potential("jacobian", logdet_fn(lam))
 
@@ -728,11 +856,23 @@ class SDEMPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
         resid = self._y_dyn[None, :] - phi_f[:, None] * self._y_lag[None, :] - beta_f @ Z.T
         eps = resid - lam_f[:, None] * (resid @ W.T)
 
-        ll = -0.5 * (
-            (eps / sigma_f[:, None]) ** 2
-            + np.log(2.0 * np.pi)
-            + 2.0 * np.log(sigma_f[:, None])
-        )
+        if self.robust:
+            nu_f = idata.posterior["nu"].values.reshape(s)
+            from scipy.special import gammaln
+            ll = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - ((nu_f[:, None] + 1) / 2)
+                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
+            )
+        else:
+            ll = -0.5 * (
+                (eps / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
 
         eigs = self._W_eigs.real.astype(np.float64)
         jac = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_f]) * self._n_time_eff
@@ -776,6 +916,20 @@ class SLXPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     This is the dynamic analogue of :class:`SLXPanelFE`. No spatial lag
     on y, so no Jacobian adjustment is needed.
+
+    **Robust regression**
+
+    When ``robust=True``, the error distribution is changed from Normal
+    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+
+    .. math::
+
+        \\varepsilon_t \\sim t_\\nu(0, \\sigma^2)
+
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
+    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
+    favouring near-Normal tails.  The lower bound of 2 ensures the
+    variance exists.
     """
 
     def _beta_names(self) -> list[str]:
@@ -800,7 +954,12 @@ class SLXPanelDEDynamic(_DynamicPanelMixin, SpatialPanelModel):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             mu = phi * self._y_lag + pt.dot(Z, beta)
-            pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
 
         return model
 

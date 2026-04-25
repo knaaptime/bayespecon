@@ -3,17 +3,17 @@
 
 Provides functions for estimating marginal likelihoods (via bridge sampling
 or BIC approximation) and computing pairwise Bayes factors between
-competing models, following the approach of Meng & Wong (1996),
-Gronau et al. (2017), and Wagenmakers (2007).
+competing models, following the approach of :cite:t:`meng1996SimulatingRatios`,
+:cite:t:`gronau2020bridgesampling`, and :cite:t:`wagenmakers2007PracticalSolution`.
 
 The bridge sampling implementation follows the R ``bridgesampling`` package
-(Gronau, Singmann, & Wagenmakers, 2020) and supports:
+(:cite:p:`gronau2020bridgesampling`) and supports:
 
 - Automatic compilation of the log-posterior from fitted model objects
   via ``compile_log_posterior()``.
 - Effective sample size (ESS) weighting in the iterative scheme.
 - Two-phase convergence with geometric-mean restart.
-- Monte Carlo standard error (MCSE) following Micaletto & Vehtari (2025).
+- Monte Carlo standard error (MCSE) following :cite:t:`micaletto2025MCSE`.
 
 Functions
 ---------
@@ -351,7 +351,7 @@ def _run_iterative_scheme(
     neff: Optional[float] = None,
     use_neff: bool = True,
 ) -> dict:
-    """Run the iterative bridge sampling scheme (Meng & Wong, 1996, eq. 4.1).
+    """Run the iterative bridge sampling scheme (:cite:p:`meng1996SimulatingRatios`, eq. 4.1).
 
     Uses the "optimal" bridge function with numerically stable log-sum-exp
     arithmetic.  Follows the R ``bridgesampling`` package's
@@ -513,10 +513,9 @@ def _bridge_logml(
     use_neff=True,
     repetitions=1,
 ):
-    """Estimate log marginal likelihood via bridge sampling (Meng & Wong, 1996).
+    """Estimate log marginal likelihood via bridge sampling (:cite:p:`meng1996SimulatingRatios`).
 
-    Follows the R ``bridgesampling`` package (Gronau, Singmann, &
-    Wagenmakers, 2020) with the "normal" proposal method.
+    Follows the R ``bridgesampling`` package (:cite:t:`gronau2020bridgesampling`) with the "normal" proposal method.
 
     Parameters
     ----------
@@ -741,7 +740,7 @@ def _bridge_logml(
 def _bic_logml(idata, return_diagnostics=False, model=None):
     """Estimate log marginal likelihood via the BIC approximation.
 
-    Following bayestestR's ``bic_to_bf()`` (Wagenmakers, 2007):
+    Following bayestestR's ``bic_to_bf()`` (:cite:p:`wagenmakers2007PracticalSolution`):
 
     .. math::
         BF_{10} = \\exp((BIC_0 - BIC_1) / 2)
@@ -751,12 +750,12 @@ def _bic_logml(idata, return_diagnostics=False, model=None):
     .. math::
         \\log(ML) \\approx -BIC / 2
 
-    since :math:`BIC = k \\log(n) - 2 \\hat\\ell_{\\max}`, so
+    since :math:`BIC = k \\log(n) - 2 \\hat{\\ell}_{\\max}`, so
     :math:`\\log(ML) \\approx -BIC/2 + (k \\log(n))/2` and the
     :math:`k \\log(n)/2` terms cancel when computing BF ratios.
 
     .. note::
-       The maximised log-likelihood :math:`\\hat\\ell_{\\max}` is
+       The maximised log-likelihood :math:`\\hat{\\ell}_{\\max}` is
        approximated by the maximum of the posterior log-likelihoods
        (``np.max``), not the posterior mean.  Using the mean would
        underestimate the log-likelihood and distort model rankings
@@ -851,7 +850,7 @@ def _bic_logml(idata, return_diagnostics=False, model=None):
 def bic_to_bf(bic_values, denominator=None, log=False):
     """Convert BIC values to Bayes factors via the BIC-approximation method.
 
-    Following bayestestR (Wagenmakers, 2007):
+    Following bayestestR (:cite:p:`wagenmakers2007PracticalSolution`):
 
     .. math::
         BF_{10} = \\exp((BIC_0 - BIC_1) / 2)
@@ -897,8 +896,8 @@ def bayes_factor_compare_models(
 ) -> Union[pd.DataFrame, tuple[pd.DataFrame, dict]]:
     """Compute all pairwise Bayes factors for a set of Bayesian models.
 
-    Following bayestestR's ``bayesfactor_models()`` (Makowski et al., 2019;
-    Ben-Shachar & Lüdecke), this function estimates marginal likelihoods for
+    Following bayestestR's ``bayesfactor_models()`` (:cite:p:`makowski2019bayestestR`),
+    this function estimates marginal likelihoods for
     each model and then computes Bayes factors as ratios of marginal
     likelihoods:
 
@@ -935,13 +934,13 @@ def bayes_factor_compare_models(
     method : str, default 'bridge'
         Marginal likelihood estimation method. Supported:
 
-        - ``'bridge'``: Bridge sampling (Meng & Wong, 1996). Uses the
+        - ``'bridge'``: Bridge sampling (:cite:p:`meng1996SimulatingRatios`). Uses the
           iterative scheme with a multivariate normal proposal, ESS
           weighting, two-phase convergence, and MCSE diagnostics —
-          following the R ``bridgesampling`` package (Gronau et al., 2020).
+          following the R ``bridgesampling`` package (:cite:p:`gronau2020bridgesampling`).
           **Requires fitted model objects** so the log-posterior can be
           compiled automatically.
-        - ``'bic'``: BIC approximation (Wagenmakers, 2007).
+        - ``'bic'``: BIC approximation (:cite:p:`wagenmakers2007PracticalSolution`).
           Computes :math:`\\log(ML) \\approx -BIC/2`.  Works with either
           fitted model objects or InferenceData.
 
@@ -981,7 +980,7 @@ def bayes_factor_compare_models(
         - ``logml``: Estimated log marginal likelihood.
         - ``iterations``: Number of bridge iterations.
         - ``mcse_logml``: Monte Carlo standard error of logml
-          (Micaletto & Vehtari, 2025).
+          (:cite:p:`micaletto2025MCSE`).
         - ``converged``: Whether the iterative scheme converged.
         - ``neff``: Effective sample size used for weighting (if
           ``use_neff=True``).
@@ -993,7 +992,7 @@ def bayes_factor_compare_models(
     Notes
     -----
     **Bridge sampling algorithm.**  The ``'bridge'`` method implements the
-    iterative bridge sampling estimator of Meng & Wong (1996, eq. 4.1) with
+    iterative bridge sampling estimator of :cite:t:`meng1996SimulatingRatios`, eq. 4.1, with
     the "optimal" bridge function.  The procedure is:
 
     1. Split posterior samples in half: first half fits a multivariate
@@ -1010,7 +1009,7 @@ def bayes_factor_compare_models(
     4. Compute MCSE following Micaletto & Vehtari (2025).
 
     **ESS weighting.**  By default (``use_neff=True``), the bridge function
-    uses :math:`s_1 = n_{\\text{eff}} / (n_{\\text{eff}} + N_2)` instead of
+    uses :math:`s_1 = n_{\\mathrm{eff}} / (n_{\\mathrm{eff}} + N_2)` instead of
     :math:`s_1 = N_1 / (N_1 + N_2)`, matching the R ``bridgesampling``
     package.  This down-weights autocorrelated samples and generally
     improves accuracy.
@@ -1024,11 +1023,11 @@ def bayes_factor_compare_models(
       >100 (extreme).
 
     **Sample size.**  For bridge sampling, at least 40,000 posterior
-    samples are recommended for precise estimates (Gronau et al., 2017).
+    samples are recommended for precise estimates (:cite:p:`gronau2020bridgesampling`).
     A warning is emitted when fewer samples are detected.
 
     **BIC vs. bridge sampling.**  The ``'bic'`` method approximates
-    :math:`\\log(ML) \\approx \\hat\\ell_{\\max} - \\frac{k}{2}\\log(n)`,
+    :math:`\\log(ML) \\approx \\hat{\\ell}_{\\max} - \\frac{k}{2}\\log(n)`,
     which assumes unit-information priors (priors containing as much
     information as a single observation).  When the actual priors are
     wider — as is typical for spatial models — bridge sampling will
@@ -1077,19 +1076,6 @@ def bayes_factor_compare_models(
             random_seed=42,
         )
 
-    References
-    ----------
-    - Gronau, Q. F., Singmann, H., & Wagenmakers, E.-J. (2020). bridgesampling:
-      An R Package for Estimating Normalizing Constants. *Journal of Statistical
-      Software*, 92. doi:10.18637/jss.v092.i10
-    - Kass, R. E., & Raftery, A. E. (1995). Bayes Factors. *JASA*, 90(430),
-      773-795.
-    - Meng, X.-L., & Wong, W. H. (1996). Simulating ratios of normalizing
-      constants via a simple identity. *Statistica Sinica*, 831-860.
-    - Micaletto, G., & Vehtari, A. (2025). Monte Carlo standard errors for
-      bridge sampling marginal likelihood estimation. arXiv:2508.14487.
-    - Wagenmakers, E.-J. (2007). A practical solution to the pervasive problems
-      of p values. *Psychonomic Bulletin & Review*, 14(5), 779-804.
     """
     # --- Unpack models into idata_list, log_posterior_list, and labels ---
     if isinstance(models, dict):
