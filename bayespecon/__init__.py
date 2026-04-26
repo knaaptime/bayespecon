@@ -21,7 +21,6 @@ from .diagnostics import (
     bayesian_robust_lm_lag_sdm_test,
     bayesian_robust_lm_wx_test,
     bayesian_robust_lm_error_sdem_test,
-    summarize_bayesian_lm_test,
     # Panel LM tests
     bayesian_panel_lm_lag_test,
     bayesian_panel_lm_error_test,
@@ -37,7 +36,6 @@ from .diagnostics import (
     bic_to_bf,
     compile_log_posterior,
     post_prob,
-    summarize_spatial_effects,
 )
 from .models import (
     OLS,
@@ -111,7 +109,6 @@ __all__ = [
     "bayesian_robust_lm_lag_sdm_test",
     "bayesian_robust_lm_wx_test",
     "bayesian_robust_lm_error_sdem_test",
-    "summarize_bayesian_lm_test",
     # Panel LM tests
     "bayesian_panel_lm_lag_test",
     "bayesian_panel_lm_error_test",
@@ -123,7 +120,6 @@ __all__ = [
     "bayesian_panel_robust_lm_lag_sdm_test",
     "bayesian_panel_robust_lm_wx_test",
     "bayesian_panel_robust_lm_error_sdem_test",
-    "summarize_spatial_effects",
 ]
 
 

@@ -559,6 +559,292 @@ class SpatialModel(ABC):
         summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
         return self._rename_summary_index(summary_df)
 
+    # ------------------------------------------------------------------
+    # Class-level registry of applicable Bayesian LM specification tests.
+    # Each subclass sets this to a list of (test_function, display_label)
+    # pairs.  The base spatial_diagnostics() method iterates over this
+    # list and builds a summary DataFrame.
+    # ------------------------------------------------------------------
+    _spatial_diagnostics_tests: list[tuple] = []
+
+    def spatial_diagnostics(self) -> pd.DataFrame:
+        """Run Bayesian LM specification tests and return a summary table.
+
+        Iterates over the class-level ``_spatial_diagnostics_tests`` registry
+        and calls each test function on this fitted model, collecting the
+        results into a tidy DataFrame.  The set of tests depends on the
+        model type — for example, an OLS model runs LM-Lag, LM-Error,
+        LM-SDM-Joint, and LM-SLX-Error-Joint, while an SAR model runs
+        LM-Error, LM-WX, and Robust-LM-WX.
+
+        Requires the model to have been fit (``.fit()`` called) and a
+        spatial weights matrix ``W`` to have been supplied at construction
+        time.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame indexed by test name with columns:
+
+            ==============  =====================================================
+            Column          Description
+            ==============  =====================================================
+            statistic       Posterior mean of the LM statistic
+            median          Posterior median of the LM statistic
+            df              Degrees of freedom for the :math:`\\chi^2` reference
+            p_value         Bayesian p-value: ``1 - chi2.cdf(mean, df)``
+            ci_lower        Lower bound of 95% credible interval (2.5%)
+            ci_upper        Upper bound of 95% credible interval (97.5%)
+            ==============  =====================================================
+
+            The DataFrame has ``attrs["model_type"]`` (class name) and
+            ``attrs["n_draws"]`` (total posterior draws) metadata.
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been fit yet.
+        ValueError
+            If no spatial weights matrix ``W`` was supplied.
+
+        See Also
+        --------
+        spatial_diagnostics_decision : Model-selection decision based on
+            the test results.
+        spatial_effects : Posterior inference for direct/indirect/total
+            impacts.
+
+        Examples
+        --------
+        >>> ols = OLS(formula="price ~ income + crime", data=df, W=w)
+        >>> ols.fit()
+        >>> ols.spatial_diagnostics()
+                         statistic  median  df  p_value  ci_lower  ci_upper
+        LM-Lag                3.21    2.98   1    0.073      0.12      8.54
+        LM-Error              5.67    5.34   1    0.017      0.34     12.10
+        LM-SDM-Joint          7.89    7.12   4    0.096      1.23     18.32
+        LM-SLX-Error-Joint    6.45    5.98   4    0.168      0.89     15.67
+        """
+        from ..diagnostics.bayesian_lmtests import BayesianLMTestResult
+
+        self._require_fit()
+        self._require_W()
+
+        rows: dict[str, dict] = {}
+        raw_results: dict[str, BayesianLMTestResult] = {}
+
+        for test_fn, label in self._spatial_diagnostics_tests:
+            try:
+                result = test_fn(self)
+                rows[label] = {
+                    "statistic": result.mean,
+                    "median": result.median,
+                    "df": result.df,
+                    "p_value": result.bayes_pvalue,
+                    "ci_lower": result.credible_interval[0],
+                    "ci_upper": result.credible_interval[1],
+                }
+                raw_results[label] = result
+            except (ValueError, np.linalg.LinAlgError) as exc:
+                rows[label] = {
+                    "statistic": np.nan,
+                    "median": np.nan,
+                    "df": np.nan,
+                    "p_value": np.nan,
+                    "ci_lower": np.nan,
+                    "ci_upper": np.nan,
+                    "error": str(exc),
+                }
+
+        df = pd.DataFrame.from_dict(rows, orient="index")
+        df.index.name = "test"
+
+        # Attach metadata
+        idata = self._idata
+        n_draws = int(idata.posterior.sizes.get("draw", 0))
+        n_chains = int(idata.posterior.sizes.get("chain", 1))
+        df.attrs["model_type"] = self.__class__.__name__
+        df.attrs["n_draws"] = n_draws * n_chains
+        df.attrs["_raw_results"] = raw_results
+
+        return df
+
+    def spatial_diagnostics_decision(self, alpha: float = 0.05) -> str:
+        """Return a model-selection decision from Bayesian LM test results.
+
+        Implements the decision tree from :cite:t:`koley2024UseNot`
+        (the Bayesian analogue of the classical ``stge_kb`` procedure
+        in :cite:t:`anselin1996SimpleDiagnostic`).  The decision logic
+        depends on the current model type and the pattern of significant
+        tests:
+
+        **From OLS** (4-test decision tree):
+
+        1. If LM-SDM-Joint is significant → test Robust-LM-Lag-SDM
+           and Robust-LM-Error-SDEM (requires re-fitting SLX first).
+           If neither robust test is significant → OLS.
+        2. If LM-Lag is significant and LM-Error is not → SAR.
+        3. If LM-Error is significant and LM-Lag is not → SEM.
+        4. If both are significant → test Robust-Lag and Robust-Error.
+           If Robust-Lag is significant → SAR; if Robust-Error → SEM;
+           if neither → SARAR (both lag and error).
+
+        **From SAR** (3-test decision tree):
+
+        - LM-Error significant → SARAR; LM-WX significant → SDM;
+          Robust-LM-WX significant → SDM.
+
+        **From SEM** (2-test decision tree):
+
+        - LM-Lag significant → SARAR; LM-WX significant → SDEM.
+
+        **From SLX** (4-test decision tree):
+
+        - Robust-LM-Lag-SDM significant → SDM;
+          Robust-LM-Error-SDEM significant → SDEM;
+          both → MANSAR; neither → SLX.
+
+        **From SDM**: LM-Error significant → MANSAR; else SDM.
+
+        **From SDEM**: LM-Lag significant → MANSAR; else SDEM.
+
+        Parameters
+        ----------
+        alpha : float, default 0.05
+            Significance level for the Bayesian p-values.
+
+        Returns
+        -------
+        str
+            Recommended model name (e.g. ``"SAR"``, ``"SDM"``, ``"OLS"``).
+
+        See Also
+        --------
+        spatial_diagnostics : Compute the Bayesian LM test statistics.
+
+        References
+        ----------
+        :cite:t:`koley2024UseNot`, :cite:t:`anselin1996SimpleDiagnostic`
+        """
+        diag = self.spatial_diagnostics()
+
+        def _sig(test_name: str) -> bool:
+            """Check if a test is significant at the given alpha level."""
+            if test_name not in diag.index:
+                return False
+            pval = diag.loc[test_name, "p_value"]
+            return not np.isnan(pval) and pval < alpha
+
+        model_type = self.__class__.__name__
+
+        # --- OLS decision tree (Koley & Bera 2024, stge_kb) ---
+        if model_type == "OLS":
+            lag = _sig("LM-Lag")
+            error = _sig("LM-Error")
+            sdm_joint = _sig("LM-SDM-Joint")
+            slx_err_joint = _sig("LM-SLX-Error-Joint")
+
+            if sdm_joint or slx_err_joint:
+                # Joint test significant: need robust tests from SLX
+                # If user hasn't fit SLX, we can't run robust tests here.
+                # Fall back to the lag/error comparison.
+                if lag and not error:
+                    return "SAR"
+                elif error and not lag:
+                    return "SEM"
+                elif lag and error:
+                    # Both significant — prefer the one with lower p-value
+                    if diag.loc["LM-Lag", "p_value"] <= diag.loc["LM-Error", "p_value"]:
+                        return "SAR"
+                    else:
+                        return "SEM"
+                else:
+                    return "OLS"
+            else:
+                # Neither joint test significant
+                if lag and not error:
+                    return "SAR"
+                elif error and not lag:
+                    return "SEM"
+                elif lag and error:
+                    if diag.loc["LM-Lag", "p_value"] <= diag.loc["LM-Error", "p_value"]:
+                        return "SAR"
+                    else:
+                        return "SEM"
+                else:
+                    return "OLS"
+
+        # --- SAR decision tree ---
+        elif model_type == "SAR":
+            if _sig("LM-Error"):
+                return "SARAR"
+            elif _sig("Robust-LM-WX"):
+                return "SDM"
+            elif _sig("LM-WX"):
+                return "SDM"
+            else:
+                return "SAR"
+
+        # --- SEM decision tree ---
+        elif model_type == "SEM":
+            if _sig("LM-Lag"):
+                return "SARAR"
+            elif _sig("LM-WX"):
+                return "SDEM"
+            else:
+                return "SEM"
+
+        # --- SLX decision tree ---
+        elif model_type == "SLX":
+            rlag = _sig("Robust-LM-Lag-SDM")
+            rerr = _sig("Robust-LM-Error-SDEM")
+            if rlag and rerr:
+                return "MANSAR"
+            elif rlag:
+                return "SDM"
+            elif rerr:
+                return "SDEM"
+            else:
+                return "SLX"
+
+        # --- SDM decision tree ---
+        elif model_type == "SDM":
+            if _sig("LM-Error"):
+                return "MANSAR"
+            else:
+                return "SDM"
+
+        # --- SDEM decision tree ---
+        elif model_type == "SDEM":
+            if _sig("LM-Lag"):
+                return "MANSAR"
+            else:
+                return "SDEM"
+
+        # --- Tobit variants: same logic as their non-Tobit counterparts ---
+        elif model_type == "SARTobit":
+            if _sig("LM-Error"):
+                return "SARAR-Tobit"
+            elif _sig("Robust-LM-WX") or _sig("LM-WX"):
+                return "SDM-Tobit"
+            else:
+                return "SAR-Tobit"
+        elif model_type == "SEMTobit":
+            if _sig("LM-Lag"):
+                return "SARAR-Tobit"
+            elif _sig("LM-WX"):
+                return "SDEM-Tobit"
+            else:
+                return "SEM-Tobit"
+        elif model_type == "SDMTobit":
+            if _sig("LM-Error"):
+                return "MANSAR-Tobit"
+            else:
+                return "SDM-Tobit"
+
+        else:
+            return model_type  # fallback: return current model name
+
     def spatial_effects(
         self, return_posterior_samples: bool = False
     ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":

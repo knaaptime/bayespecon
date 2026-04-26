@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bayespecon"
 dynamic = ["version"]
-description = "Bayesian spatial regression models in Python"
+description = "Bayesian spatial econometric regression models in Python"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -35,13 +35,13 @@ markers = [
 [tool.coverage.run]
 source = ["bayespecon"]
 omit = [
-    "tests/*",
+    "bayespecon/tests/*",
     "*/tests/*",
 ]
 
 [tool.coverage.report]
 omit = [
-    "tests/*",
+    "bayespecon/tests/*",
     "*/tests/*",
 ]
 

@@ -81,7 +81,20 @@ class SARTobit(_SpatialTobitBase):
     freedom, and :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30.
     """
-
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_error_test"],
+        ).bayesian_lm_error_test(m), "LM-Error"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_wx_test"],
+        ).bayesian_lm_wx_test(m), "LM-WX"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_robust_lm_wx_test"],
+        ).bayesian_robust_lm_wx_test(m), "Robust-LM-WX"),
+    ]
     def _build_pymc_model(self) -> pm.Model:
         rho_lower = self.priors.get("rho_lower", -1.0)
         rho_upper = self.priors.get("rho_upper", 1.0)
@@ -352,7 +365,16 @@ class SEMTobit(_SpatialTobitBase):
     where :math:`T_\\nu` is the Student-t CDF and
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
-
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_lag_test"],
+        ).bayesian_lm_lag_test(m), "LM-Lag"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_wx_sem_test"],
+        ).bayesian_lm_wx_sem_test(m), "LM-WX"),
+    ]
     def _build_pymc_model(self) -> pm.Model:
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
@@ -605,7 +627,12 @@ class SDMTobit(_SpatialTobitBase):
     where :math:`T_\\nu` is the Student-t CDF and
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
-
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_error_test"],
+        ).bayesian_lm_error_test(m), "LM-Error"),
+    ]
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 

@@ -50,6 +50,16 @@ def test_make_logdet_fn_unknown_method_raises():
         logdet.make_logdet_fn(W, method="not-a-method")
 
 
+def test_chebyshev_parameter_validation():
+    W = _toy_w(4)
+    with pytest.raises(ValueError, match="order must be positive"):
+        logdet.chebyshev(W, order=0)
+    with pytest.raises(ValueError, match="rmax must be greater than rmin"):
+        logdet.chebyshev(W, order=10, rmin=0.5, rmax=0.5)
+    with pytest.raises(ValueError, match="rmax must be greater than rmin"):
+        logdet.chebyshev(W, order=10, rmin=0.5, rmax=0.3)
+
+
 def test_make_logdet_fn_1d_eigs_falls_back_to_eigenvalue_for_grid_like_methods():
     W = _toy_w(4)
     eigs = np.linalg.eigvals(W).real

@@ -1,4 +1,8 @@
 # .coveragerc
 [run]
+source = bayespecon
 concurrency = multiprocessing
 parallel = true
+omit = 
+    bayespecon/tests/*
+    */tests/*

@@ -70,10 +70,30 @@ class OLS(SpatialModel):
           :math:`\\nu` (only used when ``robust=True``).
     logdet_method : str, optional
         Unused for OLS (no spatial lag); kept for API compatibility with
-        :class:`SpatialModel`.
+        :class:`~bayespecon.models.base.SpatialModel`.
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal.
     """
+
+    _spatial_diagnostics_tests = [
+        # Lazy import avoids circular dependency; resolved at call time.
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_lag_test"],
+        ).bayesian_lm_lag_test(m), "LM-Lag"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_error_test"],
+        ).bayesian_lm_error_test(m), "LM-Error"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_sdm_joint_test"],
+        ).bayesian_lm_sdm_joint_test(m), "LM-SDM-Joint"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_slx_error_joint_test"],
+        ).bayesian_lm_slx_error_joint_test(m), "LM-SLX-Error-Joint"),
+    ]
 
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for Bayesian OLS regression.

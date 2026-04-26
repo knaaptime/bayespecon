@@ -27,20 +27,20 @@ Sampling Backends <user-guide/sampling_backend_profiling>
 
 ```{toctree}
 :hidden:
+:caption: API
+:maxdepth: 1
+
+API reference <api>
+```
+
+```{toctree}
+:hidden:
 :caption: References
 :maxdepth: 1
 
 References <references>
 ```
 
-
-```{toctree}
-:hidden:
-:caption: API
-:maxdepth: 1
-
-API reference <api>
-```
 
 ```{toctree}
 :hidden:

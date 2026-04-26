@@ -1,3 +1,194 @@
+def bayesian_panel_lm_wx_sem_test(
+    model,
+) -> "BayesianLMTestResult":
+    """Bayesian panel LM test for WX coefficients in SEM (H₀: γ = 0 | SEM).
+
+    Tests whether spatially lagged covariates (WX) should be added to a
+    panel SEM model, i.e., whether the SEM panel model should be extended to an SDEM panel.
+    Follows the multi-parameter Bayesian LM test framework of Dogan et al. (2021).
+
+    The null model is panel SEM (includes λ but not γ). For each posterior draw
+    from the SEM model, residuals are:
+
+    .. math::
+        \mathbf{e} = \mathbf{y} - X \beta
+
+    The score vector for the WX coefficients is:
+
+    .. math::
+        \mathbf{g}_\gamma = (WX)^\top \mathbf{e}
+
+    The concentration matrix is the information matrix evaluated at the posterior mean:
+
+    .. math::
+        J_{\gamma\gamma} = \frac{1}{\bar{\sigma}^2} (WX)^\top (WX)
+
+    Parameters
+    ----------
+    model : SEMPanelFE or SEMPanelRE
+        Fitted SEM panel model instance with ``inference_data`` attribute
+        containing posterior draws for ``beta``, ``lambda``, and ``sigma``.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+        The ``df`` field is set to :math:`k_{wx}` (number of WX columns).
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    k_wx = WX.shape[1]
+    N = getattr(model, "_N", None)
+    T = getattr(model, "_T", None)
+
+    if k_wx == 0:
+        raise ValueError(
+            "Model has no WX columns. The panel WX test requires at least one "
+            "spatially lagged covariate."
+        )
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # Residuals: e = y - X@beta
+    fitted = beta_draws @ X.T  # (draws, n)
+    resid = y[None, :] - fitted  # (draws, n)
+
+    # For RE models, also subtract alpha
+    if hasattr(model, "_unit_idx") and "alpha" in idata.posterior:
+        alpha_draws = _get_posterior_draws(idata, "alpha")  # (draws, N)
+        resid = resid - alpha_draws[:, model._unit_idx]
+
+    # Score: g_gamma = WX' @ e for each draw → (draws, k_wx)
+    g_gamma = resid @ WX  # (draws, k_wx)
+
+    # Information matrix: J = (1/sigma2_mean) * WX'WX
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    J_gamma_gamma = (WX.T @ WX) / sigma2_mean  # (k_wx, k_wx)
+
+    # LM = g' J^{-1} g for each draw
+    J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
+    LM = np.array([g_gamma[g] @ J_inv @ g_gamma[g] for g in range(g_gamma.shape[0])])
+
+    df = k_wx
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_wx_sem",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_wx": k_wx, "N": N, "T": T},
+    )
+
+
+# ...existing code...
+
+
+def bayesian_lm_wx_sem_test(
+    model,
+) -> "BayesianLMTestResult":
+    """Bayesian LM test for WX coefficients in SEM (H₀: γ = 0 | SEM).
+
+    Tests whether spatially lagged covariates (WX) should be added to a
+    SEM model, i.e., whether the SEM model should be extended to an SDEM
+    specification. Follows the multi-parameter Bayesian LM test framework
+    of :cite:t:`dogan2021BayesianRobust` and the classical LM-WX test of :cite:t:`koley2024UseNot`.
+
+    The null model is SEM (includes λ but not γ). For each posterior draw
+    from the SEM model, residuals are:
+
+    .. math::
+        \mathbf{e} = \mathbf{y} - X \beta
+
+    The score vector for the WX coefficients is:
+
+    .. math::
+        \mathbf{g}_\gamma = (WX)^\top \mathbf{e}
+
+    a :math:`k_{wx} \times 1` vector for each draw. The concentration
+    matrix is the information matrix evaluated at the posterior mean:
+
+    .. math::
+        J_{\gamma\gamma} = \frac{1}{\bar{\sigma}^2} (WX)^\top (WX)
+
+    where :math:`\bar{\sigma}^2` is the posterior mean of :math:`\sigma^2`.
+    The LM statistic for each draw is:
+
+    .. math::
+        \mathrm{LM} = \mathbf{g}_\gamma^\top J_{\gamma\gamma}^{-1} \mathbf{g}_\gamma
+
+    which is distributed as :math:`\chi^2_{k_{wx}}` under H₀.
+
+    Parameters
+    ----------
+    model : SEM
+        Fitted SEM model instance with ``inference_data`` attribute
+        containing posterior draws for ``beta``, ``lambda``, and ``sigma``.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Dataclass containing LM samples, summary statistics, and metadata.
+        The ``df`` field is set to :math:`k_{wx}` (number of WX columns).
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    k_wx = WX.shape[1]
+
+    if k_wx == 0:
+        raise ValueError(
+            "Model has no WX columns. The WX test requires at least one "
+            "spatially lagged covariate. Ensure the model was constructed "
+            "with a W matrix and w_vars."
+        )
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
+
+    # Residuals: e = y - X@beta
+    fitted = beta_draws @ X.T  # (draws, n)
+    resid = y[None, :] - fitted  # (draws, n)
+
+    # Score: g_gamma = WX' @ e for each draw → (draws, k_wx)
+    g_gamma = resid @ WX  # (draws, k_wx)
+
+    # Information matrix: J = (1/sigma2_mean) * WX'WX
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    J_gamma_gamma = (WX.T @ WX) / sigma2_mean  # (k_wx, k_wx)
+
+    # LM = g' J^{-1} g for each draw
+    J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
+    LM = np.array([g_gamma[g] @ J_inv @ g_gamma[g] for g in range(g_gamma.shape[0])])
+
+    df = k_wx
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_lm_wx_sem",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_wx": k_wx},
+    )
+
+
 """
 Bayesian LM-type diagnostics for spatial models :cite:p:`dogan2021BayesianRobust`.
 
@@ -57,6 +248,26 @@ class BayesianLMTestResult:
         if self.details is None:
             self.details = {}
 
+    def to_dict(self):
+        """Convert the test result to a dictionary."""
+        d =  {
+            "lm_samples": self.lm_samples,
+            "mean": self.mean,
+            "median": self.median,
+            "credible_interval": self.credible_interval,
+            "bayes_pvalue": self.bayes_pvalue,
+            "test_type": self.test_type,
+            "df": self.df,
+        }
+        if self.details:
+            for k in self.details:
+                d[k] = self.details[k]
+        return d
+
+    def to_series(self):
+        """Convert the test result to a pandas Series."""
+        import pandas as pd
+        return pd.Series(self.to_dict())
 
 def _get_posterior_draws(idata: az.InferenceData, param: str) -> np.ndarray:
     """Extract posterior draws for a parameter from an ArviZ InferenceData object.
@@ -81,8 +292,6 @@ def _get_posterior_draws(idata: az.InferenceData, param: str) -> np.ndarray:
 
 def bayesian_lm_lag_test(
     model,
-    beta_name: str = "beta",
-    test_type: str = "lag",
 ) -> BayesianLMTestResult:
     """Bayesian LM test for omitted spatial lag (SAR) model.
 
@@ -114,10 +323,6 @@ def bayesian_lm_lag_test(
     ----------
     model : SpatialModel
         Fitted spatial model instance with ``inference_data`` attribute.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
-    test_type : str, default "lag"
-        Test type label (for result metadata).
 
     Returns
     -------
@@ -127,11 +332,15 @@ def bayesian_lm_lag_test(
     """
     y = model._y
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     # Only include WX in X if the model's beta covers WX columns
     # (e.g., SLX, SDM). For OLS, beta only covers X.
     k_beta = beta_draws.shape[1]
-    if hasattr(model, "_WX") and model._WX.shape[1] > 0 and k_beta == model._X.shape[1] + model._WX.shape[1]:
+    if (
+        hasattr(model, "_WX")
+        and model._WX.shape[1] > 0
+        and k_beta == model._X.shape[1] + model._WX.shape[1]
+    ):
         X = np.hstack([model._X, model._WX])
     else:
         X = model._X
@@ -162,8 +371,6 @@ def bayesian_lm_lag_test(
 
 def bayesian_lm_error_test(
     model,
-    beta_name: str = "beta",
-    test_type: str = "error",
 ) -> BayesianLMTestResult:
     """Bayesian LM test for omitted spatial error (SEM) model.
 
@@ -195,10 +402,6 @@ def bayesian_lm_error_test(
     ----------
     model : SpatialModel
         Fitted spatial model instance with ``inference_data`` attribute.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
-    test_type : str, default "error"
-        Test type label (for result metadata).
 
     Returns
     -------
@@ -210,10 +413,14 @@ def bayesian_lm_error_test(
     # Use sparse matrix for We = W @ resid (avoids dense materialisation)
     W_sp = model._W_sparse
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     # Only include WX in X if the model's beta covers WX columns
     k_beta = beta_draws.shape[1]
-    if hasattr(model, "_WX") and model._WX.shape[1] > 0 and k_beta == model._X.shape[1] + model._WX.shape[1]:
+    if (
+        hasattr(model, "_WX")
+        and model._WX.shape[1] > 0
+        and k_beta == model._X.shape[1] + model._WX.shape[1]
+    ):
         X = np.hstack([model._X, model._WX])
     else:
         X = model._X
@@ -245,7 +452,6 @@ def bayesian_lm_error_test(
 
 def bayesian_lm_wx_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian LM test for WX coefficients (H₀: γ = 0).
 
@@ -284,8 +490,6 @@ def bayesian_lm_wx_test(
     model : SAR
         Fitted SAR model instance with ``inference_data`` attribute
         containing posterior draws for ``beta``, ``rho``, and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -308,7 +512,7 @@ def bayesian_lm_wx_test(
         )
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     rho_draws = _get_posterior_draws(idata, "rho")  # (draws,)
 
     # Residuals: e = y - rho*Wy - X@beta
@@ -351,7 +555,6 @@ def bayesian_lm_wx_test(
 
 def bayesian_lm_sdm_joint_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian joint LM test for SDM (H₀: ρ = 0 AND γ = 0).
 
@@ -396,8 +599,6 @@ def bayesian_lm_sdm_joint_test(
     model : SpatialModel
         Fitted OLS model instance with ``inference_data`` attribute
         containing posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -413,7 +614,7 @@ def bayesian_lm_sdm_joint_test(
     k_wx = WX.shape[1]
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
 
     # Residuals: e = y - X@beta
     fitted = beta_draws @ X.T  # (draws, n)
@@ -466,7 +667,6 @@ def bayesian_lm_sdm_joint_test(
 
 def bayesian_lm_slx_error_joint_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian joint LM test for SDEM (H₀: λ = 0 AND γ = 0).
 
@@ -511,8 +711,6 @@ def bayesian_lm_slx_error_joint_test(
     model : SpatialModel
         Fitted OLS model instance with ``inference_data`` attribute
         containing posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -528,7 +726,7 @@ def bayesian_lm_slx_error_joint_test(
     k_wx = WX.shape[1]
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
 
     # Residuals: e = y - X@beta
     fitted = beta_draws @ X.T  # (draws, n)
@@ -580,24 +778,6 @@ def bayesian_lm_slx_error_joint_test(
         df=df,
         details={"n_draws": LM.shape[0], "k_wx": k_wx},
     )
-
-
-def summarize_bayesian_lm_test(result: BayesianLMTestResult) -> None:
-    """Print a summary of the Bayesian LM test result.
-
-    Parameters
-    ----------
-    result : BayesianLMTestResult
-        Result object from a Bayesian LM test function.
-    """
-    print(f"Bayesian LM Test ({result.test_type}):")
-    print(f"  Degrees of freedom: {result.df}")
-    print(f"  Mean: {result.mean:.3f}")
-    print(f"  Median: {result.median:.3f}")
-    print(
-        f"  95% Credible Interval: [{result.credible_interval[0]:.3f}, {result.credible_interval[1]:.3f}]"
-    )
-    print(f"  Bayesian p-value: {result.bayes_pvalue:.3f}")
 
 
 # ---------------------------------------------------------------------------
@@ -753,7 +933,6 @@ def _info_matrix_blocks_sdem(
 
 def bayesian_robust_lm_lag_sdm_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian robust LM-Lag test in SDM context (H₀: ρ = 0, robust to γ).
 
@@ -800,8 +979,6 @@ def bayesian_robust_lm_lag_sdm_test(
     model : SLX
         Fitted SLX model instance with ``inference_data`` attribute
         containing posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -818,7 +995,7 @@ def bayesian_robust_lm_lag_sdm_test(
     k_wx = WX.shape[1]
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k_total)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k_total)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # SLX residuals: e = y - [X, WX] @ beta
@@ -849,9 +1026,7 @@ def bayesian_robust_lm_lag_sdm_test(
 
     # Neyman adjustment: g_rho* = g_rho - J_{ργ·σ} J_{γγ·σ}^{-1} g_gamma
     if k_wx > 0:
-        J_gamma_gamma_inv = np.linalg.inv(
-            J_gamma_gamma + 1e-12 * np.eye(k_wx)
-        )
+        J_gamma_gamma_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
         neyman_coef = J_rho_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_rho_star = g_rho - adjustment
@@ -886,7 +1061,6 @@ def bayesian_robust_lm_lag_sdm_test(
 
 def bayesian_robust_lm_wx_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian robust LM-WX test (H₀: γ = 0, robust to ρ).
 
@@ -938,8 +1112,6 @@ def bayesian_robust_lm_wx_test(
     model : SAR
         Fitted SAR model instance with ``inference_data`` attribute
         containing posterior draws for ``beta``, ``rho``, and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -962,7 +1134,7 @@ def bayesian_robust_lm_wx_test(
         )
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     rho_draws = _get_posterior_draws(idata, "rho")  # (draws,)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
@@ -994,7 +1166,9 @@ def bayesian_robust_lm_wx_test(
 
     # J_{γ·ρ} = J_{γγ·σ} - J_{γρ·σ} J_{ρρ·σ}^{-1} J_{ργ·σ}
     # J_rho_gamma is (k_wx,), so outer product gives (k_wx, k_wx)
-    J_gamma_given_rho = J_gamma_gamma - np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12)
+    J_gamma_given_rho = J_gamma_gamma - np.outer(J_rho_gamma, J_rho_gamma) / (
+        J_rho_rho + 1e-12
+    )
 
     # Neyman adjustment: g_gamma* = g_gamma - J_{γρ·σ} J_{ρρ·σ}^{-1} g_rho
     neyman_coef = J_rho_gamma / (J_rho_rho + 1e-12)  # (k_wx,)
@@ -1002,26 +1176,30 @@ def bayesian_robust_lm_wx_test(
 
     # Adjusted weight matrix: C*_{γγ} = P_{γγ} J_{γ·ρ}
     # P_{γγ} = I - J_{γρ·σ} J_{ρρ·σ}^{-1} J_{ργ·σ} J_{γ·ρ}^{-1}
-    J_gamma_given_rho_inv = np.linalg.inv(
-        J_gamma_given_rho + 1e-12 * np.eye(k_wx)
-    )
-    P_gamma = np.eye(k_wx) - np.outer(J_rho_gamma, J_rho_gamma) / (
-        (J_rho_rho + 1e-12) * (J_gamma_given_rho + 1e-12 * np.eye(k_wx))
-    ).trace()  # Simplified: use the full formula
+    J_gamma_given_rho_inv = np.linalg.inv(J_gamma_given_rho + 1e-12 * np.eye(k_wx))
+    P_gamma = (
+        np.eye(k_wx)
+        - np.outer(J_rho_gamma, J_rho_gamma)
+        / ((J_rho_rho + 1e-12) * (J_gamma_given_rho + 1e-12 * np.eye(k_wx))).trace()
+    )  # Simplified: use the full formula
     # More precisely: P = I - (J_{γρ}/J_{ρρ}) (J_{ργ}/J_{γ·ρ})
     # which is a (k_wx, k_wx) matrix
-    P_gamma = np.eye(k_wx) - (
-        np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12)
-    ) @ J_gamma_given_rho_inv
+    P_gamma = (
+        np.eye(k_wx)
+        - (np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12))
+        @ J_gamma_given_rho_inv
+    )
 
     C_star = P_gamma @ J_gamma_given_rho  # (k_wx, k_wx)
 
     # Robust LM = g_gamma*' C*^{-1} g_gamma* for each draw
     C_star_inv = np.linalg.inv(C_star + 1e-12 * np.eye(k_wx))
-    LM = np.array([
-        g_gamma_star[d] @ C_star_inv @ g_gamma_star[d]
-        for d in range(g_gamma_star.shape[0])
-    ])
+    LM = np.array(
+        [
+            g_gamma_star[d] @ C_star_inv @ g_gamma_star[d]
+            for d in range(g_gamma_star.shape[0])
+        ]
+    )
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -1043,7 +1221,6 @@ def bayesian_robust_lm_wx_test(
 
 def bayesian_robust_lm_error_sdem_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian robust LM-Error test in SDEM context (H₀: λ = 0, robust to γ).
 
@@ -1090,8 +1267,6 @@ def bayesian_robust_lm_error_sdem_test(
     model : SLX
         Fitted SLX model instance with ``inference_data`` attribute
         containing posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -1107,7 +1282,7 @@ def bayesian_robust_lm_error_sdem_test(
     k_wx = WX.shape[1]
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k_total)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k_total)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # SLX residuals: e = y - [X, WX] @ beta
@@ -1132,9 +1307,7 @@ def bayesian_robust_lm_error_sdem_test(
 
     # Neyman adjustment: g_lambda* = g_lambda - J_{λγ·σ} J_{γγ·σ}^{-1} g_gamma
     if k_wx > 0:
-        J_gamma_gamma_inv = np.linalg.inv(
-            J_gamma_gamma + 1e-12 * np.eye(k_wx)
-        )
+        J_gamma_gamma_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
         neyman_coef = J_lam_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_lambda_star = g_lambda - adjustment
@@ -1380,7 +1553,6 @@ def _panel_info_matrix_blocks(
 
 def bayesian_panel_lm_lag_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel LM test for omitted spatial lag (H₀: ρ = 0).
 
@@ -1427,8 +1599,6 @@ def bayesian_panel_lm_lag_test(
         Fitted panel model (e.g. ``OLSPanelFE``, ``OLSPanelRE``) with
         ``inference_data`` attribute containing posterior draws for
         ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -1444,7 +1614,7 @@ def bayesian_panel_lm_lag_test(
     T = model._T
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # Panel residuals (handles FE vs RE)
@@ -1499,7 +1669,6 @@ def bayesian_panel_lm_lag_test(
 
 def bayesian_panel_lm_error_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel LM test for omitted spatial error (H₀: λ = 0).
 
@@ -1533,8 +1702,6 @@ def bayesian_panel_lm_error_test(
         Fitted panel model (e.g. ``OLSPanelFE``, ``OLSPanelRE``) with
         ``inference_data`` attribute containing posterior draws for
         ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -1549,7 +1716,7 @@ def bayesian_panel_lm_error_test(
     T = model._T
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # Panel residuals
@@ -1589,7 +1756,6 @@ def bayesian_panel_lm_error_test(
 
 def bayesian_panel_robust_lm_lag_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel robust LM-Lag test (H₀: ρ = 0, robust to λ).
 
@@ -1615,8 +1781,6 @@ def bayesian_panel_robust_lm_lag_test(
     model : SpatialPanelModel
         Fitted panel model (e.g. ``OLSPanelFE``) with ``inference_data``
         attribute containing posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -1632,7 +1796,7 @@ def bayesian_panel_robust_lm_lag_test(
     T = model._T
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # Panel residuals
@@ -1660,7 +1824,7 @@ def bayesian_panel_robust_lm_lag_test(
     # Robust LM = (S_lag/σ² - S_err/σ²)² / (J - T*tr)
     # where J is in σ² units and tr = tr(W'W+W²)
     sigma2_draws = sigma_draws**2
-    robust_score = (S_lag / sigma2_draws - S_err / sigma2_draws)  # (draws,)
+    robust_score = S_lag / sigma2_draws - S_err / sigma2_draws  # (draws,)
     denom = J_val / sigma2_mean - T * T_ww  # J/σ² - T*tr (scalar)
 
     LM = robust_score**2 / (abs(denom) + 1e-12)
@@ -1685,7 +1849,6 @@ def bayesian_panel_robust_lm_lag_test(
 
 def bayesian_panel_robust_lm_error_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel robust LM-Error test (H₀: λ = 0, robust to ρ).
 
@@ -1714,8 +1877,6 @@ def bayesian_panel_robust_lm_error_test(
     model : SpatialPanelModel
         Fitted panel model (e.g. ``OLSPanelFE``) with ``inference_data``
         attribute containing posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -1731,7 +1892,7 @@ def bayesian_panel_robust_lm_error_test(
     T = model._T
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # Panel residuals
@@ -1793,7 +1954,6 @@ def bayesian_panel_robust_lm_error_test(
 
 def bayesian_panel_lm_wx_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel LM test for WX coefficients (H₀: γ = 0).
 
@@ -1831,8 +1991,6 @@ def bayesian_panel_lm_wx_test(
     model : SARPanelFE or SARPanelRE
         Fitted SAR panel model with ``inference_data`` containing
         posterior draws for ``beta``, ``rho``, and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -1856,7 +2014,7 @@ def bayesian_panel_lm_wx_test(
         )
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     rho_draws = _get_posterior_draws(idata, "rho")  # (draws,)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
@@ -1900,7 +2058,6 @@ def bayesian_panel_lm_wx_test(
 
 def bayesian_panel_lm_sdm_joint_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel joint LM test for SDM (H₀: ρ = 0 AND γ = 0).
 
@@ -1930,8 +2087,6 @@ def bayesian_panel_lm_sdm_joint_test(
     model : SpatialPanelModel
         Fitted OLS panel model with ``inference_data`` containing
         posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -1949,7 +2104,7 @@ def bayesian_panel_lm_sdm_joint_test(
     T = model._T
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # Panel residuals
@@ -1968,7 +2123,14 @@ def bayesian_panel_lm_sdm_joint_test(
     y_hat = X @ beta_mean
 
     info = _panel_info_matrix_blocks(
-        X, WX, W_sp, model._W_eigs, sigma2_mean, N, T, y_hat=y_hat,
+        X,
+        WX,
+        W_sp,
+        model._W_eigs,
+        sigma2_mean,
+        N,
+        T,
+        y_hat=y_hat,
     )
 
     p = 1 + k_wx
@@ -2003,7 +2165,6 @@ def bayesian_panel_lm_sdm_joint_test(
 
 def bayesian_panel_lm_slx_error_joint_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel joint LM test for SDEM (H₀: λ = 0 AND γ = 0).
 
@@ -2033,8 +2194,6 @@ def bayesian_panel_lm_slx_error_joint_test(
     model : SpatialPanelModel
         Fitted OLS panel model with ``inference_data`` containing
         posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -2051,7 +2210,7 @@ def bayesian_panel_lm_slx_error_joint_test(
     T = model._T
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # Panel residuals
@@ -2107,7 +2266,6 @@ def bayesian_panel_lm_slx_error_joint_test(
 
 def bayesian_panel_robust_lm_lag_sdm_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel robust LM-Lag test in SDM context (H₀: ρ = 0, robust to γ).
 
@@ -2134,8 +2292,6 @@ def bayesian_panel_robust_lm_lag_sdm_test(
     model : SLXPanelFE or SLX-like panel model
         Fitted SLX panel model with ``inference_data`` containing
         posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -2152,7 +2308,7 @@ def bayesian_panel_robust_lm_lag_sdm_test(
     T = model._T
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k_total)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k_total)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # SLX residuals: e = y - [X, WX] @ beta
@@ -2171,7 +2327,14 @@ def bayesian_panel_robust_lm_lag_sdm_test(
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
 
     info = _panel_info_matrix_blocks(
-        X, WX, W_sp, model._W_eigs, sigma2_mean, N, T, Wy_hat=Wy_hat,
+        X,
+        WX,
+        W_sp,
+        model._W_eigs,
+        sigma2_mean,
+        N,
+        T,
+        Wy_hat=Wy_hat,
     )
 
     J_rho_rho = info["J_rho_rho"]
@@ -2180,9 +2343,7 @@ def bayesian_panel_robust_lm_lag_sdm_test(
 
     # Neyman adjustment
     if k_wx > 0:
-        J_gamma_gamma_inv = np.linalg.inv(
-            J_gamma_gamma + 1e-12 * np.eye(k_wx)
-        )
+        J_gamma_gamma_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
         neyman_coef = J_rho_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_rho_star = g_rho - adjustment
@@ -2214,7 +2375,6 @@ def bayesian_panel_robust_lm_lag_sdm_test(
 
 def bayesian_panel_robust_lm_wx_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel robust LM-WX test (H₀: γ = 0, robust to ρ).
 
@@ -2241,8 +2401,6 @@ def bayesian_panel_robust_lm_wx_test(
     model : SARPanelFE or SARPanelRE
         Fitted SAR panel model with ``inference_data`` containing
         posterior draws for ``beta``, ``rho``, and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -2265,7 +2423,7 @@ def bayesian_panel_robust_lm_wx_test(
         )
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     rho_draws = _get_posterior_draws(idata, "rho")  # (draws,)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
@@ -2290,7 +2448,14 @@ def bayesian_panel_robust_lm_wx_test(
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
 
     info = _panel_info_matrix_blocks(
-        X, WX, W_sp, model._W_eigs, sigma2_mean, N, T, Wy_hat=Wy_hat,
+        X,
+        WX,
+        W_sp,
+        model._W_eigs,
+        sigma2_mean,
+        N,
+        T,
+        Wy_hat=Wy_hat,
     )
 
     J_rho_rho = info["J_rho_rho"]
@@ -2298,28 +2463,32 @@ def bayesian_panel_robust_lm_wx_test(
     J_gamma_gamma = info["J_gamma_gamma"]  # (k_wx, k_wx)
 
     # J_{γ·ρ} = J_{γγ·σ} - J_{γρ·σ} J_{ρρ·σ}^{-1} J_{ργ·σ}
-    J_gamma_given_rho = J_gamma_gamma - np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12)
+    J_gamma_given_rho = J_gamma_gamma - np.outer(J_rho_gamma, J_rho_gamma) / (
+        J_rho_rho + 1e-12
+    )
 
     # Neyman adjustment: g_gamma* = g_gamma - J_{γρ·σ} J_{ρρ·σ}^{-1} g_rho
     neyman_coef = J_rho_gamma / (J_rho_rho + 1e-12)  # (k_wx,)
     g_gamma_star = g_gamma - np.outer(g_rho, neyman_coef)  # (draws, k_wx)
 
     # Adjusted weight matrix: C*_{γγ} = P_{γγ} J_{γ·ρ}
-    J_gamma_given_rho_inv = np.linalg.inv(
-        J_gamma_given_rho + 1e-12 * np.eye(k_wx)
+    J_gamma_given_rho_inv = np.linalg.inv(J_gamma_given_rho + 1e-12 * np.eye(k_wx))
+    P_gamma = (
+        np.eye(k_wx)
+        - (np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12))
+        @ J_gamma_given_rho_inv
     )
-    P_gamma = np.eye(k_wx) - (
-        np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12)
-    ) @ J_gamma_given_rho_inv
 
     C_star = P_gamma @ J_gamma_given_rho  # (k_wx, k_wx)
 
     # Robust LM = g_gamma*' C*^{-1} g_gamma* for each draw
     C_star_inv = np.linalg.inv(C_star + 1e-12 * np.eye(k_wx))
-    LM = np.array([
-        g_gamma_star[d] @ C_star_inv @ g_gamma_star[d]
-        for d in range(g_gamma_star.shape[0])
-    ])
+    LM = np.array(
+        [
+            g_gamma_star[d] @ C_star_inv @ g_gamma_star[d]
+            for d in range(g_gamma_star.shape[0])
+        ]
+    )
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -2341,7 +2510,6 @@ def bayesian_panel_robust_lm_wx_test(
 
 def bayesian_panel_robust_lm_error_sdem_test(
     model,
-    beta_name: str = "beta",
 ) -> BayesianLMTestResult:
     """Bayesian panel robust LM-Error test in SDEM context (H₀: λ = 0, robust to γ).
 
@@ -2372,8 +2540,6 @@ def bayesian_panel_robust_lm_error_sdem_test(
     model : SLXPanelFE or SLX-like panel model
         Fitted SLX panel model with ``inference_data`` containing
         posterior draws for ``beta`` and ``sigma``.
-    beta_name : str, default "beta"
-        Name of the regression coefficient parameter in the posterior.
 
     Returns
     -------
@@ -2389,7 +2555,7 @@ def bayesian_panel_robust_lm_error_sdem_test(
     T = model._T
 
     idata = model.inference_data
-    beta_draws = _get_posterior_draws(idata, beta_name)  # (draws, k_total)
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k_total)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
     # SLX residuals: e = y - [X, WX] @ beta
@@ -2414,9 +2580,7 @@ def bayesian_panel_robust_lm_error_sdem_test(
 
     # Neyman adjustment (no-op since J_lam_gamma = 0)
     if k_wx > 0:
-        J_gamma_gamma_inv = np.linalg.inv(
-            J_gamma_gamma + 1e-12 * np.eye(k_wx)
-        )
+        J_gamma_gamma_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
         neyman_coef = J_lam_gamma @ J_gamma_gamma_inv  # zeros
         adjustment = g_gamma @ neyman_coef  # zeros
         g_lambda_star = g_lambda - adjustment

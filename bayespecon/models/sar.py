@@ -28,7 +28,7 @@ class SAR(SpatialModel):
     Parameters
     ----------
     formula, data, y, X, W, priors, logdet_method, w_vars
-        See :class:`SpatialModel` for descriptions.
+        See :class:`~bayespecon.models.base.SpatialModel` for descriptions.
 
     Notes
     -----
@@ -55,6 +55,21 @@ class SAR(SpatialModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_error_test"],
+        ).bayesian_lm_error_test(m), "LM-Error"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_wx_test"],
+        ).bayesian_lm_wx_test(m), "LM-WX"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_robust_lm_wx_test"],
+        ).bayesian_robust_lm_wx_test(m), "Robust-LM-WX"),
+    ]
 
     def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
         """Construct the PyMC model for SAR regression.
@@ -120,7 +135,7 @@ class SAR(SpatialModel):
             Passed to ``pm.sample`` for InferenceData creation. If contains
             ``log_likelihood: True``, the complete pointwise log-likelihood
             (including the Jacobian correction) is attached to the output.
-        Other parameters as in :class:`SpatialModel`.
+        Other parameters as in :class:`~bayespecon.models.base.SpatialModel`.
 
         Notes
         -----

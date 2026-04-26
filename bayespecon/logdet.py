@@ -3,9 +3,6 @@
 Provides log|I - rho*W| as a pytensor expression or a pre-computed
 grid interpolation for large n, used as pm.Potential in spatial likelihoods.
 
-The fastest approach for any n is the eigenvalue method: pre-computing
-W's eigenvalues once (O(n³)) and evaluating sum(log(1 - rho*eigs)) per
-step (O(n)), which is both exact and differentiable.
 """
 
 import numpy as np
@@ -193,7 +190,7 @@ def mc(
     grid: float = 0.01,
     random_state: int | None = None,
 ) -> dict:
-    """Compute Monte Carlo log-determinant approximation (MATLAB ``lndetmc`` style).
+    """Compute Monte Carlo log-determinant approximation (:cite:t:`barry1999MonteCarlo`).
 
     Parameters
     ----------
@@ -306,6 +303,239 @@ def ilu(
     return {"rho": rho, "lndet": lndet}
 
 
+def chebyshev(
+    W,
+    order: int = 20,
+    rmin: float = -1.0,
+    rmax: float = 1.0,
+    random_state: int | None = None,
+) -> dict:
+    """Compute Chebyshev approximation of log|I - rho*W| (:cite:p:`pace2004ChebyshevApproximation`).
+
+    Uses Chebyshev polynomials of the first kind to approximate the
+    log-determinant over ``[rmin, rmax]``.  The approximation is
+    near-minimax: for a given polynomial degree it minimises the
+    maximum absolute error on the interval.
+
+    Two computation strategies are supported:
+
+    * **Eigenvalue-based** (default when *n* ≤ 2000): evaluates
+      the exact log-determinant at Chebyshev nodes via eigenvalues,
+      then computes Chebyshev coefficients from those values.
+    * **Monte-Carlo trace-based** (automatically used when *n* > 2000):
+      replaces exact traces with Barry-Pace stochastic trace estimates
+      (:cite:t:`barry1999MonteCarlo`), avoiding the O(n³) eigenvalue
+      decomposition.
+
+    Parameters
+    ----------
+    W : array-like
+        Spatial weights matrix (dense or sparse).
+    order : int, default=20
+        Number of Chebyshev terms (polynomial degree).  Higher values
+        give better accuracy; 15–30 is usually sufficient.
+    rmin : float, default=-1.0
+        Lower bound of the rho interval.
+    rmax : float, default=1.0
+        Upper bound of the rho interval.
+    random_state : int, optional
+        Seed for the Monte Carlo trace estimator (only used when
+        *n* > 2000).
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+
+        - ``coeffs`` : Chebyshev coefficients ``c_0, c_1, …, c_{m-1}``.
+        - ``rmin``, ``rmax`` : interval bounds (echoed back).
+        - ``order`` : polynomial degree used.
+        - ``method`` : ``'eigenvalue'`` or ``'mc'`` indicating how
+          coefficients were computed.
+
+    Notes
+    -----
+    The Chebyshev approximation is
+
+    .. math::
+
+        \\ln|I_n - \\rho W| \\approx
+            \\sum_{j=0}^{m-1} c_j \\, T_j\\!\\left(
+                \\frac{2\\rho - r_{\\max} - r_{\\min}}
+                     {r_{\\max} - r_{\\min}}
+            \\right)
+
+    where :math:`T_j` are Chebyshev polynomials of the first kind and
+    the coefficients :math:`c_j` are computed via the discrete cosine
+    transform of the log-determinant evaluated at Chebyshev nodes.
+
+    The error bound for the *m*-term approximation on
+    :math:`[r_{\\min}, r_{\\max}]` is
+
+    .. math::
+
+        |\\text{error}| \\leq
+            \\frac{n\\,|\\rho|^{m+1}}{(m+1)(1-|\\rho|)}
+
+    for row-standardised :math:`W` with :math:`|\\rho| < 1`.
+
+    References
+    ----------
+    Pace, R.K. & LeSage, J.P. (2004). Chebyshev approximation of
+    log-determinants of spatial weight matrices. *Computational
+    Statistics & Data Analysis*, 45(2), 179–196.
+    :cite:p:`pace2004ChebyshevApproximation`
+    """
+    if order <= 0:
+        raise ValueError("order must be positive.")
+    if rmax <= rmin:
+        raise ValueError("rmax must be greater than rmin.")
+
+    W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
+    n = W_sp.shape[0]
+
+    # Chebyshev nodes on [-1, 1], mapped to [rmin, rmax]
+    k = np.arange(1, order + 1)
+    # Nodes: cos((2k-1)π / (2m)) for k=1..m  (Chebyshev nodes of the first kind)
+    nodes_cos = np.cos((2 * k - 1) * np.pi / (2 * order))
+    # Map from [-1, 1] to [rmin, rmax]
+    rho_nodes = 0.5 * (rmax - rmin) * nodes_cos + 0.5 * (rmax + rmin)
+
+    # Decide computation strategy
+    # Only fall back to MC for truly large matrices; for small matrices
+    # eigenvalue decomposition is fast and exact.
+    use_mc = n > 2000
+
+    if not use_mc:
+        # Eigenvalue-based: exact log-determinant at each Chebyshev node
+        eigs = np.linalg.eigvals(W_sp.toarray()).real
+        logdet_at_nodes = np.array(
+            [np.sum(np.log(np.abs(1.0 - r * eigs))) for r in rho_nodes]
+        )
+        method_used = "eigenvalue"
+    else:
+        # Monte Carlo trace-based: use Barry-Pace stochastic trace
+        # ln|I - ρW| = -Σ_{k=1}^{∞} (ρ^k / k) tr(W^k)
+        # Approximate tr(W^k) via MC, then evaluate at nodes
+        n_mc_iter = 30
+        rng = np.random.default_rng(random_state)
+
+        # Compute MC trace estimates for k=1..order
+        td = np.zeros(order, dtype=np.float64)
+        for j in range(n_mc_iter):
+            u = rng.standard_normal(n)
+            v = u.copy()
+            utu = float(u @ u)
+            for i in range(order):
+                v = W_sp @ v
+                td[i] += n * float(u @ v) / ((i + 1) * utu)
+        td /= n_mc_iter
+
+        # Evaluate power series at each node
+        logdet_at_nodes = np.zeros(order, dtype=np.float64)
+        for idx, r in enumerate(rho_nodes):
+            powers = np.power(r, np.arange(1, order + 1, dtype=np.float64))
+            logdet_at_nodes[idx] = -powers @ td
+        method_used = "mc"
+
+    # Compute Chebyshev coefficients via DCT-I
+    # c_j = (2 - δ_{j,0}) / m * Σ_{k=1}^{m} f(ρ_k*) cos(j(2k-1)π / (2m))
+    coeffs = np.zeros(order, dtype=np.float64)
+    for j in range(order):
+        scale = 2.0 / order if j > 0 else 1.0 / order
+        coeffs[j] = scale * np.sum(
+            logdet_at_nodes * np.cos(j * (2 * k - 1) * np.pi / (2 * order))
+        )
+
+    return {
+        "coeffs": coeffs,
+        "rmin": rmin,
+        "rmax": rmax,
+        "order": order,
+        "method": method_used,
+    }
+
+
+def logdet_chebyshev(
+    rho,
+    coeffs: np.ndarray,
+    rmin: float = -1.0,
+    rmax: float = 1.0,
+) -> pt.TensorVariable:
+    """Evaluate Chebyshev approximation of log|I - rho*W| symbolically.
+
+    Uses Clenshaw's algorithm for numerically stable evaluation of the
+    Chebyshev series at a PyTensor scalar ``rho``.
+
+    Parameters
+    ----------
+    rho : pytensor scalar
+        Spatial autoregressive parameter symbol.
+    coeffs : np.ndarray
+        Chebyshev coefficients from :func:`chebyshev`, shape ``(m,)``.
+    rmin : float, default=-1.0
+        Lower bound of the rho interval (must match what was used to
+        compute *coeffs*).
+    rmax : float, default=1.0
+        Upper bound of the rho interval (must match what was used to
+        compute *coeffs*).
+
+    Returns
+    -------
+    pytensor.tensor.TensorVariable
+        Symbolic Chebyshev approximation of the log-determinant.
+
+    Notes
+    -----
+    The mapped variable is
+
+    .. math::
+
+        x = \\frac{2\\rho - r_{\\max} - r_{\\min}}{r_{\\max} - r_{\\min}}
+
+    and the approximation is evaluated via Clenshaw's recurrence:
+
+    .. math::
+
+        b_{m+1} = 0, \\quad b_m = c_m
+
+        b_k = 2x \\, b_{k+1} - b_{k+2} + c_k
+
+        f(x) = x \\, b_1 - b_2 + c_0
+    """
+    m = len(coeffs)
+    if m == 0:
+        return pt.zeros_like(rho)
+
+    # Map rho ∈ [rmin, rmax] → x ∈ [-1, 1]
+    x = (2.0 * rho - rmax - rmin) / (rmax - rmin)
+
+    # Clenshaw's algorithm for Σ_{j=0}^{m-1} c_j T_j(x)
+    # Iterate from k = m-1 down to k = 1:
+    #   b_{m} = c_{m-1},  b_{m+1} = 0
+    #   b_k = 2x b_{k+1} - b_{k+2} + c_k
+    # Then: f(x) = c_0 + x*b_1 - b_2
+    c = pt.as_tensor_variable(coeffs.astype(np.float64))
+
+    if m == 1:
+        # Only c_0 * T_0(x) = c_0
+        return c[0] * pt.ones_like(rho)
+
+    # Start: b_{m} = c_{m-1}, b_{m+1} = 0
+    b_next = pt.zeros_like(rho)  # b_{m+1} = 0
+    b_curr = c[m - 1]              # b_m = c_{m-1}
+
+    # Iterate from k = m-2 down to k = 1
+    for k in range(m - 2, 0, -1):
+        b_new = 2.0 * x * b_curr - b_next + c[k]
+        b_next = b_curr
+        b_curr = b_new
+
+    # f(x) = c_0 + x*b_1 - b_2
+    # After the loop, b_curr = b_1, b_next = b_2
+    return c[0] + x * b_curr - b_next
+
+
 def logdet_interpolated(rho, W_dense: np.ndarray, rho_min: float = -1.0, rho_max: float = 1.0, n_grid: int = 200):
     """Cubic spline interpolation of log|I - rho*W|.
 
@@ -380,10 +610,14 @@ def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max
         then spline interpolation.
         ``"int"``   — sparse-LU + cubic-spline interpolation (MATLAB
         ``lndetint`` style).
-        ``"mc"``    — Monte Carlo trace approximation (MATLAB ``lndetmc`` style),
+        ``"mc"``    — Monte Carlo trace approximation (:cite:p:`barry1999MonteCarlo`),
         then spline interpolation.
         ``"ichol"`` — ILU-based approximation (MATLAB ``lndetichol`` analog),
         then spline interpolation.
+        ``"chebyshev"`` — Chebyshev polynomial approximation
+        (:cite:p:`pace2004ChebyshevApproximation`); near-minimax
+        polynomial approximation evaluated via Clenshaw's algorithm.
+        O(m) per evaluation after O(n³) or O(R·n·m) pre-computation.
     rho_min : float, default=-1.0
         Lower bound for the grid method.
     rho_max : float, default=1.0
@@ -405,7 +639,7 @@ def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max
     if W.ndim == 1:
         # 1-D eigenvalue array supplied — skip O(n³) decomposition.
         eigs = W
-        if method in ("dense_grid", "exact", "sparse_grid", "spline", "mc", "ilu"):
+        if method in ("dense_grid", "exact", "sparse_grid", "spline", "mc", "ilu", "chebyshev"):
             method = "eigenvalue"
         if method == "eigenvalue":
             if T == 1:
@@ -418,7 +652,7 @@ def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max
     if method in ("spline", "mc") and rho_min < 0.0:
         raise ValueError(
             f"method='{method}' is defined for nonnegative rho ranges; "
-            "use rho_min >= 0 or choose 'eigenvalue'/'exact'/'dense_grid'/'sparse_grid'/'ilu'."
+            "use rho_min >= 0 or choose 'eigenvalue'/'exact'/'dense_grid'/'sparse_grid'/'ilu'/'chebyshev'."
         )
     if method == "eigenvalue":
         eigs = np.linalg.eigvals(W_dense).real
@@ -510,7 +744,18 @@ def make_logdet_fn(W, method: str = "eigenvalue", rho_min: float = -1.0, rho_max
             return val if T == 1 else T * val
 
         return _ilu_interp
+    elif method == "chebyshev":
+        out = chebyshev(W_dense, order=20, rmin=rho_min, rmax=rho_max)
+        coeffs_np = out["coeffs"]
+        rmin_cb = out["rmin"]
+        rmax_cb = out["rmax"]
+
+        def _chebyshev_interp(rho):
+            val = logdet_chebyshev(rho, coeffs_np, rmin=rmin_cb, rmax=rmax_cb)
+            return val if T == 1 else T * val
+
+        return _chebyshev_interp
     else:
         raise ValueError(
-            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu'."
+            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu', 'chebyshev'."
         )

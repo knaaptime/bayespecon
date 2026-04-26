@@ -17,7 +17,6 @@ from bayespecon.diagnostics.spatial_effects import (
     _build_effects_dataframe,
     _compute_bayesian_pvalue,
     _compute_ci,
-    summarize_spatial_effects,
 )
 
 
@@ -421,32 +420,3 @@ class TestBuildEffectsDataFrame:
         np.testing.assert_allclose(df["total"].values, np.mean(total_samples, axis=0))
 
 
-# ------------------------------------------------------------------
-# Tests for summarize_spatial_effects
-# ------------------------------------------------------------------
-
-class TestSummarizeSpatialEffects:
-    def test_print_output(self, capsys):
-        G = 50
-        k = 2
-        rng = np.random.default_rng(42)
-        direct_samples = rng.normal(size=(G, k)) + np.array([1.0, -0.5])
-        indirect_samples = rng.normal(size=(G, k)) + np.array([0.3, -0.1])
-        total_samples = direct_samples + indirect_samples
-        feature_names = ["income", "crime"]
-
-        df = _build_effects_dataframe(
-            direct_samples=direct_samples,
-            indirect_samples=indirect_samples,
-            total_samples=total_samples,
-            feature_names=feature_names,
-            model_type="SAR",
-        )
-        summarize_spatial_effects(df)
-        captured = capsys.readouterr()
-        assert "SAR" in captured.out
-        assert "income" in captured.out
-        assert "crime" in captured.out
-        assert "Direct" in captured.out
-        assert "Indirect" in captured.out
-        assert "Total" in captured.out

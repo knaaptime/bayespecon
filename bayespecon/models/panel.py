@@ -23,6 +23,25 @@ class OLSPanelFE(SpatialPanelModel):
     Notes
     -----
     This class mirrors MATLAB ``ols_panel_FE_g`` behavior through the shared
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_lag_test"],
+        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_error_test"],
+        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_sdm_joint_test"],
+        ).bayesian_panel_lm_sdm_joint_test(m), "Panel-LM-SDM-Joint"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_slx_error_joint_test"],
+        ).bayesian_panel_lm_slx_error_joint_test(m), "Panel-LM-SLX-Error-Joint"),
+    ]
     :class:`~bayespecon.models.panel_base.SpatialPanelModel` transformation
     pipeline.
 
@@ -123,6 +142,21 @@ class SARPanelFE(SpatialPanelModel):
     Notes
     -----
     This class mirrors MATLAB ``sar_panel_FE_g`` behavior under the common
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_error_test"],
+        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_wx_test"],
+        ).bayesian_panel_lm_wx_test(m), "Panel-LM-WX"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_robust_lm_wx_test"],
+        ).bayesian_panel_robust_lm_wx_test(m), "Panel-Robust-LM-WX"),
+    ]
     panel transformation framework.
 
     **Robust regression**
@@ -300,6 +334,17 @@ class SEMPanelFE(SpatialPanelModel):
     Notes
     -----
     This class mirrors MATLAB ``sem_panel_FE_g`` behavior under the common
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_lag_test"],
+        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_wx_sem_test"],
+        ).bayesian_panel_lm_wx_sem_test(m), "Panel-LM-WX"),
+    ]
     panel transformation framework.
 
     **Robust regression**
@@ -493,6 +538,13 @@ class SDMPanelFE(SpatialPanelModel):
     Notes
     -----
     This class mirrors MATLAB ``sdm_panel_FE_g`` behavior by augmenting the
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_error_test"],
+        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
+    ]
     design matrix with spatially lagged regressors ``W X``.
 
     **Robust regression**
@@ -703,6 +755,13 @@ class SDEMPanelFE(SpatialPanelModel):
     Notes
     -----
     This class mirrors MATLAB ``sdem_panel_FE_g`` behavior using transformed
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_lag_test"],
+        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
+    ]
     residual likelihood and Jacobian adjustment.
 
     **Robust regression**
@@ -923,6 +982,25 @@ class SLXPanelFE(SpatialPanelModel):
 
     Parameters
     ----------
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_lag_test"],
+        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_lm_error_test"],
+        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_robust_lm_lag_sdm_test"],
+        ).bayesian_panel_robust_lm_lag_sdm_test(m), "Panel-Robust-LM-Lag-SDM"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_panel_robust_lm_error_sdem_test"],
+        ).bayesian_panel_robust_lm_error_sdem_test(m), "Panel-Robust-LM-Error-SDEM"),
+    ]
     formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.

@@ -30,7 +30,7 @@ class SEM(SpatialModel):
     Parameters
     ----------
     formula, data, y, X, W, priors, logdet_method
-        See :class:`SpatialModel`.
+        See :class:`~bayespecon.models.base.SpatialModel`.
 
     Notes
     -----
@@ -59,6 +59,17 @@ class SEM(SpatialModel):
     variance exists.
     """
 
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_lag_test"],
+        ).bayesian_lm_lag_test(m), "LM-Lag"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_wx_sem_test"],
+        ).bayesian_lm_wx_sem_test(m), "LM-WX"),
+    ]
+
     def fit(
         self,
         draws: int = 2000,
@@ -77,7 +88,7 @@ class SEM(SpatialModel):
             Passed to ``pm.sample`` for InferenceData creation. If contains
             ``log_likelihood: True``, the complete pointwise log-likelihood
             (including the Jacobian correction) is attached to the output.
-        Other parameters as in :class:`SpatialModel`.
+        Other parameters as in :class:`~bayespecon.models.base.SpatialModel`.
 
         Notes
         -----

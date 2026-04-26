@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from bayespecon.logdet import sparse_grid, ilu, spline, mc, make_logdet_fn
+from bayespecon.logdet import sparse_grid, ilu, spline, mc, chebyshev, make_logdet_fn
 
 
 def _toy_w() -> np.ndarray:
@@ -94,3 +94,58 @@ def test_lndetmc_tracks_exact_trend_for_symmetric_row_standardized_w() -> None:
 
     # MC approximation should stay close to exact values on this stable toy case.
     assert np.mean(np.abs(out["lndet"] - exact)) < 0.2
+
+
+def test_chebyshev_returns_expected_keys_and_values() -> None:
+    W = _toy_w()
+    # Use order=2 (< n=3) so eigenvalue path is used
+    out = chebyshev(W, order=2, rmin=-0.5, rmax=0.5)
+
+    assert set(out.keys()) == {"coeffs", "rmin", "rmax", "order", "method"}
+    assert out["order"] == 2
+    assert out["rmin"] == -0.5
+    assert out["rmax"] == 0.5
+    assert out["method"] == "eigenvalue"
+    assert out["coeffs"].shape == (2,)
+    assert np.all(np.isfinite(out["coeffs"]))
+
+
+def test_chebyshev_accuracy_against_exact() -> None:
+    W = _toy_w()
+    I = np.eye(W.shape[0])
+    out = chebyshev(W, order=20, rmin=-0.5, rmax=0.5)
+    coeffs = out["coeffs"]
+    rmin, rmax = out["rmin"], out["rmax"]
+
+    # Evaluate Chebyshev approximation at several rho values
+    from bayespecon.logdet import logdet_chebyshev
+    import pytensor
+    import pytensor.tensor as pt
+    rho_sym = pt.scalar("rho")
+    expr = logdet_chebyshev(rho_sym, coeffs, rmin=rmin, rmax=rmax)
+    fn = pytensor.function([rho_sym], expr)
+
+    test_rhos = np.linspace(-0.4, 0.4, 9)
+    for rho in test_rhos:
+        approx = float(fn(rho))
+        exact = np.linalg.slogdet(I - rho * W)[1]
+        # Chebyshev with order=20 should be very accurate for this small matrix
+        assert abs(approx - exact) < 0.05, f"rho={rho}: approx={approx}, exact={exact}"
+
+
+def test_make_logdet_fn_chebyshev() -> None:
+    W = _toy_w()
+    fn = make_logdet_fn(W, method="chebyshev", rho_min=-0.5, rho_max=0.5)
+    assert callable(fn)
+
+    import pytensor
+    import pytensor.tensor as pt
+    rho_sym = pt.scalar("rho")
+    expr = fn(rho_sym)
+    compiled = pytensor.function([rho_sym], expr)
+
+    I = np.eye(W.shape[0])
+    for rho in [-0.3, 0.0, 0.3]:
+        approx = float(compiled(rho))
+        exact = np.linalg.slogdet(I - rho * W)[1]
+        assert abs(approx - exact) < 0.05

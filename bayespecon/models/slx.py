@@ -24,7 +24,7 @@ class SLX(SpatialModel):
     Parameters
     ----------
     formula, data, y, X, W, priors, logdet_method, w_vars
-        See :class:`SpatialModel`. Use ``w_vars`` to restrict which X columns
+        See :class:`~bayespecon.models.base.SpatialModel`. Use ``w_vars`` to restrict which X columns
         are spatially lagged.
 
     Notes
@@ -51,6 +51,25 @@ class SLX(SpatialModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_lag_test"],
+        ).bayesian_lm_lag_test(m), "LM-Lag"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_error_test"],
+        ).bayesian_lm_error_test(m), "LM-Error"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_robust_lm_lag_sdm_test"],
+        ).bayesian_robust_lm_lag_sdm_test(m), "Robust-LM-Lag-SDM"),
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_robust_lm_error_sdem_test"],
+        ).bayesian_robust_lm_error_sdem_test(m), "Robust-LM-Error-SDEM"),
+    ]
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]

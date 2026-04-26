@@ -129,7 +129,6 @@ Bayesian Diagnostics
    bayesian_robust_lm_lag_sdm_test
    bayesian_robust_lm_wx_test
    bayesian_robust_lm_error_sdem_test
-   summarize_bayesian_lm_test
 
 Panel Bayesian LM Tests
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -159,6 +158,26 @@ Bayesian Model Comparison
    :toctree: generated/
 
    bayes_factor_compare_models
+
+
+Log-Determinant Methods
+-----------------------
+
+.. currentmodule:: bayespecon.logdet
+
+.. autosummary::
+   :toctree: generated/
+
+   make_logdet_fn
+   logdet_eigenvalue
+   logdet_exact
+   logdet_chebyshev
+   logdet_interpolated
+   mc
+   chebyshev
+   ilu
+   sparse_grid
+   spline
 
 
 Data Generating Processes

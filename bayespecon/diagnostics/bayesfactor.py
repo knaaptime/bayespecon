@@ -7,7 +7,7 @@ competing models, following the approach of :cite:t:`meng1996SimulatingRatios`,
 :cite:t:`gronau2020bridgesampling`, and :cite:t:`wagenmakers2007PracticalSolution`.
 
 The bridge sampling implementation follows the R ``bridgesampling`` package
-(:cite:p:`gronau2020bridgesampling`) and supports:
+(:cite:t:`gronau2020bridgesampling`) and supports:
 
 - Automatic compilation of the log-posterior from fitted model objects
   via ``compile_log_posterior()``.
@@ -1220,7 +1220,7 @@ def bayes_factor_compare_models(
                 bf_mat[i, j] = np.exp(logmls[i] - logmls[j])
     df = pd.DataFrame(bf_mat, index=model_labels, columns=model_labels)
     if prior_note:
-        print(f"Bayes factors computed with priors: {prior_note}")
+        warnings.warn(f"Bayes factors computed with priors: {prior_note}", stacklevel=2)
     if return_diagnostics:
         return df, diagnostics
     return df

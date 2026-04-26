@@ -20,7 +20,6 @@ from .bayesian_lmtests import (
     bayesian_robust_lm_lag_sdm_test,
     bayesian_robust_lm_wx_test,
     bayesian_robust_lm_error_sdem_test,
-    summarize_bayesian_lm_test,
     # Panel LM tests
     bayesian_panel_lm_lag_test,
     bayesian_panel_lm_error_test,
@@ -39,7 +38,6 @@ from .bayesfactor import (
     compile_log_posterior,
     post_prob,
 )
-from .spatial_effects import summarize_spatial_effects
 
 __all__ = [
     # Bayesian LM tests (cross-sectional)
@@ -52,8 +50,7 @@ __all__ = [
     "bayesian_robust_lm_lag_sdm_test",
     "bayesian_robust_lm_wx_test",
     "bayesian_robust_lm_error_sdem_test",
-    "summarize_bayesian_lm_test",
-    # Bayesian LM tests (panel)
+    # Panel LM tests
     "bayesian_panel_lm_lag_test",
     "bayesian_panel_lm_error_test",
     "bayesian_panel_robust_lm_lag_test",
@@ -69,6 +66,4 @@ __all__ = [
     "bic_to_bf",
     "compile_log_posterior",
     "post_prob",
-    # Spatial effects inference
-    "summarize_spatial_effects",
 ]

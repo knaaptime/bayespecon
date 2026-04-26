@@ -28,7 +28,7 @@ class SDM(SpatialModel):
     Parameters
     ----------
     formula, data, y, X, W, priors, logdet_method, w_vars
-        See :class:`SpatialModel`. Use ``w_vars`` to restrict which X columns
+        See :class:`~bayespecon.models.base.SpatialModel`. Use ``w_vars`` to restrict which X columns
         are spatially lagged.
 
     Notes
@@ -56,6 +56,13 @@ class SDM(SpatialModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (lambda m: __import__(
+            "bayespecon.diagnostics.bayesian_lmtests",
+            fromlist=["bayesian_lm_error_test"],
+        ).bayesian_lm_error_test(m), "LM-Error"),
+    ]
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
@@ -124,7 +131,7 @@ class SDM(SpatialModel):
             Passed to ``pm.sample`` for InferenceData creation. If contains
             ``log_likelihood: True``, the complete pointwise log-likelihood
             (including the Jacobian correction) is attached to the output.
-        Other parameters as in :class:`SpatialModel`.
+        Other parameters as in :class:`~bayespecon.models.base.SpatialModel`.
 
         Notes
         -----
