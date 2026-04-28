@@ -1,4 +1,3 @@
-
 """Bayes factor comparison of Bayesian spatial models.
 
 Provides functions for estimating marginal likelihoods (via bridge sampling
@@ -32,7 +31,6 @@ from __future__ import annotations
 import warnings
 from typing import Callable, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
 from scipy.stats import multivariate_normal
@@ -42,6 +40,7 @@ _BAYES_FACTOR_METHODS = {}
 
 def _register_bayes_factor_method(name):
     """Register a marginal-likelihood estimation method by name."""
+
     def decorator(fn):
         _BAYES_FACTOR_METHODS[name] = fn
         return fn
@@ -52,6 +51,7 @@ def _register_bayes_factor_method(name):
 # ---------------------------------------------------------------------------
 # Utility: compile log-posterior from a PyMC model
 # ---------------------------------------------------------------------------
+
 
 def compile_log_posterior(pymc_model) -> tuple[Callable, list[str], dict, Callable]:
     """Compile a PyMC model's log-posterior into a callable for bridge sampling.
@@ -179,7 +179,7 @@ def compile_log_posterior(pymc_model) -> tuple[Callable, list[str], dict, Callab
         offset = 0
         for name in input_names:
             size = param_sizes[name]
-            raw = theta_flat[offset:offset + size]
+            raw = theta_flat[offset : offset + size]
             offset += size
             if param_shapes[name]:
                 theta_dict[name] = raw.reshape(param_shapes[name])
@@ -211,7 +211,7 @@ def compile_log_posterior(pymc_model) -> tuple[Callable, list[str], dict, Callab
         blocks = []
         for fv in free_vars:
             constrained_name = fv.name
-            unconstrained_name = constrained_to_unconstrained_name[constrained_name]
+            constrained_to_unconstrained_name[constrained_name]
             transform_type = transform_types[constrained_name]
 
             # Get constrained samples from posterior
@@ -265,6 +265,7 @@ def compile_log_posterior(pymc_model) -> tuple[Callable, list[str], dict, Callab
 # Utility: numerically stable helpers
 # ---------------------------------------------------------------------------
 
+
 def _logsumexp(a: np.ndarray) -> float:
     """Numerically stable log-sum-exp."""
     a_max = np.max(a)
@@ -298,7 +299,7 @@ def _compute_ess(samples: np.ndarray) -> float:
             continue
         max_lag = min(n // 2, 1000)
         acf = np.correlate(x_centered, x_centered, mode="full")
-        acf = acf[n - 1:]
+        acf = acf[n - 1 :]
         acf = acf / (var_x * n)
         tau = 1.0
         for lag in range(1, max_lag):
@@ -338,6 +339,7 @@ def _nearest_pos_def(A: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Iterative bridge sampling scheme
 # ---------------------------------------------------------------------------
+
 
 def _run_iterative_scheme(
     q11: np.ndarray,
@@ -423,15 +425,19 @@ def _run_iterative_scheme(
         l1_shifted = l1 - lstar
 
         # Numerator: for proposal samples
-        log_num = np.array([
-            l2_shifted[j] - _logsumexp(np.array([log_s1 + l2_shifted[j], log_s2_r]))
-            for j in range(N2)
-        ])
+        log_num = np.array(
+            [
+                l2_shifted[j] - _logsumexp(np.array([log_s1 + l2_shifted[j], log_s2_r]))
+                for j in range(N2)
+            ]
+        )
         # Denominator: for posterior samples
-        log_den = np.array([
-            l1_shifted[j] - _logsumexp(np.array([log_s1 + l1_shifted[j], log_s2_r]))
-            for j in range(N1)
-        ])
+        log_den = np.array(
+            [
+                l1_shifted[j] - _logsumexp(np.array([log_s1 + l1_shifted[j], log_s2_r]))
+                for j in range(N1)
+            ]
+        )
 
         # Check for infinities
         if np.any(np.isinf(log_num)) or np.any(np.isinf(log_den)):
@@ -440,8 +446,9 @@ def _run_iterative_scheme(
                 "Try rerunning with more samples.",
                 stacklevel=3,
             )
-            return dict(logml=np.nan, niter=i, r_vals=r_vals,
-                        mcse_logml=np.nan, converged=False)
+            return dict(
+                logml=np.nan, niter=i, r_vals=r_vals, mcse_logml=np.nan, converged=False
+            )
 
         num_vals = np.exp(log_num)
         den_vals = np.exp(log_den)
@@ -455,8 +462,9 @@ def _run_iterative_scheme(
                 "Try rerunning with more samples.",
                 stacklevel=3,
             )
-            return dict(logml=np.nan, niter=i, r_vals=r_vals,
-                        mcse_logml=np.nan, converged=False)
+            return dict(
+                logml=np.nan, niter=i, r_vals=r_vals, mcse_logml=np.nan, converged=False
+            )
 
         r = mean_num / mean_den
         logml = np.log(r) + lstar
@@ -468,7 +476,9 @@ def _run_iterative_scheme(
         if criterion == "r":
             criterion_val = abs((r - rold) / r) if r != 0 else abs(r)
         else:  # "logml"
-            criterion_val = abs((logml - logmlold) / logml) if logml != 0 else abs(logml)
+            criterion_val = (
+                abs((logml - logmlold) / logml) if logml != 0 else abs(logml)
+            )
 
         i += 1
 
@@ -481,13 +491,13 @@ def _run_iterative_scheme(
     else:
         var_den_adj = var_den
 
-    var_r = (mean_num ** 2 / mean_den ** 2) * (
-        var_num / mean_num ** 2 + var_den_adj / mean_den ** 2
+    var_r = (mean_num**2 / mean_den**2) * (
+        var_num / mean_num**2 + var_den_adj / mean_den**2
     )
     var_r = var_r / N2
 
-    if r > 0 and var_r / r ** 2 > -1:
-        var_logml = np.log(1 + var_r / r ** 2)
+    if r > 0 and var_r / r**2 > -1:
+        var_logml = np.log(1 + var_r / r**2)
     else:
         var_logml = np.nan
 
@@ -495,9 +505,9 @@ def _run_iterative_scheme(
 
     converged = criterion_val <= tol
 
-    return dict(logml=logml, niter=i, r_vals=r_vals,
-                mcse_logml=mcse_logml, converged=converged)
-
+    return dict(
+        logml=logml, niter=i, r_vals=r_vals, mcse_logml=mcse_logml, converged=converged
+    )
 
 
 @_register_bayes_factor_method("bridge")
@@ -675,9 +685,16 @@ def _bridge_logml(
 
         # Phase 1: criterion = "r"
         result = _run_iterative_scheme(
-            q11=q11_safe, q12=q12, q21=q21_safe, q22=q22,
-            r0=1.0, tol=tol1, maxiter=maxiter,
-            criterion="r", neff=neff, use_neff=use_neff,
+            q11=q11_safe,
+            q12=q12,
+            q21=q21_safe,
+            q22=q22,
+            r0=1.0,
+            tol=tol1,
+            maxiter=maxiter,
+            criterion="r",
+            neff=neff,
+            use_neff=use_neff,
         )
 
         # Phase 2: if not converged, restart with geometric mean
@@ -690,9 +707,16 @@ def _bridge_logml(
             lr = len(result["r_vals"])
             r0_2 = np.sqrt(result["r_vals"][lr - 1] * result["r_vals"][lr - 2])
             result2 = _run_iterative_scheme(
-                q11=q11_safe, q12=q12, q21=q21_safe, q22=q22,
-                r0=r0_2, tol=tol2, maxiter=maxiter,
-                criterion="logml", neff=neff, use_neff=use_neff,
+                q11=q11_safe,
+                q12=q12,
+                q21=q21_safe,
+                q22=q22,
+                r0=r0_2,
+                tol=tol2,
+                maxiter=maxiter,
+                criterion="logml",
+                neff=neff,
+                use_neff=use_neff,
             )
             result2["niter"] = maxiter + result2["niter"]
             result = result2
@@ -1177,9 +1201,16 @@ def bayes_factor_compare_models(
             )
         elif method == "bic":
             # Strip bridge-specific kwargs that _bic_logml doesn't accept
-            for _key in ("log_posterior", "constrained_to_unconstrained",
-                         "maxiter", "tol1", "tol2", "use_neff",
-                         "repetitions", "random_state"):
+            for _key in (
+                "log_posterior",
+                "constrained_to_unconstrained",
+                "maxiter",
+                "tol1",
+                "tol2",
+                "use_neff",
+                "repetitions",
+                "random_state",
+            ):
                 call_kwargs.pop(_key, None)
             # Pass the model object so _bic_logml can use len(model._y)
             # as a fallback for n_obs
@@ -1229,6 +1260,7 @@ def bayes_factor_compare_models(
 # ---------------------------------------------------------------------------
 # Posterior model probabilities
 # ---------------------------------------------------------------------------
+
 
 def post_prob(
     logml_list,

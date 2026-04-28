@@ -23,34 +23,35 @@ import pytest
 from bayespecon import (
     OLS,
     SAR,
-    SDM,
     SDEM,
+    SDM,
     SEM,
     SLX,
-    SARTobit,
-    SDMTobit,
-    SEMTobit,
     OLSPanelFE,
-    SARPanelFE,
-    SDMPanelFE,
-    SDEMPanelFE,
-    SEMPanelFE,
     OLSPanelRE,
+    SARPanelFE,
     SARPanelRE,
-    SEMPanelRE,
     SARPanelTobit,
+    SARTobit,
+    SDEMPanelFE,
+    SDMPanelFE,
+    SDMTobit,
+    SEMPanelFE,
+    SEMPanelRE,
     SEMPanelTobit,
+    SEMTobit,
 )
 from bayespecon.models.base import SpatialModel
 from bayespecon.models.panel_base import SpatialPanelModel
-from bayespecon.models.tobit import _SpatialTobitBase
 from bayespecon.models.panel_tobit import _PanelTobitBase
-from .helpers import W_to_graph, make_line_W
+from bayespecon.models.tobit import _SpatialTobitBase
 
+from .helpers import W_to_graph, make_line_W
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _cross_section_data(n: int = 8, seed: int = 42):
     """Small cross-sectional dataset for fast tests."""
@@ -102,7 +103,9 @@ def _assert_valid_log_likelihood(idata, n_obs: int, label: str):
         f"this breaks az.loo()/az.waic()/az.compare()"
     )
     # Check shape: (chain, draw, obs_dim*)
-    assert obs_da.ndim == 3, f"{label}: expected 3 dims, got {obs_da.ndim} ({obs_da.dims})"
+    assert obs_da.ndim == 3, (
+        f"{label}: expected 3 dims, got {obs_da.ndim} ({obs_da.dims})"
+    )
     assert obs_da.shape[0] >= 1, f"{label}: expected >=1 chain, got {obs_da.shape[0]}"
     assert obs_da.shape[1] >= 1, f"{label}: expected >=1 draw, got {obs_da.shape[1]}"
     assert obs_da.shape[2] == n_obs, (
@@ -118,6 +121,7 @@ def _assert_valid_log_likelihood(idata, n_obs: int, label: str):
 # Cross-sectional models
 # ===========================================================================
 
+
 class TestCrossSectionalLogLikelihood:
     """Test that cross-sectional models produce valid log_likelihood groups."""
 
@@ -128,7 +132,11 @@ class TestCrossSectionalLogLikelihood:
     def test_ols_log_likelihood(self):
         model = OLS(y=self.y, X=self.X, W=self.W)
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "OLS")
@@ -136,7 +144,11 @@ class TestCrossSectionalLogLikelihood:
     def test_slx_log_likelihood(self):
         model = SLX(y=self.y, X=self.X, W=self.W)
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SLX")
@@ -144,7 +156,11 @@ class TestCrossSectionalLogLikelihood:
     def test_sar_log_likelihood(self):
         model = SAR(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SAR")
@@ -152,7 +168,11 @@ class TestCrossSectionalLogLikelihood:
     def test_sem_log_likelihood(self):
         model = SEM(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SEM")
@@ -160,7 +180,11 @@ class TestCrossSectionalLogLikelihood:
     def test_sdm_log_likelihood(self):
         model = SDM(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SDM")
@@ -168,7 +192,11 @@ class TestCrossSectionalLogLikelihood:
     def test_sdem_log_likelihood(self):
         model = SDEM(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SDEM")
@@ -177,6 +205,7 @@ class TestCrossSectionalLogLikelihood:
 # ===========================================================================
 # Tobit models
 # ===========================================================================
+
 
 class TestTobitLogLikelihood:
     """Test that Tobit models produce valid log_likelihood groups."""
@@ -188,7 +217,11 @@ class TestTobitLogLikelihood:
     def test_sar_tobit_log_likelihood(self):
         model = SARTobit(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SARTobit")
@@ -196,7 +229,11 @@ class TestTobitLogLikelihood:
     def test_sem_tobit_log_likelihood(self):
         model = SEMTobit(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SEMTobit")
@@ -204,7 +241,11 @@ class TestTobitLogLikelihood:
     def test_sdm_tobit_log_likelihood(self):
         model = SDMTobit(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SDMTobit")
@@ -213,6 +254,7 @@ class TestTobitLogLikelihood:
 # ===========================================================================
 # Panel FE models
 # ===========================================================================
+
 
 class TestPanelFELogLikelihood:
     """Test that panel FE models produce valid log_likelihood groups."""
@@ -224,43 +266,91 @@ class TestPanelFELogLikelihood:
     def test_ols_panel_fe_log_likelihood(self):
         model = OLSPanelFE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1)
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "OLSPanelFE")
 
     def test_sar_panel_fe_log_likelihood(self):
-        model = SARPanelFE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1,
-                           logdet_method="eigenvalue")
+        model = SARPanelFE(
+            y=self.y,
+            X=self.X,
+            W=self.W,
+            N=self.N,
+            T=self.T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SARPanelFE")
 
     def test_sem_panel_fe_log_likelihood(self):
-        model = SEMPanelFE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1,
-                           logdet_method="eigenvalue")
+        model = SEMPanelFE(
+            y=self.y,
+            X=self.X,
+            W=self.W,
+            N=self.N,
+            T=self.T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SEMPanelFE")
 
     def test_sdm_panel_fe_log_likelihood(self):
-        model = SDMPanelFE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1,
-                           logdet_method="eigenvalue")
+        model = SDMPanelFE(
+            y=self.y,
+            X=self.X,
+            W=self.W,
+            N=self.N,
+            T=self.T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SDMPanelFE")
 
     def test_sdem_panel_fe_log_likelihood(self):
-        model = SDEMPanelFE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1,
-                            logdet_method="eigenvalue")
+        model = SDEMPanelFE(
+            y=self.y,
+            X=self.X,
+            W=self.W,
+            N=self.N,
+            T=self.T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SDEMPanelFE")
@@ -269,6 +359,7 @@ class TestPanelFELogLikelihood:
 # ===========================================================================
 # Panel RE models
 # ===========================================================================
+
 
 class TestPanelRELogLikelihood:
     """Test that panel RE models produce valid log_likelihood groups."""
@@ -280,25 +371,51 @@ class TestPanelRELogLikelihood:
     def test_ols_panel_re_log_likelihood(self):
         model = OLSPanelRE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1)
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "OLSPanelRE")
 
     def test_sar_panel_re_log_likelihood(self):
-        model = SARPanelRE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1,
-                           logdet_method="eigenvalue")
+        model = SARPanelRE(
+            y=self.y,
+            X=self.X,
+            W=self.W,
+            N=self.N,
+            T=self.T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SARPanelRE")
 
     def test_sem_panel_re_log_likelihood(self):
-        model = SEMPanelRE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1,
-                           logdet_method="eigenvalue")
+        model = SEMPanelRE(
+            y=self.y,
+            X=self.X,
+            W=self.W,
+            N=self.N,
+            T=self.T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SEMPanelRE")
@@ -308,6 +425,7 @@ class TestPanelRELogLikelihood:
 # Panel Tobit models
 # ===========================================================================
 
+
 class TestPanelTobitLogLikelihood:
     """Test that panel Tobit models produce valid log_likelihood groups."""
 
@@ -316,19 +434,41 @@ class TestPanelTobitLogLikelihood:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def test_sar_panel_tobit_log_likelihood(self):
-        model = SARPanelTobit(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1,
-                               logdet_method="eigenvalue")
+        model = SARPanelTobit(
+            y=self.y,
+            X=self.X,
+            W=self.W,
+            N=self.N,
+            T=self.T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SARPanelTobit")
 
     def test_sem_panel_tobit_log_likelihood(self):
-        model = SEMPanelTobit(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1,
-                              logdet_method="eigenvalue")
+        model = SEMPanelTobit(
+            y=self.y,
+            X=self.X,
+            W=self.W,
+            N=self.N,
+            T=self.T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
         idata = model.fit(
-            draws=10, tune=5, chains=1, random_seed=42, progressbar=False,
+            draws=10,
+            tune=5,
+            chains=1,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         _assert_valid_log_likelihood(idata, self.n, "SEMPanelTobit")
@@ -337,6 +477,7 @@ class TestPanelTobitLogLikelihood:
 # ===========================================================================
 # Monkeypatch-based fast tests (no MCMC)
 # ===========================================================================
+
 
 class TestLogLikelihoodStructureFast:
     """Fast tests using monkeypatched MCMC to verify log_likelihood structure.
@@ -362,8 +503,13 @@ class TestLogLikelihoodStructureFast:
             return fake_idata
 
         monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
-        out = model.fit(draws=2, tune=1, chains=1, progressbar=False,
-                        idata_kwargs={"log_likelihood": True})
+        out = model.fit(
+            draws=2,
+            tune=1,
+            chains=1,
+            progressbar=False,
+            idata_kwargs={"log_likelihood": True},
+        )
 
         _assert_valid_log_likelihood(out, n, "SAR")
 
@@ -383,8 +529,13 @@ class TestLogLikelihoodStructureFast:
             return fake_idata
 
         monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
-        out = model.fit(draws=2, tune=1, chains=1, progressbar=False,
-                        idata_kwargs={"log_likelihood": True})
+        out = model.fit(
+            draws=2,
+            tune=1,
+            chains=1,
+            progressbar=False,
+            idata_kwargs={"log_likelihood": True},
+        )
 
         _assert_valid_log_likelihood(out, n, "SEM")
 
@@ -404,8 +555,13 @@ class TestLogLikelihoodStructureFast:
             return fake_idata
 
         monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
-        out = model.fit(draws=2, tune=1, chains=1, progressbar=False,
-                        idata_kwargs={"log_likelihood": True})
+        out = model.fit(
+            draws=2,
+            tune=1,
+            chains=1,
+            progressbar=False,
+            idata_kwargs={"log_likelihood": True},
+        )
 
         _assert_valid_log_likelihood(out, n, "SDM")
 
@@ -425,8 +581,13 @@ class TestLogLikelihoodStructureFast:
             return fake_idata
 
         monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
-        out = model.fit(draws=2, tune=1, chains=1, progressbar=False,
-                        idata_kwargs={"log_likelihood": True})
+        out = model.fit(
+            draws=2,
+            tune=1,
+            chains=1,
+            progressbar=False,
+            idata_kwargs={"log_likelihood": True},
+        )
 
         _assert_valid_log_likelihood(out, n, "SDEM")
 
@@ -453,7 +614,9 @@ class TestLogLikelihoodStructureFast:
     def test_sdem_panel_fe_fit_adds_log_likelihood(self, monkeypatch):
         """SDEMPanelFE fit() should add log_likelihood computed from Potential."""
         y, X, W, W_dense, N, T, n = _panel_data()
-        model = SDEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue")
+        model = SDEMPanelFE(
+            y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue"
+        )
 
         posterior = {
             "lam": np.array([[0.1, 0.11]]),
@@ -494,8 +657,13 @@ class TestLogLikelihoodStructureFast:
             return fake_idata
 
         monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
-        out = model.fit(draws=2, tune=1, chains=1, progressbar=False,
-                        idata_kwargs={"log_likelihood": True})
+        out = model.fit(
+            draws=2,
+            tune=1,
+            chains=1,
+            progressbar=False,
+            idata_kwargs={"log_likelihood": True},
+        )
 
         _assert_valid_log_likelihood(out, n, "SARPanelFE")
 
@@ -520,8 +688,13 @@ class TestLogLikelihoodStructureFast:
             return fake_idata
 
         monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
-        out = model.fit(draws=2, tune=1, chains=1, progressbar=False,
-                        idata_kwargs={"log_likelihood": True})
+        out = model.fit(
+            draws=2,
+            tune=1,
+            chains=1,
+            progressbar=False,
+            idata_kwargs={"log_likelihood": True},
+        )
 
         _assert_valid_log_likelihood(out, n, "SDMPanelFE")
 
@@ -529,6 +702,7 @@ class TestLogLikelihoodStructureFast:
 # ===========================================================================
 # ArviZ compatibility tests
 # ===========================================================================
+
 
 class TestArviZCompatibility:
     """Test that log_likelihood groups work with ArviZ functions."""
@@ -541,7 +715,11 @@ class TestArviZCompatibility:
         """SAR log_likelihood should work with az.loo() and az.waic()."""
         model = SAR(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=50, tune=25, chains=2, random_seed=42, progressbar=False,
+            draws=50,
+            tune=25,
+            chains=2,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         loo = az.loo(idata)
@@ -553,7 +731,11 @@ class TestArviZCompatibility:
         """SEM log_likelihood should work with az.loo() and az.waic()."""
         model = SEM(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=50, tune=25, chains=2, random_seed=42, progressbar=False,
+            draws=50,
+            tune=25,
+            chains=2,
+            random_seed=42,
+            progressbar=False,
             idata_kwargs={"log_likelihood": True},
         )
         loo = az.loo(idata)
@@ -565,14 +747,23 @@ class TestArviZCompatibility:
         """az.compare() should work with multiple models that have log_likelihood."""
         models = {}
         for cls, name in [(OLS, "OLS"), (SAR, "SAR"), (SEM, "SEM")]:
-            model = cls(y=self.y, X=self.X, W=self.W,
-                        logdet_method="eigenvalue") if cls != OLS else cls(y=self.y, X=self.X, W=self.W)
+            model = (
+                cls(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
+                if cls != OLS
+                else cls(y=self.y, X=self.X, W=self.W)
+            )
             idata = model.fit(
-                draws=50, tune=25, chains=2, random_seed=42, progressbar=False,
+                draws=50,
+                tune=25,
+                chains=2,
+                random_seed=42,
+                progressbar=False,
                 idata_kwargs={"log_likelihood": True},
             )
             models[name] = idata
 
         comparison = az.compare(models, ic="loo")
         assert isinstance(comparison, object), "az.compare() should return a DataFrame"
-        assert len(comparison) == 3, f"Expected 3 models in comparison, got {len(comparison)}"
+        assert len(comparison) == 3, (
+            f"Expected 3 models in comparison, got {len(comparison)}"
+        )

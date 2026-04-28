@@ -10,7 +10,9 @@ import scipy.sparse as sp
 from libpysal.graph import Graph
 
 
-def ensure_rng(rng: np.random.Generator | None = None, seed: int | None = None) -> np.random.Generator:
+def ensure_rng(
+    rng: np.random.Generator | None = None, seed: int | None = None
+) -> np.random.Generator:
     """Return a reproducible NumPy random generator.
 
     Parameters
@@ -149,7 +151,9 @@ def weights_from_geodataframe(
     if gdf is None:
         raise ValueError("gdf must be provided when building weights from geometry.")
     if not hasattr(gdf, "geometry"):
-        raise TypeError("gdf must be a GeoDataFrame-like object with a geometry column.")
+        raise TypeError(
+            "gdf must be a GeoDataFrame-like object with a geometry column."
+        )
 
     mode = contiguity.lower()
     if mode == "queen":
@@ -160,10 +164,16 @@ def weights_from_geodataframe(
         g = Graph.build_knn(gdf, k=int(k))
     elif mode == "distance":
         if distance_threshold is None:
-            raise ValueError("distance_threshold must be supplied when contiguity='distance'.")
-        g = Graph.build_distance_band(gdf, threshold=float(distance_threshold), binary=True)
+            raise ValueError(
+                "distance_threshold must be supplied when contiguity='distance'."
+            )
+        g = Graph.build_distance_band(
+            gdf, threshold=float(distance_threshold), binary=True
+        )
     else:
-        raise ValueError("contiguity must be one of {'queen', 'rook', 'knn', 'distance'}.")
+        raise ValueError(
+            "contiguity must be one of {'queen', 'rook', 'knn', 'distance'}."
+        )
 
     return g.transform("r")
 
@@ -208,20 +218,26 @@ def resolve_weights(
             g = W.transform("r")
             Wd = g.sparse.toarray().astype(float)
             if gdf_n is not None and Wd.shape[0] != gdf_n:
-                raise ValueError("W and gdf must describe the same number of spatial units.")
+                raise ValueError(
+                    "W and gdf must describe the same number of spatial units."
+                )
             if n_obs is not None and Wd.shape[0] != n_obs:
                 raise ValueError("n must match the size implied by W/gdf.")
             return Wd, g
         if sp.issparse(W):
             Wd = row_standardize(W.toarray().astype(float))
             if gdf_n is not None and Wd.shape[0] != gdf_n:
-                raise ValueError("W and gdf must describe the same number of spatial units.")
+                raise ValueError(
+                    "W and gdf must describe the same number of spatial units."
+                )
             if n_obs is not None and Wd.shape[0] != n_obs:
                 raise ValueError("n must match the size implied by W/gdf.")
             return Wd, dense_to_graph(Wd)
         Wd = row_standardize(np.asarray(W, dtype=float))
         if gdf_n is not None and Wd.shape[0] != gdf_n:
-            raise ValueError("W and gdf must describe the same number of spatial units.")
+            raise ValueError(
+                "W and gdf must describe the same number of spatial units."
+            )
         if n_obs is not None and Wd.shape[0] != n_obs:
             raise ValueError("n must match the size implied by W/gdf.")
         return Wd, dense_to_graph(Wd)
@@ -231,7 +247,9 @@ def resolve_weights(
             raise ValueError("Provide either W, gdf, or n.")
         return rook_grid_weights(int(n))
 
-    g = weights_from_geodataframe(gdf, contiguity=contiguity, k=k, distance_threshold=distance_threshold)
+    g = weights_from_geodataframe(
+        gdf, contiguity=contiguity, k=k, distance_threshold=distance_threshold
+    )
     if n is not None and g.sparse.shape[0] != int(n):
         raise ValueError("n must match the size implied by W/gdf.")
     return g.sparse.toarray().astype(float), g
@@ -258,10 +276,12 @@ def _hetero_scale(X: np.ndarray, sigma: float) -> np.ndarray:
         Array of shape ``(n,)`` with element-wise standard deviations
         ``sigma * sqrt(1 + ||x_i||^2)``.
     """
-    return sigma * np.sqrt(1.0 + np.sum(X ** 2, axis=1))
+    return sigma * np.sqrt(1.0 + np.sum(X**2, axis=1))
 
 
-def make_design_matrix(rng: np.random.Generator, n: int, k: int = 1, add_intercept: bool = True) -> np.ndarray:
+def make_design_matrix(
+    rng: np.random.Generator, n: int, k: int = 1, add_intercept: bool = True
+) -> np.ndarray:
     """Generate synthetic design matrix.
 
     Parameters
@@ -354,7 +374,9 @@ def make_output_geodataframe(
 
     if gdf is not None:
         if len(gdf) != n_obs:
-            raise ValueError("Provided gdf must have the same number of rows as y and X.")
+            raise ValueError(
+                "Provided gdf must have the same number of rows as y and X."
+            )
         out_gdf = gdf.copy()
         for col, values in out.items():
             out_gdf[col] = values
@@ -365,7 +387,7 @@ def make_output_geodataframe(
         raise ValueError("geometry_type must be one of {'point', 'polygon'}.")
 
     n_cols = int(np.ceil(np.sqrt(n_obs)))
-    n_rows = int(np.ceil(n_obs / n_cols))
+    int(np.ceil(n_obs / n_cols))
 
     geoms = []
     for idx in range(n_obs):
@@ -439,7 +461,7 @@ def make_panel_output_geodataframe(
     if y.ndim != 1:
         raise ValueError("y must be a 1D array.")
     if y.shape[0] != N * T:
-        raise ValueError(f"y length {y.shape[0]} does not match N*T={N*T}.")
+        raise ValueError(f"y length {y.shape[0]} does not match N*T={N * T}.")
 
     # Build N-row unit GeoDataFrame (geometry only).
     if gdf is not None:

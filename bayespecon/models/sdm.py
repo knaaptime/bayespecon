@@ -13,7 +13,6 @@ from typing import Optional
 import arviz as az
 import numpy as np
 import pymc as pm
-import pytensor
 import pytensor.tensor as pt
 
 from .base import SpatialModel
@@ -58,10 +57,13 @@ class SDM(SpatialModel):
     """
 
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_error_test"],
-        ).bayesian_lm_error_test(m), "LM-Error"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_error_test"],
+            ).bayesian_lm_error_test(m),
+            "LM-Error",
+        ),
     ]
 
     def _beta_names(self) -> list[str]:
@@ -81,7 +83,13 @@ class SDM(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        k = self._X.shape[1]
+        if not self._wx_column_indices:
+            raise ValueError(
+                "SDM requires at least one WX column. Pass `w_vars=[...]` to "
+                "choose which regressors receive a spatial lag, or fit a SAR "
+                "model instead."
+            )
+        self._X.shape[1]
         Z = np.hstack([self._X, self._WX])  # (n, 2k)
 
         rho_lower = self.priors.get("rho_lower", -1.0)
@@ -151,7 +159,7 @@ class SDM(SpatialModel):
             \\ell_i = -\\frac{1}{2}\\left(\\frac{y_i - \\mu_i}{\\sigma}\\right)^2
             + \\frac{1}{n} \\log |I - \\rho W |
         """
-        from ..logdet import make_logdet_fn
+
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
 
@@ -181,18 +189,23 @@ class SDM(SpatialModel):
             Z = np.hstack([self._X, self._WX])  # (n, 2k)
 
             # Posterior draws: shape (chains, draws, ...)
-            rho_draws = idata.posterior["rho"].values.reshape(-1)    # (n_draws,)
-            beta_draws = idata.posterior["beta"].values.reshape(-1, Z.shape[1])  # (n_draws, 2k)
-            sigma_draws = idata.posterior["sigma"].values.reshape(-1)   # (n_draws,)
+            rho_draws = idata.posterior["rho"].values.reshape(-1)  # (n_draws,)
+            beta_draws = idata.posterior["beta"].values.reshape(
+                -1, Z.shape[1]
+            )  # (n_draws, 2k)
+            sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
 
             # Mean: mu = rho * Wy + Z @ beta.T  => (n_draws, n)
-            mu = rho_draws[:, None] * self._Wy[None, :] + (beta_draws @ Z.T)  # (n_draws, n)
+            mu = rho_draws[:, None] * self._Wy[None, :] + (
+                beta_draws @ Z.T
+            )  # (n_draws, n)
             resid = self._y[None, :] - mu  # (n_draws, n)
 
             # Pointwise log-likelihood
             if self.robust:
                 nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
                 from scipy.special import gammaln
+
                 ll_gauss = (
                     gammaln((nu_draws[:, None] + 1) / 2)
                     - gammaln(nu_draws[:, None] / 2)
@@ -202,7 +215,11 @@ class SDM(SpatialModel):
                     * np.log1p((resid / sigma_draws[:, None]) ** 2 / nu_draws[:, None])
                 )  # (n_draws, n)
             else:
-                ll_gauss = -0.5 * (resid / sigma_draws[:, None]) ** 2 - np.log(sigma_draws[:, None]) - 0.5 * np.log(2 * np.pi)  # (n_draws, n)
+                ll_gauss = (
+                    -0.5 * (resid / sigma_draws[:, None]) ** 2
+                    - np.log(sigma_draws[:, None])
+                    - 0.5 * np.log(2 * np.pi)
+                )  # (n_draws, n)
 
             # Jacobian contribution per draw: log|I - rho*W| / n (respects logdet_method)
             jacobian = self._logdet_numpy_vec_fn(rho_draws)  # (n_draws,)
@@ -222,7 +239,9 @@ class SDM(SpatialModel):
             # Assigning via idata["log_likelihood"] = xr.Dataset({"obs": da}) can silently
             # treat "obs" as a dimension coordinate if da.dims includes "obs" as a dim name,
             # causing data_vars to be empty and breaking az.loo() / az.waic().
-            ll_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
+            ll_da = xr.DataArray(
+                ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
+            )
             ll_ds = xr.Dataset({"obs": ll_da})
             idata["log_likelihood"] = ll_ds
 
@@ -244,7 +263,7 @@ class SDM(SpatialModel):
         beta = self._posterior_mean("beta")
         k = self._X.shape[1]
         kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k:k + kw]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
 
         eigs = self._W_eigs
         inv_eigs = 1.0 / (1.0 - rho * eigs)
@@ -253,14 +272,18 @@ class SDM(SpatialModel):
         rho_arr = np.array([rho])
         mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
         mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
-        direct = np.array([
-            beta1[j] * mean_diag_M + b2 * mean_diag_MW
-            for j, b2 in zip(self._wx_column_indices, beta2)
-        ])
-        total = np.array([
-            beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-            for j, b2 in zip(self._wx_column_indices, beta2)
-        ])
+        direct = np.array(
+            [
+                beta1[j] * mean_diag_M + b2 * mean_diag_MW
+                for j, b2 in zip(self._wx_column_indices, beta2)
+            ]
+        )
+        total = np.array(
+            [
+                beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
+                for j, b2 in zip(self._wx_column_indices, beta2)
+            ]
+        )
         indirect = total - direct
 
         return {
@@ -270,7 +293,9 @@ class SDM(SpatialModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         For the SDM model, the impact measures for covariate :math:`k` are:
@@ -301,12 +326,12 @@ class SDM(SpatialModel):
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = rho_draws.shape[0]
+        rho_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         eigs = self._W_eigs.real.astype(np.float64)  # (n,)
 
@@ -322,14 +347,19 @@ class SDM(SpatialModel):
         # Direct_k = beta1_j * mean_diag_M + beta2_k * mean_diag_MW
         # Total_k  = beta1_j * mean_row_sum_M + beta2_k * mean_row_sum_MW
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] * mean_row_sum_M + beta2_draws[:, idx] * mean_row_sum_MW
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] * mean_row_sum_M
+                + beta2_draws[:, idx] * mean_row_sum_MW
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
@@ -346,5 +376,3 @@ class SDM(SpatialModel):
         beta = self._posterior_mean("beta")
         Z = np.hstack([self._X, self._WX])
         return rho * self._Wy + Z @ beta
-
-

@@ -7,7 +7,6 @@ import pytest
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -112,7 +111,11 @@ class TestWeightMatrixShapes:
 class TestWeightMatrixKronecker:
     def test_network_equals_dest_at_origin(self):
         """W_w = W_d @ W_o / (row normalisation) for row-stochastic W."""
-        from bayespecon.graph import destination_weights, network_weights, origin_weights
+        from bayespecon.graph import (
+            destination_weights,
+            network_weights,
+            origin_weights,
+        )
 
         n = 5
         G = _make_ring_graph(n)
@@ -260,9 +263,7 @@ class TestFlowDesignMatrix:
         dm = flow_design_matrix(self.X)
         for i in range(n):
             for j in range(n):
-                np.testing.assert_allclose(
-                    dm.X_dest[i * n + j], self.X[j], atol=1e-12
-                )
+                np.testing.assert_allclose(dm.X_dest[i * n + j], self.X[j], atol=1e-12)
 
     def test_orig_block_kron_structure(self):
         """X_orig[i*n+j] should equal X[i, :] for all i, j."""
@@ -272,9 +273,7 @@ class TestFlowDesignMatrix:
         dm = flow_design_matrix(self.X)
         for i in range(n):
             for j in range(n):
-                np.testing.assert_allclose(
-                    dm.X_orig[i * n + j], self.X[i], atol=1e-12
-                )
+                np.testing.assert_allclose(dm.X_orig[i * n + j], self.X[i], atol=1e-12)
 
     def test_intra_block_zero_off_diagonal(self):
         """X_intra should be zero for non-intra-zonal O-D pairs."""
@@ -285,9 +284,7 @@ class TestFlowDesignMatrix:
         for i in range(n):
             for j in range(n):
                 if i != j:
-                    np.testing.assert_allclose(
-                        dm.X_intra[i * n + j], 0.0, atol=1e-12
-                    )
+                    np.testing.assert_allclose(dm.X_intra[i * n + j], 0.0, atol=1e-12)
 
     def test_wrong_dist_shape_raises(self):
         from bayespecon.graph import flow_design_matrix

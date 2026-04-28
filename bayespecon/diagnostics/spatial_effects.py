@@ -68,7 +68,9 @@ def _compute_ci(samples: np.ndarray) -> List[Tuple[float, float]]:
         One ``(2.5%, 97.5%)`` interval per column.
     """
     if samples.ndim == 1:
-        return [(float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5)))]
+        return [
+            (float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5)))
+        ]
     lo = np.percentile(samples, 2.5, axis=0)
     hi = np.percentile(samples, 97.5, axis=0)
     return [(float(lo[j]), float(hi[j])) for j in range(samples.shape[1])]

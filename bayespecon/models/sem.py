@@ -13,11 +13,9 @@ from typing import Optional
 import arviz as az
 import numpy as np
 import pymc as pm
-import pytensor
 import pytensor.tensor as pt
 import xarray as xr
 
-from ..logdet import make_logdet_fn
 from .base import SpatialModel
 
 
@@ -60,14 +58,20 @@ class SEM(SpatialModel):
     """
 
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_lag_test"],
-        ).bayesian_lm_lag_test(m), "LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_wx_sem_test"],
-        ).bayesian_lm_wx_sem_test(m), "LM-WX"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_lag_test"],
+            ).bayesian_lm_lag_test(m),
+            "LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_wx_sem_test"],
+            ).bayesian_lm_wx_sem_test(m),
+            "LM-WX",
+        ),
     ]
 
     def fit(
@@ -131,15 +135,15 @@ class SEM(SpatialModel):
         # SEM uses pm.Potential for both Gaussian and Jacobian terms,
         # so nothing is auto-captured. We recompute from posterior draws.
         if compute_log_likelihood:
-            import pytensor
-
             idata = self._idata
             n = self._y.shape[0]
             W = self._W_dense
 
-            lam_draws = idata.posterior["lam"].values.reshape(-1)       # (n_draws,)
-            beta_draws = idata.posterior["beta"].values.reshape(-1, self._X.shape[1])  # (n_draws, k)
-            sigma_draws = idata.posterior["sigma"].values.reshape(-1)   # (n_draws,)
+            lam_draws = idata.posterior["lam"].values.reshape(-1)  # (n_draws,)
+            beta_draws = idata.posterior["beta"].values.reshape(
+                -1, self._X.shape[1]
+            )  # (n_draws, k)
+            sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
 
             # Residuals: resid = y - X @ beta.T  => (n_draws, n)
             resid = self._y[None, :] - (beta_draws @ self._X.T)  # (n_draws, n)
@@ -151,6 +155,7 @@ class SEM(SpatialModel):
             if self.robust:
                 nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
                 from scipy.special import gammaln
+
                 ll_gauss = (
                     gammaln((nu_draws[:, None] + 1) / 2)
                     - gammaln(nu_draws[:, None] / 2)
@@ -179,7 +184,9 @@ class SEM(SpatialModel):
 
             # Attach to idata — use explicit Dataset creation to ensure
             # "obs" is a data variable, not a coordinate.
-            ll_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
+            ll_da = xr.DataArray(
+                ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
+            )
             ll_ds = xr.Dataset({"obs": ll_da})
             idata["log_likelihood"] = ll_ds
 
@@ -239,7 +246,9 @@ class SEM(SpatialModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         For the SEM model, the spatial multiplier does not apply to :math:`X`
@@ -278,5 +287,3 @@ class SEM(SpatialModel):
         """
         beta = self._posterior_mean("beta")
         return self._X @ beta
-
-

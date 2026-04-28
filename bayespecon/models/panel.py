@@ -7,7 +7,6 @@ import pymc as pm
 import pytensor.tensor as pt
 import xarray as xr
 
-from ..logdet import make_logdet_fn
 from .panel_base import SpatialPanelModel
 
 
@@ -112,7 +111,9 @@ class OLSPanelFE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         OLS panel has no spatial structure: Direct = beta, Indirect = 0.
@@ -271,7 +272,9 @@ class SARPanelFE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SAR panel impacts use the same eigenvalue-based formulas as
@@ -282,7 +285,7 @@ class SARPanelFE(SpatialPanelModel):
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
-        G = rho_draws.shape[0]
+        rho_draws.shape[0]
 
         eigs = self._W_eigs.real.astype(np.float64)
         inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
@@ -368,7 +371,9 @@ class SEMPanelFE(SpatialPanelModel):
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
@@ -426,6 +431,7 @@ class SEMPanelFE(SpatialPanelModel):
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
+
             ll = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -478,7 +484,9 @@ class SEMPanelFE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SEM panel has no spatial multiplier on X: Direct = beta, Indirect = 0.
@@ -623,7 +631,7 @@ class SDMPanelFE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         k = self._X.shape[1]
         kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k:k + kw]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
 
         eigs = self._W_eigs
         inv_eigs = 1.0 / (1.0 - rho * eigs)
@@ -632,14 +640,18 @@ class SDMPanelFE(SpatialPanelModel):
         rho_arr = np.array([rho])
         mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
         mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
-        direct = np.array([
-            beta1[j] * mean_diag_M + b2 * mean_diag_MW
-            for j, b2 in zip(self._wx_column_indices, beta2)
-        ])
-        total = np.array([
-            beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-            for j, b2 in zip(self._wx_column_indices, beta2)
-        ])
+        direct = np.array(
+            [
+                beta1[j] * mean_diag_M + b2 * mean_diag_MW
+                for j, b2 in zip(self._wx_column_indices, beta2)
+            ]
+        )
+        total = np.array(
+            [
+                beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
+                for j, b2 in zip(self._wx_column_indices, beta2)
+            ]
+        )
         indirect = total - direct
 
         return {
@@ -649,7 +661,9 @@ class SDMPanelFE(SpatialPanelModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SDM panel impacts use the same eigenvalue-based formulas as
@@ -660,12 +674,12 @@ class SDMPanelFE(SpatialPanelModel):
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = rho_draws.shape[0]
+        rho_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         eigs = self._W_eigs.real.astype(np.float64)
         inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
@@ -676,14 +690,19 @@ class SDMPanelFE(SpatialPanelModel):
         mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)  # (G,)
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] * mean_row_sum_M + beta2_draws[:, idx] * mean_row_sum_MW
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] * mean_row_sum_M
+                + beta2_draws[:, idx] * mean_row_sum_MW
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
@@ -759,7 +778,9 @@ class SDEMPanelFE(SpatialPanelModel):
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
@@ -817,6 +838,7 @@ class SDEMPanelFE(SpatialPanelModel):
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
+
             ll = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -864,7 +886,7 @@ class SDEMPanelFE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         k = self._X.shape[1]
         kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k:k + kw]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
         direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
@@ -876,7 +898,9 @@ class SDEMPanelFE(SpatialPanelModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SDEM panel impacts match SLX form (no rho multiplier).
@@ -885,25 +909,29 @@ class SDEMPanelFE(SpatialPanelModel):
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = beta_draws.shape[0]
+        beta_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
@@ -1025,7 +1053,7 @@ class SLXPanelFE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         k = self._X.shape[1]
         kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k:k + kw]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
@@ -1041,7 +1069,9 @@ class SLXPanelFE(SpatialPanelModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SLX panel impacts are linear in beta (no rho multiplier).
@@ -1050,25 +1080,29 @@ class SLXPanelFE(SpatialPanelModel):
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = beta_draws.shape[0]
+        beta_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples

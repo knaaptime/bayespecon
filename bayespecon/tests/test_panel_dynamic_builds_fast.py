@@ -6,8 +6,9 @@ import arviz as az
 import numpy as np
 import pymc as pm
 
-from bayespecon import DLMPanelFE, SDMRPanelFE, SDMUPanelFE
-from .helpers  import W_to_graph, make_line_W
+from bayespecon import OLSPanelDynamic, SDMRPanelDynamic, SDMUPanelDynamic
+
+from .helpers import W_to_graph, make_line_W
 
 
 def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:
@@ -30,9 +31,9 @@ def test_dynamic_panel_build_pymc_models_and_prepare_dynamic_design_cache():
     y, X, W, N, T = _panel_data()
 
     models = [
-        DLMPanelFE(y=y, X=X, W=W, N=N, T=T, model=0),
-        SDMRPanelFE(y=y, X=X, W=W, N=N, T=T, model=0),
-        SDMUPanelFE(y=y, X=X, W=W, N=N, T=T, model=0),
+        OLSPanelDynamic(y=y, X=X, W=W, N=N, T=T, model=0),
+        SDMRPanelDynamic(y=y, X=X, W=W, N=N, T=T, model=0),
+        SDMUPanelDynamic(y=y, X=X, W=W, N=N, T=T, model=0),
     ]
 
     for model in models:
@@ -51,20 +52,24 @@ def test_dynamic_sdm_models_no_wx_branch_effects_and_names():
     # Use X with 2 columns (intercept + x1) so WX has 1 column
     X = np.column_stack([np.ones(N * T), np.linspace(-1, 1, N * T)])
 
-    sdmr = SDMRPanelFE(y=y, X=X, W=W, N=N, T=T, model=0)
-    sdmr._idata = _idata({
-        "beta": np.array([[0.2, 0.5, 0.1], [0.201, 0.501, 0.101]]),
-        "phi": np.array([0.4, 0.401]),
-        "rho": np.array([0.1, 0.101]),
-    })
+    sdmr = SDMRPanelDynamic(y=y, X=X, W=W, N=N, T=T, model=0)
+    sdmr._idata = _idata(
+        {
+            "beta": np.array([[0.2, 0.5, 0.1], [0.201, 0.501, 0.101]]),
+            "phi": np.array([0.4, 0.401]),
+            "rho": np.array([0.1, 0.101]),
+        }
+    )
 
-    sdmu = SDMUPanelFE(y=y, X=X, W=W, N=N, T=T, model=0)
-    sdmu._idata = _idata({
-        "beta": np.array([[0.2, 0.5, 0.1], [0.201, 0.501, 0.101]]),
-        "phi": np.array([0.4, 0.401]),
-        "rho": np.array([0.1, 0.101]),
-        "theta": np.array([0.0, 0.001]),
-    })
+    sdmu = SDMUPanelDynamic(y=y, X=X, W=W, N=N, T=T, model=0)
+    sdmu._idata = _idata(
+        {
+            "beta": np.array([[0.2, 0.5, 0.1], [0.201, 0.501, 0.101]]),
+            "phi": np.array([0.4, 0.401]),
+            "rho": np.array([0.1, 0.101]),
+            "theta": np.array([0.0, 0.001]),
+        }
+    )
 
     for model in [sdmr, sdmu]:
         eff = model.spatial_effects()
@@ -78,7 +83,7 @@ def test_dynamic_sdm_models_no_wx_branch_effects_and_names():
 def test_dynamic_beta_names_include_wx_labels_when_present():
     y, X, W, N, T = _panel_data(seed=102)
 
-    model = DLMPanelFE(y=y, X=X, W=W, N=N, T=T, model=0)
+    model = OLSPanelDynamic(y=y, X=X, W=W, N=N, T=T, model=0)
     names = model._beta_names()
 
     assert any(name.startswith("W*") for name in names)

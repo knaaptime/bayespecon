@@ -70,7 +70,9 @@ def logdet_exact(rho, W_dense: np.ndarray) -> pt.TensorVariable:
     return pt.log(pt.nlinalg.det(I - rho * W_dense))
 
 
-def _build_logdet_grid(W_dense: np.ndarray, rho_min: float, rho_max: float, n_grid: int = 200):
+def _build_logdet_grid(
+    W_dense: np.ndarray, rho_min: float, rho_max: float, n_grid: int = 200
+):
     """Pre-compute log-determinant values on a rho grid.
 
     Parameters
@@ -162,7 +164,12 @@ def spline(W, rmin: float = 0.0, rmax: float = 1.0, n_grid: int = 100) -> dict:
 
     rho = np.linspace(rmin, rmax, n_grid, endpoint=False, dtype=np.float64)
     # Follow the original control-point pattern from the MATLAB routine.
-    ctrl = np.array([10, 20, 40, 50, 60, 70, 80, 85, 90, 95, 96, 97, 98, 99, 100], dtype=int) - 1
+    ctrl = (
+        np.array(
+            [10, 20, 40, 50, 60, 70, 80, 85, 90, 95, 96, 97, 98, 99, 100], dtype=int
+        )
+        - 1
+    )
     ctrl = np.unique(np.clip(ctrl, 0, n_grid - 1))
 
     rho_sub = rho[ctrl]
@@ -242,7 +249,9 @@ def mc(
     srvs = (alomat @ mavmomi).T
     sderr = np.sqrt(np.maximum(0.0, srvs.var(axis=0, ddof=0) / iter))
 
-    fbound = (n * np.power(rho, order + 1)) / ((order + 1) * (1.0 - rho + np.finfo(float).eps))
+    fbound = (n * np.power(rho, order + 1)) / (
+        (order + 1) * (1.0 - rho + np.finfo(float).eps)
+    )
     lo95 = lndet - 1.96 * sderr - fbound
     up95 = lndet + 1.96 * sderr
 
@@ -288,7 +297,9 @@ def ilu(
     for i, r in enumerate(rho):
         A = (I - r * W_sp).tocsc()
         ilu = spla.spilu(A, drop_tol=drop_tol, fill_factor=fill_factor)
-        lndet[i] = np.sum(np.log(np.abs(ilu.L.diagonal()))) + np.sum(np.log(np.abs(ilu.U.diagonal())))
+        lndet[i] = np.sum(np.log(np.abs(ilu.L.diagonal()))) + np.sum(
+            np.log(np.abs(ilu.U.diagonal()))
+        )
 
     return {"rho": rho, "lndet": lndet}
 
@@ -299,6 +310,7 @@ def chebyshev(
     rmin: float = -1.0,
     rmax: float = 1.0,
     random_state: int | None = None,
+    eigs: np.ndarray | None = None,
 ) -> dict:
     """Compute Chebyshev approximation of log|I - rho*W| (:cite:p:`pace2004ChebyshevApproximation`).
 
@@ -331,6 +343,10 @@ def chebyshev(
     random_state : int, optional
         Seed for the Monte Carlo trace estimator (only used when
         *n* > 2000).
+    eigs : np.ndarray, optional
+        Pre-computed real eigenvalues of *W*.  When supplied, the
+        eigenvalue decomposition step is skipped, avoiding redundant
+        O(n³) work when the caller already has them cached.
 
     Returns
     -------
@@ -381,8 +397,15 @@ def chebyshev(
     if rmax <= rmin:
         raise ValueError("rmax must be greater than rmin.")
 
-    W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
-    n = W_sp.shape[0]
+    # Allow caller to skip dense materialisation when only eigs are needed.
+    if eigs is not None:
+        eigs_arr = np.asarray(eigs, dtype=np.float64).real
+        n = int(eigs_arr.shape[0])
+        W_sp = None
+    else:
+        W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
+        n = W_sp.shape[0]
+        eigs_arr = None
 
     # Chebyshev nodes on [-1, 1], mapped to [rmin, rmax]
     k = np.arange(1, order + 1)
@@ -394,13 +417,14 @@ def chebyshev(
     # Decide computation strategy
     # Only fall back to MC for truly large matrices; for small matrices
     # eigenvalue decomposition is fast and exact.
-    use_mc = n > 2000
+    use_mc = (eigs_arr is None) and (n > 2000)
 
     if not use_mc:
         # Eigenvalue-based: exact log-determinant at each Chebyshev node
-        eigs = np.linalg.eigvals(W_sp.toarray()).real
+        if eigs_arr is None:
+            eigs_arr = np.linalg.eigvals(W_sp.toarray()).real
         logdet_at_nodes = np.sum(
-            np.log(np.abs(1.0 - rho_nodes[:, None] * eigs[None, :])), axis=1
+            np.log(np.abs(1.0 - rho_nodes[:, None] * eigs_arr[None, :])), axis=1
         )
         method_used = "eigenvalue"
     else:
@@ -513,7 +537,7 @@ def logdet_chebyshev(
 
     # Start: b_{m} = c_{m-1}, b_{m+1} = 0
     b_next = pt.zeros_like(rho)  # b_{m+1} = 0
-    b_curr = c[m - 1]              # b_m = c_{m-1}
+    b_curr = c[m - 1]  # b_m = c_{m-1}
 
     # Iterate from k = m-2 down to k = 1
     for k in range(m - 2, 0, -1):
@@ -584,7 +608,13 @@ def logdet_mc_poly_pytensor(
     return -result
 
 
-def logdet_interpolated(rho, W_dense: np.ndarray, rho_min: float = -1.0, rho_max: float = 1.0, n_grid: int = 200):
+def logdet_interpolated(
+    rho,
+    W_dense: np.ndarray,
+    rho_min: float = -1.0,
+    rho_max: float = 1.0,
+    n_grid: int = 200,
+):
     """Cubic spline interpolation of log|I - rho*W|.
 
     Pre-computes values on a rho grid at construction time and evaluates
@@ -615,7 +645,9 @@ def logdet_interpolated(rho, W_dense: np.ndarray, rho_min: float = -1.0, rho_max
     # We use a piecewise polynomial evaluated via pytensor scan-free approach:
     # store breakpoints and coefficients, evaluate via pt ops.
     breakpoints = pt.as_tensor_variable(spline.x.astype(np.float64))
-    coefficients = pt.as_tensor_variable(spline.c.astype(np.float64))  # (4, n_intervals)
+    coefficients = pt.as_tensor_variable(
+        spline.c.astype(np.float64)
+    )  # (4, n_intervals)
 
     # Find the interval index for rho
     idx = pt.sum(pt.lt(breakpoints, rho)) - 1
@@ -670,7 +702,9 @@ def _barry_pace_traces(
     # Override with exact values for k=1, 2
     traces[0, :] = float(W_sparse.diagonal().sum())  # tr(W) = 0 for zero-diagonal W
     if order >= 2:
-        traces[1, :] = float(W_sparse.multiply(W_sparse.T).sum())  # tr(W^2) = sum(W .* W')
+        traces[1, :] = float(
+            W_sparse.multiply(W_sparse.T).sum()
+        )  # tr(W^2) = sum(W .* W')
     return traces
 
 
@@ -793,7 +827,9 @@ def _flow_logdet_poly_coeffs(
                 coeff = -float(multi) * trace_prod / k
                 poly_rows.append((float(a), float(b), float(c), coeff))
                 if k == miter:
-                    miter_rows.append((float(a), float(b), float(c), float(multi) * trace_prod))
+                    miter_rows.append(
+                        (float(a), float(b), float(c), float(multi) * trace_prod)
+                    )
 
     poly_arr = np.array(poly_rows, dtype=np.float64)
     miter_arr = np.array(miter_rows, dtype=np.float64)
@@ -876,10 +912,7 @@ def flow_logdet_pytensor(
     pcoeffs = pt.as_tensor_variable(poly_coeffs)
 
     poly_part = pt.sum(
-        pcoeffs
-        * pt.power(rho_d, pa)
-        * pt.power(rho_o, pb)
-        * pt.power(rho_w, pc)
+        pcoeffs * pt.power(rho_d, pa) * pt.power(rho_o, pb) * pt.power(rho_w, pc)
     )
 
     # --- Geometric tail: k = miter+1 .. titer ---
@@ -890,10 +923,7 @@ def flow_logdet_pytensor(
     mcoeffs = pt.as_tensor_variable(miter_coeffs)
 
     trace_last = pt.sum(
-        mcoeffs
-        * pt.power(rho_d, ma)
-        * pt.power(rho_o, mb)
-        * pt.power(rho_w, mc_)
+        mcoeffs * pt.power(rho_d, ma) * pt.power(rho_o, mb) * pt.power(rho_w, mc_)
     )
 
     # scalarparm = rho_d + rho_o + rho_w  (spectral radius bound for row-stochastic W)
@@ -963,8 +993,12 @@ def make_logdet_numpy_fn(
         method = _auto_logdet_method(n)
 
     # Normalise legacy aliases
-    _legacy = {"grid": "dense_grid", "full": "sparse_grid", "int": "spline",
-               "ichol": "ilu"}
+    _legacy = {
+        "grid": "dense_grid",
+        "full": "sparse_grid",
+        "int": "spline",
+        "ichol": "ilu",
+    }
     method = _legacy.get(method, method)
 
     if method == "eigenvalue":
@@ -1079,15 +1113,23 @@ def make_logdet_numpy_vec_fn(
     if method is None:
         method = _auto_logdet_method(n)
 
-    _legacy = {"grid": "dense_grid", "full": "sparse_grid", "int": "spline",
-               "ichol": "ilu"}
+    _legacy = {
+        "grid": "dense_grid",
+        "full": "sparse_grid",
+        "int": "spline",
+        "ichol": "ilu",
+    }
     method = _legacy.get(method, method)
 
     if method == "eigenvalue":
         _eigs = eigs.real.astype(np.float64)
+
         def _vec_eigenvalue(rho_arr: np.ndarray) -> np.ndarray:
             rho_arr = np.asarray(rho_arr, dtype=np.float64)
-            return np.sum(np.log(np.abs(1.0 - rho_arr[:, None] * _eigs[None, :])), axis=1)
+            return np.sum(
+                np.log(np.abs(1.0 - rho_arr[:, None] * _eigs[None, :])), axis=1
+            )
+
         return _vec_eigenvalue
 
     # For all other methods, build the scalar fn and wrap it.
@@ -1096,7 +1138,13 @@ def make_logdet_numpy_vec_fn(
     return lambda rho_arr: _vfn(np.asarray(rho_arr, dtype=np.float64))
 
 
-def make_logdet_fn(W, method: str | None = None, rho_min: float = -1.0, rho_max: float = 1.0, T: int = 1):
+def make_logdet_fn(
+    W,
+    method: str | None = None,
+    rho_min: float = -1.0,
+    rho_max: float = 1.0,
+    T: int = 1,
+):
     # Map legacy method names to new ones for backward compatibility
     legacy_map = {
         "grid": "dense_grid",
@@ -1155,13 +1203,34 @@ def make_logdet_fn(W, method: str | None = None, rho_min: float = -1.0, rho_max:
     if W.ndim == 1:
         # 1-D eigenvalue array supplied — skip O(n³) decomposition.
         eigs = W
-        if method is None or method in ("dense_grid", "exact", "sparse_grid", "spline", "mc", "ilu", "chebyshev"):
+        if method is None:
             method = "eigenvalue"
         if method == "eigenvalue":
             if T == 1:
                 return lambda rho: logdet_eigenvalue(rho, eigs)
             return lambda rho: T * logdet_eigenvalue(rho, eigs)
-        raise ValueError(f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu'.")
+        if method == "chebyshev":
+            # Build Chebyshev approximation directly from cached eigenvalues
+            # (no dense W needed).
+            out = chebyshev(None, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
+            coeffs_np = out["coeffs"]
+            rmin_cb = out["rmin"]
+            rmax_cb = out["rmax"]
+
+            def _chebyshev_eig_interp(rho):
+                val = logdet_chebyshev(rho, coeffs_np, rmin=rmin_cb, rmax=rmax_cb)
+                return val if T == 1 else T * val
+
+            return _chebyshev_eig_interp
+        # Other methods (dense_grid, exact, sparse_grid, spline, mc, ilu)
+        # require the full matrix; fall back to eigenvalue with a note.
+        if method in ("dense_grid", "exact", "sparse_grid", "spline", "mc", "ilu"):
+            if T == 1:
+                return lambda rho: logdet_eigenvalue(rho, eigs)
+            return lambda rho: T * logdet_eigenvalue(rho, eigs)
+        raise ValueError(
+            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'chebyshev', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu'."
+        )
 
     # 2-D dense matrix path.
     W_dense = W
@@ -1373,7 +1442,9 @@ def make_flow_separable_logdet(
             + n * logdet_chebyshev(rho_o, coeffs, rmin=rmin_cb, rmax=rmax_cb)
         )
     elif method == "mc_poly":
-        traces = compute_flow_traces(W_sp, miter=miter, riter=riter, random_state=random_state)
+        traces = compute_flow_traces(
+            W_sp, miter=miter, riter=riter, random_state=random_state
+        )
         return lambda rho_d, rho_o: (
             n * logdet_mc_poly_pytensor(rho_d, traces)
             + n * logdet_mc_poly_pytensor(rho_o, traces)

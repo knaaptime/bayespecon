@@ -70,7 +70,7 @@ def bayesian_panel_lm_wx_sem_test(
 
     # LM = g' J^{-1} g for each draw
     J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
-    LM = np.einsum('di,ij,dj->d', g_gamma, J_inv, g_gamma)
+    LM = np.einsum("di,ij,dj->d", g_gamma, J_inv, g_gamma)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -169,7 +169,7 @@ def bayesian_lm_wx_sem_test(
 
     # LM = g' J^{-1} g for each draw
     J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
-    LM = np.einsum('di,ij,dj->d', g_gamma, J_inv, g_gamma)
+    LM = np.einsum("di,ij,dj->d", g_gamma, J_inv, g_gamma)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -250,7 +250,7 @@ class BayesianLMTestResult:
 
     def to_dict(self):
         """Convert the test result to a dictionary."""
-        d =  {
+        d = {
             "lm_samples": self.lm_samples,
             "mean": self.mean,
             "median": self.median,
@@ -267,7 +267,9 @@ class BayesianLMTestResult:
     def to_series(self):
         """Convert the test result to a pandas Series."""
         import pandas as pd
+
         return pd.Series(self.to_dict())
+
 
 def _get_posterior_draws(idata: az.InferenceData, param: str) -> np.ndarray:
     """Extract posterior draws for a parameter from an ArviZ InferenceData object.
@@ -351,7 +353,6 @@ def bayesian_lm_lag_test(
         X = model._X
     # Wy is pre-computed and stored as a dense array — no need to materialize W
     Wy = model._Wy
-    W_sp = model._W_sparse
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
     sigma2_mean = float(np.mean(sigma_draws**2))
     # T_ww = tr(W'W + W²) — cached on the model
@@ -552,7 +553,7 @@ def bayesian_lm_wx_test(
 
     # LM = g' J^{-1} g for each draw
     J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
-    LM = np.einsum('di,ij,dj->d', g_gamma, J_inv, g_gamma)
+    LM = np.einsum("di,ij,dj->d", g_gamma, J_inv, g_gamma)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -664,7 +665,7 @@ def bayesian_lm_sdm_joint_test(
 
     # LM = g' J^{-1} g for each draw
     J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
-    LM = np.einsum('di,ij,dj->d', g, J_inv, g)
+    LM = np.einsum("di,ij,dj->d", g, J_inv, g)
 
     df = p
     mean = float(np.mean(LM))
@@ -778,7 +779,7 @@ def bayesian_lm_slx_error_joint_test(
 
     # LM = g' J^{-1} g for each draw
     J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
-    LM = np.einsum('di,ij,dj->d', g, J_inv, g)
+    LM = np.einsum("di,ij,dj->d", g, J_inv, g)
 
     df = p
     mean = float(np.mean(LM))
@@ -852,7 +853,7 @@ def _info_matrix_blocks_sdm(
         Dictionary with keys ``J_rho_rho``, ``J_rho_gamma``, ``J_gamma_gamma``,
         ``T_ww`` (trace of W'W + W²).
     """
-    n = X.shape[0]
+    X.shape[0]
     k_wx = WX.shape[1]
 
     # T = tr(W'W + W²) = ||W||_F^2 + sum(W*W') [O(nnz)]
@@ -1039,7 +1040,9 @@ def bayesian_robust_lm_lag_sdm_test(
 
     # Information matrix blocks (evaluated at posterior mean of sigma²)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    info = _info_matrix_blocks_sdm(X, WX, W_sp, sigma2_mean, Wy_hat=Wy_hat, T_ww=model._T_ww)
+    info = _info_matrix_blocks_sdm(
+        X, WX, W_sp, sigma2_mean, Wy_hat=Wy_hat, T_ww=model._T_ww
+    )
 
     J_rho_rho = info["J_rho_rho"]
     J_rho_gamma = info["J_rho_gamma"]  # (k_wx,)
@@ -1179,7 +1182,9 @@ def bayesian_robust_lm_wx_test(
 
     # Information matrix blocks (evaluated at posterior mean of sigma²)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    info = _info_matrix_blocks_sdm(X, WX, W_sp, sigma2_mean, Wy_hat=Wy_hat, T_ww=model._T_ww)
+    info = _info_matrix_blocks_sdm(
+        X, WX, W_sp, sigma2_mean, Wy_hat=Wy_hat, T_ww=model._T_ww
+    )
 
     J_rho_rho = info["J_rho_rho"]
     J_rho_gamma = info["J_rho_gamma"]  # (k_wx,)
@@ -1215,7 +1220,7 @@ def bayesian_robust_lm_wx_test(
 
     # Robust LM = g_gamma*' C*^{-1} g_gamma* for each draw
     C_star_inv = np.linalg.inv(C_star + 1e-12 * np.eye(k_wx))
-    LM = np.einsum('di,ij,dj->d', g_gamma_star, C_star_inv, g_gamma_star)
+    LM = np.einsum("di,ij,dj->d", g_gamma_star, C_star_inv, g_gamma_star)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -1624,7 +1629,6 @@ def bayesian_panel_lm_lag_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    y = model._y
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
@@ -1727,8 +1731,6 @@ def bayesian_panel_lm_error_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    y = model._y
-    X = model._X
     W_sp = model._W_sparse
     N = model._N
     T = model._T
@@ -1806,7 +1808,6 @@ def bayesian_panel_robust_lm_lag_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    y = model._y
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
@@ -1902,7 +1903,6 @@ def bayesian_panel_robust_lm_error_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    y = model._y
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
@@ -2020,7 +2020,6 @@ def bayesian_panel_lm_wx_test(
     X = model._X
     WX = model._WX
     Wy = model._Wy
-    W_sp = model._W_sparse
     k_wx = WX.shape[1]
     N = model._N
     T = model._T
@@ -2054,7 +2053,7 @@ def bayesian_panel_lm_wx_test(
 
     # LM = g' J^{-1} g for each draw
     J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
-    LM = np.einsum('di,ij,dj->d', g_gamma, J_inv, g_gamma)
+    LM = np.einsum("di,ij,dj->d", g_gamma, J_inv, g_gamma)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -2112,7 +2111,6 @@ def bayesian_panel_lm_sdm_joint_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to :math:`1 + k_{wx}`.
     """
-    y = model._y
     X = model._X
     WX = model._WX
     Wy = model._Wy
@@ -2162,7 +2160,7 @@ def bayesian_panel_lm_sdm_joint_test(
 
     # LM = g' J^{-1} g for each draw
     J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
-    LM = np.einsum('di,ij,dj->d', g, J_inv, g)
+    LM = np.einsum("di,ij,dj->d", g, J_inv, g)
 
     df = p
     mean = float(np.mean(LM))
@@ -2220,8 +2218,6 @@ def bayesian_panel_lm_slx_error_joint_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to :math:`1 + k_{wx}`.
     """
-    y = model._y
-    X = model._X
     WX = model._WX
     W_sp = model._W_sparse
     k_wx = WX.shape[1]
@@ -2258,7 +2254,7 @@ def bayesian_panel_lm_slx_error_joint_test(
 
     # LM = g' J^{-1} g for each draw
     J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
-    LM = np.einsum('di,ij,dj->d', g, J_inv, g)
+    LM = np.einsum("di,ij,dj->d", g, J_inv, g)
 
     df = p
     mean = float(np.mean(LM))
@@ -2504,7 +2500,7 @@ def bayesian_panel_robust_lm_wx_test(
 
     # Robust LM = g_gamma*' C*^{-1} g_gamma* for each draw
     C_star_inv = np.linalg.inv(C_star + 1e-12 * np.eye(k_wx))
-    LM = np.einsum('di,ij,dj->d', g_gamma_star, C_star_inv, g_gamma_star)
+    LM = np.einsum("di,ij,dj->d", g_gamma_star, C_star_inv, g_gamma_star)
 
     df = k_wx
     mean = float(np.mean(LM))

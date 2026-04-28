@@ -17,7 +17,6 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ..logdet import make_logdet_fn
 from .panel_base import SpatialPanelModel
 
 
@@ -44,8 +43,12 @@ class _PanelTobitBase(SpatialPanelModel):
     def _posterior_latent_y_mean(self) -> np.ndarray:
         y_lat = self._y.copy().astype(float)
         if self._censored_idx.size > 0 and "y_cens_gap" in self._idata.posterior:
-            gap_hat = self._idata.posterior["y_cens_gap"].mean(("chain", "draw")).to_numpy()
-            y_lat[self._censored_idx] = self.censoring - np.asarray(gap_hat, dtype=float)
+            gap_hat = (
+                self._idata.posterior["y_cens_gap"].mean(("chain", "draw")).to_numpy()
+            )
+            y_lat[self._censored_idx] = self.censoring - np.asarray(
+                gap_hat, dtype=float
+            )
         return y_lat
 
 
@@ -100,7 +103,9 @@ class SARPanelTobit(_PanelTobitBase):
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_resid = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid).sum()
+                logp_resid = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid
+                ).sum()
             else:
                 logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
             pm.Potential("resid_loglik", logp_resid)
@@ -131,9 +136,12 @@ class SARPanelTobit(_PanelTobitBase):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
         ni = self._nonintercept_indices
 
@@ -192,8 +200,6 @@ class SARPanelTobit(_PanelTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import pytensor
-        import pytensor.tensor as pt_ll
         import xarray as xr
         from scipy.stats import norm
 
@@ -224,6 +230,7 @@ class SARPanelTobit(_PanelTobitBase):
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
+
             ll[:, uncens] = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -309,7 +316,9 @@ class SEMPanelTobit(_PanelTobitBase):
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
@@ -331,9 +340,12 @@ class SEMPanelTobit(_PanelTobitBase):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
         ni = self._nonintercept_indices
 
@@ -393,8 +405,6 @@ class SEMPanelTobit(_PanelTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import pytensor
-        import pytensor.tensor as pt_ll
         import xarray as xr
         from scipy.stats import norm
 
@@ -423,6 +433,7 @@ class SEMPanelTobit(_PanelTobitBase):
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
+
             ll[:, uncens] = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)

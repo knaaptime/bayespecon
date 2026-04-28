@@ -211,15 +211,12 @@ class _SparseFlowVJPOp(pt.Op):
 
     def perform(self, node, inputs, outputs):
         rd, ro, rw, eta, g = inputs
-        A = (
-            self._I
-            - float(rd) * self._Wd
-            - float(ro) * self._Wo
-            - float(rw) * self._Ww
-        )
+        A = self._I - float(rd) * self._Wd - float(ro) * self._Wo - float(rw) * self._Ww
         lu = sp.linalg.splu(A.tocsc())  # LU factorization
         eta = np.asarray(eta, dtype=np.float64)
-        v = np.asarray(lu.solve(np.asarray(g, dtype=np.float64), trans="T"), dtype=np.float64)
+        v = np.asarray(
+            lu.solve(np.asarray(g, dtype=np.float64), trans="T"), dtype=np.float64
+        )
         outputs[0][0] = np.asarray(float(v @ (self._Wd @ eta)), dtype=np.float64)
         outputs[1][0] = np.asarray(float(v @ (self._Wo @ eta)), dtype=np.float64)
         outputs[2][0] = np.asarray(float(v @ (self._Ww @ eta)), dtype=np.float64)
@@ -253,7 +250,7 @@ class SparseFlowSolveOp(pt.Op):
     :math:`W_w = W \otimes W` are the Kronecker-product flow weight matrices
     and :math:`N = n^2`.
 
-    This Op is used by :class:`~bayespecon.models.flow.PoissonFlow` to embed
+    This Op is used by :class:`~bayespecon.models.flow.PoissonSARFlow` to embed
     the implicit spatial filter on the **log-mean** of a Poisson observation
     model:
 
@@ -345,14 +342,11 @@ class SparseFlowSolveOp(pt.Op):
         Uses a single SuperLU factorisation via :func:`scipy.sparse.linalg.splu`.
         """
         rd, ro, rw, b = inputs
-        A = (
-            self._I
-            - float(rd) * self._Wd
-            - float(ro) * self._Wo
-            - float(rw) * self._Ww
-        )
+        A = self._I - float(rd) * self._Wd - float(ro) * self._Wo - float(rw) * self._Ww
         lu = sp.linalg.splu(A.tocsc())  # LU factorization
-        outputs[0][0] = np.asarray(lu.solve(np.asarray(b, dtype=np.float64)), dtype=np.float64)
+        outputs[0][0] = np.asarray(
+            lu.solve(np.asarray(b, dtype=np.float64)), dtype=np.float64
+        )
 
     def infer_shape(self, fgraph, node, input_shapes):
         # Output has same shape as b
@@ -436,15 +430,12 @@ class _SparseFlowVJPMatrixOp(pt.Op):
 
     def perform(self, node, inputs, outputs):
         rd, ro, rw, H, G = inputs
-        A = (
-            self._I
-            - float(rd) * self._Wd
-            - float(ro) * self._Wo
-            - float(rw) * self._Ww
-        )
+        A = self._I - float(rd) * self._Wd - float(ro) * self._Wo - float(rw) * self._Ww
         lu = sp.linalg.splu(A.tocsc())
         H = np.asarray(H, dtype=np.float64)
-        V = np.asarray(lu.solve(np.asarray(G, dtype=np.float64), trans="T"), dtype=np.float64)
+        V = np.asarray(
+            lu.solve(np.asarray(G, dtype=np.float64), trans="T"), dtype=np.float64
+        )
         outputs[0][0] = np.asarray(np.sum(V * (self._Wd @ H)), dtype=np.float64)
         outputs[1][0] = np.asarray(np.sum(V * (self._Wo @ H)), dtype=np.float64)
         outputs[2][0] = np.asarray(np.sum(V * (self._Ww @ H)), dtype=np.float64)
@@ -496,14 +487,11 @@ class SparseFlowSolveMatrixOp(pt.Op):
 
     def perform(self, node, inputs, outputs):
         rd, ro, rw, B = inputs
-        A = (
-            self._I
-            - float(rd) * self._Wd
-            - float(ro) * self._Wo
-            - float(rw) * self._Ww
-        )
+        A = self._I - float(rd) * self._Wd - float(ro) * self._Wo - float(rw) * self._Ww
         lu = sp.linalg.splu(A.tocsc())
-        outputs[0][0] = np.asarray(lu.solve(np.asarray(B, dtype=np.float64)), dtype=np.float64)
+        outputs[0][0] = np.asarray(
+            lu.solve(np.asarray(B, dtype=np.float64)), dtype=np.float64
+        )
 
     def infer_shape(self, fgraph, node, input_shapes):
         return [input_shapes[3]]
@@ -635,22 +623,24 @@ class _KroneckerFlowVJPOp(pt.Op):
         # (Lo⊗Ld)^T = Lo^T⊗Ld^T,  (Lo^T⊗Ld^T) vec(Y) = vec(Ld^T Y Lo)
         # Adjoint solve: v = (Lo ⊗ Ld)^{-T} g
         Hg = g.reshape(n, n, order="F")
-        P = np.asarray(lu_d.solve(np.asarray(Hg, dtype=np.float64), trans="T"), dtype=np.float64)
+        P = np.asarray(
+            lu_d.solve(np.asarray(Hg, dtype=np.float64), trans="T"), dtype=np.float64
+        )
         Q = np.asarray(lu_o.solve(P.T, trans="T"), dtype=np.float64)
-        H_v = Q.T                                      # (n, n)
+        H_v = Q.T  # (n, n)
 
         # Sensitivities for A = Lo ⊗ Ld:
         #   dA/drho_d = Lo ⊗ (-W),  dL/drho_d = v^T (Lo⊗W) eta
         #             = tr(H_v^T W H_eta Lo^T) = sum(H_v * (W H_eta) @ Lo^T)
         #   dA/drho_o = (-W) ⊗ Ld,  dL/drho_o = v^T (W⊗Ld) eta
         #             = tr(H_v^T Ld H_eta W^T) = sum(H_v * (Ld H_eta) @ W^T)
-        W_H  = self._W @ H_eta     # (n, n)
-        Ld_H = Ld @ H_eta          # (n, n)
+        W_H = self._W @ H_eta  # (n, n)
+        Ld_H = Ld @ H_eta  # (n, n)
         # sum(H_v * (W_H @ Lo.T)) = sum(H_v * (Lo @ W_H.T).T)  [avoids Lo.toarray()]
         # sum(H_v * (Ld_H @ W.T)) = sum(H_v * (W @ Ld_H.T).T)  [avoids W.toarray()]
         outputs[0][0] = np.asarray(np.sum(H_v * (Lo @ W_H.T).T), dtype=np.float64)
-        outputs[1][0] = np.asarray(np.sum(H_v * (self._W @ Ld_H.T).T),  dtype=np.float64)
-        outputs[2][0] = H_v.ravel(order="F").astype(np.float64)   # v = vec(H_v)
+        outputs[1][0] = np.asarray(np.sum(H_v * (self._W @ Ld_H.T).T), dtype=np.float64)
+        outputs[2][0] = H_v.ravel(order="F").astype(np.float64)  # v = vec(H_v)
 
     def infer_shape(self, fgraph, node, input_shapes):
         eta_shape = input_shapes[2]
@@ -925,17 +915,24 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
         """
         n, T = self._n, rhs.shape[1]
         # Step 1: L_first H'_t = H_b_t  (batch: (n, n*T) solve)
-        R = rhs.reshape(n, n * T, order="F")   # (n, n*T): col t*n+j = col j of H_b_t
-        Hp = np.asarray(lu_d.solve(np.asarray(R, dtype=np.float64), trans="T" if transpose_d else "N"), dtype=np.float64)
-        Hp3  = Hp.reshape(n, n, T, order="F")     # (n, n, T): Hp3[:,:,t] = H'_t
+        R = rhs.reshape(n, n * T, order="F")  # (n, n*T): col t*n+j = col j of H_b_t
+        Hp = np.asarray(
+            lu_d.solve(
+                np.asarray(R, dtype=np.float64), trans="T" if transpose_d else "N"
+            ),
+            dtype=np.float64,
+        )
+        Hp3 = Hp.reshape(n, n, T, order="F")  # (n, n, T): Hp3[:,:,t] = H'_t
         # Step 2: Lo_T Z_t = H'_t^T  (batch: (n, n*T) solve)
         # Pack RHS so that col t*n+j = H'_t[j,:] (j-th row of H'_t = j-th col of H'_t^T)
         # Hp3.transpose(2,0,1) shape (T,n,n): result[t,j,:] = H'_t[j,:]
         # C-order reshape to (T*n, n): result_2d[t*n+j, i] = H'_t[j, i]
         # Transpose to (n, T*n): RHS2[:, t*n+j] = H'_t[j, :] ✓
-        RHS2 = Hp3.transpose(2, 0, 1).reshape(T * n, n).T   # (n, n*T)
-        Z_h = np.asarray(lu_o.solve(np.asarray(RHS2, dtype=np.float64), trans="T"), dtype=np.float64)
-        Z3   = Z_h.reshape(n, n, T, order="F")             # (n, n, T): Z3[:,:,t] = Z_t
+        RHS2 = Hp3.transpose(2, 0, 1).reshape(T * n, n).T  # (n, n*T)
+        Z_h = np.asarray(
+            lu_o.solve(np.asarray(RHS2, dtype=np.float64), trans="T"), dtype=np.float64
+        )
+        Z3 = Z_h.reshape(n, n, T, order="F")  # (n, n, T): Z3[:,:,t] = Z_t
         # result[:, t] = Z_t^T.ravel('F') = H_eta_t.ravel('F')
         # Z3.transpose(1,0,2): result[j,i,t] = Z3[i,j,t] = Z_t[i,j]
         # F-order reshape (n,n,T) → (N,T): result[i+n*j, t] = Z3[j,i,t] = Z_t[j,i] = Z_t^T[i,j]
@@ -944,32 +941,34 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
     def perform(self, node, inputs, outputs):
         rd, ro, H_eta, G = inputs
         n = self._n
-        Ld   = (self._I - float(rd) * self._W).tocsr()
-        Lo   = (self._I - float(ro) * self._W).tocsr()
+        Ld = (self._I - float(rd) * self._W).tocsr()
+        Lo = (self._I - float(ro) * self._W).tocsr()
         lu_d = sp.linalg.splu(Ld.tocsc())
         lu_o = sp.linalg.splu(Lo.tocsc())
 
         H_eta = np.asarray(H_eta, dtype=np.float64)
-        H_v = self._kron_solve(lu_o, lu_d, np.asarray(G, dtype=np.float64), transpose_d=True)
+        H_v = self._kron_solve(
+            lu_o, lu_d, np.asarray(G, dtype=np.float64), transpose_d=True
+        )
 
         # Reshape to (n, n, T) for Kronecker trace sums over all T periods
         T = H_eta.shape[1]
-        He   = H_eta.reshape(n, n, T, order="F")
-        Hv   = H_v.reshape(n, n, T, order="F")
+        He = H_eta.reshape(n, n, T, order="F")
+        Hv = H_v.reshape(n, n, T, order="F")
 
         # Sparse matmul: W @ He_t and Ld @ He_t for all T simultaneously
-        He_2d = He.reshape(n, n * T)                            # (n, n*T)
-        W_He  = (self._W @ He_2d).reshape(n, n, T)             # (n, n, T)
-        Ld_He = (Ld        @ He_2d).reshape(n, n, T)           # (n, n, T)
+        He_2d = He.reshape(n, n * T)  # (n, n*T)
+        W_He = (self._W @ He_2d).reshape(n, n, T)  # (n, n, T)
+        Ld_He = (Ld @ He_2d).reshape(n, n, T)  # (n, n, T)
 
         # sum(Hv * WHe_LoT)  = sum_{jk} Lo[j,k]  * S_d[j,k]
         # sum(Hv * LdHe_WT)  = sum_{jk} W[j,k]   * S_o[j,k]
         # where S[j,k] = sum_{it} XHe[i,k,t] * Hv[i,j,t]
-        S_d = np.einsum("ikt,ijt->jk", W_He,  Hv)             # (n, n)
-        S_o = np.einsum("ikt,ijt->jk", Ld_He, Hv)             # (n, n)
+        S_d = np.einsum("ikt,ijt->jk", W_He, Hv)  # (n, n)
+        S_o = np.einsum("ikt,ijt->jk", Ld_He, Hv)  # (n, n)
 
-        outputs[0][0] = np.asarray(Lo.multiply(S_d).sum(),         dtype=np.float64)
-        outputs[1][0] = np.asarray(self._W.multiply(S_o).sum(),    dtype=np.float64)
+        outputs[0][0] = np.asarray(Lo.multiply(S_d).sum(), dtype=np.float64)
+        outputs[1][0] = np.asarray(self._W.multiply(S_o).sum(), dtype=np.float64)
         outputs[2][0] = np.asarray(H_v, dtype=np.float64)
 
     def infer_shape(self, fgraph, node, input_shapes):
@@ -1126,7 +1125,7 @@ def kron_solve_vec(
     """
     Hb = b.reshape(n, n, order="F")
     Hp = sp.linalg.spsolve(Ld, Hb)
-    Z  = sp.linalg.spsolve(Lo, Hp.T)
+    Z = sp.linalg.spsolve(Lo, Hp.T)
     return np.asarray(Z, dtype=np.float64).T.ravel(order="F")
 
 
@@ -1153,14 +1152,12 @@ def kron_solve_matrix(
     H : ndarray, shape (N, k)
     """
     k = B.shape[1]
-    R    = B.reshape(n, n * k, order="F")
-    Hp   = sp.linalg.spsolve(Ld, R)
-    Hp3  = Hp.reshape(n, n, k, order="F")
+    R = B.reshape(n, n * k, order="F")
+    Hp = sp.linalg.spsolve(Ld, R)
+    Hp3 = Hp.reshape(n, n, k, order="F")
     RHS2 = Hp3.transpose(2, 0, 1).reshape(k * n, n).T
-    Z_h  = sp.linalg.spsolve(Lo, RHS2)
-    Z3   = Z_h.reshape(n, n, k, order="F")
+    Z_h = sp.linalg.spsolve(Lo, RHS2)
+    Z3 = Z_h.reshape(n, n, k, order="F")
     return np.asarray(
         Z3.transpose(1, 0, 2).reshape(n * n, k, order="F"), dtype=np.float64
     )
-
-

@@ -10,8 +10,8 @@ from __future__ import annotations
 from bayespecon import (
     OLS,
     SAR,
-    SDM,
     SDEM,
+    SDM,
     SEM,
     SLX,
     OLSPanelFE,
@@ -29,12 +29,8 @@ def test_cross_sectional_models_no_longer_expose_frequentist_spec_tests():
         assert not hasattr(cls, "lm_error_test"), (
             f"{cls.__name__} still has lm_error_test"
         )
-        assert not hasattr(cls, "lm_lag_test"), (
-            f"{cls.__name__} still has lm_lag_test"
-        )
-        assert not hasattr(cls, "moran_test"), (
-            f"{cls.__name__} still has moran_test"
-        )
+        assert not hasattr(cls, "lm_lag_test"), f"{cls.__name__} still has lm_lag_test"
+        assert not hasattr(cls, "moran_test"), f"{cls.__name__} still has moran_test"
 
     assert not hasattr(SAR, "lm_rho_test")
     assert not hasattr(SAR, "lm_rho_robust_test")

@@ -9,7 +9,13 @@ from __future__ import annotations
 import numpy as np
 
 from .panel_fe import _panel_finalize
-from .utils import _hetero_scale, ensure_rng, make_design_matrix, make_panel_output_geodataframe, resolve_weights
+from .utils import (
+    _hetero_scale,
+    ensure_rng,
+    make_design_matrix,
+    make_panel_output_geodataframe,
+    resolve_weights,
+)
 
 
 def simulate_panel_dlm_fe(
@@ -76,7 +82,9 @@ def simulate_panel_dlm_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
         yt = phi * y_prev + Xt @ beta + alpha + eps
         y_list.append(yt)
         X_list.append(Xt)
@@ -90,10 +98,25 @@ def simulate_panel_dlm_fe(
         "time": idx["time"],
         "W_dense": Wd,
         "W_graph": Wg,
-        "params_true": {"phi": phi, "beta": beta, "sigma": sigma, "sigma_alpha": sigma_alpha},
+        "params_true": {
+            "phi": phi,
+            "beta": beta,
+            "sigma": sigma,
+            "sigma_alpha": sigma_alpha,
+        },
     }
     if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(y, X, idx["unit"], idx["time"], N, T, gdf=gdf, geometry_type=geometry_type, wide=wide)
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
     return out
 
 
@@ -165,7 +188,9 @@ def simulate_panel_sdmr_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
         rhs = phi * y_prev - rho * phi * (Wd @ y_prev) + Xt @ beta + alpha + eps
         yt = A_inv @ rhs
         y_list.append(yt)
@@ -189,7 +214,17 @@ def simulate_panel_sdmr_fe(
         },
     }
     if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(y, X, idx["unit"], idx["time"], N, T, gdf=gdf, geometry_type=geometry_type, wide=wide)
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
     return out
 
 
@@ -264,7 +299,9 @@ def simulate_panel_sdmu_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
         rhs = phi * y_prev + theta * (Wd @ y_prev) + Xt @ beta + alpha + eps
         yt = A_inv @ rhs
         y_list.append(yt)
@@ -289,7 +326,17 @@ def simulate_panel_sdmu_fe(
         },
     }
     if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(y, X, idx["unit"], idx["time"], N, T, gdf=gdf, geometry_type=geometry_type, wide=wide)
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
     return out
 
 
@@ -333,7 +380,9 @@ def simulate_panel_sar_dynamic_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
         rhs = phi * y_prev + Xt @ beta + alpha + eps
         yt = A_inv @ rhs
         y_list.append(yt)
@@ -357,7 +406,17 @@ def simulate_panel_sar_dynamic_fe(
         },
     }
     if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(y, X, idx["unit"], idx["time"], N, T, gdf=gdf, geometry_type=geometry_type, wide=wide)
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
     return out
 
 
@@ -401,7 +460,9 @@ def simulate_panel_sem_dynamic_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
         u = B_inv @ eps
         yt = phi * y_prev + Xt @ beta + alpha + u
         y_list.append(yt)
@@ -425,7 +486,17 @@ def simulate_panel_sem_dynamic_fe(
         },
     }
     if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(y, X, idx["unit"], idx["time"], N, T, gdf=gdf, geometry_type=geometry_type, wide=wide)
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
     return out
 
 
@@ -469,7 +540,9 @@ def simulate_panel_sdem_dynamic_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
         u = B_inv @ eps
         yt = phi * y_prev + Xt @ beta + alpha + u
         y_list.append(yt)
@@ -493,7 +566,17 @@ def simulate_panel_sdem_dynamic_fe(
         },
     }
     if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(y, X, idx["unit"], idx["time"], N, T, gdf=gdf, geometry_type=geometry_type, wide=wide)
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
     return out
 
 
@@ -535,7 +618,9 @@ def simulate_panel_slx_dynamic_fe(
     y_list, X_list = [], []
     for _ in range(T):
         Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
         yt = phi * y_prev + Xt @ beta + alpha + eps
         y_list.append(yt)
         X_list.append(Xt)
@@ -557,5 +642,15 @@ def simulate_panel_slx_dynamic_fe(
         },
     }
     if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(y, X, idx["unit"], idx["time"], N, T, gdf=gdf, geometry_type=geometry_type, wide=wide)
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
     return out

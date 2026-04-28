@@ -26,7 +26,6 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ..logdet import make_logdet_fn
 from .panel_base import SpatialPanelModel
 
 
@@ -170,9 +169,12 @@ class OLSPanelRE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
         ni = self._nonintercept_indices
 
@@ -367,9 +369,12 @@ class SARPanelRE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
         ni = self._nonintercept_indices
 
@@ -497,7 +502,9 @@ class SEMPanelRE(SpatialPanelModel):
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
@@ -536,8 +543,6 @@ class SEMPanelRE(SpatialPanelModel):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import pytensor
-        import pytensor.tensor as pt_ll
         import xarray as xr
 
         lam = idata.posterior["lam"].values
@@ -564,6 +569,7 @@ class SEMPanelRE(SpatialPanelModel):
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
+
             ll = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -615,9 +621,12 @@ class SEMPanelRE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
         ni = self._nonintercept_indices
 
@@ -644,4 +653,230 @@ class SEMPanelRE(SpatialPanelModel):
             indirect_samples = np.zeros_like(beta_draws)
             total_samples = beta_draws.copy()
 
+        return direct_samples, indirect_samples, total_samples
+
+
+class SDEMPanelRE(SpatialPanelModel):
+    r"""Bayesian spatial Durbin error panel model with unit random effects.
+
+    .. math::
+        y_{it} = X_{it}\beta_1 + (WX)_{it}\beta_2 + \alpha_i + u_{it}, \quad
+        u_{it} = \lambda (Wu)_{it} + \varepsilon_{it}
+
+    Combines the SDEM mean structure (covariates plus their spatial lags)
+    with random unit effects :math:`\alpha_i \sim N(0, \sigma_\alpha^2)`
+    and a spatially-correlated error term governed by :math:`\lambda`.
+
+    Parameters
+    ----------
+    formula, data, y, X, W, unit_col, time_col, N, T, priors, logdet_method
+        See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
+        ``model`` is forced to 0 because unit heterogeneity is captured by
+        the random effect rather than by within-unit demeaning.
+
+    Notes
+    -----
+    The ``priors`` dict supports the following keys:
+
+    - ``lam_lower, lam_upper`` (float, default -1, 1)
+    - ``beta_mu`` (float, default 0)
+    - ``beta_sigma`` (float, default 1e6)
+    - ``sigma_sigma`` (float, default 10)
+    - ``sigma_alpha_sigma`` (float, default 10)
+    - ``nu_lam`` (float, default 1/30) when ``robust=True``
+    """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_test"],
+            ).bayesian_panel_lm_lag_test(m),
+            "Panel-LM-Lag",
+        ),
+    ]
+
+    def __init__(self, **kwargs):
+        kwargs.pop("model", None)
+        super().__init__(model=0, **kwargs)
+        if not self._wx_column_indices:
+            raise ValueError(
+                "SDEMPanelRE requires at least one WX column. Pass "
+                "`w_vars=[...]` to choose which regressors receive a spatial "
+                "lag, or fit an SEMPanelRE model instead."
+            )
+        self._unit_idx = np.arange(self._N * self._T) % self._N
+
+    def _beta_names(self) -> list[str]:
+        return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
+    def _model_coords(self) -> dict:
+        coords = super()._model_coords()
+        coords["unit"] = list(range(self._N))
+        return coords
+
+    def _build_pymc_model(self) -> pm.Model:
+        """Construct the PyMC model for SDEM panel with random effects."""
+        Z = np.hstack([self._X, self._WX])
+
+        lam_lower = self.priors.get("lam_lower", -1.0)
+        lam_upper = self.priors.get("lam_upper", 1.0)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+        sigma_alpha_sigma = self.priors.get("sigma_alpha_sigma", 10.0)
+
+        logdet_fn = self._logdet_pytensor_fn
+        W_pt = pt.as_tensor_variable(self._W_dense)
+        unit_idx = self._unit_idx
+
+        with pm.Model(coords=self._model_coords()) as model:
+            lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            sigma_alpha = pm.HalfNormal("sigma_alpha", sigma=sigma_alpha_sigma)
+            alpha = pm.Normal("alpha", mu=0.0, sigma=sigma_alpha, dims="unit")
+
+            resid = self._y - pt.dot(Z, beta) - alpha[unit_idx]
+            eps = resid - lam * pt.dot(W_pt, resid)
+            if self.robust:
+                self._add_nu_prior(model)
+                nu = model["nu"]
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
+            else:
+                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+            pm.Potential("eps_loglik", logp_eps)
+            pm.Potential("jacobian", logdet_fn(lam))
+
+        return model
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
+        """Sample posterior and attach pointwise log-likelihood for IC metrics."""
+        idata_kwargs = idata_kwargs or {}
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            idata_kwargs=idata_kwargs,
+            **sample_kwargs,
+        )
+
+        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
+            return idata
+
+        import xarray as xr
+
+        Z = np.hstack([self._X, self._WX])
+        lam = idata.posterior["lam"].values
+        beta = idata.posterior["beta"].values
+        sigma = idata.posterior["sigma"].values
+        alpha = idata.posterior["alpha"].values
+
+        c, d = lam.shape
+        s = c * d
+        n = self._y.shape[0]
+        W = self._W_dense
+        unit_idx = self._unit_idx
+
+        lam_f = lam.reshape(s)
+        beta_f = beta.reshape(s, beta.shape[-1])
+        sigma_f = sigma.reshape(s)
+        alpha_f = alpha.reshape(s, alpha.shape[-1])
+
+        resid = self._y[None, :] - beta_f @ Z.T - alpha_f[:, unit_idx]
+        eps = resid - lam_f[:, None] * (resid @ W.T)
+
+        if self.robust:
+            nu_f = idata.posterior["nu"].values.reshape(s)
+            from scipy.special import gammaln
+
+            ll = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - ((nu_f[:, None] + 1) / 2)
+                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
+            )
+        else:
+            ll = -0.5 * (
+                (eps / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
+
+        jac = self._logdet_numpy_vec_fn(lam_f) * self._T
+        ll = ll + jac[:, None] / n
+
+        ll = ll.reshape(c, d, n)
+        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
+        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        return idata
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        beta = self._posterior_mean("beta")
+        alpha = self._posterior_mean("alpha")
+        Z = np.hstack([self._X, self._WX])
+        return Z @ beta + alpha[self._unit_idx]
+
+    def _compute_spatial_effects(self) -> dict:
+        """SDEM-style direct/indirect/total effects (no rho multiplier)."""
+        beta = self._posterior_mean("beta")
+        k = self._X.shape[1]
+        kw = self._WX.shape[1]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+        direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
+        total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
+        return {
+            "direct": direct,
+            "indirect": total - direct,
+            "total": total,
+            "feature_names": self._wx_feature_names,
+        }
+
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior samples of direct/indirect/total effects (SDEM form)."""
+        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        beta_draws = _get_posterior_draws(idata, "beta")
+        k = self._X.shape[1]
+        kw = self._WX.shape[1]
+        beta1_draws = beta_draws[:, :k]
+        beta2_draws = beta_draws[:, k : k + kw]
+
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+
+        wx_idx = self._wx_column_indices
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )
+        indirect_samples = total_samples - direct_samples
         return direct_samples, indirect_samples, total_samples

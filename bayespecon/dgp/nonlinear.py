@@ -14,14 +14,18 @@ from .cross_sectional import simulate_sar, simulate_sdm, simulate_sem
 from .utils import _hetero_scale, ensure_rng, make_design_matrix, resolve_weights
 
 
-def _left_censor(y_latent: np.ndarray, censoring: float) -> tuple[np.ndarray, np.ndarray]:
+def _left_censor(
+    y_latent: np.ndarray, censoring: float
+) -> tuple[np.ndarray, np.ndarray]:
     mask = y_latent <= censoring
     y_obs = y_latent.copy()
     y_obs[mask] = censoring
     return y_obs, mask
 
 
-def simulate_sar_tobit(*, censoring: float = 0.0, err_hetero: bool = False, **kwargs) -> dict:
+def simulate_sar_tobit(
+    *, censoring: float = 0.0, err_hetero: bool = False, **kwargs
+) -> dict:
     """Simulate left-censored SAR Tobit data.
 
     Parameters
@@ -48,7 +52,9 @@ def simulate_sar_tobit(*, censoring: float = 0.0, err_hetero: bool = False, **kw
     return out
 
 
-def simulate_sem_tobit(*, censoring: float = 0.0, err_hetero: bool = False, **kwargs) -> dict:
+def simulate_sem_tobit(
+    *, censoring: float = 0.0, err_hetero: bool = False, **kwargs
+) -> dict:
     """Simulate left-censored SEM Tobit data.
 
     Parameters
@@ -75,7 +81,9 @@ def simulate_sem_tobit(*, censoring: float = 0.0, err_hetero: bool = False, **kw
     return out
 
 
-def simulate_sdm_tobit(*, censoring: float = 0.0, err_hetero: bool = False, **kwargs) -> dict:
+def simulate_sdm_tobit(
+    *, censoring: float = 0.0, err_hetero: bool = False, **kwargs
+) -> dict:
     """Simulate left-censored SDM Tobit data.
 
     Parameters

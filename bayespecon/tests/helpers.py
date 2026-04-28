@@ -11,7 +11,6 @@ from libpysal.graph import Graph
 
 from bayespecon import dgp
 
-
 # ---------------------------------------------------------------------------
 # Sampling settings (moderate draws for reliable recovery, not too slow)
 # ---------------------------------------------------------------------------
@@ -21,13 +20,14 @@ SAMPLE_KWARGS: dict = dict(
 )
 
 # Panel dimensions
-PANEL_N = 10   # cross-sectional units (larger N for reliable recovery)
-PANEL_T = 10   # time periods
+PANEL_N = 10  # cross-sectional units (larger N for reliable recovery)
+PANEL_T = 10  # time periods
 
 
 # ---------------------------------------------------------------------------
 # Spatial weight helpers
 # ---------------------------------------------------------------------------
+
 
 def make_rook_W(side: int) -> np.ndarray:
     """Row-standardized rook-contiguity weights on a ``side x side`` grid."""
@@ -83,6 +83,7 @@ def W_to_graph(W_dense: np.ndarray) -> Graph:
 # ---------------------------------------------------------------------------
 # Cross-sectional data generators
 # ---------------------------------------------------------------------------
+
 
 def make_sar_data(
     rng: np.random.Generator,
@@ -163,6 +164,7 @@ def make_sdem_data(
 # ---------------------------------------------------------------------------
 # Panel data generators  (time-first stacking: obs t*N+i → unit i)
 # ---------------------------------------------------------------------------
+
 
 def make_panel_ols_data(
     rng: np.random.Generator,
@@ -340,6 +342,7 @@ def make_panel_sdmu_data(
 # Spatial probit data generator
 # ---------------------------------------------------------------------------
 
+
 def make_spatial_probit_data(
     rng: np.random.Generator,
     W: np.ndarray,
@@ -373,6 +376,7 @@ def make_spatial_probit_data(
 # ---------------------------------------------------------------------------
 # Tobit data generators
 # ---------------------------------------------------------------------------
+
 
 def make_sar_tobit_data(
     rng: np.random.Generator,
@@ -488,6 +492,7 @@ def make_panel_sem_tobit_data(
 # Dynamic DE (direct-estimation) panel data generators
 # ---------------------------------------------------------------------------
 
+
 def make_panel_sar_dynamic_data(
     rng: np.random.Generator,
     W: np.ndarray,
@@ -501,8 +506,15 @@ def make_panel_sar_dynamic_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate dynamic SAR panel FE data."""
     out = dgp.simulate_panel_sar_dynamic_fe(
-        N=N, T=T, W=W, rho=rho, phi=phi, beta=beta,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        rho=rho,
+        phi=phi,
+        beta=beta,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -523,8 +535,15 @@ def make_panel_sem_dynamic_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate dynamic SEM panel FE data."""
     out = dgp.simulate_panel_sem_dynamic_fe(
-        N=N, T=T, W=W, lam=lam, phi=phi, beta=beta,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        lam=lam,
+        phi=phi,
+        beta=beta,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -545,8 +564,15 @@ def make_panel_sdem_dynamic_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate dynamic SDEM panel FE data."""
     out = dgp.simulate_panel_sdem_dynamic_fe(
-        N=N, T=T, W=W, lam=lam, phi=phi, beta=beta,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        lam=lam,
+        phi=phi,
+        beta=beta,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -566,8 +592,14 @@ def make_panel_slx_dynamic_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate dynamic SLX panel FE data."""
     out = dgp.simulate_panel_slx_dynamic_fe(
-        N=N, T=T, W=W, phi=phi, beta=beta,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        phi=phi,
+        beta=beta,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -578,6 +610,7 @@ def make_panel_slx_dynamic_data(
 # ---------------------------------------------------------------------------
 # Static SDM / SDEM panel data generators (for FE recovery tests)
 # ---------------------------------------------------------------------------
+
 
 def make_panel_sdm_fe_data(
     rng: np.random.Generator,
@@ -592,8 +625,15 @@ def make_panel_sdm_fe_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate SDM panel FE data with WX terms."""
     out = dgp.simulate_panel_sdm_fe(
-        N=N, T=T, W=W, rho=rho, beta1=beta1, beta2=beta2,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        rho=rho,
+        beta1=beta1,
+        beta2=beta2,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -614,8 +654,15 @@ def make_panel_sdem_fe_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate SDEM panel FE data with WX terms."""
     out = dgp.simulate_panel_sdem_fe(
-        N=N, T=T, W=W, lam=lam, beta1=beta1, beta2=beta2,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        lam=lam,
+        beta1=beta1,
+        beta2=beta2,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -626,6 +673,7 @@ def make_panel_sdem_fe_data(
 # ---------------------------------------------------------------------------
 # Flow (O-D) data generators
 # ---------------------------------------------------------------------------
+
 
 def make_flow_data(
     rng: np.random.Generator,
@@ -647,8 +695,14 @@ def make_flow_data(
     if beta_o is None:
         beta_o = [0.5, 0.3]
     out = dgp.generate_flow_data(
-        n=n, G=G, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w,
-        beta_d=beta_d, beta_o=beta_o, sigma=sigma,
+        n=n,
+        G=G,
+        rho_d=rho_d,
+        rho_o=rho_o,
+        rho_w=rho_w,
+        beta_d=beta_d,
+        beta_o=beta_o,
+        sigma=sigma,
         seed=int(rng.integers(0, 2**31)),
     )
     return out["y_vec"], out["X"], out["col_names"]
@@ -670,8 +724,14 @@ def make_poisson_flow_data(
     Returns (y_vec, X, col_names).
     """
     out = dgp.generate_poisson_flow_data(
-        n=n, G=G, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w,
-        beta_d=beta_d, beta_o=beta_o, k=k,
+        n=n,
+        G=G,
+        rho_d=rho_d,
+        rho_o=rho_o,
+        rho_w=rho_w,
+        beta_d=beta_d,
+        beta_o=beta_o,
+        k=k,
         seed=int(rng.integers(0, 2**31)),
     )
     return out["y_vec"], out["X"], out["col_names"]
@@ -699,8 +759,15 @@ def make_panel_flow_data(
     if beta_o is None:
         beta_o = [0.5, 0.3]
     out = dgp.generate_panel_flow_data(
-        n=n, T=T, G=G, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w,
-        beta_d=beta_d, beta_o=beta_o, sigma=sigma,
+        n=n,
+        T=T,
+        G=G,
+        rho_d=rho_d,
+        rho_o=rho_o,
+        rho_w=rho_w,
+        beta_d=beta_d,
+        beta_o=beta_o,
+        sigma=sigma,
         sigma_alpha=sigma_alpha,
         seed=int(rng.integers(0, 2**31)),
     )
@@ -724,8 +791,15 @@ def make_panel_poisson_flow_data(
     Returns (y, X, col_names) in time-first stacking order.
     """
     out = dgp.generate_panel_poisson_flow_data(
-        n=n, T=T, G=G, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w,
-        beta_d=beta_d, beta_o=beta_o, k=k,
+        n=n,
+        T=T,
+        G=G,
+        rho_d=rho_d,
+        rho_o=rho_o,
+        rho_w=rho_w,
+        beta_d=beta_d,
+        beta_o=beta_o,
+        k=k,
         seed=int(rng.integers(0, 2**31)),
     )
     return out["y"], out["X"], out["col_names"]

@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from bayespecon import SARPanelTobit, SEMPanelTobit
-from .helpers  import (
+
+from .helpers import (
     PANEL_N,
     PANEL_T,
     SAMPLE_KWARGS,
@@ -37,7 +38,9 @@ def test_sar_panel_tobit_recovers_rho_and_beta(rng, W_panel_dense, W_panel_graph
         sigma=SIGMA_TRUE,
         censoring=CENSOR_TRUE,
     )
-    model = SARPanelTobit(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, censoring=CENSOR_TRUE)
+    model = SARPanelTobit(
+        y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, censoring=CENSOR_TRUE
+    )
     idata = model.fit(**SAMPLE_KWARGS)
 
     rho_hat = float(idata.posterior["rho"].mean())
@@ -59,7 +62,9 @@ def test_sem_panel_tobit_recovers_lam_and_beta(rng, W_panel_dense, W_panel_graph
         sigma=SIGMA_TRUE,
         censoring=CENSOR_TRUE,
     )
-    model = SEMPanelTobit(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, censoring=CENSOR_TRUE)
+    model = SEMPanelTobit(
+        y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, censoring=CENSOR_TRUE
+    )
     idata = model.fit(**SAMPLE_KWARGS)
 
     lam_hat = float(idata.posterior["lam"].mean())

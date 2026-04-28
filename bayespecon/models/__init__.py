@@ -5,26 +5,41 @@ single import surface.
 """
 
 from .base import SpatialModel
-from .slx import SLX
-from .ols import OLS
-from .sar import SAR
-from .sem import SEM
-from .sdm import SDM
-from .sdem import SDEM
-from .tobit import SARTobit, SEMTobit, SDMTobit
-from .spatial_probit import SpatialProbit
-from .panel import OLSPanelFE, SARPanelFE, SEMPanelFE, SDMPanelFE, SDEMPanelFE, SLXPanelFE
-from .panel_dynamic import DLMPanelFE, SDMRPanelFE, SDMUPanelFE, SARPanelDEDynamic, SEMPanelDEDynamic, SDEMPanelDEDynamic, SLXPanelDEDynamic
-from .panel_base import SpatialPanelModel
-from .panel_re import OLSPanelRE, SARPanelRE, SEMPanelRE
-from .panel_tobit import SARPanelTobit, SEMPanelTobit
 from .flow_panel import (
     FlowPanelModel,
-    SAR_Flow_Panel,
-    SAR_Flow_Separable_Panel,
-    PoissonFlow_Panel,
-    PoissonFlow_Separable_Panel,
+    PoissonSARFlowPanel,
+    PoissonSARFlowSeparablePanel,
+    SARFlowPanel,
+    SARFlowSeparablePanel,
 )
+from .ols import OLS
+from .panel import (
+    OLSPanelFE,
+    SARPanelFE,
+    SDEMPanelFE,
+    SDMPanelFE,
+    SEMPanelFE,
+    SLXPanelFE,
+)
+from .panel_base import SpatialPanelModel
+from .panel_dynamic import (
+    OLSPanelDynamic,
+    SARPanelDynamic,
+    SDEMPanelDynamic,
+    SDMRPanelDynamic,
+    SDMUPanelDynamic,
+    SEMPanelDynamic,
+    SLXPanelDynamic,
+)
+from .panel_re import OLSPanelRE, SARPanelRE, SDEMPanelRE, SEMPanelRE
+from .panel_tobit import SARPanelTobit, SEMPanelTobit
+from .sar import SAR
+from .sdem import SDEM
+from .sdm import SDM
+from .sem import SEM
+from .slx import SLX
+from .spatial_probit import SpatialProbit
+from .tobit import SARTobit, SDMTobit, SEMTobit
 
 __all__ = [
     "SpatialModel",
@@ -44,22 +59,23 @@ __all__ = [
     "SDMPanelFE",
     "SDEMPanelFE",
     "SLXPanelFE",
-    "DLMPanelFE",
-    "SDMRPanelFE",
-    "SDMUPanelFE",
-    "SARPanelDEDynamic",
-    "SEMPanelDEDynamic",
-    "SDEMPanelDEDynamic",
-    "SLXPanelDEDynamic",
+    "OLSPanelDynamic",
+    "SDMRPanelDynamic",
+    "SDMUPanelDynamic",
+    "SARPanelDynamic",
+    "SEMPanelDynamic",
+    "SDEMPanelDynamic",
+    "SLXPanelDynamic",
     "OLSPanelRE",
     "SARPanelRE",
     "SEMPanelRE",
+    "SDEMPanelRE",
     "SARPanelTobit",
     "SEMPanelTobit",
     "SpatialPanelModel",
     "FlowPanelModel",
-    "SAR_Flow_Panel",
-    "SAR_Flow_Separable_Panel",
-    "PoissonFlow_Panel",
-    "PoissonFlow_Separable_Panel",
+    "SARFlowPanel",
+    "SARFlowSeparablePanel",
+    "PoissonSARFlowPanel",
+    "PoissonSARFlowSeparablePanel",
 ]

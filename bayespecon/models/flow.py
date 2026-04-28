@@ -20,10 +20,10 @@ where :math:`N = n^2`.
 
 Two variants are provided:
 
-* :class:`SAR_Flow` — three free ρ parameters with a Dirichlet stability
+* :class:`SARFlow` — three free ρ parameters with a Dirichlet stability
   constraint (default) or a quadratic-wall potential when competitive effects
   are needed (``restrict_positive=False``).
-* :class:`SAR_Flow_Separable` — constrained :math:`\\rho_w = -\\rho_d \\rho_o`,
+* :class:`SARFlowSeparable` — constrained :math:`\\rho_w = -\\rho_d \\rho_o`,
   enabling exact eigenvalue-based log-determinant.
 """
 
@@ -45,10 +45,100 @@ from ..logdet import (
     _flow_logdet_poly_coeffs,
     compute_flow_traces,
     flow_logdet_pytensor,
-    logdet_eigenvalue,
     make_flow_separable_logdet,
 )
-from ..ops import kron_solve_vec
+from ..ops import kron_solve_matrix, kron_solve_vec
+
+
+def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build (N, n) boolean masks for LeSage origin/destination/intra shocks.
+
+    For each region ``j``, column ``j`` flags the flow indices receiving the
+    region-specific shock under the LeSage (2008) effects decomposition:
+
+    - ``dmask[:, j]``: flows whose destination = j and origin ≠ j (β_d shock).
+    - ``omask[:, j]``: flows whose origin = j and destination ≠ j (β_o shock).
+    - ``imask[:, j]``: the intra flow (j, j) (β_d + β_o shock).
+
+    Flow vec ordering is row-major ``arr[o, d].ravel()`` so flat index
+    ``i = o * n + d``.
+    """
+    N = n * n
+    flat = np.arange(N)
+    o_idx = flat // n
+    d_idx = flat % n
+    j = np.arange(n)
+    dmask = (d_idx[:, None] == j[None, :]) & (o_idx[:, None] != j[None, :])
+    omask = (o_idx[:, None] == j[None, :]) & (d_idx[:, None] != j[None, :])
+    imask = (o_idx[:, None] == j[None, :]) & (d_idx[:, None] == j[None, :])
+    return dmask, omask, imask
+
+
+def _compute_flow_effects_lesage(
+    A_solve,
+    dmask: np.ndarray,
+    omask: np.ndarray,
+    imask: np.ndarray,
+    beta_d: np.ndarray,
+    beta_o: np.ndarray,
+    n: int,
+    k: int,
+) -> dict[str, float]:
+    """Compute scalar LeSage effects for one posterior draw.
+
+    Parameters
+    ----------
+    A_solve : callable
+        Function ``A_solve(rhs)`` that solves ``A x = rhs`` for ``rhs`` of shape
+        ``(N, n)`` where ``N = n * n``.  Must accept a 2-D right-hand side.
+    dmask, omask, imask : np.ndarray, shape (N, n), dtype bool
+        Region-shock masks from :func:`_build_flow_effect_masks`.
+    beta_d, beta_o : np.ndarray, shape (k,)
+        Destination and origin coefficient vectors for one posterior draw.
+    n, k : int
+        Number of regions and number of regional attribute predictors.
+
+    Returns
+    -------
+    dict
+        Keys ``"origin"``, ``"destination"``, ``"intra"``, ``"network"``,
+        ``"total"``; each value is a length-``k`` array of scalar effects.
+    """
+    N = n * n
+    out_total = np.empty(k, dtype=np.float64)
+    out_intra = np.empty(k, dtype=np.float64)
+    out_origin = np.empty(k, dtype=np.float64)
+    out_dest = np.empty(k, dtype=np.float64)
+    out_network = np.empty(k, dtype=np.float64)
+
+    for p in range(k):
+        bd = float(beta_d[p])
+        bo = float(beta_o[p])
+        shock = np.zeros((N, n), dtype=np.float64)
+        shock[dmask] = bd
+        shock[omask] = bo
+        shock[imask] = bd + bo
+
+        T_resp = A_solve(shock)  # (N, n)
+        total = T_resp.sum() / N
+        intra = T_resp[imask].sum() / N
+        origin = T_resp[omask].sum() / N
+        dest = T_resp[dmask].sum() / N
+        network = total - origin - dest - intra
+
+        out_total[p] = total
+        out_intra[p] = intra
+        out_origin[p] = origin
+        out_dest[p] = dest
+        out_network[p] = network
+
+    return {
+        "total": out_total,
+        "destination": out_dest,
+        "origin": out_origin,
+        "intra": out_intra,
+        "network": out_network,
+    }
 
 
 class FlowModel(ABC):
@@ -94,7 +184,7 @@ class FlowModel(ABC):
         How to compute :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`.
         ``"traces"`` uses Barry-Pace stochastic traces with the multinomial
         Kronecker identity (the default and recommended method).
-        ``"separable"`` (SAR_Flow_Separable only) uses eigenvalues of W.
+        ``"separable"`` (SARFlowSeparable only) uses eigenvalues of W.
     restrict_positive : bool, default True
         If True, use a ``pm.Dirichlet`` prior that restricts :math:`\\rho_d,
         \\rho_o, \\rho_w \\geq 0` with :math:`\\rho_d + \\rho_o + \\rho_w \\leq 1`.
@@ -171,8 +261,7 @@ class FlowModel(ABC):
             X_arr = X_arr[:, None]
         if X_arr.shape[0] != self._N:
             raise ValueError(
-                f"X must have {self._N} rows (= n² = {self._n}²), "
-                f"got {X_arr.shape[0]}."
+                f"X must have {self._N} rows (= n² = {self._n}²), got {X_arr.shape[0]}."
             )
 
         self._X_design: np.ndarray = X_arr  # (N, p)
@@ -188,7 +277,9 @@ class FlowModel(ABC):
         if k is not None:
             self._k: int = k
         else:
-            dest_cols = [name for name in self._feature_names if name.startswith("dest_")]
+            dest_cols = [
+                name for name in self._feature_names if name.startswith("dest_")
+            ]
             self._k = len(dest_cols)
             if self._k == 0:
                 # Fallback: cannot infer k from column names; effects decomposition
@@ -201,14 +292,21 @@ class FlowModel(ABC):
         self._separable_logdet_fn = None
         _SEPARABLE_METHODS = {"separable", "eigenvalue", "chebyshev", "mc_poly"}
         if logdet_method in _SEPARABLE_METHODS:
-            _method_key = "eigenvalue" if logdet_method == "separable" else logdet_method
+            _method_key = (
+                "eigenvalue" if logdet_method == "separable" else logdet_method
+            )
             self._separable_logdet_fn = make_flow_separable_logdet(
-                self._W_sparse, self._n, method=_method_key,
-                miter=miter, riter=trace_riter, random_state=trace_seed,
+                self._W_sparse,
+                self._n,
+                method=_method_key,
+                miter=miter,
+                riter=trace_riter,
+                random_state=trace_seed,
             )
             if logdet_method in ("separable", "eigenvalue"):
                 self._W_eigs = np.linalg.eigvals(
-                    self._W_sparse.toarray().astype(np.float64)).real
+                    self._W_sparse.toarray().astype(np.float64)
+                ).real
 
         # Pre-compute spatial lags: Wd_y, Wo_y, Ww_y
         wms = flow_weight_matrices(G)
@@ -220,6 +318,9 @@ class FlowModel(ABC):
         self._Wd: sp.csr_matrix = wms["destination"]
         self._Wo: sp.csr_matrix = wms["origin"]
         self._Ww: sp.csr_matrix = wms["network"]
+
+        # Cache region-shock masks for LeSage effects decomposition.
+        self._dmask, self._omask, self._imask = _build_flow_effect_masks(self._n)
 
         # Pre-compute flow log-det traces (only for "traces" method)
         if logdet_method == "traces":
@@ -355,9 +456,7 @@ class FlowModel(ABC):
         """
         method = method.lower()
         if method not in {"advi", "fullrank_advi"}:
-            raise ValueError(
-                "fit_approx method must be 'advi' or 'fullrank_advi'."
-            )
+            raise ValueError("fit_approx method must be 'advi' or 'fullrank_advi'.")
 
         model = self._build_pymc_model()
         self._pymc_model = model
@@ -442,13 +541,173 @@ class FlowModel(ABC):
         I_N = sp.eye(self._N, format="csr", dtype=np.float64)
         return I_N - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
 
+    # ------------------------------------------------------------------
+    # Public diagnostics
+    # ------------------------------------------------------------------
+
+    def spatial_effects(
+        self,
+        draws: Optional[int] = None,
+        return_posterior_samples: bool = False,
+        ci: float = 0.95,
+    ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
+        """Summarise posterior origin/destination/intra/network/total effects.
+
+        Wraps :meth:`_compute_spatial_effects_posterior` to produce a tidy
+        DataFrame indexed by predictor with posterior means, credible-interval
+        bounds, and Bayesian p-values for each effect type (origin,
+        destination, intra, network, total).
+
+        Parameters
+        ----------
+        draws : int, optional
+            Maximum number of posterior draws to use.  Defaults to all.
+        return_posterior_samples : bool, default False
+            If True, also return the underlying posterior-draw arrays.
+        ci : float, default 0.95
+            Credible-interval coverage.
+
+        Returns
+        -------
+        pandas.DataFrame, or (DataFrame, dict)
+            Long-format summary table.  When ``return_posterior_samples=True``,
+            the second element is the raw posterior dictionary returned by
+            :meth:`_compute_spatial_effects_posterior`.
+        """
+        from ..diagnostics.spatial_effects import _compute_bayesian_pvalue
+
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+        if self._k == 0:
+            raise RuntimeError(
+                "Cannot compute spatial effects: no `dest_*` columns detected "
+                "in the design matrix.  Pass `k=` explicitly when constructing "
+                "the model."
+            )
+
+        posterior = self._compute_spatial_effects_posterior(draws=draws)
+
+        # Predictor names: prefer dest_* labels stripped of the prefix.
+        feature_names = [
+            name[len("dest_") :] if name.startswith("dest_") else name
+            for name in self._feature_names
+            if name.startswith("dest_")
+        ][: self._k]
+        if len(feature_names) != self._k:
+            feature_names = [f"x{i}" for i in range(self._k)]
+
+        alpha = (1.0 - ci) / 2.0
+        rows = []
+        for effect_name, samples in posterior.items():
+            means = samples.mean(axis=0)
+            lower = np.quantile(samples, alpha, axis=0)
+            upper = np.quantile(samples, 1.0 - alpha, axis=0)
+            pvals = _compute_bayesian_pvalue(samples)
+            for j, fname in enumerate(feature_names):
+                rows.append(
+                    {
+                        "predictor": fname,
+                        "effect": effect_name,
+                        "mean": float(means[j]),
+                        "ci_lower": float(lower[j]),
+                        "ci_upper": float(upper[j]),
+                        "bayes_pvalue": float(pvals[j]),
+                    }
+                )
+
+        df = pd.DataFrame(rows).set_index(["predictor", "effect"])
+        if return_posterior_samples:
+            return df, posterior
+        return df
+
+    def _simulate_y_rep(
+        self,
+        rho_d: float,
+        rho_o: float,
+        rho_w: float,
+        beta: np.ndarray,
+        sigma: Optional[float],
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        """Draw a single posterior-predictive replicate.
+
+        Default implementation: Gaussian SAR flow,
+        ``y_rep = A^{-1} (X β + σ ε)`` with ``ε ~ N(0, I_N)``.
+        Subclasses (PoissonSARFlow, PoissonSARFlowSeparable) override this.
+        """
+        A = self._assemble_A(rho_d, rho_o, rho_w)
+        Xb = self._X_design @ beta
+        eps = rng.normal(scale=float(sigma), size=self._N) if sigma is not None else 0.0
+        rhs = Xb + eps
+        return sp.linalg.spsolve(A, rhs)
+
+    def posterior_predictive(
+        self,
+        n_draws: Optional[int] = None,
+        random_seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """Draw posterior-predictive samples ``y_rep``.
+
+        For each (subsampled) posterior draw, simulates a new flow vector
+        ``y_rep`` from the implied data-generating process by solving the
+        sparse system ``A(rho) y_rep = X β + ε`` (Gaussian) or
+        ``y_rep ~ Poisson(exp(A^{-1} X β))`` (Poisson variants).
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of posterior draws to use.  Defaults to all available.
+        random_seed : int, optional
+            Seed for the noise/Poisson sampler.
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape ``(n_draws, N)`` with posterior-predictive flows.
+        """
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        post = self._idata.posterior
+        rho_d = post["rho_d"].values.reshape(-1)
+        rho_o = post["rho_o"].values.reshape(-1)
+        rho_w = post["rho_w"].values.reshape(-1)
+        beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
+        sigma_draws = (
+            post["sigma"].values.reshape(-1) if "sigma" in post.data_vars else None
+        )
+
+        total = len(rho_d)
+        if n_draws is not None:
+            total = min(int(n_draws), total)
+            rho_d = rho_d[:total]
+            rho_o = rho_o[:total]
+            rho_w = rho_w[:total]
+            beta_draws = beta_draws[:total]
+            if sigma_draws is not None:
+                sigma_draws = sigma_draws[:total]
+
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g in range(total):
+            sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
+            out[g] = self._simulate_y_rep(
+                float(rho_d[g]),
+                float(rho_o[g]),
+                float(rho_w[g]),
+                beta_draws[g],
+                sigma_g,
+                rng,
+            )
+        return out
+
 
 # ---------------------------------------------------------------------------
-# Model 1: SAR_Flow — unrestricted 3-ρ
+# Model 1: SARFlow — unrestricted 3-ρ
 # ---------------------------------------------------------------------------
 
 
-class SAR_Flow(FlowModel):
+class SARFlow(FlowModel):
     """Bayesian SAR flow model with three free spatial autoregressive parameters.
 
     .. math::
@@ -553,13 +812,17 @@ class SAR_Flow(FlowModel):
     ) -> dict[str, np.ndarray]:
         """Compute posterior origin / destination / intra / network / total effects.
 
-        For each posterior draw of (ρ_d, ρ_o, ρ_w, β_d, β_o), solves the
-        scalar summary-statistic system following LeSage (2005) ``calc_effects.m``.
-
-        The shock vector for predictor *p* is
-        :math:`z_p = (\\beta_d^{(p)} + \\beta_o^{(p)})\\,\\mathbf{1}_N`, so
-        :math:`T_p = A^{-1} z_p = (\\beta_d^{(p)} + \\beta_o^{(p)})\\,A^{-1}\\mathbf{1}_N`.
-        Consequently **one N×N solve per draw** suffices for all *k* predictors.
+        Implements the LeSage (2008) effects decomposition: for each posterior
+        draw of :math:`(\\rho_d, \\rho_o, \\rho_w, \\beta_d, \\beta_o)` and each
+        regional predictor *p*, builds an :math:`N\\times n` shock matrix whose
+        column ``j`` contains :math:`\\beta_d^{(p)}` at flows with destination
+        ``j``, :math:`\\beta_o^{(p)}` at flows with origin ``j``, and
+        :math:`\\beta_d^{(p)} + \\beta_o^{(p)}` at the intra flow ``(j, j)``.
+        The system :math:`A\\,T = \\text{shock}` is solved with one sparse
+        :math:`LU` factorisation per draw (re-used for all ``n`` columns and all
+        ``k`` predictors), and scalar effects are obtained by averaging
+        :math:`T` over the appropriate masks.  Mirrors LeSage's
+        ``calc_effects.m`` reference implementation.
 
         Parameters
         ----------
@@ -577,13 +840,14 @@ class SAR_Flow(FlowModel):
 
         idata = self._idata
         n = self._n
-        N = self._N
         k = self._k
 
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
         rho_w_draws = idata.posterior["rho_w"].values.reshape(-1)
-        beta_draws = idata.posterior["beta"].values.reshape(-1, len(self._feature_names))
+        beta_draws = idata.posterior["beta"].values.reshape(
+            -1, len(self._feature_names)
+        )
 
         dest_start = 2
         orig_start = 2 + k
@@ -596,57 +860,46 @@ class SAR_Flow(FlowModel):
             rho_w_draws = rho_w_draws[:n_draws_total]
             beta_draws = beta_draws[:n_draws_total]
 
-        # Precompute masks (same for all draws)
-        intra_mask = np.eye(n, dtype=bool).ravel()  # (N,) diagonal positions
-        ones_N = np.ones(N, dtype=np.float64)
-
-        out_origin  = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_dest    = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_intra   = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_network = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_total   = np.zeros((n_draws_total, k), dtype=np.float64)
+        out = {
+            key: np.zeros((n_draws_total, k), dtype=np.float64)
+            for key in ("origin", "destination", "intra", "network", "total")
+        }
 
         for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             rw = float(rho_w_draws[idx])
-            beta_d_vec = beta_draws[idx, dest_start : dest_start + k]  # (k,)
-            beta_o_vec = beta_draws[idx, orig_start : orig_start + k]  # (k,)
+            beta_d_vec = beta_draws[idx, dest_start : dest_start + k]
+            beta_o_vec = beta_draws[idx, orig_start : orig_start + k]
 
-            # z_p = (bd[p] + bo[p]) * ones_N for every predictor p, so
-            # T_p = A^{-1} z_p = scale[p] * t_ones  where  t_ones = A^{-1} ones_N.
-            # One sparse factorisation covers all k predictors.
-            A = self._assemble_A(rd, ro, rw)
-            t_ones = sp.linalg.spsolve(A, ones_N)  # (N,)
+            A = self._assemble_A(rd, ro, rw).tocsc()
+            lu = sp.linalg.splu(A)
 
-            scale = beta_d_vec + beta_o_vec  # (k,)
-            # T_all[:, p] = t_ones * scale[p]
-            T_all = t_ones[:, np.newaxis] * scale[np.newaxis, :]  # (N, k)
+            def _solve(rhs: np.ndarray, _lu=lu) -> np.ndarray:
+                return _lu.solve(rhs)
 
-            totals = T_all.mean(axis=0)                              # (k,)
-            intras = T_all[intra_mask, :].sum(axis=0) / N           # (k,)
-            # T_dest = T_orig = T_all (dest/orig loops cover all N positions)
-            out_total[idx, :]   = totals
-            out_intra[idx, :]   = intras
-            out_dest[idx, :]    = totals
-            out_origin[idx, :]  = totals
-            out_network[idx, :] = totals - intras - totals - totals
+            res = _compute_flow_effects_lesage(
+                _solve,
+                self._dmask,
+                self._omask,
+                self._imask,
+                beta_d_vec,
+                beta_o_vec,
+                n,
+                k,
+            )
+            for key, arr in res.items():
+                out[key][idx, :] = arr
 
-        return {
-            "total":       out_total,
-            "destination": out_dest,
-            "origin":      out_origin,
-            "intra":       out_intra,
-            "network":     out_network,
-        }
+        return out
 
 
 # ---------------------------------------------------------------------------
-# Model 2: SAR_Flow_Separable — constrained ρ_w = −ρ_d·ρ_o
+# Model 2: SARFlowSeparable — constrained ρ_w = −ρ_d·ρ_o
 # ---------------------------------------------------------------------------
 
 
-class SAR_Flow_Separable(FlowModel):
+class SARFlowSeparable(FlowModel):
     """Bayesian separable SAR flow model with ρ_w = −ρ_d · ρ_o.
 
     The separability constraint :math:`\\rho_w = -\\rho_d \\rho_o` reduces
@@ -690,7 +943,7 @@ class SAR_Flow_Separable(FlowModel):
         _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
-                f"SAR_Flow_Separable logdet_method must be one of {sorted(_VALID)}; "
+                f"SARFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
                 f"got {method!r}."
             )
         kwargs["logdet_method"] = method
@@ -705,7 +958,7 @@ class SAR_Flow_Separable(FlowModel):
 
         if self._separable_logdet_fn is None:
             raise RuntimeError(
-                "SAR_Flow_Separable requires precomputed logdet data; "
+                "SARFlowSeparable requires precomputed logdet data; "
                 "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -740,10 +993,12 @@ class SAR_Flow_Separable(FlowModel):
     ) -> dict[str, np.ndarray]:
         """Compute posterior effects using Kronecker-factored solve.
 
-        Identical statistics to :meth:`SAR_Flow._compute_spatial_effects_posterior`
-        but exploits :math:`A = L_o \\otimes L_d` to replace the
+        Implements the LeSage (2008) effects decomposition (see
+        :meth:`SARFlow._compute_spatial_effects_posterior`) but exploits
+        :math:`A = L_o \\otimes L_d` to replace the
         :math:`N\\times N` sparse factorisation with two :math:`n\\times n`
-        sparse solves via :func:`~bayespecon.ops.kron_solve_vec`.
+        sparse solves per predictor via
+        :func:`~bayespecon.ops.kron_solve_matrix`.
 
         Parameters
         ----------
@@ -753,21 +1008,22 @@ class SAR_Flow_Separable(FlowModel):
         Returns
         -------
         dict[str, np.ndarray]
-            Same keys and shapes as :meth:`SAR_Flow._compute_spatial_effects_posterior`.
+            Same keys and shapes as :meth:`SARFlow._compute_spatial_effects_posterior`.
         """
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
 
         idata = self._idata
         n = self._n
-        N = self._N
         k = self._k
         W = self._W_sparse.tocsr()
         I_n = sp.eye(n, format="csr", dtype=np.float64)
 
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
-        beta_draws = idata.posterior["beta"].values.reshape(-1, len(self._feature_names))
+        beta_draws = idata.posterior["beta"].values.reshape(
+            -1, len(self._feature_names)
+        )
 
         dest_start = 2
         orig_start = 2 + k
@@ -777,54 +1033,47 @@ class SAR_Flow_Separable(FlowModel):
             n_draws_total = min(draws, n_draws_total)
             rho_d_draws = rho_d_draws[:n_draws_total]
             rho_o_draws = rho_o_draws[:n_draws_total]
-            beta_draws  = beta_draws[:n_draws_total]
+            beta_draws = beta_draws[:n_draws_total]
 
-        intra_mask = np.eye(n, dtype=bool).ravel()  # (N,) diagonal positions
-        ones_N = np.ones(N, dtype=np.float64)
-
-        out_origin  = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_dest    = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_intra   = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_network = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_total   = np.zeros((n_draws_total, k), dtype=np.float64)
+        out = {
+            key: np.zeros((n_draws_total, k), dtype=np.float64)
+            for key in ("origin", "destination", "intra", "network", "total")
+        }
 
         for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
-            beta_d_vec = beta_draws[idx, dest_start : dest_start + k]  # (k,)
-            beta_o_vec = beta_draws[idx, orig_start : orig_start + k]  # (k,)
+            beta_d_vec = beta_draws[idx, dest_start : dest_start + k]
+            beta_o_vec = beta_draws[idx, orig_start : orig_start + k]
 
             Ld = (I_n - rd * W).tocsr()
             Lo = (I_n - ro * W).tocsr()
-            # Two n×n solves instead of one N×N factorisation
-            t_ones = kron_solve_vec(Lo, Ld, ones_N, n)  # (N,)
 
-            scale = beta_d_vec + beta_o_vec  # (k,)
-            T_all = t_ones[:, np.newaxis] * scale[np.newaxis, :]  # (N, k)
+            def _solve(rhs: np.ndarray, _Lo=Lo, _Ld=Ld, _n=n) -> np.ndarray:
+                return kron_solve_matrix(_Lo, _Ld, rhs, _n)
 
-            totals = T_all.mean(axis=0)                    # (k,)
-            intras = T_all[intra_mask, :].sum(axis=0) / N  # (k,)
-            out_total[idx, :]   = totals
-            out_intra[idx, :]   = intras
-            out_dest[idx, :]    = totals
-            out_origin[idx, :]  = totals
-            out_network[idx, :] = totals - intras - totals - totals
+            res = _compute_flow_effects_lesage(
+                _solve,
+                self._dmask,
+                self._omask,
+                self._imask,
+                beta_d_vec,
+                beta_o_vec,
+                n,
+                k,
+            )
+            for key, arr in res.items():
+                out[key][idx, :] = arr
 
-        return {
-            "total":       out_total,
-            "destination": out_dest,
-            "origin":      out_origin,
-            "intra":       out_intra,
-            "network":     out_network,
-        }
+        return out
 
 
 # ---------------------------------------------------------------------------
-# Model 3: PoissonFlow — Poisson response, unrestricted 3-rho
+# Model 3: PoissonSARFlow — Poisson response, unrestricted 3-rho
 # ---------------------------------------------------------------------------
 
 
-class PoissonFlow(SAR_Flow):
+class PoissonSARFlow(SARFlow):
     r"""Bayesian SAR flow model with a Poisson observation distribution.
 
     Models origin-destination flow **counts** :math:`y_{ij} \in \mathbb{N}_0`
@@ -866,16 +1115,31 @@ class PoissonFlow(SAR_Flow):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "PoissonFlow requires integer-valued observations; "
+                    "PoissonSARFlow requires integer-valued observations; "
                     f"got dtype {y_arr.dtype} with non-integer values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "PoissonFlow requires non-negative integer observations."
+                "PoissonSARFlow requires non-negative integer observations."
             )
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
+
+    def _simulate_y_rep(
+        self,
+        rho_d: float,
+        rho_o: float,
+        rho_w: float,
+        beta: np.ndarray,
+        sigma: Optional[float],  # unused
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        A = self._assemble_A(rho_d, rho_o, rho_w)
+        eta = sp.linalg.spsolve(A, self._X_design @ beta)
+        # Clip to avoid overflow on extreme draws.
+        lam = np.exp(np.clip(eta, -50.0, 50.0))
+        return rng.poisson(lam).astype(np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
         from ..ops import SparseFlowSolveOp
@@ -903,9 +1167,7 @@ class PoissonFlow(SAR_Flow):
                     pt.switch(slack > 0.0, 0.0, -1e6 * slack**2),
                 )
 
-            beta = pm.Normal(
-                "beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient"
-            )
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
 
             Xb = pt.dot(X_t, beta)
             solve_op = SparseFlowSolveOp(self._Wd, self._Wo, self._Ww)
@@ -937,14 +1199,14 @@ class PoissonFlow(SAR_Flow):
 
 
 # ---------------------------------------------------------------------------
-# Model 4: PoissonFlow_Separable — Poisson response, rho_w = -rho_d * rho_o
+# Model 4: PoissonSARFlowSeparable — Poisson response, rho_w = -rho_d * rho_o
 # ---------------------------------------------------------------------------
 
 
-class PoissonFlow_Separable(SAR_Flow_Separable):
+class PoissonSARFlowSeparable(SARFlowSeparable):
     r"""Bayesian separable SAR flow model with a Poisson observation distribution.
 
-    Combines the Poisson observation model of :class:`PoissonFlow` with the
+    Combines the Poisson observation model of :class:`PoissonSARFlow` with the
     separability constraint :math:`\rho_w = -\rho_d \rho_o`, enabling the
     exact eigenvalue-based log-determinant:
 
@@ -970,16 +1232,32 @@ class PoissonFlow_Separable(SAR_Flow_Separable):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "PoissonFlow_Separable requires integer-valued observations; "
+                    "PoissonSARFlowSeparable requires integer-valued observations; "
                     f"got dtype {y_arr.dtype} with non-integer values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "PoissonFlow_Separable requires non-negative integer observations."
+                "PoissonSARFlowSeparable requires non-negative integer observations."
             )
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
+
+    def _simulate_y_rep(
+        self,
+        rho_d: float,
+        rho_o: float,
+        rho_w: float,  # ignored: separable constraint enforces rho_w = -rho_d*rho_o
+        beta: np.ndarray,
+        sigma: Optional[float],  # unused
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        I_n = sp.eye(self._n, format="csr", dtype=np.float64)
+        Ld = I_n - rho_d * self._W_sparse
+        Lo = I_n - rho_o * self._W_sparse
+        eta = kron_solve_vec(Lo, Ld, self._X_design @ beta, self._n)
+        lam = np.exp(np.clip(eta, -50.0, 50.0))
+        return rng.poisson(lam).astype(np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
         from ..ops import KroneckerFlowSolveOp
@@ -990,7 +1268,11 @@ class PoissonFlow_Separable(SAR_Flow_Separable):
         rho_upper = self.priors.get("rho_upper", 0.999)
 
         n = self._n
-        eigs = self._W_eigs.astype(np.float64)
+        if self._separable_logdet_fn is None:
+            raise RuntimeError(
+                "PoissonSARFlowSeparable requires precomputed logdet data; "
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+            )
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -998,9 +1280,7 @@ class PoissonFlow_Separable(SAR_Flow_Separable):
             rho_o = pm.Uniform("rho_o", lower=rho_lower, upper=rho_upper)
             pm.Deterministic("rho_w", -rho_d * rho_o)
 
-            beta = pm.Normal(
-                "beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient"
-            )
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
 
             # KroneckerFlowSolveOp exploits A = L_d ⊗ L_o (two n×n solves
             # instead of one n²×n² solve — O(n³) vs O(n⁶)).
@@ -1014,7 +1294,7 @@ class PoissonFlow_Separable(SAR_Flow_Separable):
 
             pm.Potential(
                 "jacobian",
-                n * logdet_eigenvalue(rho_d, eigs) + n * logdet_eigenvalue(rho_o, eigs),
+                self._separable_logdet_fn(rho_d, rho_o),
             )
 
         return model

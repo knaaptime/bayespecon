@@ -16,7 +16,6 @@ import pytest
 import scipy.sparse as sp
 from pytensor.gradient import verify_grad
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -53,7 +52,9 @@ def _kron_ref_matrix(rd, ro, W, B):
     return np.column_stack([_kron_ref(rd, ro, W, B[:, t]) for t in range(B.shape[1])])
 
 
-def _flow_weight_mats(W: sp.csr_matrix) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+def _flow_weight_mats(
+    W: sp.csr_matrix,
+) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
     """Build unrestricted flow weight matrices from an n x n spatial weight matrix."""
     n = W.shape[0]
     I = sp.eye(n, format="csr")
@@ -211,7 +212,7 @@ class TestKroneckerFlowSolveOp:
         solve_op = KroneckerFlowSolveOp(W, n)
         rd_t = pt.dscalar("rd")
         ro_t = pt.dscalar("ro")
-        b_t  = pt.dvector("b")
+        b_t = pt.dvector("b")
         eta_t = solve_op(rd_t, ro_t, b_t)
         f = pytensor.function([rd_t, ro_t, b_t], eta_t)
 
@@ -228,7 +229,9 @@ class TestKroneckerFlowSolveOp:
         b = rng.normal(size=n * n)
 
         solve_op = KroneckerFlowSolveOp(W, n)
-        rd_t = pt.dscalar(); ro_t = pt.dscalar(); b_t = pt.dvector()
+        rd_t = pt.dscalar()
+        ro_t = pt.dscalar()
+        b_t = pt.dvector()
         eta_t = solve_op(rd_t, ro_t, b_t)
         f = pytensor.function([rd_t, ro_t, b_t], eta_t)
         assert f(0.1, -0.1, b).shape == (n * n,)
@@ -284,7 +287,9 @@ class TestKroneckerFlowSolveMatrixOp:
         B = rng.normal(size=(n * n, T))
 
         solve_op = KroneckerFlowSolveMatrixOp(W, n)
-        rd_t = pt.dscalar(); ro_t = pt.dscalar(); B_t = pt.dmatrix()
+        rd_t = pt.dscalar()
+        ro_t = pt.dscalar()
+        B_t = pt.dmatrix()
         H_t = solve_op(rd_t, ro_t, B_t)
         f = pytensor.function([rd_t, ro_t, B_t], H_t)
 
@@ -301,7 +306,9 @@ class TestKroneckerFlowSolveMatrixOp:
         B = rng.normal(size=(n * n, T))
 
         solve_op = KroneckerFlowSolveMatrixOp(W, n)
-        rd_t = pt.dscalar(); ro_t = pt.dscalar(); B_t = pt.dmatrix()
+        rd_t = pt.dscalar()
+        ro_t = pt.dscalar()
+        B_t = pt.dmatrix()
         H_t = solve_op(rd_t, ro_t, B_t)
         f = pytensor.function([rd_t, ro_t, B_t], H_t)
         assert f(0.1, -0.1, B).shape == (n * n, T)
@@ -339,7 +346,7 @@ class TestKroneckerFlowSolveMatrixOpVJP:
 
 
 # ---------------------------------------------------------------------------
-# Smoke test: logp compiles for PoissonFlow_Separable at moderate n
+# Smoke test: logp compiles for PoissonSARFlowSeparable at moderate n
 # ---------------------------------------------------------------------------
 
 
@@ -347,8 +354,8 @@ class TestSeparablePoissonLogpCompiles:
     @pytest.mark.slow
     def test_logp_compiles_n20(self):
         """Check that the Kronecker op compiles inside PyMC at n=20."""
-        from bayespecon.models.flow import PoissonFlow_Separable
         from bayespecon.graph import flow_weight_matrices
+        from bayespecon.models.flow import PoissonSARFlowSeparable
 
         n = 20
         rng = np.random.default_rng(6)
@@ -356,19 +363,20 @@ class TestSeparablePoissonLogpCompiles:
         pytest.importorskip("libpysal")
         from libpysal.graph import Graph
 
-        focal    = np.concatenate([np.arange(n), np.arange(n)])
+        focal = np.concatenate([np.arange(n), np.arange(n)])
         neighbor = np.concatenate([(np.arange(n) - 1) % n, (np.arange(n) + 1) % n])
-        weights  = np.ones(2 * n, dtype=float)
+        weights = np.ones(2 * n, dtype=float)
         graph = Graph.from_arrays(focal, neighbor, weights).transform("r")
 
         y = rng.poisson(5.0, size=(n, n)).astype(np.float64)
         X = rng.normal(size=(n * n, 2))
 
-        model_obj = PoissonFlow_Separable(y, graph, X)
+        model_obj = PoissonSARFlowSeparable(y, graph, X)
         pm_model = model_obj._build_pymc_model()
 
         # Just test that logp can be evaluated at the initial point
         import pymc as pm
+
         with pm_model:
             ip = pm_model.initial_point()
             lp = pm_model.compile_logp()(ip)

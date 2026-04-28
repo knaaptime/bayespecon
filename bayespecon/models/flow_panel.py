@@ -26,10 +26,13 @@ from ..logdet import (
     _flow_logdet_poly_coeffs,
     compute_flow_traces,
     flow_logdet_pytensor,
-    logdet_eigenvalue,
     make_flow_separable_logdet,
 )
-from ..ops import kron_solve_vec
+from ..ops import kron_solve_matrix
+from .flow import (
+    _build_flow_effect_masks,
+    _compute_flow_effects_lesage,
+)
 from .panel_base import _demean_panel
 
 
@@ -116,7 +119,9 @@ class FlowPanelModel(ABC):
         if y_arr.ndim == 3:
             expected = (self._T, self._n, self._n)
             if y_arr.shape != expected:
-                raise ValueError(f"y with 3 dims must have shape {expected}, got {y_arr.shape}.")
+                raise ValueError(
+                    f"y with 3 dims must have shape {expected}, got {y_arr.shape}."
+                )
             y_vec = y_arr.reshape(self._T, self._N_flow).reshape(-1)
         elif y_arr.ndim == 2:
             if y_arr.shape == (self._T, self._N_flow):
@@ -167,7 +172,9 @@ class FlowPanelModel(ABC):
         if k is not None:
             self._k: int = int(k)
         else:
-            dest_cols = [name for name in self._feature_names if name.startswith("dest_")]
+            dest_cols = [
+                name for name in self._feature_names if name.startswith("dest_")
+            ]
             self._k = len(dest_cols)
 
         # Demean panel data using N_flow panel units (OD pairs)
@@ -189,6 +196,9 @@ class FlowPanelModel(ABC):
         self._Wo: sp.csr_matrix = wms["origin"]
         self._Ww: sp.csr_matrix = wms["network"]
 
+        # Cache region-shock masks for LeSage effects decomposition.
+        self._dmask, self._omask, self._imask = _build_flow_effect_masks(self._n)
+
         # Spatial lags on demeaned/stationary panel stack
         self._Wd_y = self._sparse_flow_panel_lag(self._y, self._Wd)
         self._Wo_y = self._sparse_flow_panel_lag(self._y, self._Wo)
@@ -200,13 +210,23 @@ class FlowPanelModel(ABC):
         self._separable_logdet_fn = None
         _SEPARABLE_METHODS = {"separable", "eigenvalue", "chebyshev", "mc_poly"}
         if self.logdet_method in _SEPARABLE_METHODS:
-            _method_key = "eigenvalue" if self.logdet_method == "separable" else self.logdet_method
+            _method_key = (
+                "eigenvalue"
+                if self.logdet_method == "separable"
+                else self.logdet_method
+            )
             self._separable_logdet_fn = make_flow_separable_logdet(
-                self._W_sparse, self._n, method=_method_key,
-                miter=miter, riter=trace_riter, random_state=trace_seed,
+                self._W_sparse,
+                self._n,
+                method=_method_key,
+                miter=miter,
+                riter=trace_riter,
+                random_state=trace_seed,
             )
             if self.logdet_method in ("separable", "eigenvalue"):
-                self._W_eigs = np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64)).real
+                self._W_eigs = np.linalg.eigvals(
+                    self._W_sparse.toarray().astype(np.float64)
+                ).real
 
         # Precompute traces for unrestricted flow Jacobian when requested
         if self.logdet_method == "traces":
@@ -296,9 +316,7 @@ class FlowPanelModel(ABC):
         """Fit a variational approximation and return posterior draws."""
         method = method.lower()
         if method not in {"advi", "fullrank_advi"}:
-            raise ValueError(
-                "fit_approx method must be 'advi' or 'fullrank_advi'."
-            )
+            raise ValueError("fit_approx method must be 'advi' or 'fullrank_advi'.")
 
         model = self._build_pymc_model()
         self._pymc_model = model
@@ -363,10 +381,178 @@ class FlowPanelModel(ABC):
         eye_n = sp.eye(self._N_flow, format="csr", dtype=np.float64)
         return eye_n - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
 
-    def _sparse_flow_panel_lag(self, v: np.ndarray, W_flow: sp.csr_matrix) -> np.ndarray:
+    def _sparse_flow_panel_lag(
+        self, v: np.ndarray, W_flow: sp.csr_matrix
+    ) -> np.ndarray:
         """Apply panel flow lag I_T kron W_flow to time-first stacked vector."""
         chunks = v.reshape(self._T, self._N_flow)
         return np.asarray((W_flow @ chunks.T).T, dtype=np.float64).reshape(-1)
+
+    # ------------------------------------------------------------------
+    # Public diagnostics
+    # ------------------------------------------------------------------
+
+    def spatial_effects(
+        self,
+        draws: Optional[int] = None,
+        return_posterior_samples: bool = False,
+        ci: float = 0.95,
+    ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
+        """Summarise posterior origin/destination/intra/network/total effects.
+
+        Wraps :meth:`_compute_spatial_effects_posterior` to produce a tidy
+        DataFrame with posterior means, credible-interval bounds, and Bayesian
+        p-values for each effect type.  Effects are evaluated on the
+        one-period :math:`n^2 \\times n^2` flow system (time-invariant under
+        static panel parameters).
+
+        Parameters
+        ----------
+        draws : int, optional
+            Maximum number of posterior draws to use.  Defaults to all.
+        return_posterior_samples : bool, default False
+            If True, also return the underlying posterior-draw arrays.
+        ci : float, default 0.95
+            Credible-interval coverage.
+
+        Returns
+        -------
+        pandas.DataFrame, or (DataFrame, dict)
+        """
+        from ..diagnostics.spatial_effects import _compute_bayesian_pvalue
+
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+        if self._k == 0:
+            raise RuntimeError(
+                "Cannot compute spatial effects: no `dest_*` columns detected "
+                "in the design matrix.  Pass `k=` explicitly when constructing "
+                "the model."
+            )
+
+        posterior = self._compute_spatial_effects_posterior(draws=draws)
+
+        feature_names = [
+            name[len("dest_") :] if name.startswith("dest_") else name
+            for name in self._feature_names
+            if name.startswith("dest_")
+        ][: self._k]
+        if len(feature_names) != self._k:
+            feature_names = [f"x{i}" for i in range(self._k)]
+
+        alpha = (1.0 - ci) / 2.0
+        rows = []
+        for effect_name, samples in posterior.items():
+            means = samples.mean(axis=0)
+            lower = np.quantile(samples, alpha, axis=0)
+            upper = np.quantile(samples, 1.0 - alpha, axis=0)
+            pvals = _compute_bayesian_pvalue(samples)
+            for j, fname in enumerate(feature_names):
+                rows.append(
+                    {
+                        "predictor": fname,
+                        "effect": effect_name,
+                        "mean": float(means[j]),
+                        "ci_lower": float(lower[j]),
+                        "ci_upper": float(upper[j]),
+                        "bayes_pvalue": float(pvals[j]),
+                    }
+                )
+
+        df = pd.DataFrame(rows).set_index(["predictor", "effect"])
+        if return_posterior_samples:
+            return df, posterior
+        return df
+
+    def _simulate_y_rep_period(
+        self,
+        rho_d: float,
+        rho_o: float,
+        rho_w: float,
+        beta: np.ndarray,
+        sigma: Optional[float],
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        """Draw a single posterior-predictive replicate for the full panel.
+
+        Default Gaussian implementation: :math:`y_{rep,t} = A^{-1}(X_t \\beta + \\sigma\\varepsilon_t)`
+        for each period ``t``, with a single sparse :math:`LU` factorisation
+        of :math:`A` reused across periods.  Subclasses (Poisson variants)
+        override this method.
+        """
+        N = self._N_flow
+        T = self._T
+        A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
+        lu = sp.linalg.splu(A)
+        Xb = self._X_design @ beta  # (N*T,)
+        Xb_mat = Xb.reshape(T, N).T  # (N, T)
+        if sigma is not None:
+            noise = rng.normal(scale=float(sigma), size=(N, T))
+            rhs = Xb_mat + noise
+        else:
+            rhs = Xb_mat
+        out = lu.solve(rhs)  # (N, T)
+        return out.T.reshape(-1)  # back to time-first stacked vector
+
+    def posterior_predictive(
+        self,
+        n_draws: Optional[int] = None,
+        random_seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """Draw posterior-predictive samples ``y_rep`` for the full panel stack.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of posterior draws to use.  Defaults to all.
+        random_seed : int, optional
+            Seed for the noise/Poisson sampler.
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape ``(n_draws, N_flow * T)`` with posterior-predictive
+            flows in time-first stacked order.
+        """
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        post = self._idata.posterior
+        rho_d = post["rho_d"].values.reshape(-1)
+        rho_o = post["rho_o"].values.reshape(-1)
+        rho_w = post["rho_w"].values.reshape(-1)
+        beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
+        sigma_draws = (
+            post["sigma"].values.reshape(-1) if "sigma" in post.data_vars else None
+        )
+
+        total = len(rho_d)
+        if n_draws is not None:
+            total = min(int(n_draws), total)
+            rho_d = rho_d[:total]
+            rho_o = rho_o[:total]
+            rho_w = rho_w[:total]
+            beta_draws = beta_draws[:total]
+            if sigma_draws is not None:
+                sigma_draws = sigma_draws[:total]
+
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
+        for g in range(total):
+            sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
+            out[g] = self._simulate_y_rep_period(
+                float(rho_d[g]),
+                float(rho_o[g]),
+                float(rho_w[g]),
+                beta_draws[g],
+                sigma_g,
+                rng,
+            )
+        return out
+
+    # ------------------------------------------------------------------
+    # Internal effects helpers
+    # ------------------------------------------------------------------
 
     def _compute_flow_effects_from_draws(
         self,
@@ -376,18 +562,15 @@ class FlowPanelModel(ABC):
         beta_draws: np.ndarray,
         draws: Optional[int] = None,
     ) -> dict[str, np.ndarray]:
-        """Compute flow effects from posterior draws.
+        """Compute LeSage flow effects from posterior draws.
 
-        Effects are computed using one-period n² system matrices, which are
-        time-invariant under static panel parameters.
-
-        For each draw, the shock vector for predictor *p* is
-        :math:`z_p = (\\beta_d^{(p)} + \\beta_o^{(p)})\\,\\mathbf{1}_N`, so
-        :math:`T_p = A^{-1} z_p = (\\beta_d^{(p)} + \\beta_o^{(p)})\\,A^{-1}\\mathbf{1}_N`.
-        One N×N sparse solve per draw covers all *k* predictors.
+        Effects are computed using one-period :math:`n^2 \\times n^2` system
+        matrices, which are time-invariant under static panel parameters.  See
+        :func:`~bayespecon.models.flow._compute_flow_effects_lesage` for the
+        decomposition.  One sparse :math:`LU` factorisation per draw covers all
+        :math:`n` shock columns and all :math:`k` predictors.
         """
         n = self._n
-        N = self._N_flow
         k = self._k
 
         dest_start = 2
@@ -401,43 +584,38 @@ class FlowPanelModel(ABC):
             rho_w_draws = rho_w_draws[:n_draws_total]
             beta_draws = beta_draws[:n_draws_total]
 
-        intra_mask = np.eye(n, dtype=bool).ravel()  # (N,) diagonal positions
-        ones_N = np.ones(N, dtype=np.float64)
-
-        out_origin  = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_dest    = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_intra   = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_network = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_total   = np.zeros((n_draws_total, k), dtype=np.float64)
+        out = {
+            key: np.zeros((n_draws_total, k), dtype=np.float64)
+            for key in ("origin", "destination", "intra", "network", "total")
+        }
 
         for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             rw = float(rho_w_draws[idx])
-            beta_d_vec = beta_draws[idx, dest_start:dest_start + k]
-            beta_o_vec = beta_draws[idx, orig_start:orig_start + k]
+            beta_d_vec = beta_draws[idx, dest_start : dest_start + k]
+            beta_o_vec = beta_draws[idx, orig_start : orig_start + k]
 
-            A = self._assemble_A(rd, ro, rw)
-            t_ones = sp.linalg.spsolve(A, ones_N)  # (N,) — one solve covers all k
+            A = self._assemble_A(rd, ro, rw).tocsc()
+            lu = sp.linalg.splu(A)
 
-            scale = beta_d_vec + beta_o_vec  # (k,)
-            T_all = t_ones[:, np.newaxis] * scale[np.newaxis, :]  # (N, k)
+            def _solve(rhs: np.ndarray, _lu=lu) -> np.ndarray:
+                return _lu.solve(rhs)
 
-            totals = T_all.mean(axis=0)                    # (k,)
-            intras = T_all[intra_mask, :].sum(axis=0) / N  # (k,)
-            out_total[idx, :]   = totals
-            out_intra[idx, :]   = intras
-            out_dest[idx, :]    = totals
-            out_origin[idx, :]  = totals
-            out_network[idx, :] = totals - intras - totals - totals
+            res = _compute_flow_effects_lesage(
+                _solve,
+                self._dmask,
+                self._omask,
+                self._imask,
+                beta_d_vec,
+                beta_o_vec,
+                n,
+                k,
+            )
+            for key, arr in res.items():
+                out[key][idx, :] = arr
 
-        return {
-            "total":       out_total,
-            "destination": out_dest,
-            "origin":      out_origin,
-            "intra":       out_intra,
-            "network":     out_network,
-        }
+        return out
 
     def _compute_flow_effects_kron(
         self,
@@ -446,15 +624,14 @@ class FlowPanelModel(ABC):
         beta_draws: np.ndarray,
         draws: Optional[int] = None,
     ) -> dict[str, np.ndarray]:
-        """Compute flow effects via Kronecker-factored solve (separable models only).
+        """Compute LeSage flow effects via Kronecker-factored solve.
 
         Replaces the :math:`N\\times N` sparse factorisation in
         :meth:`_compute_flow_effects_from_draws` with two :math:`n\\times n`
-        solves via :func:`~bayespecon.ops.kron_solve_vec`, exploiting
+        solves via :func:`~bayespecon.ops.kron_solve_matrix`, exploiting
         :math:`A = L_o \\otimes L_d`.
         """
         n = self._n
-        N = self._N_flow
         k = self._k
         W = self._W_sparse.tocsr()
         I_n = sp.eye(n, format="csr", dtype=np.float64)
@@ -467,53 +644,47 @@ class FlowPanelModel(ABC):
             n_draws_total = min(draws, n_draws_total)
             rho_d_draws = rho_d_draws[:n_draws_total]
             rho_o_draws = rho_o_draws[:n_draws_total]
-            beta_draws  = beta_draws[:n_draws_total]
+            beta_draws = beta_draws[:n_draws_total]
 
-        intra_mask = np.eye(n, dtype=bool).ravel()  # (N,)
-        ones_N = np.ones(N, dtype=np.float64)
-
-        out_origin  = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_dest    = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_intra   = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_network = np.zeros((n_draws_total, k), dtype=np.float64)
-        out_total   = np.zeros((n_draws_total, k), dtype=np.float64)
+        out = {
+            key: np.zeros((n_draws_total, k), dtype=np.float64)
+            for key in ("origin", "destination", "intra", "network", "total")
+        }
 
         for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
-            beta_d_vec = beta_draws[idx, dest_start:dest_start + k]
-            beta_o_vec = beta_draws[idx, orig_start:orig_start + k]
+            beta_d_vec = beta_draws[idx, dest_start : dest_start + k]
+            beta_o_vec = beta_draws[idx, orig_start : orig_start + k]
 
             Ld = (I_n - rd * W).tocsr()
             Lo = (I_n - ro * W).tocsr()
-            t_ones = kron_solve_vec(Lo, Ld, ones_N, n)  # (N,)
 
-            scale = beta_d_vec + beta_o_vec  # (k,)
-            T_all = t_ones[:, np.newaxis] * scale[np.newaxis, :]  # (N, k)
+            def _solve(rhs: np.ndarray, _Lo=Lo, _Ld=Ld, _n=n) -> np.ndarray:
+                return kron_solve_matrix(_Lo, _Ld, rhs, _n)
 
-            totals = T_all.mean(axis=0)
-            intras = T_all[intra_mask, :].sum(axis=0) / N
-            out_total[idx, :]   = totals
-            out_intra[idx, :]   = intras
-            out_dest[idx, :]    = totals
-            out_origin[idx, :]  = totals
-            out_network[idx, :] = totals - intras - totals - totals
+            res = _compute_flow_effects_lesage(
+                _solve,
+                self._dmask,
+                self._omask,
+                self._imask,
+                beta_d_vec,
+                beta_o_vec,
+                n,
+                k,
+            )
+            for key, arr in res.items():
+                out[key][idx, :] = arr
 
-        return {
-            "total":       out_total,
-            "destination": out_dest,
-            "origin":      out_origin,
-            "intra":       out_intra,
-            "network":     out_network,
-        }
+        return out
 
 
-class SAR_Flow_Panel(FlowPanelModel):
+class SARFlowPanel(FlowPanelModel):
     """Panel SAR flow model with three free rho parameters."""
 
     def _build_pymc_model(self) -> pm.Model:
         if self.logdet_method != "traces":
-            raise ValueError("SAR_Flow_Panel supports logdet_method='traces' only.")
+            raise ValueError("SARFlowPanel supports logdet_method='traces' only.")
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
@@ -586,7 +757,9 @@ class SAR_Flow_Panel(FlowPanelModel):
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
         rho_w_draws = idata.posterior["rho_w"].values.reshape(-1)
-        beta_draws = idata.posterior["beta"].values.reshape(-1, len(self._feature_names))
+        beta_draws = idata.posterior["beta"].values.reshape(
+            -1, len(self._feature_names)
+        )
         return self._compute_flow_effects_from_draws(
             rho_d_draws,
             rho_o_draws,
@@ -596,7 +769,7 @@ class SAR_Flow_Panel(FlowPanelModel):
         )
 
 
-class SAR_Flow_Separable_Panel(FlowPanelModel):
+class SARFlowSeparablePanel(FlowPanelModel):
     """Panel separable SAR flow model with rho_w = -rho_d * rho_o."""
 
     def __init__(self, y, G, X, **kwargs):
@@ -607,7 +780,7 @@ class SAR_Flow_Separable_Panel(FlowPanelModel):
         _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
-                f"SAR_Flow_Separable_Panel logdet_method must be one of {sorted(_VALID)}; "
+                f"SARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
                 f"got {method!r}."
             )
         kwargs["logdet_method"] = method
@@ -622,10 +795,9 @@ class SAR_Flow_Separable_Panel(FlowPanelModel):
 
         if self._separable_logdet_fn is None:
             raise RuntimeError(
-                "SAR_Flow_Separable_Panel requires precomputed logdet data; "
+                "SARFlowSeparablePanel requires precomputed logdet data; "
                 "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
-        n = self._n
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -665,7 +837,9 @@ class SAR_Flow_Separable_Panel(FlowPanelModel):
         idata = self._idata
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
-        beta_draws = idata.posterior["beta"].values.reshape(-1, len(self._feature_names))
+        beta_draws = idata.posterior["beta"].values.reshape(
+            -1, len(self._feature_names)
+        )
         return self._compute_flow_effects_kron(
             rho_d_draws,
             rho_o_draws,
@@ -674,7 +848,7 @@ class SAR_Flow_Separable_Panel(FlowPanelModel):
         )
 
 
-class PoissonFlow_Panel(FlowPanelModel):
+class PoissonSARFlowPanel(FlowPanelModel):
     """Panel Poisson SAR flow model with three free rho parameters.
 
     Notes
@@ -687,7 +861,7 @@ class PoissonFlow_Panel(FlowPanelModel):
         model_mode = int(kwargs.get("model", 0))
         if model_mode != 0:
             raise ValueError(
-                "PoissonFlow_Panel currently supports model=0 only. "
+                "PoissonSARFlowPanel currently supports model=0 only. "
                 "Within-transformed FE panels are not valid for Poisson counts."
             )
 
@@ -696,13 +870,13 @@ class PoissonFlow_Panel(FlowPanelModel):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "PoissonFlow_Panel requires integer-valued observations; "
+                    "PoissonSARFlowPanel requires integer-valued observations; "
                     f"got dtype {y_arr.dtype} with non-integer values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "PoissonFlow_Panel requires non-negative integer observations."
+                "PoissonSARFlowPanel requires non-negative integer observations."
             )
 
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
@@ -712,12 +886,14 @@ class PoissonFlow_Panel(FlowPanelModel):
         from ..ops import SparseFlowSolveMatrixOp
 
         if self.logdet_method != "traces":
-            raise ValueError("PoissonFlow_Panel supports logdet_method='traces' only.")
+            raise ValueError(
+                "PoissonSARFlowPanel supports logdet_method='traces' only."
+            )
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
 
-        N = self._N_flow   # n²
+        N = self._N_flow  # n²
         T = self._T
         X_t = pt.as_tensor_variable(self._X.astype(np.float64))
 
@@ -743,11 +919,11 @@ class PoissonFlow_Panel(FlowPanelModel):
 
             # Reshape Xb to (N, T) so that A^{-1} B can be solved with one
             # LU factorisation covering all T periods (SparseFlowSolveMatrixOp).
-            Xb = pt.dot(X_t, beta)                        # (N*T,)
-            Xb_mat = pt.reshape(Xb, (T, N)).T         # (N, T), one column per period
+            Xb = pt.dot(X_t, beta)  # (N*T,)
+            Xb_mat = pt.reshape(Xb, (T, N)).T  # (N, T), one column per period
             solve_op = SparseFlowSolveMatrixOp(self._Wd, self._Wo, self._Ww)
             eta_mat = solve_op(rho_d, rho_o, rho_w, Xb_mat)  # (N, T)
-            eta = pt.reshape(eta_mat.T, (N * T,))    # (N*T,), back to time-first order
+            eta = pt.reshape(eta_mat.T, (N * T,))  # (N*T,), back to time-first order
             lam = pm.Deterministic("lambda", pt.exp(eta))
 
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
@@ -785,7 +961,9 @@ class PoissonFlow_Panel(FlowPanelModel):
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
         rho_w_draws = idata.posterior["rho_w"].values.reshape(-1)
-        beta_draws = idata.posterior["beta"].values.reshape(-1, len(self._feature_names))
+        beta_draws = idata.posterior["beta"].values.reshape(
+            -1, len(self._feature_names)
+        )
         return self._compute_flow_effects_from_draws(
             rho_d_draws,
             rho_o_draws,
@@ -794,8 +972,29 @@ class PoissonFlow_Panel(FlowPanelModel):
             draws=draws,
         )
 
+    def _simulate_y_rep_period(
+        self,
+        rho_d: float,
+        rho_o: float,
+        rho_w: float,
+        beta: np.ndarray,
+        sigma: Optional[float],  # unused
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        """Poisson posterior-predictive replicate for the full panel stack."""
+        N = self._N_flow
+        T = self._T
+        A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
+        lu = sp.linalg.splu(A)
+        Xb = self._X_design @ beta
+        Xb_mat = Xb.reshape(T, N).T
+        eta_mat = lu.solve(Xb_mat)
+        eta = eta_mat.T.reshape(-1)
+        lam = np.exp(np.clip(eta, -50.0, 50.0))
+        return rng.poisson(lam).astype(np.float64)
 
-class PoissonFlow_Separable_Panel(FlowPanelModel):
+
+class PoissonSARFlowSeparablePanel(FlowPanelModel):
     """Panel separable Poisson SAR flow model with rho_w = -rho_d * rho_o.
 
     Notes
@@ -807,7 +1006,7 @@ class PoissonFlow_Separable_Panel(FlowPanelModel):
         model_mode = int(kwargs.get("model", 0))
         if model_mode != 0:
             raise ValueError(
-                "PoissonFlow_Separable_Panel currently supports model=0 only. "
+                "PoissonSARFlowSeparablePanel currently supports model=0 only. "
                 "Within-transformed FE panels are not valid for Poisson counts."
             )
 
@@ -816,13 +1015,13 @@ class PoissonFlow_Separable_Panel(FlowPanelModel):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "PoissonFlow_Separable_Panel requires integer-valued observations; "
+                    "PoissonSARFlowSeparablePanel requires integer-valued observations; "
                     f"got dtype {y_arr.dtype} with non-integer values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "PoissonFlow_Separable_Panel requires non-negative integer observations."
+                "PoissonSARFlowSeparablePanel requires non-negative integer observations."
             )
 
         method = kwargs.pop("logdet_method", "eigenvalue")
@@ -831,7 +1030,7 @@ class PoissonFlow_Separable_Panel(FlowPanelModel):
         _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
-                f"PoissonFlow_Separable_Panel logdet_method must be one of {sorted(_VALID)}; "
+                f"PoissonSARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
                 f"got {method!r}."
             )
         kwargs["logdet_method"] = method
@@ -848,29 +1047,29 @@ class PoissonFlow_Separable_Panel(FlowPanelModel):
 
         if self._separable_logdet_fn is None:
             raise RuntimeError(
-                "PoissonFlow_Separable_Panel requires precomputed logdet data; "
+                "PoissonSARFlowSeparablePanel requires precomputed logdet data; "
                 "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         n = self._n
-        N = self._N_flow   # n²
+        N = self._N_flow  # n²
         T = self._T
         X_t = pt.as_tensor_variable(self._X.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             rho_d = pm.Uniform("rho_d", lower=rho_lower, upper=rho_upper)
             rho_o = pm.Uniform("rho_o", lower=rho_lower, upper=rho_upper)
-            rho_w = pm.Deterministic("rho_w", -rho_d * rho_o)
+            pm.Deterministic("rho_w", -rho_d * rho_o)
 
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
 
             # KroneckerFlowSolveMatrixOp: A = L_d ⊗ L_o (two n×n solves
             # covering all T columns — O(n³) regardless of T).
             # rho_w is kept as a Deterministic for trace reporting only.
-            Xb = pt.dot(X_t, beta)                            # (N*T,)
-            Xb_mat = pt.reshape(Xb, (T, N)).T         # (N, T), one column per period
+            Xb = pt.dot(X_t, beta)  # (N*T,)
+            Xb_mat = pt.reshape(Xb, (T, N)).T  # (N, T), one column per period
             solve_op = KroneckerFlowSolveMatrixOp(self._W_sparse, n)
-            eta_mat = solve_op(rho_d, rho_o, Xb_mat)          # (N, T)
-            eta = pt.reshape(eta_mat.T, (N * T,))    # (N*T,), back to time-first order
+            eta_mat = solve_op(rho_d, rho_o, Xb_mat)  # (N, T)
+            eta = pt.reshape(eta_mat.T, (N * T,))  # (N*T,), back to time-first order
             lam = pm.Deterministic("lambda", pt.exp(eta))
 
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
@@ -892,10 +1091,35 @@ class PoissonFlow_Separable_Panel(FlowPanelModel):
         idata = self._idata
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
-        beta_draws = idata.posterior["beta"].values.reshape(-1, len(self._feature_names))
+        beta_draws = idata.posterior["beta"].values.reshape(
+            -1, len(self._feature_names)
+        )
         return self._compute_flow_effects_kron(
             rho_d_draws,
             rho_o_draws,
             beta_draws,
             draws=draws,
         )
+
+    def _simulate_y_rep_period(
+        self,
+        rho_d: float,
+        rho_o: float,
+        rho_w: float,  # ignored; rho_w = -rho_d * rho_o
+        beta: np.ndarray,
+        sigma: Optional[float],  # unused
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        """Poisson posterior-predictive replicate using Kronecker solve."""
+        N = self._N_flow
+        T = self._T
+        n = self._n
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        Ld = (I_n - rho_d * self._W_sparse).tocsr()
+        Lo = (I_n - rho_o * self._W_sparse).tocsr()
+        Xb = self._X_design @ beta
+        Xb_mat = Xb.reshape(T, N).T  # (N, T)
+        eta_mat = kron_solve_matrix(Lo, Ld, Xb_mat, n)
+        eta = eta_mat.T.reshape(-1)
+        lam = np.exp(np.clip(eta, -50.0, 50.0))
+        return rng.poisson(lam).astype(np.float64)

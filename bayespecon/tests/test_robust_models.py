@@ -19,35 +19,35 @@ import pytest
 from bayespecon import (
     OLS,
     SAR,
-    SDM,
     SDEM,
+    SDM,
     SEM,
     SLX,
-    SARPanelFE,
-    SEMPanelFE,
-    SDMPanelFE,
-    SDEMPanelFE,
-    SLXPanelFE,
     OLSPanelFE,
-    SARPanelRE,
-    SEMPanelRE,
     OLSPanelRE,
-    SARTobit,
-    SEMTobit,
-    SDMTobit,
+    SARPanelFE,
+    SARPanelRE,
     SARPanelTobit,
+    SARTobit,
+    SDEMPanelFE,
+    SDMPanelFE,
+    SDMTobit,
+    SEMPanelFE,
+    SEMPanelRE,
     SEMPanelTobit,
+    SEMTobit,
+    SLXPanelFE,
     SpatialProbit,
 )
 from bayespecon.dgp import simulate_sar, simulate_sem
 
 from .helpers import (
-    SAMPLE_KWARGS,
     PANEL_N,
     PANEL_T,
-    make_rook_W,
-    make_line_W,
+    SAMPLE_KWARGS,
     W_to_graph,
+    make_line_W,
+    make_rook_W,
 )
 
 pytestmark = [pytest.mark.slow, pytest.mark.recovery]
@@ -61,6 +61,7 @@ SIDE = 6  # 36 cross-sectional units
 # ---------------------------------------------------------------------------
 # Cross-sectional model tests
 # ---------------------------------------------------------------------------
+
 
 class TestRobustCrossSectional:
     """Robust (Student-t) error distribution for cross-sectional models."""
@@ -90,7 +91,9 @@ class TestRobustCrossSectional:
         W_graph = W_to_graph(W)
         model = OLS(y=y, X=X, W=W_graph)
         idata = model.fit(**QUICK_KWARGS)
-        assert "nu" not in idata.posterior, "nu should NOT be in posterior when robust=False"
+        assert "nu" not in idata.posterior, (
+            "nu should NOT be in posterior when robust=False"
+        )
         assert "beta" in idata.posterior
 
     def test_sar_robust_builds_and_samples(self, sar_data):
@@ -138,35 +141,48 @@ class TestRobustCrossSectional:
 # Panel FE model tests
 # ---------------------------------------------------------------------------
 
+
 class TestRobustPanelFE:
     """Robust (Student-t) error distribution for panel FE models."""
 
     @pytest.fixture
     def panel_data(self, rng):
         from bayespecon.dgp import simulate_panel_sar_fe
+
         W = make_line_W(PANEL_N)
         W_graph = W_to_graph(W)
         out = simulate_panel_sar_fe(
-            N=PANEL_N, T=PANEL_T, rho=0.3, beta=np.array([1.0, 2.0]),
-            sigma=0.5, rng=rng, W=W,
+            N=PANEL_N,
+            T=PANEL_T,
+            rho=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.5,
+            rng=rng,
+            W=W,
         )
         return out["y"], out["X"], W_graph
 
     def test_ols_panel_fe_robust(self, panel_data):
         y, X, W_graph = panel_data
-        model = OLSPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True)
+        model = OLSPanelFE(
+            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True
+        )
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior
 
     def test_sar_panel_fe_robust(self, panel_data):
         y, X, W_graph = panel_data
-        model = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True)
+        model = SARPanelFE(
+            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True
+        )
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior
 
     def test_sem_panel_fe_robust(self, panel_data):
         y, X, W_graph = panel_data
-        model = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True)
+        model = SEMPanelFE(
+            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True
+        )
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior
 
@@ -175,17 +191,24 @@ class TestRobustPanelFE:
 # Panel RE model tests
 # ---------------------------------------------------------------------------
 
+
 class TestRobustPanelRE:
     """Robust (Student-t) error distribution for panel RE models."""
 
     @pytest.fixture
     def panel_re_data(self, rng):
         from bayespecon.dgp import simulate_panel_sar_re
+
         W = make_line_W(PANEL_N)
         W_graph = W_to_graph(W)
         out = simulate_panel_sar_re(
-            N=PANEL_N, T=PANEL_T, rho=0.3, beta=np.array([1.0, 2.0]),
-            sigma=0.5, rng=rng, W=W,
+            N=PANEL_N,
+            T=PANEL_T,
+            rho=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.5,
+            rng=rng,
+            W=W,
         )
         return out["y"], out["X"], W_graph
 
@@ -211,6 +234,7 @@ class TestRobustPanelRE:
 # ---------------------------------------------------------------------------
 # Tobit model tests
 # ---------------------------------------------------------------------------
+
 
 class TestRobustTobit:
     """Robust (Student-t) error distribution for Tobit models."""
@@ -256,6 +280,7 @@ class TestRobustTobit:
 # SpatialProbit — should raise NotImplementedError
 # ---------------------------------------------------------------------------
 
+
 class TestRobustSpatialProbit:
     """SpatialProbit should raise NotImplementedError when robust=True."""
 
@@ -268,13 +293,16 @@ class TestRobustSpatialProbit:
         X = rng.standard_normal((n, 2))
         y = rng.binomial(1, 0.5, size=n).astype(float)
         model = SpatialProbit(y=y, X=X, W=W_graph, region_ids=region_ids, robust=True)
-        with pytest.raises(NotImplementedError, match="Robust.*not supported.*SpatialProbit"):
+        with pytest.raises(
+            NotImplementedError, match="Robust.*not supported.*SpatialProbit"
+        ):
             model._build_pymc_model()
 
 
 # ---------------------------------------------------------------------------
 # Nu prior parameter test
 # ---------------------------------------------------------------------------
+
 
 class TestNuPriorParameters:
     """Test that nu_lam parameter is passed through correctly."""
@@ -283,7 +311,9 @@ class TestNuPriorParameters:
         W = make_rook_W(SIDE)
         out = simulate_sar(W=W, rho=0.5, beta=np.array([1.0, 2.0]), sigma=0.8, rng=rng)
         W_graph = W_to_graph(W)
-        model = OLS(y=out["y"], X=out["X"], W=W_graph, robust=True, priors={"nu_lam": 1/10})
+        model = OLS(
+            y=out["y"], X=out["X"], W=W_graph, robust=True, priors={"nu_lam": 1 / 10}
+        )
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior
         # With nu_lam=1/10, mean of Exponential is 10, so nu should be > 2

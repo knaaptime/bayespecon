@@ -13,7 +13,6 @@ from libpysal.graph import Graph
 
 from bayespecon.tests.helpers import SAMPLE_KWARGS
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
@@ -215,10 +214,19 @@ class TestFlowLogdetSeparableIdentity:
         rho_o_pt = pt.scalar("rho_o")
         rho_w_pt = pt.scalar("rho_w")
         expr = flow_logdet_pytensor(
-            rho_d_pt, rho_o_pt, rho_w_pt,
-            poly_a, poly_b, poly_c, poly_coeffs,
-            miter_a, miter_b, miter_c, miter_coeffs,
-            miter=miter, titer=800,
+            rho_d_pt,
+            rho_o_pt,
+            rho_w_pt,
+            poly_a,
+            poly_b,
+            poly_c,
+            poly_coeffs,
+            miter_a,
+            miter_b,
+            miter_c,
+            miter_coeffs,
+            miter=miter,
+            titer=800,
         )
         fn_flow = pytensor.function([rho_d_pt, rho_o_pt, rho_w_pt], expr)
         flow_val = float(fn_flow(rd, ro, rw))
@@ -253,39 +261,47 @@ class TestFlowModelConstruction:
         self.y_mat = self.y_vec.reshape(self.n, self.n)
 
     def test_sar_flow_builds_from_vec(self):
-        from bayespecon.models.flow import SAR_Flow
+        from bayespecon.models.flow import SARFlow
 
-        model = SAR_Flow(
-            self.y_vec, self.G, self.X, col_names=self.col_names,
-            miter=5, titer=50, trace_seed=0
+        model = SARFlow(
+            self.y_vec,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         assert model._n == self.n
         assert model._N == self.N
 
     def test_sar_flow_builds_from_mat(self):
-        from bayespecon.models.flow import SAR_Flow
+        from bayespecon.models.flow import SARFlow
 
-        model = SAR_Flow(
-            self.y_mat, self.G, self.X, col_names=self.col_names,
-            miter=5, titer=50, trace_seed=0
+        model = SARFlow(
+            self.y_mat,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         np.testing.assert_allclose(model._y_vec, self.y_vec, atol=1e-12)
 
     def test_sar_flow_separable_builds(self):
-        from bayespecon.models.flow import SAR_Flow_Separable
+        from bayespecon.models.flow import SARFlowSeparable
 
-        model = SAR_Flow_Separable(
+        model = SARFlowSeparable(
             self.y_vec, self.G, self.X, col_names=self.col_names, trace_seed=0
         )
         assert model._n == self.n
 
     def test_wrong_y_length_raises(self):
-        from bayespecon.models.flow import SAR_Flow
+        from bayespecon.models.flow import SARFlow
 
         with pytest.raises(ValueError, match="N="):
-            SAR_Flow(
-                np.zeros(self.N + 1), self.G, self.X, miter=5, trace_seed=0
-            )
+            SARFlow(np.zeros(self.N + 1), self.G, self.X, miter=5, trace_seed=0)
 
     def test_mismatched_beta_shapes_raises_on_dgp(self):
         """generate_flow_data should raise when beta_d and beta_o differ in length."""
@@ -297,19 +313,26 @@ class TestFlowModelConstruction:
             )
 
     def test_pymc_model_builds_without_error(self):
-        from bayespecon.models.flow import SAR_Flow
+        from bayespecon.models.flow import SARFlow
 
-        model = SAR_Flow(
-            self.y_vec, self.G, self.X, col_names=self.col_names,
-            miter=5, titer=50, trace_seed=0
+        model = SARFlow(
+            self.y_vec,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         pm_model = model._build_pymc_model()
         assert pm_model is not None
 
     def test_pymc_model_separable_builds_without_error(self):
-        from bayespecon.models.flow import SAR_Flow_Separable
+        from bayespecon.models.flow import SARFlowSeparable
 
-        model = SAR_Flow_Separable(self.y_vec, self.G, self.X, col_names=self.col_names, trace_seed=0)
+        model = SARFlowSeparable(
+            self.y_vec, self.G, self.X, col_names=self.col_names, trace_seed=0
+        )
         pm_model = model._build_pymc_model()
         assert pm_model is not None
 
@@ -331,8 +354,20 @@ class TestGenerateFlowData:
             self.n, self.G, 0.2, 0.2, 0.1, [1.0, -0.5], [0.5, 0.3], sigma=1.0, seed=0
         )
         expected = {
-            "y_vec", "y_mat", "X", "X_regional", "col_names", "design", "W", "G",
-            "rho_d", "rho_o", "rho_w", "sigma", "beta_d", "beta_o",
+            "y_vec",
+            "y_mat",
+            "X",
+            "X_regional",
+            "col_names",
+            "design",
+            "W",
+            "G",
+            "rho_d",
+            "rho_o",
+            "rho_w",
+            "sigma",
+            "beta_d",
+            "beta_o",
         }
         assert expected.issubset(set(out.keys()))
 
@@ -391,19 +426,32 @@ class TestSARFlowFitSmoke:
         self.n = 5
         self.G = _make_ring_graph(self.n)
         out = generate_flow_data(
-            self.n, self.G, 0.25, 0.25, 0.10, [1.0, -0.5], [0.5, 0.3],
-            sigma=1.0, seed=42
+            self.n,
+            self.G,
+            0.25,
+            0.25,
+            0.10,
+            [1.0, -0.5],
+            [0.5, 0.3],
+            sigma=1.0,
+            seed=42,
         )
         self.y = out["y_vec"]
         self.X = out["X"]  # (N, p) full O-D design matrix
         self.col_names = out["col_names"]
 
     def test_sar_flow_fit_posterior_keys(self):
-        from bayespecon.models.flow import SAR_Flow
+        from bayespecon.models.flow import SARFlow
 
-        model = SAR_Flow(
-            self.y, self.G, self.X, col_names=self.col_names,
-            miter=5, titer=50, trace_seed=0, restrict_positive=True,
+        model = SARFlow(
+            self.y,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            miter=5,
+            titer=50,
+            trace_seed=0,
+            restrict_positive=True,
         )
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
         posterior = idata.posterior
@@ -414,9 +462,9 @@ class TestSARFlowFitSmoke:
         assert "sigma" in posterior
 
     def test_sar_flow_separable_fit_posterior_keys(self):
-        from bayespecon.models.flow import SAR_Flow_Separable
+        from bayespecon.models.flow import SARFlowSeparable
 
-        model = SAR_Flow_Separable(
+        model = SARFlowSeparable(
             self.y, self.G, self.X, col_names=self.col_names, trace_seed=0
         )
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
@@ -427,11 +475,17 @@ class TestSARFlowFitSmoke:
 
     def test_sar_flow_rho_d_o_w_in_unit_interval(self):
         """With Dirichlet prior, rho_d, rho_o, rho_w should stay in [0, 1]."""
-        from bayespecon.models.flow import SAR_Flow
+        from bayespecon.models.flow import SARFlow
 
-        model = SAR_Flow(
-            self.y, self.G, self.X, col_names=self.col_names,
-            miter=5, titer=50, trace_seed=0, restrict_positive=True,
+        model = SARFlow(
+            self.y,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            miter=5,
+            titer=50,
+            trace_seed=0,
+            restrict_positive=True,
         )
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
         rho_d = idata.posterior["rho_d"].values.ravel()
@@ -442,11 +496,16 @@ class TestSARFlowFitSmoke:
         assert (rho_w >= 0).all() and (rho_w <= 1).all()
 
     def test_sar_flow_inference_data_property(self):
-        from bayespecon.models.flow import SAR_Flow
+        from bayespecon.models.flow import SARFlow
 
-        model = SAR_Flow(
-            self.y, self.G, self.X, col_names=self.col_names,
-            miter=5, titer=50, trace_seed=0
+        model = SARFlow(
+            self.y,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         assert model.inference_data is None  # before fit
         model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
@@ -463,14 +522,14 @@ class TestEffectsAccountingIdentity:
 
     def test_effects_sum_to_total(self):
         from bayespecon.dgp.flows import generate_flow_data
-        from bayespecon.models.flow import SAR_Flow_Separable
+        from bayespecon.models.flow import SARFlowSeparable
 
         n = 4
         G = _make_ring_graph(n)
-        out = generate_flow_data(
-            n, G, 0.3, 0.2, -0.06, [1.0], [0.5], sigma=0.5, seed=7
+        out = generate_flow_data(n, G, 0.3, 0.2, -0.06, [1.0], [0.5], sigma=0.5, seed=7)
+        model = SARFlowSeparable(
+            out["y_vec"], G, out["X"], col_names=out["col_names"], trace_seed=0
         )
-        model = SAR_Flow_Separable(out["y_vec"], G, out["X"], col_names=out["col_names"], trace_seed=0)
         # Use minimal posterior (mock-style: just run prior predictive)
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         effects = model._compute_spatial_effects_posterior(draws=5)
@@ -587,12 +646,12 @@ class TestSparseFlowSolveOp:
 
 
 # ---------------------------------------------------------------------------
-# PoissonFlow construction tests
+# PoissonSARFlow construction tests
 # ---------------------------------------------------------------------------
 
 
 class TestPoissonFlowConstruction:
-    """PoissonFlow validates input and builds a PyMC model."""
+    """PoissonSARFlow validates input and builds a PyMC model."""
 
     @pytest.fixture
     def small_data(self):
@@ -601,68 +660,129 @@ class TestPoissonFlowConstruction:
         return generate_poisson_flow_data(n=9, seed=0)
 
     def test_accepts_integer_array(self, small_data):
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         G = small_data["G"]
         y = small_data["y_vec"]
-        model = PoissonFlow(y, G, small_data["X"], col_names=small_data["col_names"], trace_seed=0)
+        model = PoissonSARFlow(
+            y, G, small_data["X"], col_names=small_data["col_names"], trace_seed=0
+        )
         assert model._y_int_vec.dtype == np.int64
 
     def test_rounds_close_floats(self, small_data):
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         G = small_data["G"]
         y_float = small_data["y_vec"].astype(np.float64) + 1e-14
-        model = PoissonFlow(y_float, G, small_data["X"], col_names=small_data["col_names"], trace_seed=0)
+        model = PoissonSARFlow(
+            y_float, G, small_data["X"], col_names=small_data["col_names"], trace_seed=0
+        )
         assert model._y_int_vec.dtype == np.int64
 
     def test_raises_on_non_integer_floats(self, small_data):
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         G = small_data["G"]
         y_bad = small_data["y_vec"].astype(np.float64) + 0.5
         with pytest.raises(ValueError, match="integer-valued"):
-            PoissonFlow(y_bad, G, small_data["X"], col_names=small_data["col_names"], trace_seed=0)
+            PoissonSARFlow(
+                y_bad,
+                G,
+                small_data["X"],
+                col_names=small_data["col_names"],
+                trace_seed=0,
+            )
 
     def test_raises_on_negative_values(self, small_data):
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         G = small_data["G"]
         y_neg = small_data["y_vec"].copy()
         y_neg[0] = -1
         with pytest.raises(ValueError, match="non-negative"):
-            PoissonFlow(y_neg, G, small_data["X"], col_names=small_data["col_names"], trace_seed=0)
+            PoissonSARFlow(
+                y_neg,
+                G,
+                small_data["X"],
+                col_names=small_data["col_names"],
+                trace_seed=0,
+            )
 
     def test_model_builds_without_error(self, small_data):
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         G = small_data["G"]
-        model = PoissonFlow(
-            small_data["y_vec"], G, small_data["X"], col_names=small_data["col_names"],
-            restrict_positive=False, trace_seed=0
+        model = PoissonSARFlow(
+            small_data["y_vec"],
+            G,
+            small_data["X"],
+            col_names=small_data["col_names"],
+            restrict_positive=False,
+            trace_seed=0,
         )
         built = model._build_pymc_model()
         assert built is not None
 
     def test_model_coords_contain_coefficient(self, small_data):
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         G = small_data["G"]
-        model = PoissonFlow(
-            small_data["y_vec"], G, small_data["X"], col_names=small_data["col_names"], trace_seed=0
+        model = PoissonSARFlow(
+            small_data["y_vec"],
+            G,
+            small_data["X"],
+            col_names=small_data["col_names"],
+            trace_seed=0,
         )
         built = model._build_pymc_model()
         assert "coefficient" in built.coords
 
     def test_separable_construction(self, small_data):
-        from bayespecon.models.flow import PoissonFlow_Separable
+        from bayespecon.models.flow import PoissonSARFlowSeparable
 
         G = small_data["G"]
-        model = PoissonFlow_Separable(
-            small_data["y_vec"], G, small_data["X"], col_names=small_data["col_names"], trace_seed=0
+        model = PoissonSARFlowSeparable(
+            small_data["y_vec"],
+            G,
+            small_data["X"],
+            col_names=small_data["col_names"],
+            trace_seed=0,
         )
         built = model._build_pymc_model()
         assert built is not None
+
+    @pytest.mark.parametrize("logdet_method", ["eigenvalue", "chebyshev", "mc_poly"])
+    def test_separable_construction_supports_logdet_methods(
+        self, small_data, logdet_method
+    ):
+        from bayespecon.models.flow import PoissonSARFlowSeparable
+
+        G = small_data["G"]
+        model = PoissonSARFlowSeparable(
+            small_data["y_vec"],
+            G,
+            small_data["X"],
+            col_names=small_data["col_names"],
+            logdet_method=logdet_method,
+            trace_seed=0,
+        )
+        built = model._build_pymc_model()
+        lp = built.point_logps(built.initial_point())
+        assert all(np.isfinite(v) for v in lp.values())
+
+    def test_separable_construction_rejects_unknown_logdet_method(self, small_data):
+        from bayespecon.models.flow import PoissonSARFlowSeparable
+
+        G = small_data["G"]
+        with pytest.raises(ValueError, match="logdet_method"):
+            PoissonSARFlowSeparable(
+                small_data["y_vec"],
+                G,
+                small_data["X"],
+                col_names=small_data["col_names"],
+                logdet_method="spline",
+                trace_seed=0,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -681,9 +801,22 @@ class TestGeneratePoissonFlowData:
 
     def test_keys_present(self, data):
         expected = {
-            "y_vec", "y_mat", "eta_vec", "lambda_vec",
-            "Xd", "Xo", "X", "col_names", "design", "W", "G",
-            "rho_d", "rho_o", "rho_w", "beta_d", "beta_o",
+            "y_vec",
+            "y_mat",
+            "eta_vec",
+            "lambda_vec",
+            "Xd",
+            "Xo",
+            "X",
+            "col_names",
+            "design",
+            "W",
+            "G",
+            "rho_d",
+            "rho_o",
+            "rho_w",
+            "beta_d",
+            "beta_o",
         }
         assert expected <= set(data.keys())
 
@@ -753,7 +886,7 @@ class TestGeneratePoissonFlowData:
 
 
 # ---------------------------------------------------------------------------
-# PoissonFlow smoke fit tests (marked slow)
+# PoissonSARFlow smoke fit tests (marked slow)
 # ---------------------------------------------------------------------------
 
 
@@ -764,11 +897,13 @@ class TestPoissonFlowFitSmoke:
     @pytest.fixture(scope="class")
     def fitted_model(self):
         from bayespecon.dgp.flows import generate_poisson_flow_data
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         data = generate_poisson_flow_data(n=9, seed=0)
         G = data["G"]
-        model = PoissonFlow(data["y_vec"], G, data["X"], col_names=data["col_names"], trace_seed=0)
+        model = PoissonSARFlow(
+            data["y_vec"], G, data["X"], col_names=data["col_names"], trace_seed=0
+        )
         model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
         return model
 
@@ -794,11 +929,13 @@ class TestPoissonFlowFitSmoke:
     @pytest.fixture(scope="class")
     def fitted_separable(self):
         from bayespecon.dgp.flows import generate_poisson_flow_data
-        from bayespecon.models.flow import PoissonFlow_Separable
+        from bayespecon.models.flow import PoissonSARFlowSeparable
 
         data = generate_poisson_flow_data(n=9, seed=1)
         G = data["G"]
-        model = PoissonFlow_Separable(data["y_vec"], G, data["X"], col_names=data["col_names"], trace_seed=0)
+        model = PoissonSARFlowSeparable(
+            data["y_vec"], G, data["X"], col_names=data["col_names"], trace_seed=0
+        )
         model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
         return model
 
@@ -814,10 +951,10 @@ class TestPoissonFlowFitSmoke:
 class TestPoissonFlowApproximation:
     def test_fit_approx_advi_returns_posterior_without_lambda(self):
         from bayespecon.dgp.flows import generate_poisson_flow_data
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         data = generate_poisson_flow_data(n=4, seed=3)
-        model = PoissonFlow(
+        model = PoissonSARFlow(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -838,10 +975,10 @@ class TestPoissonFlowApproximation:
 
     def test_fit_approx_fullrank_keeps_small_deterministics(self):
         from bayespecon.dgp.flows import generate_poisson_flow_data
-        from bayespecon.models.flow import PoissonFlow_Separable
+        from bayespecon.models.flow import PoissonSARFlowSeparable
 
         data = generate_poisson_flow_data(n=4, seed=4)
-        model = PoissonFlow_Separable(
+        model = PoissonSARFlowSeparable(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -862,10 +999,10 @@ class TestPoissonFlowApproximation:
 
     def test_fit_approx_rejects_unknown_method(self):
         from bayespecon.dgp.flows import generate_poisson_flow_data
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         data = generate_poisson_flow_data(n=4, seed=5)
-        model = PoissonFlow(
+        model = PoissonSARFlow(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -929,28 +1066,38 @@ ABS_TOL_SIGMA = 0.35
 
 
 # ---------------------------------------------------------------------------
-# Smoke tests: SAR_Flow_Separable with alternative logdet methods
+# Smoke tests: SARFlowSeparable with alternative logdet methods
 # ---------------------------------------------------------------------------
 
 
 class TestSARFlowSeparableLogdetMethods:
-    """SAR_Flow_Separable fits without error for each logdet method."""
+    """SARFlowSeparable fits without error for each logdet method."""
 
     @pytest.fixture(params=["eigenvalue", "chebyshev", "mc_poly"], scope="class")
     def fitted_model(self, request):
         from bayespecon.dgp.flows import generate_flow_data
-        from bayespecon.models.flow import SAR_Flow_Separable
+        from bayespecon.models.flow import SARFlowSeparable
 
         G = _make_ring_graph(5)
         out = generate_flow_data(
-            5, G, 0.3, 0.2, -0.06,
-            np.array([0.5, -0.3]), np.array([0.4, 0.2]),
-            sigma=1.0, seed=0,
+            5,
+            G,
+            0.3,
+            0.2,
+            -0.06,
+            np.array([0.5, -0.3]),
+            np.array([0.4, 0.2]),
+            sigma=1.0,
+            seed=0,
         )
-        model = SAR_Flow_Separable(
-            out["y_vec"], G, out["X"], col_names=out["col_names"],
+        model = SARFlowSeparable(
+            out["y_vec"],
+            G,
+            out["X"],
+            col_names=out["col_names"],
             logdet_method=request.param,
-            miter=15, trace_seed=0,
+            miter=15,
+            trace_seed=0,
         )
         idata = model.fit(**{**SAMPLE_KWARGS, "draws": 50, "tune": 50, "chains": 1})
         return idata, request.param
@@ -972,38 +1119,55 @@ class TestSARFlowSeparableLogdetMethods:
         assert idata.posterior["beta"].shape[-1] > 0
 
     def test_invalid_method_raises(self):
-        from bayespecon.dgp.flows import generate_flow_data
-        from bayespecon.models.flow import SAR_Flow_Separable
         import pytest
 
+        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.models.flow import SARFlowSeparable
+
         G = _make_ring_graph(4)
-        out = generate_flow_data(4, G, 0.2, 0.1, -0.02,
-                                  np.array([1.0]), np.array([0.5]),
-                                  sigma=1.0, seed=1)
+        out = generate_flow_data(
+            4, G, 0.2, 0.1, -0.02, np.array([1.0]), np.array([0.5]), sigma=1.0, seed=1
+        )
         with pytest.raises(ValueError, match="logdet_method"):
-            SAR_Flow_Separable(
-                out["y_vec"], G, out["X"], col_names=out["col_names"],
+            SARFlowSeparable(
+                out["y_vec"],
+                G,
+                out["X"],
+                col_names=out["col_names"],
                 logdet_method="traces",
             )
 
 
 @pytest.mark.slow
 class TestSARFlowRecovery:
-    """SAR_Flow posterior means should be close to true DGP values."""
+    """SARFlow posterior means should be close to true DGP values."""
 
     @pytest.fixture(scope="class")
     def fitted_sar_flow(self):
         from bayespecon.dgp.flows import generate_flow_data
-        from bayespecon.models.flow import SAR_Flow
+        from bayespecon.models.flow import SARFlow
 
         G = _make_ring_graph(FLOW_N)
         out = generate_flow_data(
-            FLOW_N, G, RHO_D_TRUE, RHO_O_TRUE, RHO_W_TRUE,
-            BETA_D_TRUE, BETA_O_TRUE, sigma=SIGMA_TRUE, seed=42,
+            FLOW_N,
+            G,
+            RHO_D_TRUE,
+            RHO_O_TRUE,
+            RHO_W_TRUE,
+            BETA_D_TRUE,
+            BETA_O_TRUE,
+            sigma=SIGMA_TRUE,
+            seed=42,
         )
-        model = SAR_Flow(
-            out["y_vec"], G, out["X"], col_names=out["col_names"],
-            miter=5, titer=50, trace_seed=0, restrict_positive=True,
+        model = SARFlow(
+            out["y_vec"],
+            G,
+            out["X"],
+            col_names=out["col_names"],
+            miter=5,
+            titer=50,
+            trace_seed=0,
+            restrict_positive=True,
         )
         idata = model.fit(**SAMPLE_KWARGS)
         return idata
@@ -1011,44 +1175,53 @@ class TestSARFlowRecovery:
     def test_sar_flow_recovers_rho_d(self, fitted_sar_flow):
         rho_hat = float(fitted_sar_flow.posterior["rho_d"].mean())
         assert abs(rho_hat - RHO_D_TRUE) < ABS_TOL_RHO, (
-            f"SAR_Flow rho_d: expected ≈{RHO_D_TRUE}, got {rho_hat:.3f}"
+            f"SARFlow rho_d: expected ≈{RHO_D_TRUE}, got {rho_hat:.3f}"
         )
 
     def test_sar_flow_recovers_rho_o(self, fitted_sar_flow):
         rho_hat = float(fitted_sar_flow.posterior["rho_o"].mean())
         assert abs(rho_hat - RHO_O_TRUE) < ABS_TOL_RHO, (
-            f"SAR_Flow rho_o: expected ≈{RHO_O_TRUE}, got {rho_hat:.3f}"
+            f"SARFlow rho_o: expected ≈{RHO_O_TRUE}, got {rho_hat:.3f}"
         )
 
     def test_sar_flow_recovers_rho_w(self, fitted_sar_flow):
         rho_hat = float(fitted_sar_flow.posterior["rho_w"].mean())
         assert abs(rho_hat - RHO_W_TRUE) < ABS_TOL_RHO, (
-            f"SAR_Flow rho_w: expected ≈{RHO_W_TRUE}, got {rho_hat:.3f}"
+            f"SARFlow rho_w: expected ≈{RHO_W_TRUE}, got {rho_hat:.3f}"
         )
 
     def test_sar_flow_recovers_sigma(self, fitted_sar_flow):
         sigma_hat = float(fitted_sar_flow.posterior["sigma"].mean())
         assert abs(sigma_hat - SIGMA_TRUE) < ABS_TOL_SIGMA, (
-            f"SAR_Flow sigma: expected ≈{SIGMA_TRUE}, got {sigma_hat:.3f}"
+            f"SARFlow sigma: expected ≈{SIGMA_TRUE}, got {sigma_hat:.3f}"
         )
 
 
 @pytest.mark.slow
 class TestSARFlowSeparableRecovery:
-    """SAR_Flow_Separable posterior means should be close to true DGP values."""
+    """SARFlowSeparable posterior means should be close to true DGP values."""
 
     @pytest.fixture(scope="class")
     def fitted_separable(self):
         from bayespecon.dgp.flows import generate_flow_data_separable
-        from bayespecon.models.flow import SAR_Flow_Separable
+        from bayespecon.models.flow import SARFlowSeparable
 
         G = _make_ring_graph(FLOW_N_SEP)
         out = generate_flow_data_separable(
-            FLOW_N_SEP, G, RHO_D_SEP_TRUE, RHO_O_SEP_TRUE,
-            BETA_D_TRUE, BETA_O_TRUE, sigma=SIGMA_TRUE, seed=42,
+            FLOW_N_SEP,
+            G,
+            RHO_D_SEP_TRUE,
+            RHO_O_SEP_TRUE,
+            BETA_D_TRUE,
+            BETA_O_TRUE,
+            sigma=SIGMA_TRUE,
+            seed=42,
         )
-        model = SAR_Flow_Separable(
-            out["y_vec"], G, out["X"], col_names=out["col_names"],
+        model = SARFlowSeparable(
+            out["y_vec"],
+            G,
+            out["X"],
+            col_names=out["col_names"],
             trace_seed=0,
         )
         idata = model.fit(**SAMPLE_KWARGS)
@@ -1057,32 +1230,38 @@ class TestSARFlowSeparableRecovery:
     def test_separable_recovers_rho_d(self, fitted_separable):
         rho_hat = float(fitted_separable.posterior["rho_d"].mean())
         assert abs(rho_hat - RHO_D_SEP_TRUE) < ABS_TOL_RHO_SEP, (
-            f"SAR_Flow_Separable rho_d: expected ≈{RHO_D_SEP_TRUE}, got {rho_hat:.3f}"
+            f"SARFlowSeparable rho_d: expected ≈{RHO_D_SEP_TRUE}, got {rho_hat:.3f}"
         )
 
     def test_separable_recovers_rho_o(self, fitted_separable):
         rho_hat = float(fitted_separable.posterior["rho_o"].mean())
         assert abs(rho_hat - RHO_O_SEP_TRUE) < ABS_TOL_RHO_SEP, (
-            f"SAR_Flow_Separable rho_o: expected ≈{RHO_O_SEP_TRUE}, got {rho_hat:.3f}"
+            f"SARFlowSeparable rho_o: expected ≈{RHO_O_SEP_TRUE}, got {rho_hat:.3f}"
         )
 
 
 @pytest.mark.slow
 class TestPoissonFlowRecovery:
-    """PoissonFlow posterior means should be close to true DGP values."""
+    """PoissonSARFlow posterior means should be close to true DGP values."""
 
     @pytest.fixture(scope="class")
     def fitted_poisson(self):
         from bayespecon.dgp.flows import generate_poisson_flow_data
-        from bayespecon.models.flow import PoissonFlow
+        from bayespecon.models.flow import PoissonSARFlow
 
         data = generate_poisson_flow_data(
-            n=8, rho_d=POI_RHO_D_TRUE, rho_o=POI_RHO_O_TRUE,
-            rho_w=POI_RHO_W_TRUE, seed=42,
+            n=8,
+            rho_d=POI_RHO_D_TRUE,
+            rho_o=POI_RHO_O_TRUE,
+            rho_w=POI_RHO_W_TRUE,
+            seed=42,
         )
         G = data["G"]
-        model = PoissonFlow(
-            data["y_vec"], G, data["X"], col_names=data["col_names"],
+        model = PoissonSARFlow(
+            data["y_vec"],
+            G,
+            data["X"],
+            col_names=data["col_names"],
             trace_seed=0,
         )
         idata = model.fit(**POISSON_SAMPLE_KWARGS)
@@ -1091,38 +1270,45 @@ class TestPoissonFlowRecovery:
     def test_poisson_flow_recovers_rho_d(self, fitted_poisson):
         rho_hat = float(fitted_poisson.posterior["rho_d"].mean())
         assert abs(rho_hat - POI_RHO_D_TRUE) < ABS_TOL_RHO_POI, (
-            f"PoissonFlow rho_d: expected ≈{POI_RHO_D_TRUE}, got {rho_hat:.3f}"
+            f"PoissonSARFlow rho_d: expected ≈{POI_RHO_D_TRUE}, got {rho_hat:.3f}"
         )
 
     def test_poisson_flow_recovers_rho_o(self, fitted_poisson):
         rho_hat = float(fitted_poisson.posterior["rho_o"].mean())
         assert abs(rho_hat - POI_RHO_O_TRUE) < ABS_TOL_RHO_POI, (
-            f"PoissonFlow rho_o: expected ≈{POI_RHO_O_TRUE}, got {rho_hat:.3f}"
+            f"PoissonSARFlow rho_o: expected ≈{POI_RHO_O_TRUE}, got {rho_hat:.3f}"
         )
 
     def test_poisson_flow_recovers_rho_w(self, fitted_poisson):
         rho_hat = float(fitted_poisson.posterior["rho_w"].mean())
         assert abs(rho_hat - POI_RHO_W_TRUE) < ABS_TOL_RHO_POI, (
-            f"PoissonFlow rho_w: expected ≈{POI_RHO_W_TRUE}, got {rho_hat:.3f}"
+            f"PoissonSARFlow rho_w: expected ≈{POI_RHO_W_TRUE}, got {rho_hat:.3f}"
         )
 
 
 @pytest.mark.slow
 class TestPoissonFlowSeparableRecovery:
-    """PoissonFlow_Separable posterior means should be close to true DGP values."""
+    """PoissonSARFlowSeparable posterior means should be close to true DGP values."""
 
     @pytest.fixture(scope="class")
     def fitted_poisson_separable(self):
         from bayespecon.dgp.flows import generate_poisson_flow_data_separable
-        from bayespecon.models.flow import PoissonFlow_Separable
+        from bayespecon.models.flow import PoissonSARFlowSeparable
 
-        G = _make_ring_graph(12)   # 144 O-D pairs — same size as SAR separable test
+        G = _make_ring_graph(12)  # 144 O-D pairs — same size as SAR separable test
         data = generate_poisson_flow_data_separable(
-            n=12, rho_d=POI_RHO_D_SEP_TRUE, rho_o=POI_RHO_O_SEP_TRUE, seed=42, G=G,
+            n=12,
+            rho_d=POI_RHO_D_SEP_TRUE,
+            rho_o=POI_RHO_O_SEP_TRUE,
+            seed=42,
+            G=G,
         )
         G = data["G"]
-        model = PoissonFlow_Separable(
-            data["y_vec"], G, data["X"], col_names=data["col_names"],
+        model = PoissonSARFlowSeparable(
+            data["y_vec"],
+            G,
+            data["X"],
+            col_names=data["col_names"],
             trace_seed=0,
         )
         idata = model.fit(**POISSON_SEP_SAMPLE_KWARGS)
@@ -1131,13 +1317,13 @@ class TestPoissonFlowSeparableRecovery:
     def test_poisson_separable_recovers_rho_d(self, fitted_poisson_separable):
         rho_hat = float(fitted_poisson_separable.posterior["rho_d"].mean())
         assert abs(rho_hat - POI_RHO_D_SEP_TRUE) < ABS_TOL_RHO_POI, (
-            f"PoissonFlow_Separable rho_d: expected ≈{POI_RHO_D_SEP_TRUE}, got {rho_hat:.3f}"
+            f"PoissonSARFlowSeparable rho_d: expected ≈{POI_RHO_D_SEP_TRUE}, got {rho_hat:.3f}"
         )
 
     def test_poisson_separable_recovers_rho_o(self, fitted_poisson_separable):
         rho_hat = float(fitted_poisson_separable.posterior["rho_o"].mean())
         assert abs(rho_hat - POI_RHO_O_SEP_TRUE) < ABS_TOL_RHO_POI, (
-            f"PoissonFlow_Separable rho_o: expected ≈{POI_RHO_O_SEP_TRUE}, got {rho_hat:.3f}"
+            f"PoissonSARFlowSeparable rho_o: expected ≈{POI_RHO_O_SEP_TRUE}, got {rho_hat:.3f}"
         )
 
 
@@ -1158,7 +1344,7 @@ class TestKronSolveUtilities:
 
         rng = np.random.default_rng(42)
         self.n = 6
-        N = self.n ** 2
+        N = self.n**2
         W_dense = rng.random((self.n, self.n))
         W_dense /= W_dense.sum(axis=1, keepdims=True)
         self.W = sp.csr_matrix(W_dense)
@@ -1207,8 +1393,8 @@ class TestEffectsNumericalRegression:
 
         out_total = np.zeros(k)
         out_intra = np.zeros(k)
-        out_dest  = np.zeros(k)
-        out_orig  = np.zeros(k)
+        out_dest = np.zeros(k)
+        out_orig = np.zeros(k)
 
         for p in range(k):
             bd = float(beta_d_vec[p])
@@ -1234,8 +1420,8 @@ class TestEffectsNumericalRegression:
 
             out_total[p] = float(ones_N @ T_p) / N
             out_intra[p] = float(ones_N @ T_intra) / N
-            out_dest[p]  = float(ones_N @ T_dest) / N
-            out_orig[p]  = float(ones_N @ T_orig) / N
+            out_dest[p] = float(ones_N @ T_dest) / N
+            out_orig[p] = float(ones_N @ T_orig) / N
 
         return out_total, out_intra, out_dest, out_orig
 
@@ -1267,7 +1453,7 @@ class TestEffectsNumericalRegression:
     def _setup(self):
         rng = np.random.default_rng(7)
         self.n = 5
-        self.N = self.n ** 2
+        self.N = self.n**2
         self.k = 3
 
         W_dense = rng.random((self.n, self.n))
@@ -1322,3 +1508,335 @@ class TestEffectsNumericalRegression:
             self.Lo, self.Ld, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
         )
         np.testing.assert_allclose(new_intra_kron, new_intra_gen, atol=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# Public spatial_effects + posterior_predictive (Phase 3.3)
+# ---------------------------------------------------------------------------
+
+
+class TestFlowSpatialEffectsAndPPC:
+    @pytest.fixture(scope="class")
+    def fitted(self):
+        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.models.flow import SARFlow
+
+        n = 5
+        G = _make_ring_graph(n)
+        data = generate_flow_data(
+            n=n,
+            G=G,
+            rho_d=0.2,
+            rho_o=0.15,
+            rho_w=0.1,
+            beta_d=[1.0, -0.5],
+            beta_o=[0.5, 0.2],
+            sigma=1.0,
+            seed=11,
+        )
+        model = SARFlow(
+            data["y_vec"],
+            data["G"],
+            data["X"],
+            col_names=data["col_names"],
+            trace_seed=0,
+        )
+        model.fit(draws=40, tune=40, chains=1, progressbar=False, random_seed=0)
+        return model
+
+    def test_spatial_effects_returns_dataframe(self, fitted):
+        df = fitted.spatial_effects()
+        assert df.index.names == ["predictor", "effect"]
+        assert {"mean", "ci_lower", "ci_upper", "bayes_pvalue"} <= set(df.columns)
+        # Five effect labels per predictor.
+        effects = set(df.index.get_level_values("effect"))
+        assert effects == {"origin", "destination", "intra", "network", "total"}
+
+    def test_spatial_effects_return_samples(self, fitted):
+        df, samples = fitted.spatial_effects(return_posterior_samples=True)
+        for key in ["origin", "destination", "intra", "network", "total"]:
+            arr = samples[key]
+            assert arr.ndim == 2
+            assert arr.shape[1] == fitted._k
+
+    def test_posterior_predictive_shape(self, fitted):
+        y_rep = fitted.posterior_predictive(n_draws=10, random_seed=3)
+        assert y_rep.shape == (10, fitted._N)
+        assert np.all(np.isfinite(y_rep))
+
+    def test_posterior_predictive_reproducible(self, fitted):
+        a = fitted.posterior_predictive(n_draws=5, random_seed=7)
+        b = fitted.posterior_predictive(n_draws=5, random_seed=7)
+        np.testing.assert_allclose(a, b)
+
+
+# ---------------------------------------------------------------------------
+# LeSage-decomposition correctness tests for the new spatial_effects math
+# ---------------------------------------------------------------------------
+
+
+class TestFlowEffectsLeSageDecomposition:
+    """Verify spatial_effects matches the LeSage (2008) calc_effects.m reference."""
+
+    def test_helper_zero_rho_closed_form(self):
+        """With A = I, effects collapse to closed-form expressions."""
+        from bayespecon.models.flow import (
+            _build_flow_effect_masks,
+            _compute_flow_effects_lesage,
+        )
+
+        n, k = 4, 2
+        dmask, omask, imask = _build_flow_effect_masks(n)
+        beta_d = np.array([2.0, -1.0])
+        beta_o = np.array([0.5, 3.0])
+        res = _compute_flow_effects_lesage(
+            lambda rhs: rhs,
+            dmask,
+            omask,
+            imask,
+            beta_d,
+            beta_o,
+            n,
+            k,
+        )
+        for p in range(k):
+            bd, bo = beta_d[p], beta_o[p]
+            assert np.isclose(res["total"][p], bd + bo)
+            assert np.isclose(res["intra"][p], (bd + bo) / n)
+            assert np.isclose(res["origin"][p], (n - 1) / n * bo)
+            assert np.isclose(res["destination"][p], (n - 1) / n * bd)
+            assert np.isclose(res["network"][p], 0.0)
+
+    def test_helper_total_identity(self):
+        """total == origin + destination + intra + network for arbitrary A."""
+        import scipy.sparse as sp_local
+
+        from bayespecon.models.flow import (
+            _build_flow_effect_masks,
+            _compute_flow_effects_lesage,
+        )
+
+        n, k = 4, 2
+        N = n * n
+        dmask, omask, imask = _build_flow_effect_masks(n)
+        # Random invertible A.
+        rng = np.random.default_rng(0)
+        M = rng.standard_normal((N, N))
+        A = np.eye(N) + 0.05 * M
+        lu = sp_local.linalg.splu(sp_local.csc_matrix(A))
+
+        def solve(rhs):
+            return lu.solve(rhs)
+
+        beta_d = np.array([2.0, -1.0])
+        beta_o = np.array([0.5, 3.0])
+        res = _compute_flow_effects_lesage(
+            solve,
+            dmask,
+            omask,
+            imask,
+            beta_d,
+            beta_o,
+            n,
+            k,
+        )
+        for p in range(k):
+            s = (
+                res["origin"][p]
+                + res["destination"][p]
+                + res["intra"][p]
+                + res["network"][p]
+            )
+            assert np.isclose(res["total"][p], s)
+
+    def test_calc_effects_reference_match(self):
+        """End-to-end sanity: spatial_effects matches a hand-rolled LeSage solve at posterior means."""
+        import scipy.sparse as sp_local
+
+        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.models.flow import SARFlow, _build_flow_effect_masks
+
+        n = 4
+        G = _make_ring_graph(n)
+        data = generate_flow_data(
+            n=n,
+            G=G,
+            rho_d=0.2,
+            rho_o=0.15,
+            rho_w=0.1,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=1.0,
+            seed=3,
+        )
+        model = SARFlow(
+            data["y_vec"],
+            data["G"],
+            data["X"],
+            col_names=data["col_names"],
+            trace_seed=0,
+        )
+        model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
+
+        post = model.spatial_effects(return_posterior_samples=True)
+        df, samples = post
+        # Reference computation: rebuild for one draw and compare.
+        rho_d = float(model.inference_data.posterior["rho_d"].values.reshape(-1)[0])
+        rho_o = float(model.inference_data.posterior["rho_o"].values.reshape(-1)[0])
+        rho_w = float(model.inference_data.posterior["rho_w"].values.reshape(-1)[0])
+        beta = model.inference_data.posterior["beta"].values.reshape(
+            -1, len(model._feature_names)
+        )[0]
+        k = model._k
+        beta_d = beta[2 : 2 + k]
+        beta_o = beta[2 + k : 2 + 2 * k]
+
+        N = n * n
+        dmask, omask, imask = _build_flow_effect_masks(n)
+        Wd = sp_local.kron(sp_local.eye(n), model._W_sparse, format="csr")
+        Wo = sp_local.kron(model._W_sparse, sp_local.eye(n), format="csr")
+        Ww = sp_local.kron(model._W_sparse, model._W_sparse, format="csr")
+        A = (sp_local.eye(N) - rho_d * Wd - rho_o * Wo - rho_w * Ww).tocsc()
+        lu = sp_local.linalg.splu(A)
+
+        for p in range(k):
+            shock = np.zeros((N, n))
+            shock[dmask] = beta_d[p]
+            shock[omask] = beta_o[p]
+            shock[imask] = beta_d[p] + beta_o[p]
+            T_resp = lu.solve(shock)
+            ref_total = T_resp.sum() / N
+            ref_intra = T_resp[imask].sum() / N
+            ref_origin = T_resp[omask].sum() / N
+            ref_dest = T_resp[dmask].sum() / N
+            ref_network = ref_total - ref_origin - ref_dest - ref_intra
+
+            assert np.isclose(samples["total"][0, p], ref_total)
+            assert np.isclose(samples["intra"][0, p], ref_intra)
+            assert np.isclose(samples["origin"][0, p], ref_origin)
+            assert np.isclose(samples["destination"][0, p], ref_dest)
+            assert np.isclose(samples["network"][0, p], ref_network)
+
+    def test_separable_matches_unrestricted(self):
+        """SARFlowSeparable effects ≈ SARFlow effects when rho_w = -rho_d * rho_o."""
+        import scipy.sparse as sp_local
+
+        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.models.flow import (
+            SARFlow,
+            SARFlowSeparable,
+            _build_flow_effect_masks,
+            _compute_flow_effects_lesage,
+        )
+
+        n = 4
+        G = _make_ring_graph(n)
+        data = generate_flow_data(
+            n=n,
+            G=G,
+            rho_d=0.2,
+            rho_o=0.15,
+            rho_w=-0.2 * 0.15,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=1.0,
+            seed=4,
+        )
+        # Compute reference effects directly with both code paths at the same parameter point.
+        from bayespecon.ops import kron_solve_matrix
+
+        rd, ro = 0.2, 0.15
+        rw = -rd * ro
+        dmask, omask, imask = _build_flow_effect_masks(n)
+        N = n * n
+        Wd = sp_local.kron(sp_local.eye(n), G.sparse.tocsr(), format="csr")
+        Wo = sp_local.kron(G.sparse.tocsr(), sp_local.eye(n), format="csr")
+        Ww = sp_local.kron(G.sparse.tocsr(), G.sparse.tocsr(), format="csr")
+        A = (sp_local.eye(N) - rd * Wd - ro * Wo - rw * Ww).tocsc()
+        lu = sp_local.linalg.splu(A)
+
+        I_n = sp_local.eye(n, format="csr")
+        Ld = (I_n - rd * G.sparse.tocsr()).tocsr()
+        Lo = (I_n - ro * G.sparse.tocsr()).tocsr()
+
+        beta_d = np.array([1.0])
+        beta_o = np.array([0.5])
+
+        res_general = _compute_flow_effects_lesage(
+            lambda r: lu.solve(r),
+            dmask,
+            omask,
+            imask,
+            beta_d,
+            beta_o,
+            n,
+            1,
+        )
+        res_kron = _compute_flow_effects_lesage(
+            lambda r: kron_solve_matrix(Lo, Ld, r, n),
+            dmask,
+            omask,
+            imask,
+            beta_d,
+            beta_o,
+            n,
+            1,
+        )
+        for key in res_general:
+            np.testing.assert_allclose(res_general[key], res_kron[key], atol=1e-10)
+
+
+class TestFlowPanelSpatialEffectsAndPPC:
+    """Smoke + correctness tests for the new FlowPanelModel public API."""
+
+    @pytest.fixture(scope="class")
+    def fitted_panel(self):
+        from bayespecon.graph import flow_design_matrix
+        from bayespecon.models.flow_panel import SARFlowPanel
+
+        n = 4
+        T = 3
+        G = _make_ring_graph(n)
+        rng = np.random.default_rng(5)
+        y_list, X_list = [], []
+        col_names = None
+        for _ in range(T):
+            Xr = rng.standard_normal((n, 1))
+            d = flow_design_matrix(Xr)
+            if col_names is None:
+                col_names = d.feature_names
+            X_list.append(d.combined)
+            y_list.append(rng.standard_normal(n * n))
+        y = np.concatenate(y_list)
+        X = np.vstack(X_list)
+        model = SARFlowPanel(
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            trace_seed=0,
+        )
+        model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
+        return model
+
+    def test_panel_spatial_effects_dataframe(self, fitted_panel):
+        df = fitted_panel.spatial_effects()
+        assert df.index.names == ["predictor", "effect"]
+        effects = set(df.index.get_level_values("effect"))
+        assert effects == {"origin", "destination", "intra", "network", "total"}
+
+    def test_panel_total_identity(self, fitted_panel):
+        df, samples = fitted_panel.spatial_effects(return_posterior_samples=True)
+        s = (
+            samples["origin"]
+            + samples["destination"]
+            + samples["intra"]
+            + samples["network"]
+        )
+        np.testing.assert_allclose(samples["total"], s, atol=1e-10)
+
+    def test_panel_posterior_predictive(self, fitted_panel):
+        y_rep = fitted_panel.posterior_predictive(n_draws=5, random_seed=11)
+        assert y_rep.shape == (5, fitted_panel._N_flow * fitted_panel._T)
+        assert np.all(np.isfinite(y_rep))

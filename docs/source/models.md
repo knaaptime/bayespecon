@@ -66,31 +66,31 @@ $$y_{it} = x_{it}' \beta + \alpha_i + \tau_t + u_{it}, \quad u_{it} = \lambda W 
 
 ### Dynamic Panel Models
 
-#### DLMPanelFE (Dynamic Linear Model, FE)
+#### OLSPanelDynamic (Dynamic Linear Model)
 
 $$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
 
-#### SDMRPanelFE (Dynamic Restricted Spatial Durbin, FE)
+#### SDMRPanelDynamic (Dynamic Restricted Spatial Durbin)
 
 $$y_{it} = \phi y_{i, t-1} + \rho W y_{it} - \rho \phi W y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
 
-#### SDMUPanelFE (Dynamic Unrestricted Spatial Durbin, FE)
+#### SDMUPanelDynamic (Dynamic Unrestricted Spatial Durbin)
 
 $$y_{it} = \phi y_{i, t-1} + \rho W y_{it} + \theta W y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
 
-#### SARPanelDEDynamic (Dynamic SAR, DE transformation)
+#### SARPanelDynamic (Dynamic SAR)
 
 $$y_{it} = \phi y_{i, t-1} + \rho W y_{it} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
 
-#### SEMPanelDEDynamic (Dynamic SEM, DE transformation)
+#### SEMPanelDynamic (Dynamic SEM)
 
 $$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}$$
 
-#### SDEMPanelDEDynamic (Dynamic SDEM, DE transformation)
+#### SDEMPanelDynamic (Dynamic SDEM)
 
 $$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}$$
 
-#### SLXPanelDEDynamic (Dynamic SLX, DE transformation)
+#### SLXPanelDynamic (Dynamic SLX)
 
 $$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
 
@@ -146,23 +146,23 @@ $$y^*_t = X_t \beta + u_t,  u_t = \lambda W u_t + \varepsilon_t$$
 
 Origin-destination flow matrices $Y$ (size $n \times n$) are vectorized to $y$ of length $N = n^2$. The destination, origin, and origin-destination weight matrices are $W_d = I_n \otimes W$, $W_o = W \otimes I_n$, $W_w = W \otimes W$.
 
-#### SAR_Flow
+#### SARFlow
 
 $$y = \rho_d W_d y + \rho_o W_o y + \rho_w W_w y + X\beta + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
 
-#### SAR_Flow_Separable
+#### SARFlowSeparable
 
 Imposes the separability constraint $\rho_w = -\rho_d \rho_o$, enabling an exact $\mathcal{O}(n)$ log-determinant via eigenvalue factorization:
 
 $$y = \rho_d W_d y + \rho_o W_o y - \rho_d\rho_o W_w y + X\beta + \varepsilon$$
 
-#### PoissonFlow
+#### PoissonSARFlow
 
 For count-valued flows, the mean is filtered through the spatial multiplier $A(\boldsymbol{\rho}) = I - \rho_d W_d - \rho_o W_o - \rho_w W_w$:
 
 $$y_{ij} \sim \text{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = A(\boldsymbol{\rho})^{-1} X\beta$$
 
-#### PoissonFlow_Separable
+#### PoissonSARFlowSeparable
 
 Poisson flow with separability constraint $\rho_w = -\rho_d \rho_o$:
 
@@ -172,18 +172,18 @@ $$y_{ij} \sim \text{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = A(
 
 Time-stacked versions of the flow models above. Observations are stacked time-first across $T$ periods. Poisson variants are restricted to pooled mode.
 
-#### SAR_Flow_Panel
+#### SARFlowPanel
 
 $$y_t = \rho_d W_d y_t + \rho_o W_o y_t + \rho_w W_w y_t + X_t\beta + \varepsilon_t$$
 
-#### SAR_Flow_Separable_Panel
+#### SARFlowSeparablePanel
 
 $$y_t = \rho_d W_d y_t + \rho_o W_o y_t - \rho_d\rho_o W_w y_t + X_t\beta + \varepsilon_t$$
 
-#### PoissonFlow_Panel
+#### PoissonSARFlowPanel
 
 $$y_{ijt} \sim \text{Poisson}(\lambda_{ijt}), \quad \log \boldsymbol{\lambda}_t = A(\boldsymbol{\rho})^{-1} X_t\beta$$
 
-#### PoissonFlow_Separable_Panel
+#### PoissonSARFlowSeparablePanel
 
 $$y_{ijt} \sim \text{Poisson}(\lambda_{ijt}), \quad \log \boldsymbol{\lambda}_t = A(\boldsymbol{\rho})^{-1} X_t\beta, \quad \rho_w = -\rho_d\rho_o$$

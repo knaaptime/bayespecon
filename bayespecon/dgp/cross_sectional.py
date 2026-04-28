@@ -6,7 +6,13 @@ from typing import Any
 
 import numpy as np
 
-from .utils import _hetero_scale, ensure_rng, make_design_matrix, make_output_geodataframe, resolve_weights
+from .utils import (
+    _hetero_scale,
+    ensure_rng,
+    make_design_matrix,
+    make_output_geodataframe,
+    resolve_weights,
+)
 
 
 def _attach_optional_gdf(
@@ -289,7 +295,11 @@ def simulate_slx(
     if Wx.shape[1] != len(beta2):
         raise ValueError("len(beta2) must match number of non-intercept regressors.")
 
-    y = X @ beta1 + Wx @ beta2 + (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    y = (
+        X @ beta1
+        + Wx @ beta2
+        + (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    )
     out = {
         "y": y,
         "X": X,
@@ -398,7 +408,10 @@ def simulate_sdem(
     if Wx.shape[1] != len(beta2):
         raise ValueError("len(beta2) must match number of non-intercept regressors.")
 
-    u = np.linalg.solve(np.eye(nobs) - lam * Wd, (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs))
+    u = np.linalg.solve(
+        np.eye(nobs) - lam * Wd,
+        (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs),
+    )
     y = X @ beta1 + Wx @ beta2 + u
     out = {
         "y": y,

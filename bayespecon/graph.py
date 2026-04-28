@@ -35,6 +35,17 @@ import scipy.sparse as sp
 from libpysal.graph import Graph
 
 
+def sparse_trace_WtW_plus_WW(W: sp.spmatrix) -> float:
+    r"""Return :math:`\operatorname{tr}(W^\top W) + \operatorname{tr}(W^2)`.
+
+    Computed via sparse element-wise operations
+    (:math:`\|W\|_F^2 + \sum_{ij} W_{ij} W_{ji}`), which is :math:`O(\mathrm{nnz})`
+    rather than :math:`O(n^2)`.  This quantity appears in many spatial
+    Lagrange-multiplier information-matrix formulas.
+    """
+    return float(W.power(2).sum() + W.multiply(W.T).sum())
+
+
 def _validate_graph(G: Graph) -> sp.csr_matrix:
     """Validate a :class:`libpysal.graph.Graph` and return its CSR sparse matrix.
 

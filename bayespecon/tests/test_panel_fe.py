@@ -22,15 +22,16 @@ from bayespecon import (
     SEMPanelFE,
     SLXPanelFE,
 )
+
 from .helpers import (
     PANEL_N,
     PANEL_T,
     SAMPLE_KWARGS,
     make_panel_ols_data,
     make_panel_sar_data,
-    make_panel_sem_data,
-    make_panel_sdm_fe_data,
     make_panel_sdem_fe_data,
+    make_panel_sdm_fe_data,
+    make_panel_sem_data,
 )
 
 pytestmark = [pytest.mark.slow, pytest.mark.recovery]
@@ -44,18 +45,20 @@ SIGMA_TRUE = 0.8
 
 ABS_TOL_SIGMA = 0.35
 ABS_TOL_SPATIAL = 0.25
-ABS_TOL_BETA = 0.35   # panel FE beta slightly harder to recover at small N*T
-ABS_TOL_WX = 0.65     # WX coefficients are harder to recover
+ABS_TOL_BETA = 0.35  # panel FE beta slightly harder to recover at small N*T
+ABS_TOL_WX = 0.65  # WX coefficients are harder to recover
 
 
 # ---------------------------------------------------------------------------
 # OLS Panel FE (unit fixed effects)
 # ---------------------------------------------------------------------------
 
+
 def test_ols_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """OLSPanelFE (unit FE) posterior means of beta should match truth."""
-    y, X, df = make_panel_ols_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                    beta=BETA_TRUE, sigma=SIGMA_TRUE)
+    y, X, df = make_panel_ols_data(
+        rng, W_panel_dense, PANEL_N, PANEL_T, beta=BETA_TRUE, sigma=SIGMA_TRUE
+    )
     model = OLSPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
@@ -72,9 +75,15 @@ def test_ols_panel_fe_recovers_sigma(rng, W_panel_dense, W_panel_graph):
     sigma reflects the residual variance.  We set sigma_alpha=0 so the
     DGP has no unit effects and the model sigma matches the DGP sigma.
     """
-    y, X, df = make_panel_ols_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                    beta=BETA_TRUE, sigma=SIGMA_TRUE,
-                                    sigma_alpha=0.0)
+    y, X, df = make_panel_ols_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=0.0,
+    )
     model = OLSPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     sigma_hat = float(idata.posterior["sigma"].mean())
@@ -87,10 +96,18 @@ def test_ols_panel_fe_recovers_sigma(rng, W_panel_dense, W_panel_graph):
 # SAR Panel FE
 # ---------------------------------------------------------------------------
 
+
 def test_sar_panel_fe_recovers_rho(rng, W_panel_dense, W_panel_graph):
     """SARPanelFE posterior mean of rho should be close to the true rho."""
-    y, X, _ = make_panel_sar_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                   rho=RHO_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sar_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SARPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     rho_hat = float(idata.posterior["rho"].mean())
@@ -101,8 +118,15 @@ def test_sar_panel_fe_recovers_rho(rng, W_panel_dense, W_panel_graph):
 
 def test_sar_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """SARPanelFE posterior means of beta (slope) should match truth."""
-    y, X, _ = make_panel_sar_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                   rho=RHO_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sar_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SARPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
@@ -115,10 +139,18 @@ def test_sar_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
 # SEM Panel FE
 # ---------------------------------------------------------------------------
 
+
 def test_sem_panel_fe_recovers_lam(rng, W_panel_dense, W_panel_graph):
     """SEMPanelFE posterior mean of lambda should be close to the true value."""
-    y, X, _ = make_panel_sem_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                   lam=LAM_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sem_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SEMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     lam_hat = float(idata.posterior["lam"].mean())
@@ -129,8 +161,15 @@ def test_sem_panel_fe_recovers_lam(rng, W_panel_dense, W_panel_graph):
 
 def test_sem_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """SEMPanelFE posterior means of beta (slope) should match truth."""
-    y, X, _ = make_panel_sem_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                   lam=LAM_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sem_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SEMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
@@ -143,11 +182,19 @@ def test_sem_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
 # SDM Panel FE  (uses SDM-type data with WX terms)
 # ---------------------------------------------------------------------------
 
+
 def test_sdm_panel_fe_recovers_rho(rng, W_panel_dense, W_panel_graph):
     """SDMPanelFE posterior mean of rho should be close to the true rho."""
-    y, X, _ = make_panel_sdm_fe_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                      rho=RHO_TRUE, beta1=BETA_TRUE,
-                                      beta2=BETA2_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sdm_fe_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta1=BETA_TRUE,
+        beta2=BETA2_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SDMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     rho_hat = float(idata.posterior["rho"].mean())
@@ -158,9 +205,16 @@ def test_sdm_panel_fe_recovers_rho(rng, W_panel_dense, W_panel_graph):
 
 def test_sdm_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """SDMPanelFE posterior means of beta (slope) should match truth."""
-    y, X, _ = make_panel_sdm_fe_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                      rho=RHO_TRUE, beta1=BETA_TRUE,
-                                      beta2=BETA2_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sdm_fe_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta1=BETA_TRUE,
+        beta2=BETA2_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SDMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
@@ -174,11 +228,19 @@ def test_sdm_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
 # SDEM Panel FE  (uses SDEM-type data with WX terms)
 # ---------------------------------------------------------------------------
 
+
 def test_sdem_panel_fe_recovers_lam(rng, W_panel_dense, W_panel_graph):
     """SDEMPanelFE posterior mean of lambda should be close to the true value."""
-    y, X, _ = make_panel_sdem_fe_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                        lam=LAM_TRUE, beta1=BETA_TRUE,
-                                        beta2=BETA2_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sdem_fe_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta1=BETA_TRUE,
+        beta2=BETA2_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SDEMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     lam_hat = float(idata.posterior["lam"].mean())
@@ -189,9 +251,16 @@ def test_sdem_panel_fe_recovers_lam(rng, W_panel_dense, W_panel_graph):
 
 def test_sdem_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """SDEMPanelFE posterior means of beta (slope) should match truth."""
-    y, X, _ = make_panel_sdem_fe_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                        lam=LAM_TRUE, beta1=BETA_TRUE,
-                                        beta2=BETA2_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sdem_fe_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta1=BETA_TRUE,
+        beta2=BETA2_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SDEMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
@@ -205,11 +274,19 @@ def test_sdem_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
 # SLX Panel FE  (uses SDM-type data with rho=0 to generate WX signal)
 # ---------------------------------------------------------------------------
 
+
 def test_slx_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """SLXPanelFE posterior means of beta (slope) should match truth."""
-    y, X, _ = make_panel_sdm_fe_data(rng, W_panel_dense, PANEL_N, PANEL_T,
-                                      rho=0.0, beta1=BETA_TRUE,
-                                      beta2=BETA2_TRUE, sigma=SIGMA_TRUE)
+    y, X, _ = make_panel_sdm_fe_data(
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=0.0,
+        beta1=BETA_TRUE,
+        beta2=BETA2_TRUE,
+        sigma=SIGMA_TRUE,
+    )
     model = SLXPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values

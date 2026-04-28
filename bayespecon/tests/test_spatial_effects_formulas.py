@@ -10,7 +10,8 @@ import arviz as az
 import numpy as np
 
 from bayespecon import SAR, SDEM, SDM, SLX
-from .helpers  import W_to_graph, make_line_W
+
+from .helpers import W_to_graph, make_line_W
 
 
 def _set_posterior_means(model, beta: np.ndarray, rho: float | None = None) -> None:

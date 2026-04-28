@@ -7,22 +7,24 @@ DataFrame returned by spatial_effects() is correctly constructed.
 
 from __future__ import annotations
 
+import warnings
+
 import arviz as az
 import numpy as np
 import pandas as pd
 import pytest
 
-from bayespecon import SAR, SDM, SLX, SDEM, SEM
+from bayespecon import SAR, SDEM, SDM, SEM, SLX
 from bayespecon.diagnostics.spatial_effects import (
     _build_effects_dataframe,
     _compute_bayesian_pvalue,
     _compute_ci,
 )
 
-
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
 
 def _make_W(n: int = 5) -> np.ndarray:
     """Create a simple row-standardised rook weights matrix."""
@@ -43,7 +45,17 @@ def _W_to_graph(W: np.ndarray):
     """Convert a numpy weights matrix to a libpysal Graph."""
     from libpysal.graph import Graph
     from scipy.sparse import csr_matrix
+
     return Graph.from_sparse(csr_matrix(W))
+
+
+def _W_to_graph_raw(W: np.ndarray):
+    """Convert a numpy weights matrix to a Graph without setting transform metadata."""
+    from libpysal.graph import Graph
+
+    rows, cols = np.nonzero(W)
+    vals = W[rows, cols]
+    return Graph.from_arrays(rows, cols, vals.astype(float))
 
 
 def _set_posterior_means(model, beta: np.ndarray, rho: float | None = None) -> None:
@@ -56,7 +68,9 @@ def _set_posterior_means(model, beta: np.ndarray, rho: float | None = None) -> N
     model._idata = az.from_dict(posterior=posterior)
 
 
-def _set_posterior_draws(model, beta_draws: np.ndarray, rho_draws: np.ndarray | None = None) -> None:
+def _set_posterior_draws(
+    model, beta_draws: np.ndarray, rho_draws: np.ndarray | None = None
+) -> None:
     """Inject posterior draws into a model for testing.
 
     Parameters
@@ -80,6 +94,7 @@ def _set_posterior_draws(model, beta_draws: np.ndarray, rho_draws: np.ndarray | 
 # ------------------------------------------------------------------
 # Tests for helper functions
 # ------------------------------------------------------------------
+
 
 class TestComputeBayesianPvalue:
     def test_all_positive(self):
@@ -120,7 +135,9 @@ class TestComputeCI:
         assert ci[0][1] == pytest.approx(96.525, abs=0.01)
 
     def test_2d(self):
-        samples = np.column_stack([np.arange(100, dtype=float), np.arange(100, 200, dtype=float)])
+        samples = np.column_stack(
+            [np.arange(100, dtype=float), np.arange(100, 200, dtype=float)]
+        )
         ci = _compute_ci(samples)
         assert len(ci) == 2
 
@@ -129,7 +146,33 @@ class TestComputeCI:
 # Tests for SAR spatial effects posterior
 # ------------------------------------------------------------------
 
+
 class TestSARSpatialEffectsPosterior:
+    def test_accepts_numeric_row_standardized_graph_without_transform(self):
+        n = 5
+        W = _make_W(n)
+        x1 = np.linspace(-1.0, 1.0, n)
+        X = np.column_stack([np.ones(n), x1])
+        y = np.zeros(n)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model = SAR(y=y, X=X, W=_W_to_graph_raw(W))
+
+        assert model._is_row_std is True
+        assert getattr(model._W_sparse, "shape", None) == (n, n)
+        assert len(caught) == 0
+
+        np.random.seed(42)
+        G = 50
+        beta_draws = np.random.randn(G, 2)
+        rho_draws = np.random.uniform(-0.5, 0.5, G)
+        _set_posterior_draws(model, beta_draws, rho_draws)
+
+        result = model.spatial_effects()
+        assert isinstance(result, pd.DataFrame)
+        assert np.all(np.isfinite(result[["direct", "indirect", "total"]].to_numpy()))
+
     def test_posterior_mean_matches_existing(self):
         """Posterior mean of draw-level effects should match existing point estimate."""
         n = 5
@@ -147,7 +190,9 @@ class TestSARSpatialEffectsPosterior:
         _set_posterior_draws(model, beta_draws, rho_draws)
 
         # Get posterior effects
-        direct_samples, indirect_samples, total_samples = model._compute_spatial_effects_posterior()
+        direct_samples, indirect_samples, total_samples = (
+            model._compute_spatial_effects_posterior()
+        )
 
         # Verify shapes (intercept excluded from effects)
         assert direct_samples.shape == (G, 1)
@@ -193,9 +238,18 @@ class TestSARSpatialEffectsPosterior:
         assert len(result.index) == 1
         # Check expected columns
         expected_cols = {
-            "direct", "direct_ci_lower", "direct_ci_upper", "direct_pvalue",
-            "indirect", "indirect_ci_lower", "indirect_ci_upper", "indirect_pvalue",
-            "total", "total_ci_lower", "total_ci_upper", "total_pvalue",
+            "direct",
+            "direct_ci_lower",
+            "direct_ci_upper",
+            "direct_pvalue",
+            "indirect",
+            "indirect_ci_lower",
+            "indirect_ci_upper",
+            "indirect_pvalue",
+            "total",
+            "total_ci_lower",
+            "total_ci_upper",
+            "total_pvalue",
         }
         assert set(result.columns) == expected_cols
         # P-values should be in [0, 1]
@@ -229,12 +283,15 @@ class TestSARSpatialEffectsPosterior:
         assert samples["indirect"].shape == (G, 1)
         assert samples["total"].shape == (G, 1)
         # Verify posterior means match DataFrame values
-        np.testing.assert_allclose(df["direct"].values, np.mean(samples["direct"], axis=0))
+        np.testing.assert_allclose(
+            df["direct"].values, np.mean(samples["direct"], axis=0)
+        )
 
 
 # ------------------------------------------------------------------
 # Tests for SDM spatial effects posterior
 # ------------------------------------------------------------------
+
 
 class TestSDMSpatialEffectsPosterior:
     def test_posterior_mean_matches_existing(self):
@@ -252,7 +309,9 @@ class TestSDMSpatialEffectsPosterior:
         rho_draws = np.random.uniform(-0.5, 0.5, G)
         _set_posterior_draws(model, beta_draws, rho_draws)
 
-        direct_samples, indirect_samples, total_samples = model._compute_spatial_effects_posterior()
+        direct_samples, indirect_samples, total_samples = (
+            model._compute_spatial_effects_posterior()
+        )
 
         # SDM has k_wx = 1 (only x1 is lagged)
         assert direct_samples.shape == (G, 1)
@@ -278,6 +337,7 @@ class TestSDMSpatialEffectsPosterior:
 # Tests for SLX spatial effects posterior
 # ------------------------------------------------------------------
 
+
 class TestSLXSpatialEffectsPosterior:
     def test_posterior_mean_matches_existing(self):
         n = 5
@@ -292,7 +352,9 @@ class TestSLXSpatialEffectsPosterior:
         beta_draws = np.random.randn(G, 3)  # [intercept, x1, W*x1]
         _set_posterior_draws(model, beta_draws)
 
-        direct_samples, indirect_samples, total_samples = model._compute_spatial_effects_posterior()
+        direct_samples, indirect_samples, total_samples = (
+            model._compute_spatial_effects_posterior()
+        )
 
         assert direct_samples.shape == (G, 1)
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
@@ -313,6 +375,7 @@ class TestSLXSpatialEffectsPosterior:
 # Tests for SDEM spatial effects posterior
 # ------------------------------------------------------------------
 
+
 class TestSDEMSpatialEffectsPosterior:
     def test_posterior_mean_matches_existing(self):
         n = 5
@@ -327,7 +390,9 @@ class TestSDEMSpatialEffectsPosterior:
         beta_draws = np.random.randn(G, 3)  # [intercept, x1, W*x1]
         _set_posterior_draws(model, beta_draws)
 
-        direct_samples, indirect_samples, total_samples = model._compute_spatial_effects_posterior()
+        direct_samples, indirect_samples, total_samples = (
+            model._compute_spatial_effects_posterior()
+        )
 
         assert direct_samples.shape == (G, 1)
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
@@ -347,6 +412,7 @@ class TestSDEMSpatialEffectsPosterior:
 # Tests for SEM spatial effects posterior
 # ------------------------------------------------------------------
 
+
 class TestSEMSpatialEffectsPosterior:
     def test_posterior_mean_matches_existing(self):
         n = 5
@@ -361,7 +427,9 @@ class TestSEMSpatialEffectsPosterior:
         beta_draws = np.random.randn(G, 2)
         _set_posterior_draws(model, beta_draws)
 
-        direct_samples, indirect_samples, total_samples = model._compute_spatial_effects_posterior()
+        direct_samples, indirect_samples, total_samples = (
+            model._compute_spatial_effects_posterior()
+        )
 
         # SEM excludes intercept from effects
         assert direct_samples.shape == (G, 1)
@@ -383,6 +451,7 @@ class TestSEMSpatialEffectsPosterior:
 # ------------------------------------------------------------------
 # Tests for _build_effects_dataframe
 # ------------------------------------------------------------------
+
 
 class TestBuildEffectsDataFrame:
     def test_construction(self):
@@ -409,14 +478,23 @@ class TestBuildEffectsDataFrame:
         assert df.index.name == "variable"
         # Check all expected columns
         expected_cols = {
-            "direct", "direct_ci_lower", "direct_ci_upper", "direct_pvalue",
-            "indirect", "indirect_ci_lower", "indirect_ci_upper", "indirect_pvalue",
-            "total", "total_ci_lower", "total_ci_upper", "total_pvalue",
+            "direct",
+            "direct_ci_lower",
+            "direct_ci_upper",
+            "direct_pvalue",
+            "indirect",
+            "indirect_ci_lower",
+            "indirect_ci_upper",
+            "indirect_pvalue",
+            "total",
+            "total_ci_lower",
+            "total_ci_upper",
+            "total_pvalue",
         }
         assert set(df.columns) == expected_cols
         # Check posterior means match
         np.testing.assert_allclose(df["direct"].values, np.mean(direct_samples, axis=0))
-        np.testing.assert_allclose(df["indirect"].values, np.mean(indirect_samples, axis=0))
+        np.testing.assert_allclose(
+            df["indirect"].values, np.mean(indirect_samples, axis=0)
+        )
         np.testing.assert_allclose(df["total"].values, np.mean(total_samples, axis=0))
-
-

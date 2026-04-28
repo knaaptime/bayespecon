@@ -1,30 +1,31 @@
+from unittest.mock import MagicMock
+
+import arviz as az
 import numpy as np
 import pandas as pd
-import arviz as az
 import pytest
-from unittest.mock import MagicMock
 
 from bayespecon.diagnostics.bayesian_lmtests import (
     BayesianLMTestResult,
-    bayesian_lm_lag_test,
     bayesian_lm_error_test,
-    bayesian_lm_wx_test,
+    bayesian_lm_lag_test,
     bayesian_lm_sdm_joint_test,
     bayesian_lm_slx_error_joint_test,
-    bayesian_robust_lm_lag_sdm_test,
-    bayesian_robust_lm_wx_test,
-    bayesian_robust_lm_error_sdem_test,
+    bayesian_lm_wx_test,
+    bayesian_panel_lm_error_test,
     # Panel LM tests
     bayesian_panel_lm_lag_test,
-    bayesian_panel_lm_error_test,
-    bayesian_panel_robust_lm_lag_test,
-    bayesian_panel_robust_lm_error_test,
-    bayesian_panel_lm_wx_test,
     bayesian_panel_lm_sdm_joint_test,
     bayesian_panel_lm_slx_error_joint_test,
-    bayesian_panel_robust_lm_lag_sdm_test,
-    bayesian_panel_robust_lm_wx_test,
+    bayesian_panel_lm_wx_test,
     bayesian_panel_robust_lm_error_sdem_test,
+    bayesian_panel_robust_lm_error_test,
+    bayesian_panel_robust_lm_lag_sdm_test,
+    bayesian_panel_robust_lm_lag_test,
+    bayesian_panel_robust_lm_wx_test,
+    bayesian_robust_lm_error_sdem_test,
+    bayesian_robust_lm_lag_sdm_test,
+    bayesian_robust_lm_wx_test,
 )
 
 
@@ -38,6 +39,7 @@ def make_sar_sem_data(n=20, seed=42):
     W_dense[0, -1] = W_dense[-1, 0] = 1
     W_dense = W_dense / W_dense.sum(axis=1, keepdims=True)
     import scipy.sparse as sp
+
     W_sparse = sp.csr_matrix(W_dense)
     return y, X, W_dense, W_sparse
 
@@ -215,6 +217,7 @@ def _make_data_with_wx(n=20, k_wx=2, seed=42):
     W_dense[0, -1] = W_dense[-1, 0] = 1
     W_dense = W_dense / W_dense.sum(axis=1, keepdims=True)
     import scipy.sparse as sp
+
     W_sparse = sp.csr_matrix(W_dense)
     return y, X, WX, W_dense, W_sparse
 
@@ -461,6 +464,7 @@ def _make_panel_data(N=6, T=3, k_wx=0, seed=42):
     W_dense[0, -1] = W_dense[-1, 0] = 1
     W_dense = W_dense / W_dense.sum(axis=1, keepdims=True)
     import scipy.sparse as sp
+
     W_sparse = sp.csr_matrix(W_dense)
 
     # WX columns (spatially lagged X, applied period-by-period)
@@ -471,7 +475,9 @@ def _make_panel_data(N=6, T=3, k_wx=0, seed=42):
             for t in range(T):
                 start = t * N
                 end = (t + 1) * N
-                wx_j[start:end] = W_dense @ X[start:end, 1]  # lag the non-constant column
+                wx_j[start:end] = (
+                    W_dense @ X[start:end, 1]
+                )  # lag the non-constant column
             WX_list.append(wx_j)
         WX = np.column_stack(WX_list)
     else:
@@ -518,7 +524,9 @@ def _make_mock_panel_ols_model(N=6, T=3, k_wx=0, beta_noise=0.1, draws=100, seed
     return model
 
 
-def _make_mock_panel_sar_model(N=6, T=3, k_wx=2, beta_noise=0.1, rho_noise=0.05, draws=100, seed=42):
+def _make_mock_panel_sar_model(
+    N=6, T=3, k_wx=2, beta_noise=0.1, rho_noise=0.05, draws=100, seed=42
+):
     """Build a mock SAR panel model for panel LM tests."""
     y, X, WX, Wy, W_dense, W_sparse, W_eigs, N, T = _make_panel_data(N, T, k_wx, seed)
 
@@ -781,8 +789,9 @@ class TestSpatialDiagnosticsMethod:
     """Test the spatial_diagnostics() and spatial_diagnostics_decision()
     methods on model classes."""
 
-    def _make_model_with_class(self, y, X, W_sparse, cls, WX=None,
-                                beta_noise=0.1, draws=100, rho_noise=None):
+    def _make_model_with_class(
+        self, y, X, W_sparse, cls, WX=None, beta_noise=0.1, draws=100, rho_noise=None
+    ):
         """Build a mock model that has the right class for spatial_diagnostics."""
         n, k = X.shape
         beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
@@ -828,7 +837,12 @@ class TestSpatialDiagnosticsMethod:
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 4
-        assert set(df.index) == {"LM-Lag", "LM-Error", "LM-SDM-Joint", "LM-SLX-Error-Joint"}
+        assert set(df.index) == {
+            "LM-Lag",
+            "LM-Error",
+            "LM-SDM-Joint",
+            "LM-SLX-Error-Joint",
+        }
         assert "statistic" in df.columns
         assert "p_value" in df.columns
         assert "df" in df.columns
@@ -865,8 +879,10 @@ class TestSpatialDiagnosticsMethod:
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 4
         assert set(df.index) == {
-            "LM-Lag", "LM-Error",
-            "Robust-LM-Lag-SDM", "Robust-LM-Error-SDEM",
+            "LM-Lag",
+            "LM-Error",
+            "Robust-LM-Lag-SDM",
+            "Robust-LM-Error-SDEM",
         }
 
     def test_sdm_spatial_diagnostics_returns_dataframe(self):

@@ -15,7 +15,8 @@ import numpy as np
 import pytest
 
 from bayespecon import OLSPanelRE, SARPanelRE, SEMPanelRE
-from .helpers  import (
+
+from .helpers import (
     PANEL_N,
     PANEL_T,
     SAMPLE_KWARGS,
@@ -42,11 +43,17 @@ ABS_TOL_SIGMA_ALPHA = 0.30
 # OLS Panel RE
 # ---------------------------------------------------------------------------
 
+
 def test_ols_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """OLSPanelRE posterior means of beta should match truth."""
     y, X, _ = make_panel_ols_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        beta=BETA_TRUE, sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = OLSPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
     idata = model.fit(**SAMPLE_KWARGS)
@@ -60,8 +67,13 @@ def test_ols_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
 def test_ols_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
     """OLSPanelRE posterior mean of sigma_alpha should be close to the true value."""
     y, X, _ = make_panel_ols_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        beta=BETA_TRUE, sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = OLSPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
     idata = model.fit(**SAMPLE_KWARGS)
@@ -75,11 +87,17 @@ def test_ols_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
 # SAR Panel RE
 # ---------------------------------------------------------------------------
 
+
 def test_sar_panel_re_recovers_rho(rng, W_panel_dense, W_panel_graph):
     """SARPanelRE posterior mean of rho should be close to the true rho."""
     y, X, _ = make_panel_sar_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
         sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = SARPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
@@ -93,8 +111,13 @@ def test_sar_panel_re_recovers_rho(rng, W_panel_dense, W_panel_graph):
 def test_sar_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """SARPanelRE posterior means of beta should match truth."""
     y, X, _ = make_panel_sar_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
         sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = SARPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
@@ -109,8 +132,13 @@ def test_sar_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
 def test_sar_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
     """SARPanelRE posterior mean of sigma_alpha should be close to the true value."""
     y, X, _ = make_panel_sar_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
         sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = SARPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
@@ -125,11 +153,17 @@ def test_sar_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
 # SEM Panel RE
 # ---------------------------------------------------------------------------
 
+
 def test_sem_panel_re_recovers_lam(rng, W_panel_dense, W_panel_graph):
     """SEMPanelRE posterior mean of lambda should be close to the true value."""
     y, X, _ = make_panel_sem_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        lam=LAM_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
         sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = SEMPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
@@ -143,8 +177,13 @@ def test_sem_panel_re_recovers_lam(rng, W_panel_dense, W_panel_graph):
 def test_sem_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """SEMPanelRE posterior means of beta should match truth."""
     y, X, _ = make_panel_sem_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        lam=LAM_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
         sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = SEMPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
@@ -159,8 +198,13 @@ def test_sem_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
 def test_sem_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
     """SEMPanelRE posterior mean of sigma_alpha should be close to the true value."""
     y, X, _ = make_panel_sem_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        lam=LAM_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
         sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = SEMPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)

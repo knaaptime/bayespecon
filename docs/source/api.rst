@@ -68,6 +68,7 @@ Panel Spatial Models (Random Effects)
    OLSPanelRE
    SARPanelRE
    SEMPanelRE
+   SDEMPanelRE
 
 Dynamic Panel Spatial Models
 ----------------------------
@@ -77,13 +78,13 @@ Dynamic Panel Spatial Models
 .. autosummary::
    :toctree: generated/
 
-   DLMPanelFE
-   SDMRPanelFE
-   SDMUPanelFE
-   SARPanelDEDynamic
-   SEMPanelDEDynamic
-   SDEMPanelDEDynamic
-   SLXPanelDEDynamic
+   OLSPanelDynamic
+   SDMRPanelDynamic
+   SDMUPanelDynamic
+   SARPanelDynamic
+   SEMPanelDynamic
+   SDEMPanelDynamic
+   SLXPanelDynamic
 
 
 Non-Linear Spatial Models
@@ -122,10 +123,10 @@ Flow Models
    :toctree: generated/
 
    FlowModel
-   SAR_Flow
-   SAR_Flow_Separable
-   PoissonFlow
-   PoissonFlow_Separable
+   SARFlow
+   SARFlowSeparable
+   PoissonSARFlow
+   PoissonSARFlowSeparable
 
 
 Panel Flow Models
@@ -137,10 +138,10 @@ Panel Flow Models
    :toctree: generated/
 
    FlowPanelModel
-   SAR_Flow_Panel
-   SAR_Flow_Separable_Panel
-   PoissonFlow_Panel
-   PoissonFlow_Separable_Panel
+   SARFlowPanel
+   SARFlowSeparablePanel
+   PoissonSARFlowPanel
+   PoissonSARFlowSeparablePanel
 
 
 
@@ -180,6 +181,7 @@ Panel Bayesian LM Tests
    bayesian_panel_robust_lm_lag_sdm_test
    bayesian_panel_robust_lm_wx_test
    bayesian_panel_robust_lm_error_sdem_test
+   bayesian_panel_lm_wx_sem_test
 
 
 Bayesian Model Comparison
@@ -254,10 +256,10 @@ Flow Models
    :toctree: generated/
 
    FlowModel
-   SAR_Flow
-   SAR_Flow_Separable
-   PoissonFlow
-   PoissonFlow_Separable
+   SARFlow
+   SARFlowSeparable
+   PoissonSARFlow
+   PoissonSARFlowSeparable
 
 Panel Flow Models
 ^^^^^^^^^^^^^^^^^
@@ -268,10 +270,10 @@ Panel Flow Models
    :toctree: generated/
 
    FlowPanelModel
-   SAR_Flow_Panel
-   SAR_Flow_Separable_Panel
-   PoissonFlow_Panel
-   PoissonFlow_Separable_Panel
+   SARFlowPanel
+   SARFlowSeparablePanel
+   PoissonSARFlowPanel
+   PoissonSARFlowSeparablePanel
 
 
 Graph Utilities

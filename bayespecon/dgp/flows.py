@@ -16,8 +16,12 @@ import numpy as np
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from ..graph import _validate_graph, flow_design_matrix, flow_design_matrix_with_orig, flow_weight_matrices
-from .utils import weights_from_geodataframe
+from ..graph import (
+    _validate_graph,
+    flow_design_matrix,
+    flow_design_matrix_with_orig,
+    flow_weight_matrices,
+)
 
 
 def generate_flow_data(
@@ -112,9 +116,7 @@ def generate_flow_data(
 
     W = _validate_graph(G)
     if W.shape[0] != n:
-        raise ValueError(
-            f"G has {W.shape[0]} units but n={n} was specified."
-        )
+        raise ValueError(f"G has {W.shape[0]} units but n={n} was specified.")
     N = n * n
 
     beta_d_arr = np.asarray(beta_d, dtype=np.float64).ravel()
@@ -146,9 +148,9 @@ def generate_flow_data(
     # beta_extended layout: [alpha, 0, beta_d..., beta_o..., 0...(intra), (0 for dist)]
     p = design.combined.shape[1]
     beta_full = np.zeros(p, dtype=np.float64)
-    beta_full[0] = alpha                        # intercept
+    beta_full[0] = alpha  # intercept
     # intra_indicator coefficient stays 0 in DGP
-    beta_full[2 : 2 + k] = beta_d_arr          # destination block
+    beta_full[2 : 2 + k] = beta_d_arr  # destination block
     beta_full[2 + k : 2 + 2 * k] = beta_o_arr  # origin block
     # intra and dist coefficients remain 0
 
@@ -157,8 +159,8 @@ def generate_flow_data(
     # Solve y = A^{-1}(Xbeta + epsilon)
     if err_hetero:
         # Cell-level standard deviations: sigma * sqrt(1 + ||x_dest||^2 + ||x_orig||^2)
-        dest_idx = np.repeat(np.arange(n), n)   # row = destination unit
-        orig_idx = np.tile(np.arange(n), n)     # col = origin unit
+        dest_idx = np.repeat(np.arange(n), n)  # row = destination unit
+        orig_idx = np.tile(np.arange(n), n)  # col = origin unit
         scale_vec = sigma * np.sqrt(
             1.0
             + np.sum(X_arr[dest_idx] ** 2, axis=1)
@@ -327,6 +329,7 @@ def generate_poisson_flow_data(
         # Default: create a rook-contiguity grid with ~n units.
         # n_side is chosen so that n_side² ≈ n.
         import math
+
         n_side = max(2, int(round(math.sqrt(n))))
         W, G = rook_grid_weights(n_side)
     n = W.shape[0]  # actual number of spatial units
@@ -357,7 +360,7 @@ def generate_poisson_flow_data(
     # beta layout: [alpha=0, intra=0, beta_d..., beta_o..., intra_x=0..., (dist=0)]
     p = design.combined.shape[1]
     beta_full = np.zeros(p, dtype=np.float64)
-    beta_full[2 : 2 + k] = beta_d_arr          # destination block
+    beta_full[2 : 2 + k] = beta_d_arr  # destination block
     beta_full[2 + k : 2 + 2 * k] = beta_o_arr  # origin block
 
     Xbeta = design.combined @ beta_full  # (N,)
@@ -494,9 +497,7 @@ def generate_panel_flow_data(
 
     W = _validate_graph(G)
     if W.shape[0] != n:
-        raise ValueError(
-            f"G has {W.shape[0]} units but n={n} was specified."
-        )
+        raise ValueError(f"G has {W.shape[0]} units but n={n} was specified.")
     N = n * n  # O-D pairs per period
 
     beta_d_arr = np.asarray(beta_d, dtype=np.float64).ravel()
@@ -549,8 +550,8 @@ def generate_panel_flow_data(
         y_list.append(y_t)
         X_list.append(design.combined)
 
-    y = np.concatenate(y_list)   # (N*T,)
-    X = np.vstack(X_list)        # (N*T, p)
+    y = np.concatenate(y_list)  # (N*T,)
+    X = np.vstack(X_list)  # (N*T, p)
 
     return {
         "y": y,
@@ -663,9 +664,7 @@ def generate_panel_poisson_flow_data(
 
     W = _validate_graph(G)
     if W.shape[0] != n:
-        raise ValueError(
-            f"G has {W.shape[0]} units but n={n} was specified."
-        )
+        raise ValueError(f"G has {W.shape[0]} units but n={n} was specified.")
     N = n * n
 
     # Coefficient vectors
@@ -727,8 +726,8 @@ def generate_panel_poisson_flow_data(
         y_list.append(y_t)
         X_list.append(design.combined)
 
-    y = np.concatenate(y_list)   # (N*T,)
-    X = np.vstack(X_list)        # (N*T, p)
+    y = np.concatenate(y_list)  # (N*T,)
+    X = np.vstack(X_list)  # (N*T, p)
 
     return {
         "y": y,
@@ -765,7 +764,7 @@ def generate_flow_data_separable(
     derived from the separability constraint
     :math:`\\rho_w = -\\rho_d \\rho_o`, so it is **not** a free argument.
     Use this function to generate training data for
-    :class:`~bayespecon.models.flow.SAR_Flow_Separable`.
+    :class:`~bayespecon.models.flow.SARFlowSeparable`.
 
     Parameters
     ----------
@@ -807,7 +806,7 @@ def generate_poisson_flow_data_separable(
     Identical to :func:`generate_poisson_flow_data` except the network
     parameter is derived as :math:`\\rho_w = -\\rho_d \\rho_o`, so it is
     **not** a free argument.  Use this function to generate training data for
-    :class:`~bayespecon.models.flow.PoissonFlow_Separable`.
+    :class:`~bayespecon.models.flow.PoissonSARFlowSeparable`.
 
     Parameters
     ----------
@@ -830,7 +829,9 @@ def generate_poisson_flow_data_separable(
         will equal ``-rho_d * rho_o``.
     """
     rho_w = -rho_d * rho_o
-    return generate_poisson_flow_data(n=n, k=k, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w, **kwargs)
+    return generate_poisson_flow_data(
+        n=n, k=k, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w, **kwargs
+    )
 
 
 def generate_panel_flow_data_separable(
@@ -848,7 +849,7 @@ def generate_panel_flow_data_separable(
     Identical to :func:`generate_panel_flow_data` except the network parameter
     is derived as :math:`\\rho_w = -\\rho_d \\rho_o`.  Use this function to
     generate training data for
-    :class:`~bayespecon.models.flow_panel.SAR_Flow_Separable_Panel`.
+    :class:`~bayespecon.models.flow_panel.SARFlowSeparablePanel`.
 
     Parameters
     ----------
@@ -877,7 +878,9 @@ def generate_panel_flow_data_separable(
         equal ``-rho_d * rho_o``.
     """
     rho_w = -rho_d * rho_o
-    return generate_panel_flow_data(n, T, G, rho_d, rho_o, rho_w, beta_d, beta_o, **kwargs)
+    return generate_panel_flow_data(
+        n, T, G, rho_d, rho_o, rho_w, beta_d, beta_o, **kwargs
+    )
 
 
 def generate_panel_poisson_flow_data_separable(
@@ -893,7 +896,7 @@ def generate_panel_poisson_flow_data_separable(
     Identical to :func:`generate_panel_poisson_flow_data` except the network
     parameter is derived as :math:`\\rho_w = -\\rho_d \\rho_o`.  Use this
     function to generate training data for
-    :class:`~bayespecon.models.flow_panel.PoissonFlow_Separable_Panel`.
+    :class:`~bayespecon.models.flow_panel.PoissonSARFlowSeparablePanel`.
 
     Parameters
     ----------
@@ -918,4 +921,6 @@ def generate_panel_poisson_flow_data_separable(
         entry will equal ``-rho_d * rho_o``.
     """
     rho_w = -rho_d * rho_o
-    return generate_panel_poisson_flow_data(n=n, T=T, G=G, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w, **kwargs)
+    return generate_panel_poisson_flow_data(
+        n=n, T=T, G=G, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w, **kwargs
+    )

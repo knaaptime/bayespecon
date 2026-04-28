@@ -14,11 +14,12 @@ import numpy as np
 import pytest
 
 from bayespecon import SpatialProbit
-from .helpers  import (
+
+from .helpers import (
     SAMPLE_KWARGS,
+    W_to_graph,
     make_line_W,
     make_spatial_probit_data,
-    W_to_graph,
 )
 
 pytestmark = [pytest.mark.slow, pytest.mark.recovery]

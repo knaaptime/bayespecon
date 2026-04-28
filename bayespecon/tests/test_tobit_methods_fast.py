@@ -5,8 +5,9 @@ from __future__ import annotations
 import arviz as az
 import numpy as np
 
-from bayespecon import SARTobit, SEMTobit, SDMTobit
-from .helpers  import W_to_graph, make_line_W
+from bayespecon import SARTobit, SDMTobit, SEMTobit
+
+from .helpers import W_to_graph, make_line_W
 
 
 def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:
@@ -32,25 +33,33 @@ def test_sar_sem_tobit_fitted_values_and_effects_run_with_mock_posteriors():
     sem = SEMTobit(y=y, X=X, W=W)
 
     beta = np.array([0.3, 0.9])
-    yc_sar = np.vstack([
-        np.linspace(0.05, 0.15, sar._censored_idx.size),
-        np.linspace(0.06, 0.16, sar._censored_idx.size),
-    ])
-    yc_sem = np.vstack([
-        np.linspace(0.05, 0.15, sem._censored_idx.size),
-        np.linspace(0.06, 0.16, sem._censored_idx.size),
-    ])
+    yc_sar = np.vstack(
+        [
+            np.linspace(0.05, 0.15, sar._censored_idx.size),
+            np.linspace(0.06, 0.16, sar._censored_idx.size),
+        ]
+    )
+    yc_sem = np.vstack(
+        [
+            np.linspace(0.05, 0.15, sem._censored_idx.size),
+            np.linspace(0.06, 0.16, sem._censored_idx.size),
+        ]
+    )
 
-    sar._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "rho": np.array([0.2, 0.201]),
-        "y_cens_gap": yc_sar,
-    })
-    sem._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "lam": np.array([0.1, 0.101]),
-        "y_cens_gap": yc_sem,
-    })
+    sar._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "rho": np.array([0.2, 0.201]),
+            "y_cens_gap": yc_sar,
+        }
+    )
+    sem._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "lam": np.array([0.1, 0.101]),
+            "y_cens_gap": yc_sem,
+        }
+    )
 
     for m in [sar, sem]:
         fitted = m.fitted_values()
@@ -69,16 +78,20 @@ def test_sdm_tobit_fitted_values_and_effects_run_with_mock_posterior():
 
     # k=2, kw=1 when intercept is excluded from WX terms
     beta = np.array([0.25, 0.8, 0.15])
-    yc = np.vstack([
-        np.linspace(0.05, 0.15, sdm._censored_idx.size),
-        np.linspace(0.06, 0.16, sdm._censored_idx.size),
-    ])
+    yc = np.vstack(
+        [
+            np.linspace(0.05, 0.15, sdm._censored_idx.size),
+            np.linspace(0.06, 0.16, sdm._censored_idx.size),
+        ]
+    )
 
-    sdm._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "rho": np.array([0.18, 0.181]),
-        "y_cens_gap": yc,
-    })
+    sdm._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "rho": np.array([0.18, 0.181]),
+            "y_cens_gap": yc,
+        }
+    )
 
     fitted = sdm.fitted_values()
     effects = sdm.spatial_effects()

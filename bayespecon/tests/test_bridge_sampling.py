@@ -29,10 +29,10 @@ from bayespecon.diagnostics.bayesfactor import (
     post_prob,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_2d_normal_idata(n_samples=10000, seed=42):
     """Create InferenceData from a 2D standard normal distribution.
@@ -43,8 +43,10 @@ def _make_2d_normal_idata(n_samples=10000, seed=42):
     rng = np.random.default_rng(seed)
     samples = rng.multivariate_normal(mean=np.zeros(2), cov=np.eye(2), size=n_samples)
     # Reshape to (1, n_samples, 2) for ArviZ
-    posterior_dict = {"x1": samples[:, 0].reshape(1, -1),
-                      "x2": samples[:, 1].reshape(1, -1)}
+    posterior_dict = {
+        "x1": samples[:, 0].reshape(1, -1),
+        "x2": samples[:, 1].reshape(1, -1),
+    }
     idata = az.from_dict(posterior=posterior_dict)
     return idata, samples
 
@@ -55,8 +57,10 @@ def _make_2d_normal_log_posterior():
     log p(x) = -0.5 * x^T x  (unnormalized; the normalizing constant
     is what bridge sampling estimates).
     """
+
     def log_posterior(theta_flat):
-        return -0.5 * np.sum(theta_flat ** 2)
+        return -0.5 * np.sum(theta_flat**2)
+
     return log_posterior
 
 
@@ -89,6 +93,7 @@ def _make_simple_linear_idata(n=30, k=2, seed=42):
 # Test: _logsumexp
 # ---------------------------------------------------------------------------
 
+
 class TestLogsumexp:
     def test_basic(self):
         a = np.array([1.0, 2.0, 3.0])
@@ -113,6 +118,7 @@ class TestLogsumexp:
 # ---------------------------------------------------------------------------
 # Test: _nearest_pos_def
 # ---------------------------------------------------------------------------
+
 
 class TestNearestPosDef:
     def test_already_pd(self):
@@ -140,6 +146,7 @@ class TestNearestPosDef:
 # Test: _run_iterative_scheme
 # ---------------------------------------------------------------------------
 
+
 class TestIterativeScheme:
     def test_2d_standard_normal(self):
         """Test against the analytical normalizing constant of a 2D standard normal.
@@ -156,31 +163,45 @@ class TestIterativeScheme:
         prop_samples = rng.multivariate_normal(np.zeros(2), np.eye(2), size=n_prop)
 
         # q11: log unnormalized posterior at posterior samples
-        q11 = -0.5 * np.sum(post_samples ** 2, axis=1)
+        q11 = -0.5 * np.sum(post_samples**2, axis=1)
         # q12: log proposal density at posterior samples
         q12 = multivariate_normal.logpdf(post_samples, mean=np.zeros(2), cov=np.eye(2))
         # q21: log unnormalized posterior at proposal samples
-        q21 = -0.5 * np.sum(prop_samples ** 2, axis=1)
+        q21 = -0.5 * np.sum(prop_samples**2, axis=1)
         # q22: log proposal density at proposal samples
         q22 = multivariate_normal.logpdf(prop_samples, mean=np.zeros(2), cov=np.eye(2))
 
         result = _run_iterative_scheme(
-            q11=q11, q12=q12, q21=q21, q22=q22,
-            r0=1.0, tol=1e-10, maxiter=1000,
-            criterion="r", neff=None, use_neff=False,
+            q11=q11,
+            q12=q12,
+            q21=q21,
+            q22=q22,
+            r0=1.0,
+            tol=1e-10,
+            maxiter=1000,
+            criterion="r",
+            neff=None,
+            use_neff=False,
         )
 
         # The true logml is log(2π) ≈ 1.8379
         true_logml = np.log(2 * np.pi)
-        np.testing.assert_allclose(result["logml"], true_logml, rtol=0.05,
-                                   err_msg=f"logml={result['logml']:.4f}, expected={true_logml:.4f}")
+        np.testing.assert_allclose(
+            result["logml"],
+            true_logml,
+            rtol=0.05,
+            err_msg=f"logml={result['logml']:.4f}, expected={true_logml:.4f}",
+        )
         assert result["converged"], "Iterative scheme should converge"
-        assert result["niter"] < 100, f"Should converge quickly, got {result['niter']} iterations"
+        assert result["niter"] < 100, (
+            f"Should converge quickly, got {result['niter']} iterations"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Test: _bridge_logml
 # ---------------------------------------------------------------------------
+
 
 class TestBridgeLogml:
     def test_2d_normal_with_log_posterior(self):
@@ -191,16 +212,21 @@ class TestBridgeLogml:
         logml = _bridge_logml(idata, log_posterior=log_post, random_state=42)
 
         true_logml = np.log(2 * np.pi)
-        np.testing.assert_allclose(logml, true_logml, rtol=0.05,
-                                   err_msg=f"logml={logml:.4f}, expected={true_logml:.4f}")
+        np.testing.assert_allclose(
+            logml,
+            true_logml,
+            rtol=0.05,
+            err_msg=f"logml={logml:.4f}, expected={true_logml:.4f}",
+        )
 
     def test_2d_normal_diagnostics(self):
         """Bridge sampling returns diagnostics when requested."""
         idata, _ = _make_2d_normal_idata(n_samples=10000, seed=42)
         log_post = _make_2d_normal_log_posterior()
 
-        diag = _bridge_logml(idata, log_posterior=log_post, return_diagnostics=True,
-                             random_state=42)
+        diag = _bridge_logml(
+            idata, log_posterior=log_post, return_diagnostics=True, random_state=42
+        )
 
         assert isinstance(diag, dict)
         assert "logml" in diag
@@ -215,8 +241,13 @@ class TestBridgeLogml:
         idata, _ = _make_2d_normal_idata(n_samples=10000, seed=42)
         log_post = _make_2d_normal_log_posterior()
 
-        diag = _bridge_logml(idata, log_posterior=log_post, return_diagnostics=True,
-                             repetitions=3, random_state=42)
+        diag = _bridge_logml(
+            idata,
+            log_posterior=log_post,
+            return_diagnostics=True,
+            repetitions=3,
+            random_state=42,
+        )
 
         true_logml = np.log(2 * np.pi)
         np.testing.assert_allclose(diag["logml"], true_logml, rtol=0.05)
@@ -229,10 +260,20 @@ class TestBridgeLogml:
         idata, _ = _make_2d_normal_idata(n_samples=10000, seed=42)
         log_post = _make_2d_normal_log_posterior()
 
-        diag_neff = _bridge_logml(idata, log_posterior=log_post, return_diagnostics=True,
-                                  use_neff=True, random_state=42)
-        diag_no_neff = _bridge_logml(idata, log_posterior=log_post, return_diagnostics=True,
-                                     use_neff=False, random_state=42)
+        diag_neff = _bridge_logml(
+            idata,
+            log_posterior=log_post,
+            return_diagnostics=True,
+            use_neff=True,
+            random_state=42,
+        )
+        diag_no_neff = _bridge_logml(
+            idata,
+            log_posterior=log_post,
+            return_diagnostics=True,
+            use_neff=False,
+            random_state=42,
+        )
 
         # Both should converge and give reasonable estimates
         true_logml = np.log(2 * np.pi)
@@ -245,6 +286,7 @@ class TestBridgeLogml:
 # ---------------------------------------------------------------------------
 # Test: bic_to_bf
 # ---------------------------------------------------------------------------
+
 
 class TestBicToBf:
     def test_basic(self):
@@ -270,6 +312,7 @@ class TestBicToBf:
 # Test: post_prob
 # ---------------------------------------------------------------------------
 
+
 class TestPostProb:
     def test_uniform_prior(self):
         probs = post_prob([-20.8, -18.0, -19.0], model_names=["H0", "H1", "H2"])
@@ -280,8 +323,9 @@ class TestPostProb:
         assert probs["H1"] > probs["H2"]
 
     def test_custom_prior(self):
-        probs = post_prob([-20.8, -18.0], model_names=["H0", "H1"],
-                          prior_prob=[0.8, 0.2])
+        probs = post_prob(
+            [-20.8, -18.0], model_names=["H0", "H1"], prior_prob=[0.8, 0.2]
+        )
         np.testing.assert_allclose(probs.sum(), 1.0, rtol=1e-10)
 
     def test_equal_logml(self):
@@ -302,6 +346,7 @@ class TestPostProb:
 # Test: bayes_factor_compare_models
 # ---------------------------------------------------------------------------
 
+
 class TestBayesFactorCompareModels:
     def test_bic_method_with_idata(self):
         """BIC method should work with InferenceData (no model object needed)."""
@@ -313,7 +358,9 @@ class TestBayesFactorCompareModels:
     def test_bridge_requires_model_object(self):
         """Bridge method raises ValueError when InferenceData is passed without model object."""
         idata, _ = _make_2d_normal_idata(n_samples=1000, seed=42)
-        with pytest.raises(ValueError, match="InferenceData.*bridge sampling requires a fitted model"):
+        with pytest.raises(
+            ValueError, match="InferenceData.*bridge sampling requires a fitted model"
+        ):
             bayes_factor_compare_models([idata], method="bridge", model_labels=["M1"])
 
     def test_bridge_with_log_posterior_direct(self):
@@ -328,6 +375,7 @@ class TestBayesFactorCompareModels:
     def test_bridge_with_model_object(self):
         """Bridge method with a fitted model object auto-compiles log_posterior."""
         import pymc as pm
+
         rng = np.random.default_rng(42)
         n = 30
         X = np.column_stack([np.ones(n), rng.normal(size=n)])
@@ -339,31 +387,38 @@ class TestBayesFactorCompareModels:
             sigma = pm.HalfNormal("sigma", sigma=10)
             mu = pm.math.dot(X, beta)
             pm.Normal("obs", mu=mu, sigma=sigma, observed=y)
-            idata = pm.sample(draws=500, tune=500, chains=2, random_seed=42,
-                              progressbar=False)
+            idata = pm.sample(
+                draws=500, tune=500, chains=2, random_seed=42, progressbar=False
+            )
 
         # Create a mock model object with .inference_data and .pymc_model
         class MockModel:
             def __init__(self, pymc_model, idata):
                 self._pymc_model = pymc_model
                 self._idata = idata
+
             @property
             def pymc_model(self):
                 return self._pymc_model
+
             @property
             def inference_data(self):
                 return self._idata
 
         mock_model = MockModel(model, idata)
         df = bayes_factor_compare_models(
-            {"OLS": mock_model}, method="bridge", random_state=42,
+            {"OLS": mock_model},
+            method="bridge",
+            random_state=42,
         )
         assert df.shape == (1, 1)
         assert df.loc["OLS", "OLS"] == 1.0
 
         # Also test with return_diagnostics to verify constrained_to_unconstrained works
         df2, diag = bayes_factor_compare_models(
-            {"OLS": mock_model}, method="bridge", random_state=42,
+            {"OLS": mock_model},
+            method="bridge",
+            random_state=42,
             return_diagnostics=True,
         )
         assert "OLS" in diag
@@ -376,8 +431,9 @@ class TestBayesFactorCompareModels:
         idata, _ = _make_2d_normal_idata(n_samples=10000, seed=42)
         log_post = _make_2d_normal_log_posterior()
 
-        diag = _bridge_logml(idata, log_posterior=log_post,
-                              return_diagnostics=True, random_state=42)
+        diag = _bridge_logml(
+            idata, log_posterior=log_post, return_diagnostics=True, random_state=42
+        )
         assert isinstance(diag, dict)
         assert "logml" in diag
         assert diag["method"] == "bridge"
@@ -392,7 +448,8 @@ class TestBayesFactorCompareModels:
         """BIC method accepts a dict of InferenceData."""
         idata = _make_simple_linear_idata()
         df = bayes_factor_compare_models(
-            {"OLS": idata}, method="bic",
+            {"OLS": idata},
+            method="bic",
         )
         assert df.shape == (1, 1)
         assert "OLS" in df.index
@@ -401,7 +458,8 @@ class TestBayesFactorCompareModels:
         """Explicit model_labels override dict keys."""
         idata = _make_simple_linear_idata()
         df = bayes_factor_compare_models(
-            {"OLS": idata}, method="bic",
+            {"OLS": idata},
+            method="bic",
             model_labels=["Custom"],
         )
         assert "Custom" in df.index
@@ -413,7 +471,8 @@ class TestBayesFactorCompareModels:
         # Remove observed_data to simulate the case where it's absent
         del idata["observed_data"]
         df = bayes_factor_compare_models(
-            {"OLS": idata}, method="bic",
+            {"OLS": idata},
+            method="bic",
         )
         assert df.shape == (1, 1)
         assert np.isfinite(df.iloc[0, 0])
@@ -430,13 +489,15 @@ class TestBayesFactorCompareModels:
             _y = np.zeros(30)  # n_obs = 30
 
         df = bayes_factor_compare_models(
-            {"OLS": FakeModel()}, method="bic",
+            {"OLS": FakeModel()},
+            method="bic",
         )
         assert df.shape == (1, 1)
         assert np.isfinite(df.iloc[0, 0])
 
     def test_unfitted_model_raises(self):
         """Model without inference_data raises ValueError."""
+
         class UnfittedModel:
             inference_data = None
             pymc_model = None
@@ -449,11 +510,13 @@ class TestBayesFactorCompareModels:
 # Test: compile_log_posterior (requires PyMC)
 # ---------------------------------------------------------------------------
 
+
 class TestCompileLogPosterior:
     @pytest.fixture
     def pymc_model(self):
         """Create a simple PyMC model for testing."""
         import pymc as pm
+
         rng = np.random.default_rng(42)
         n = 30
         X = np.column_stack([np.ones(n), rng.normal(size=n)])
@@ -496,6 +559,7 @@ class TestCompileLogPosterior:
     def test_constrained_to_unconstrained(self, pymc_model):
         """Test that constrained_to_unconstrained correctly transforms samples."""
         import pymc as pm
+
         logp_fn, names, info, to_unconstrained = compile_log_posterior(pymc_model)
 
         # Create fake posterior samples in constrained space
@@ -503,10 +567,15 @@ class TestCompileLogPosterior:
         n_chains, n_draws = 2, 100
         rng = np.random.default_rng(42)
         beta_samples = rng.normal(size=(n_chains, n_draws, 2))
-        sigma_samples = np.abs(rng.normal(size=(n_chains, n_draws)))  # constrained (positive)
+        sigma_samples = np.abs(
+            rng.normal(size=(n_chains, n_draws))
+        )  # constrained (positive)
 
         posterior = az.from_dict(
-            posterior={"beta": beta_samples, "sigma": sigma_samples.reshape(n_chains, n_draws, 1)}
+            posterior={
+                "beta": beta_samples,
+                "sigma": sigma_samples.reshape(n_chains, n_draws, 1),
+            }
         ).posterior
 
         # Transform to unconstrained space
@@ -516,7 +585,9 @@ class TestCompileLogPosterior:
         # sigma_log__ should be log(sigma)
         sigma_log_from_transform = unconstrained[:, 2]
         sigma_log_expected = np.log(sigma_samples.ravel())
-        np.testing.assert_allclose(sigma_log_from_transform, sigma_log_expected, rtol=1e-10)
+        np.testing.assert_allclose(
+            sigma_log_from_transform, sigma_log_expected, rtol=1e-10
+        )
 
         # beta should be unchanged (identity transform)
         beta_from_transform = unconstrained[:, :2]
