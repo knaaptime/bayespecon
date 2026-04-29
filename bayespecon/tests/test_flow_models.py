@@ -2285,7 +2285,7 @@ class TestFlowLogLikelihood:
             col_names=self.poi["col_names"],
             trace_seed=0,
         )
-        idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
+        idata = m.fit(draws=200, tune=300, chains=1, progressbar=False, random_seed=0)
         # PoissonFlow uses self.poi's own G (not self.G); validate against m._N.
         import arviz as az
 

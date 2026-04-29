@@ -12,6 +12,12 @@ import scipy.sparse.linalg as spla
 from scipy.interpolate import CubicSpline
 
 
+# Largest n for which `_build_logdet_grid` uses a single eigendecomposition
+# rather than a per-rho slogdet loop.  Above this threshold the O(n^3) eigvals
+# cost dominates and the iterative slogdet path is more memory-friendly.
+_LOGDET_GRID_EIG_MAX = 4000
+
+
 def _stable_rho_grid(
     rmin: float, rmax: float, grid: float, eps: float = 1e-6
 ) -> np.ndarray:
@@ -124,10 +130,21 @@ def _build_logdet_grid(
     """
     rho_grid = np.linspace(rho_min + 1e-6, rho_max - 1e-6, n_grid)
     n = W_dense.shape[0]
+
+    # Eigenvalue path: log|I - rho W| = sum_j log|1 - rho * lambda_j|.
+    # One O(n^3) eigendecomposition replaces n_grid slogdet calls.  For
+    # complex-conjugate eigenvalue pairs the modulus of (1 - rho lambda) is
+    # real-positive so the sum-of-logs is exact (matches slogdet to machine
+    # precision).  Falls back to the slogdet loop for very large n where
+    # eigvals becomes the dominant cost.
+    if n <= _LOGDET_GRID_EIG_MAX:
+        eigs = np.linalg.eigvals(W_dense)
+        # Shape: (n_grid, n).  log of |1 - rho * lambda|, summed across j.
+        vals = 1.0 - rho_grid[:, None] * eigs[None, :]
+        logdet_grid = np.log(np.abs(vals)).sum(axis=1).astype(np.float64)
+        return rho_grid, logdet_grid
+
     I = np.eye(n)
-    # Loop over rho_grid: same FLOPs as a batched slogdet but avoids the
-    # O(n_grid * n^2) intermediate tensor that batched broadcasting would
-    # allocate (which can exceed memory for n in the low thousands).
     logdet_grid = np.empty(n_grid, dtype=np.float64)
     for i, r in enumerate(rho_grid):
         _, logdet_grid[i] = np.linalg.slogdet(I - r * W_dense)
@@ -479,16 +496,16 @@ def chebyshev(
         # Approximate tr(W^k) via MC, then evaluate at nodes
         rng = np.random.default_rng(random_state)
 
-        # Compute MC trace estimates for k=1..order
+        # Compute MC trace estimates for k=1..order via batched Hutchinson
+        # probes: one CSR×dense product per order covers all probes.
+        U = rng.standard_normal((n, n_mc_iter))
+        utu = np.einsum("ij,ij->j", U, U)  # (n_mc_iter,)
+        V = U.copy()
         td = np.zeros(order, dtype=np.float64)
-        for j in range(n_mc_iter):
-            u = rng.standard_normal(n)
-            v = u.copy()
-            utu = float(u @ u)
-            for i in range(order):
-                v = W_sp @ v
-                td[i] += n * float(u @ v) / ((i + 1) * utu)
-        td /= n_mc_iter
+        for i in range(order):
+            V = W_sp @ V
+            tr_k = n * np.einsum("ij,ij->j", U, V) / utu  # (n_mc_iter,)
+            td[i] = tr_k.mean() / (i + 1)
 
         # Evaluate power series at each node
         logdet_at_nodes = np.zeros(order, dtype=np.float64)
@@ -736,14 +753,15 @@ def _barry_pace_traces(
         exact values (``tr(W)`` and ``tr(W²)``).
     """
     n = W_sparse.shape[0]
-    traces = np.zeros((order, iter), dtype=np.float64)
-    for j in range(iter):
-        u = rng.standard_normal(n)
-        v = u.copy()
-        utu = float(u @ u)
-        for i in range(order):
-            v = W_sparse @ v
-            traces[i, j] = n * float(u @ v) / utu  # estimate of tr(W^{i+1})
+    # Batched Hutchinson: draw all probes at once and let scipy's CSR×dense
+    # kernel amortise row-pointer traversal across the (n, iter) RHS.
+    U = rng.standard_normal((n, iter))
+    utu = np.einsum("ij,ij->j", U, U)  # (iter,)
+    V = U.copy()
+    traces = np.empty((order, iter), dtype=np.float64)
+    for i in range(order):
+        V = W_sparse @ V  # (n, iter)
+        traces[i] = n * np.einsum("ij,ij->j", U, V) / utu
     # Override with exact values for k=1, 2
     traces[0, :] = float(W_sparse.diagonal().sum())  # tr(W) = 0 for zero-diagonal W
     if order >= 2:

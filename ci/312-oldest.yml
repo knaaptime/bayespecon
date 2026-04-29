@@ -21,3 +21,4 @@ dependencies:
   - twine
   - openpyxl
   - lazy_loader
+  - fastprogress

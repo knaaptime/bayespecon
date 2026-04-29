@@ -506,6 +506,7 @@ class FlowModel(ABC):
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
+        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
@@ -540,9 +541,19 @@ class FlowModel(ABC):
         -------
         arviz.InferenceData
         """
+        from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop(
+            "nuts_sampler",
+            resolve_sampler(
+                sampler,
+                requires_c_backend=getattr(self, "_requires_c_backend", False),
+                model_name=type(self).__name__,
+            ),
+        )
 
         model = self._build_pymc_model()
         self._pymc_model = model
@@ -552,6 +563,8 @@ class FlowModel(ABC):
                 model,
                 store_lambda=False,
             )
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -560,6 +573,7 @@ class FlowModel(ABC):
                 target_accept=target_accept,
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
         if compute_log_likelihood:

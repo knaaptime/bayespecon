@@ -12,3 +12,4 @@ dependencies:
   - geodatasets
   - arviz < 1  #pinned until supported by pymc
   - lazy_loader
+  - fastprogress

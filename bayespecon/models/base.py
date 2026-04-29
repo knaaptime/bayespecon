@@ -20,6 +20,7 @@ from ..logdet import (
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
 
 
 def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
@@ -579,6 +580,7 @@ class SpatialModel(ABC):
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
+        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
@@ -595,6 +597,14 @@ class SpatialModel(ABC):
             Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
+        sampler : str, optional
+            Which NUTS backend to use.  One of ``"pymc"``, ``"blackjax"``,
+            ``"numpyro"``, ``"nutpie"``, or ``None`` (use the package
+            default — typically ``"blackjax"``; can be overridden via the
+            ``BAYESPECON_SAMPLER`` environment variable).  If the requested
+            optional backend is not installed, falls back to ``"pymc"``
+            with a ``UserWarning``.  An explicit ``nuts_sampler=...`` in
+            ``sample_kwargs`` always takes precedence.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``.
 
@@ -602,8 +612,14 @@ class SpatialModel(ABC):
         -------
         arviz.InferenceData
         """
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
         model = self._build_pymc_model()
         self._pymc_model = model
+        if "idata_kwargs" in sample_kwargs:
+            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
+                sample_kwargs["idata_kwargs"], model, nuts_sampler
+            )
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -611,6 +627,7 @@ class SpatialModel(ABC):
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
         return self._idata

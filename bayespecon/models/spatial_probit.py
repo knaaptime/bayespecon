@@ -276,11 +276,20 @@ class SpatialProbit:
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
+        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
+        from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
         model = self._build_pymc_model()
         self._pymc_model = model
+        if "idata_kwargs" in sample_kwargs:
+            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
+                sample_kwargs["idata_kwargs"], model, nuts_sampler
+            )
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -288,6 +297,7 @@ class SpatialProbit:
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
         return self._idata

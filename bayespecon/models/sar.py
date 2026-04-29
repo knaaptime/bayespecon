@@ -128,6 +128,7 @@ class SAR(SpatialModel):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         idata_kwargs: Optional[dict] = None,
+        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> "az.InferenceData":
         """
@@ -170,12 +171,17 @@ class SAR(SpatialModel):
         used for sampling.
         """
 
+        from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
 
         # Build model with log_likelihood computation if requested
         model = self._build_pymc_model(compute_log_likelihood=compute_log_likelihood)
         self._pymc_model = model
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
 
         with model:
             self._idata = pm.sample(
@@ -185,6 +191,7 @@ class SAR(SpatialModel):
                 target_accept=target_accept,
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
 

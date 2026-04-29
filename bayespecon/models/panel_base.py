@@ -20,6 +20,7 @@ from ..logdet import (
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
 from .base import _is_row_standardized_csr
 
 
@@ -697,6 +698,7 @@ class SpatialPanelModel(ABC):
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
+        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Sample the posterior for the panel model.
@@ -713,6 +715,10 @@ class SpatialPanelModel(ABC):
             NUTS target acceptance probability.
         random_seed : int, optional
             Random seed used by PyMC.
+        sampler : str, optional
+            NUTS backend (``"pymc"``, ``"blackjax"``, ``"numpyro"``,
+            ``"nutpie"``, or ``None`` for the package default).  See
+            :meth:`bayespecon.models.base.BaseSpatialModel.fit`.
         **sample_kwargs
             Extra keyword arguments forwarded to :func:`pymc.sample`.
 
@@ -721,8 +727,14 @@ class SpatialPanelModel(ABC):
         arviz.InferenceData
             Posterior samples and diagnostics.
         """
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
         model = self._build_pymc_model()
         self._pymc_model = model
+        if "idata_kwargs" in sample_kwargs:
+            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
+                sample_kwargs["idata_kwargs"], model, nuts_sampler
+            )
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -730,6 +742,7 @@ class SpatialPanelModel(ABC):
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
         return self._idata
