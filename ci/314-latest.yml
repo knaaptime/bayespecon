@@ -17,6 +17,8 @@ dependencies:
   - pytest-mpl
   - pytest-xdist
   - openpyxl
+  - lazy_loader
+
   # docs
   - numpydoc
   - nbsphinx

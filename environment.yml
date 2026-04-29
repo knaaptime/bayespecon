@@ -10,4 +10,5 @@ dependencies:
   - statsmodels
   - geopandas
   - geodatasets
-  - arviz < 1
+  - arviz < 1  #pinned until supported by pymc
+  - lazy_loader

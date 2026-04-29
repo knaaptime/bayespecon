@@ -3,6 +3,12 @@
 The package exposes cross-sectional and panel spatial regression model
 classes and Bayesian specification tests.
 
+Submodules and attributes are loaded lazily following SPEC 1
+(https://scientific-python.org/specs/spec-0001/) so that ``import bayespecon``
+is cheap and does not eagerly import ``pymc``/``pytensor``/``arviz``. The
+public API surface is declared in the sibling ``__init__.pyi`` stub for
+static type checkers and IDE autocomplete.
+
 Examples
 --------
 Import a model class directly from the package namespace::
@@ -10,213 +16,12 @@ Import a model class directly from the package namespace::
         from bayespecon import SAR
 """
 
-from . import dgp
-from .dgp.flows import generate_flow_data, generate_poisson_flow_data
-from .diagnostics import (
-    BayesianLMTestResult,
-    bayes_factor_compare_models,
-    bayesian_lm_error_test,
-    bayesian_lm_flow_dest_test,
-    bayesian_lm_flow_intra_test,
-    bayesian_lm_flow_joint_test,
-    bayesian_lm_flow_network_test,
-    bayesian_lm_flow_orig_test,
-    bayesian_lm_lag_test,
-    bayesian_lm_sdm_joint_test,
-    bayesian_lm_slx_error_joint_test,
-    bayesian_lm_wx_test,
-    bayesian_panel_lm_error_test,
-    bayesian_panel_lm_flow_dest_test,
-    bayesian_panel_lm_flow_intra_test,
-    bayesian_panel_lm_flow_joint_test,
-    bayesian_panel_lm_flow_network_test,
-    bayesian_panel_lm_flow_orig_test,
-    # Panel LM tests
-    bayesian_panel_lm_lag_test,
-    bayesian_panel_lm_sdm_joint_test,
-    bayesian_panel_lm_slx_error_joint_test,
-    bayesian_panel_lm_wx_test,
-    bayesian_panel_robust_lm_error_sdem_test,
-    bayesian_panel_robust_lm_error_test,
-    bayesian_panel_robust_lm_lag_sdm_test,
-    bayesian_panel_robust_lm_lag_test,
-    bayesian_panel_robust_lm_wx_test,
-    bayesian_robust_lm_error_sdem_test,
-    bayesian_robust_lm_flow_dest_test,
-    bayesian_robust_lm_flow_network_test,
-    bayesian_robust_lm_flow_orig_test,
-    bayesian_robust_lm_lag_sdm_test,
-    bayesian_robust_lm_wx_test,
-    bic_to_bf,
-    compile_log_posterior,
-    post_prob,
-    spatial_mcmc_diagnostic,
-    SpatialMCMCReport,
-)
-from .graph import (
-    FlowDesignMatrix,
-    destination_weights,
-    flow_design_matrix,
-    flow_design_matrix_asymmetric,
-    flow_design_matrix_with_orig,
-    flow_weight_matrices,
-    network_weights,
-    origin_weights,
-)
-from .models import (
-    OLS,
-    SAR,
-    SDEM,
-    SDM,
-    SEM,
-    SLX,
-    OLSFlowPanel,
-    OLSPanelDynamic,
-    OLSPanelFE,
-    OLSPanelRE,
-    PoissonFlowPanel,
-    PoissonSARFlowPanel,
-    PoissonSARFlowSeparablePanel,
-    SARFlowPanel,
-    SARFlowSeparablePanel,
-    SEMFlowPanel,
-    SEMFlowSeparablePanel,
-    SARPanelDynamic,
-    SARPanelFE,
-    SARPanelRE,
-    SARPanelTobit,
-    SARTobit,
-    SDEMPanelDynamic,
-    SDEMPanelFE,
-    SDEMPanelRE,
-    SDMPanelFE,
-    SDMRPanelDynamic,
-    SDMTobit,
-    SDMUPanelDynamic,
-    SEMPanelDynamic,
-    SEMPanelFE,
-    SEMPanelRE,
-    SEMPanelTobit,
-    SEMTobit,
-    SLXPanelDynamic,
-    SLXPanelFE,
-    SpatialProbit,
-)
-from .models.flow import (
-    OLSFlow,
-    PoissonFlow,
-    PoissonSARFlow,
-    PoissonSARFlowSeparable,
-    SARFlow,
-    SARFlowSeparable,
-    SEMFlow,
-    SEMFlowSeparable,
-)
-from .ops import SparseFlowSolveOp, kron_solve_matrix, kron_solve_vec
-
-__all__ = [
-    "SLX",
-    "OLS",
-    "SAR",
-    "SEM",
-    "SDM",
-    "SDEM",
-    "SARTobit",
-    "SEMTobit",
-    "SDMTobit",
-    "SpatialProbit",
-    "OLSPanelFE",
-    "SARPanelFE",
-    "SEMPanelFE",
-    "SDMPanelFE",
-    "SDEMPanelFE",
-    "SLXPanelFE",
-    "OLSPanelDynamic",
-    "SDMRPanelDynamic",
-    "SDMUPanelDynamic",
-    "SARPanelDynamic",
-    "SEMPanelDynamic",
-    "SDEMPanelDynamic",
-    "SLXPanelDynamic",
-    "OLSPanelRE",
-    "SARPanelRE",
-    "SEMPanelRE",
-    "SDEMPanelRE",
-    "SARPanelTobit",
-    "SEMPanelTobit",
-    "dgp",
-    "OLSFlow",
-    "SARFlow",
-    "SARFlowSeparable",
-    "SEMFlow",
-    "SEMFlowSeparable",
-    "PoissonFlow",
-    "PoissonSARFlow",
-    "PoissonSARFlowSeparable",
-    "OLSFlowPanel",
-    "SARFlowPanel",
-    "SARFlowSeparablePanel",
-    "SEMFlowPanel",
-    "SEMFlowSeparablePanel",
-    "PoissonFlowPanel",
-    "PoissonSARFlowPanel",
-    "PoissonSARFlowSeparablePanel",
-    "SparseFlowSolveOp",
-    "destination_weights",
-    "origin_weights",
-    "network_weights",
-    "flow_weight_matrices",
-    "flow_design_matrix",
-    "flow_design_matrix_asymmetric",
-    "flow_design_matrix_with_orig",
-    "FlowDesignMatrix",
-    "generate_flow_data",
-    "generate_poisson_flow_data",
-    "bayes_factor_compare_models",
-    "bic_to_bf",
-    "BayesianLMTestResult",
-    "bayesian_lm_lag_test",
-    "bayesian_lm_error_test",
-    "bayesian_lm_wx_test",
-    "bayesian_lm_sdm_joint_test",
-    "bayesian_lm_slx_error_joint_test",
-    "bayesian_robust_lm_lag_sdm_test",
-    "bayesian_robust_lm_wx_test",
-    "bayesian_robust_lm_error_sdem_test",
-    # Panel LM tests
-    "bayesian_panel_lm_lag_test",
-    "bayesian_panel_lm_error_test",
-    "bayesian_panel_robust_lm_lag_test",
-    "bayesian_panel_robust_lm_error_test",
-    "bayesian_panel_lm_wx_test",
-    "bayesian_panel_lm_sdm_joint_test",
-    "bayesian_panel_lm_slx_error_joint_test",
-    "bayesian_panel_robust_lm_lag_sdm_test",
-    "bayesian_panel_robust_lm_wx_test",
-    "bayesian_panel_robust_lm_error_sdem_test",
-    # Flow LM tests (cross-sectional)
-    "bayesian_lm_flow_dest_test",
-    "bayesian_lm_flow_orig_test",
-    "bayesian_lm_flow_network_test",
-    "bayesian_lm_flow_joint_test",
-    "bayesian_lm_flow_intra_test",
-    "bayesian_robust_lm_flow_dest_test",
-    "bayesian_robust_lm_flow_orig_test",
-    "bayesian_robust_lm_flow_network_test",
-    # Flow LM tests (panel)
-    "bayesian_panel_lm_flow_dest_test",
-    "bayesian_panel_lm_flow_orig_test",
-    "bayesian_panel_lm_flow_network_test",
-    "bayesian_panel_lm_flow_joint_test",
-    "bayesian_panel_lm_flow_intra_test",
-    # MCMC sampling-efficiency diagnostic (Wolf et al. 2018)
-    "spatial_mcmc_diagnostic",
-    "SpatialMCMCReport",
-]
-
-
 import contextlib
 from importlib.metadata import PackageNotFoundError, version
+
+import lazy_loader as _lazy
+
+__getattr__, __dir__, __all__ = _lazy.attach_stub(__name__, __file__)
 
 with contextlib.suppress(PackageNotFoundError):
     __version__ = version("bayespecon")
