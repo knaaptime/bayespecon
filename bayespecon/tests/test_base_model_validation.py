@@ -467,9 +467,11 @@ class TestDecisionOutputFormats:
         monkeypatch.setattr(
             _dt.importlib.util,
             "find_spec",
-            lambda name: None
-            if name == "graphviz"
-            else __import__("importlib").util.find_spec(name),
+            lambda name: (
+                None
+                if name == "graphviz"
+                else __import__("importlib").util.find_spec(name)
+            ),
         )
         with pytest.warns(UserWarning, match="graphviz package is not installed"):
             result = fitted_ols.spatial_diagnostics_decision(format="graphviz")
