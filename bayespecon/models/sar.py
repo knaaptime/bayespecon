@@ -171,7 +171,11 @@ class SAR(SpatialModel):
         used for sampling.
         """
 
-        from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+        from ._sampler import (
+            prepare_compile_kwargs,
+            prepare_idata_kwargs,
+            resolve_sampler,
+        )
 
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))

@@ -280,7 +280,11 @@ class SpatialProbit:
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
-        from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+        from ._sampler import (
+            prepare_compile_kwargs,
+            prepare_idata_kwargs,
+            resolve_sampler,
+        )
 
         nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
         model = self._build_pymc_model()

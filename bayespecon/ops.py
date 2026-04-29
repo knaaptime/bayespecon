@@ -187,14 +187,18 @@ class _DenseLU:
     __slots__ = ("_lu", "_piv")
 
     def __init__(self, A_dense: np.ndarray) -> None:
-        self._lu, self._piv = sla.lu_factor(A_dense, overwrite_a=False, check_finite=False)
+        self._lu, self._piv = sla.lu_factor(
+            A_dense, overwrite_a=False, check_finite=False
+        )
 
     def solve(self, rhs: np.ndarray, trans: str = "N") -> np.ndarray:
         t = 1 if trans == "T" else 0
         return sla.lu_solve((self._lu, self._piv), rhs, trans=t, check_finite=False)
 
 
-def _factor_kron_factor(W_dense: np.ndarray, W_sparse: sp.csr_matrix, rho: float, n: int):
+def _factor_kron_factor(
+    W_dense: np.ndarray, W_sparse: sp.csr_matrix, rho: float, n: int
+):
     """Return an LU factorisation of ``I - rho * W`` using dense LAPACK when small.
 
     Falls back to ``scipy.sparse.linalg.splu`` for ``n > BAYESPECON_KRON_DENSE_MAX``.
@@ -203,7 +207,9 @@ def _factor_kron_factor(W_dense: np.ndarray, W_sparse: sp.csr_matrix, rho: float
     if n <= _kron_dense_max() and W_dense is not None:
         L = np.eye(n, dtype=np.float64) - float(rho) * W_dense
         return _DenseLU(L)
-    L_sparse = (sp.eye(n, format="csr", dtype=np.float64) - float(rho) * W_sparse).tocsc()
+    L_sparse = (
+        sp.eye(n, format="csr", dtype=np.float64) - float(rho) * W_sparse
+    ).tocsc()
     return sp.linalg.splu(L_sparse)
 
 

@@ -541,7 +541,11 @@ class FlowModel(ABC):
         -------
         arviz.InferenceData
         """
-        from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+        from ._sampler import (
+            prepare_compile_kwargs,
+            prepare_idata_kwargs,
+            resolve_sampler,
+        )
 
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)

@@ -96,9 +96,9 @@ def register_jax_dispatch() -> bool:
         def kron_solve(rho_d, rho_o, b):
             Ld = I - rho_d * W_d
             Lo = I - rho_o * W_d
-            Hb = _reshape_F(b, (n, n))            # (n, n)
-            Hp = jsla.solve(Ld, Hb)               # Ld H' = Hb
-            Z = jsla.solve(Lo.T, Hp.T)            # Lo^T Z = Hp^T
+            Hb = _reshape_F(b, (n, n))  # (n, n)
+            Hp = jsla.solve(Ld, Hb)  # Ld H' = Hb
+            Z = jsla.solve(Lo.T, Hp.T)  # Lo^T Z = Hp^T
             # perform: Z.T.ravel(order='F') == Z.ravel()
             return Z.reshape(-1)
 
@@ -118,16 +118,16 @@ def register_jax_dispatch() -> bool:
             Ld = I - rho_d * W_d
             Lo = I - rho_o * W_d
 
-            H_eta = _reshape_F(eta, (n, n))       # (n, n)
-            Hg = _reshape_F(g, (n, n))            # (n, n)
+            H_eta = _reshape_F(eta, (n, n))  # (n, n)
+            Hg = _reshape_F(g, (n, n))  # (n, n)
 
             # Adjoint: (Lo^T ⊗ Ld^T) v = g  =>  Ld^T H_v Lo = Hg
-            P = jsla.solve(Ld.T, Hg)              # Ld^T P = Hg
-            Q = jsla.solve(Lo.T, P.T)             # Lo^T Q = P^T  (Q = H_v^T)
-            H_v = Q.T                             # (n, n)
+            P = jsla.solve(Ld.T, Hg)  # Ld^T P = Hg
+            Q = jsla.solve(Lo.T, P.T)  # Lo^T Q = P^T  (Q = H_v^T)
+            H_v = Q.T  # (n, n)
 
-            W_H = W_d @ H_eta                     # (n, n)
-            Ld_H = Ld @ H_eta                     # (n, n)
+            W_H = W_d @ H_eta  # (n, n)
+            Ld_H = Ld @ H_eta  # (n, n)
             grad_rd = jnp.sum(H_v * (W_H @ Lo.T))
             grad_ro = jnp.sum(H_v * (Ld_H @ W_d.T))
             grad_b = _ravel_F_2d(H_v)
@@ -238,7 +238,10 @@ def register_jax_dispatch() -> bool:
             return jax.pure_callback(
                 _host_solve,
                 jax.ShapeDtypeStruct(rhs.shape, jnp.float64),
-                rho_d, rho_o, rho_w, rhs,
+                rho_d,
+                rho_o,
+                rho_w,
+                rhs,
                 vmap_method="sequential",
             )
 
@@ -258,7 +261,11 @@ def register_jax_dispatch() -> bool:
             grad_rd, grad_ro, grad_rw, grad_rhs = jax.pure_callback(
                 _host_vjp,
                 shapes,
-                rho_d, rho_o, rho_w, sol, g,
+                rho_d,
+                rho_o,
+                rho_w,
+                sol,
+                g,
                 vmap_method="sequential",
             )
             return grad_rd, grad_ro, grad_rw, grad_rhs
@@ -306,7 +313,11 @@ def register_jax_dispatch() -> bool:
             return jax.pure_callback(
                 _host_vjp,
                 shapes,
-                rho_d, rho_o, rho_w, eta, g,
+                rho_d,
+                rho_o,
+                rho_w,
+                eta,
+                g,
                 vmap_method="sequential",
             )
 
@@ -349,7 +360,11 @@ def register_jax_dispatch() -> bool:
             return jax.pure_callback(
                 _host_vjp,
                 shapes,
-                rho_d, rho_o, rho_w, H, G,
+                rho_d,
+                rho_o,
+                rho_w,
+                H,
+                G,
                 vmap_method="sequential",
             )
 

@@ -178,6 +178,7 @@ def test_sampler_resolution_with_jax_present():
     from bayespecon.models._sampler import resolve_sampler, _jax_dispatches_available
 
     assert _jax_dispatches_available() is True
-    assert resolve_sampler(
-        "blackjax", requires_c_backend=True, model_name="ToyFlow"
-    ) == "blackjax"
+    assert (
+        resolve_sampler("blackjax", requires_c_backend=True, model_name="ToyFlow")
+        == "blackjax"
+    )

@@ -332,7 +332,11 @@ class FlowPanelModel(ABC):
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
-        from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+        from ._sampler import (
+            prepare_compile_kwargs,
+            prepare_idata_kwargs,
+            resolve_sampler,
+        )
 
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
