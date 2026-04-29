@@ -46,6 +46,49 @@ def sparse_trace_WtW_plus_WW(W: sp.spmatrix) -> float:
     return float(W.power(2).sum() + W.multiply(W.T).sum())
 
 
+def flow_trace_blocks(W: sp.spmatrix) -> np.ndarray:
+    r"""Return the symmetric :math:`3 \times 3` Kronecker trace matrix
+    :math:`T_{ij} = \operatorname{tr}(W_i^\top W_j) + \operatorname{tr}(W_i W_j)`,
+    indexed by the flow weight matrices :math:`(W_d, W_o, W_w)` with
+    :math:`W_d = I_n \otimes W`, :math:`W_o = W \otimes I_n`,
+    :math:`W_w = W \otimes W`.
+
+    Used by Bayesian LM tests on flow models as the noise-free part of the
+    information matrix block for the spatial-lag scores.  All entries are
+    derived in :math:`O(\mathrm{nnz})` from three base traces of the
+    :math:`n \times n` graph weight matrix
+    (:math:`\operatorname{tr}(W)`, :math:`\operatorname{tr}(W^2)`,
+    :math:`\operatorname{tr}(W^\top W)`) using
+    :math:`\operatorname{tr}(A \otimes B) = \operatorname{tr}(A)\operatorname{tr}(B)`.
+
+    Parameters
+    ----------
+    W : scipy.sparse.spmatrix
+        Row-standardised :math:`n \times n` weight matrix on the base graph.
+
+    Returns
+    -------
+    numpy.ndarray
+        Dense ``(3, 3)`` array with rows/cols ordered as
+        ``(destination, origin, network)``.
+    """
+    W = W.tocsr()
+    n = W.shape[0]
+    tr_W = float(W.diagonal().sum())
+    tr_W2 = float(W.multiply(W.T).sum())  # tr(W^2) = sum_ij W_ij W_ji
+    tr_WtW = float(W.power(2).sum())  # tr(W'W) = ||W||_F^2
+
+    s = tr_WtW + tr_W2  # tr(W'W) + tr(W^2)
+    T = np.empty((3, 3), dtype=np.float64)
+    T[0, 0] = n * s
+    T[1, 1] = n * s
+    T[2, 2] = tr_WtW * tr_WtW + tr_W2 * tr_W2
+    T[0, 1] = T[1, 0] = 2.0 * tr_W * tr_W
+    T[0, 2] = T[2, 0] = tr_W * s
+    T[1, 2] = T[2, 1] = tr_W * s
+    return T
+
+
 def _validate_graph(G: Graph) -> sp.csr_matrix:
     """Validate a :class:`libpysal.graph.Graph` and return its CSR sparse matrix.
 
@@ -185,27 +228,34 @@ class FlowDesignMatrix:
 
     Attributes
     ----------
-    X_dest : np.ndarray, shape (N, k)
-        Destination-side characteristics: :math:`\\iota_n \\otimes X`.
-    X_orig : np.ndarray, shape (N, k)
-        Origin-side characteristics: :math:`X \\otimes \\iota_n`.
-    X_intra : np.ndarray, shape (N, k)
+    X_dest : np.ndarray, shape (N, k_d)
+        Destination-side characteristics: :math:`\\iota_n \\otimes X_d`.
+    X_orig : np.ndarray, shape (N, k_o)
+        Origin-side characteristics: :math:`X_o \\otimes \\iota_n`.
+    X_intra : np.ndarray, shape (N, k_d)
         Intra-zonal characteristics (non-zero only on the diagonal of the
-        flow matrix): rows of *X* selected by ``vec(I_n)``.
+        flow matrix): rows of *X_d* selected by ``vec(I_n)``.
+        Uses destination-side columns because
+        :func:`flow_design_matrix` constructs
+        ``X_intra = intra_indicator * X_dest``.
     intra_indicator : np.ndarray, shape (N,)
         Binary indicator for diagonal (intra-zonal) O-D pairs.
     dist_vec : np.ndarray or None, shape (N,)
         Vectorised distance/cost matrix ``vec(dist)`` if provided.
     combined : np.ndarray, shape (N, p)
         Full design matrix ready for regression.  Column order:
-        intercept | intra_indicator | X_dest (k cols) | X_orig (k cols) |
-        X_intra (k cols) [| dist (1 col if provided)].
+        intercept | intra_indicator | X_dest (k_d cols) | X_orig (k_o cols) |
+        X_intra (k_d cols) [| dist (1 col if provided)].
     feature_names : list[str]
         Column labels for *combined* aligned with ``beta`` in the flow model.
     n : int
         Number of spatial units (*n*).  Flow count is :math:`N = n^2`.
+    k_d : int
+        Number of destination-side attribute columns.
+    k_o : int
+        Number of origin-side attribute columns.
     k : int
-        Number of regional attribute columns in *X*.
+        Alias for ``k_d`` for backward compatibility.  Equal to ``k_d``.
     """
 
     X_dest: np.ndarray
@@ -216,6 +266,8 @@ class FlowDesignMatrix:
     combined: np.ndarray
     feature_names: list
     n: int
+    k_d: int
+    k_o: int
     k: int
 
 
@@ -223,6 +275,7 @@ def flow_design_matrix(
     X: np.ndarray,
     col_names: list[str] | None = None,
     dist: np.ndarray | None = None,
+    log_distance: bool = True,
 ) -> FlowDesignMatrix:
     """Build a flow regression design matrix from regional attribute data.
 
@@ -240,6 +293,12 @@ def flow_design_matrix(
     dist : np.ndarray, shape (n, n), optional
         Distance or cost matrix.  If provided, ``vec(dist)`` is appended as
         the last column of *combined*.
+    log_distance : bool, default True
+        If True and ``dist`` is provided, the appended column is
+        ``log(1 + dist).ravel()`` and is named ``"log_distance"``.  If
+        False, the raw distance vector is appended and named ``"dist"``.
+        Using ``log(1 + d)`` matches the gravity-model convention while
+        keeping the diagonal at zero.
 
     Returns
     -------
@@ -344,9 +403,14 @@ def flow_design_matrix(
             raise ValueError(
                 f"dist must have shape ({n}, {n}) to match X, got {dist_arr.shape}."
             )
-        dist_vec = dist_arr.ravel()
+        if log_distance:
+            dist_vec = np.log1p(dist_arr).ravel()
+            dist_name = "log_distance"
+        else:
+            dist_vec = dist_arr.ravel()
+            dist_name = "dist"
         parts.append(dist_vec[:, None])
-        names.append("dist")
+        names.append(dist_name)
 
     combined = np.concatenate(parts, axis=1)
 
@@ -359,7 +423,154 @@ def flow_design_matrix(
         combined=combined,
         feature_names=names,
         n=n,
+        k_d=k,
+        k_o=k,
         k=k,
+    )
+
+
+def flow_design_matrix_asymmetric(
+    Xd: np.ndarray,
+    Xo: np.ndarray,
+    col_names_d: list[str] | None = None,
+    col_names_o: list[str] | None = None,
+    dist: np.ndarray | None = None,
+    log_distance: bool = True,
+) -> FlowDesignMatrix:
+    """Build a flow design matrix with different numbers of dest/origin variables.
+
+    Unlike :func:`flow_design_matrix` (which uses a single ``(n, k)`` matrix
+    for both destination and origin blocks), this function accepts separate
+    attribute matrices *Xd* of shape ``(n, k_d)`` and *Xo* of shape
+    ``(n, k_o)`` where ``k_d`` and ``k_o`` may differ.
+
+    The design matrix column layout is:
+
+    ``intercept | intra_indicator | X_dest (k_d cols) | X_orig (k_o cols) | X_intra (k_d cols) [| dist]``
+
+    The intra-zonal block uses ``k_d`` columns (destination-side variables),
+    matching the LeSage convention where ``X_intra = intra_indicator * X_dest``.
+
+    Parameters
+    ----------
+    Xd : np.ndarray, shape (n, k_d)
+        Destination-side regional attribute matrix (no intercept).
+    Xo : np.ndarray, shape (n, k_o)
+        Origin-side regional attribute matrix (no intercept).
+        ``k_o`` may differ from ``k_d``.
+    col_names_d : list[str], optional
+        Names for the *k_d* destination columns.  Defaults to
+        ``["x0", "x1", ...]``.
+    col_names_o : list[str], optional
+        Names for the *k_o* origin columns.  Defaults to
+        ``["y0", "y1", ...]`` when ``k_o != k_d``, or the same names as
+        *col_names_d* when ``k_o == k_d``.
+    dist : np.ndarray, shape (n, n), optional
+        Distance / cost matrix appended as the last predictor.
+    log_distance : bool, default True
+        If True and ``dist`` is provided, the appended column is
+        ``log(1 + dist).ravel()`` and is named ``"log_distance"``.
+
+    Returns
+    -------
+    FlowDesignMatrix
+        Dataclass with ``k_d`` and ``k_o`` set independently.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> n = 3
+    >>> Xd = np.ones((n, 2))   # 2 destination variables
+    >>> Xo = 2 * np.ones((n, 1))  # 1 origin variable
+    >>> dm = flow_design_matrix_asymmetric(Xd, Xo)
+    >>> dm.combined.shape  # 9 OD pairs, 1+1+2+1+2 = 7 cols
+    (9, 7)
+    >>> dm.k_d, dm.k_o
+    (2, 1)
+    >>> dm.feature_names
+    ['intercept', 'intra_indicator', 'dest_x0', 'dest_x1', 'orig_y0', 'intra_x0', 'intra_x1']
+    """
+    Xd_arr = np.asarray(Xd, dtype=np.float64)
+    Xo_arr = np.asarray(Xo, dtype=np.float64)
+    if Xd_arr.ndim == 1:
+        Xd_arr = Xd_arr[:, None]
+    if Xo_arr.ndim == 1:
+        Xo_arr = Xo_arr[:, None]
+
+    n = Xd_arr.shape[0]
+    k_d = Xd_arr.shape[1]
+    k_o = Xo_arr.shape[1]
+
+    if Xo_arr.shape[0] != n:
+        raise ValueError(
+            f"Xd and Xo must have the same number of rows, "
+            f"got {Xd_arr.shape[0]} and {Xo_arr.shape[0]}."
+        )
+
+    N = n * n
+    ones_n = np.ones((n, 1), dtype=np.float64)
+
+    # Intra-zonal selector: vec(I_n), length N
+    intra_indicator = np.eye(n, dtype=np.float64).ravel()
+
+    # Destination characteristics: kron(ones_n, Xd)
+    X_dest = np.kron(ones_n, Xd_arr)  # (N, k_d)
+
+    # Origin characteristics: kron(Xo, ones_n)
+    X_orig = np.kron(Xo_arr, ones_n)  # (N, k_o)
+
+    # Intra-zonal characteristics: non-zero only on diagonal cells (uses Xd)
+    X_intra = intra_indicator[:, None] * X_dest  # (N, k_d)
+
+    # Intercept column
+    intercept = np.ones((N, 1), dtype=np.float64)
+
+    # Column names
+    if col_names_d is None:
+        col_names_d = [f"x{i}" for i in range(k_d)]
+    if col_names_o is None:
+        if k_o == k_d and k_o <= len(col_names_d):
+            col_names_o = list(col_names_d[:k_o])
+        else:
+            col_names_o = [f"y{i}" for i in range(k_o)]
+
+    # Assemble combined design matrix: [1, ia, X_dest, X_orig, X_intra, (dist)]
+    parts = [intercept, intra_indicator[:, None], X_dest, X_orig, X_intra]
+    names = ["intercept", "intra_indicator"]
+    names += [f"dest_{c}" for c in col_names_d]
+    names += [f"orig_{c}" for c in col_names_o]
+    names += [f"intra_{c}" for c in col_names_d]
+
+    dist_vec: np.ndarray | None = None
+    if dist is not None:
+        dist_arr = np.asarray(dist, dtype=np.float64)
+        if dist_arr.shape != (n, n):
+            raise ValueError(
+                f"dist must have shape ({n}, {n}) to match X, got {dist_arr.shape}."
+            )
+        if log_distance:
+            dist_vec = np.log1p(dist_arr).ravel()
+            dist_name = "log_distance"
+        else:
+            dist_vec = dist_arr.ravel()
+            dist_name = "dist"
+        parts.append(dist_vec[:, None])
+        names.append(dist_name)
+
+    combined = np.concatenate(parts, axis=1)
+
+    return FlowDesignMatrix(
+        X_dest=X_dest,
+        X_orig=X_orig,
+        X_intra=X_intra,
+        intra_indicator=intra_indicator,
+        dist_vec=dist_vec,
+        combined=combined,
+        feature_names=names,
+        n=n,
+        k_d=k_d,
+        k_o=k_o,
+        k=k_d,
     )
 
 
@@ -368,6 +579,7 @@ def flow_design_matrix_with_orig(
     Xo: np.ndarray,
     col_names: list[str] | None = None,
     dist: np.ndarray | None = None,
+    log_distance: bool = True,
 ) -> FlowDesignMatrix:
     """Build a flow design matrix with separate destination and origin data.
 
@@ -375,22 +587,27 @@ def flow_design_matrix_with_orig(
     handles the common pattern of building a design matrix from destination
     attributes *Xd* and then splicing in separate origin attributes *Xo*.
 
-    :func:`flow_design_matrix` uses a single attribute matrix *X* for both
-    the destination and origin blocks (``X_dest = kron(ones_n, X)`` and
-    ``X_orig = kron(X, ones_n)``).  When destination and origin attributes
-    differ, call this function instead — it replaces the origin block with
-    ``kron(Xo, ones_n)`` and updates ``X_intra`` accordingly.
+    When ``k_d == k_o`` (same number of destination and origin columns),
+    this delegates to :func:`flow_design_matrix` and splices in the origin
+    block.  When ``k_d != k_o``, it delegates to
+    :func:`flow_design_matrix_asymmetric`.
 
     Parameters
     ----------
-    Xd : np.ndarray, shape (n, k)
+    Xd : np.ndarray, shape (n, k_d)
         Destination-side regional attribute matrix (no intercept).
-    Xo : np.ndarray, shape (n, k)
-        Origin-side regional attribute matrix (same columns as *Xd*).
+    Xo : np.ndarray, shape (n, k_o)
+        Origin-side regional attribute matrix (no intercept).
+        ``k_o`` may differ from ``k_d``.
     col_names : list[str], optional
-        Names for the *k* columns.  Defaults to ``["x0", "x1", ...]``.
+        Names for the destination columns.  Defaults to
+        ``["x0", "x1", ...]``.  When ``k_d != k_o``, origin columns
+        default to ``["y0", "y1", ...]``.
     dist : np.ndarray, shape (n, n), optional
         Distance / cost matrix appended as the last predictor.
+    log_distance : bool, default True
+        If True and ``dist`` is provided, the appended column is
+        ``log(1 + dist).ravel()`` and is named ``"log_distance"``.
 
     Returns
     -------
@@ -400,7 +617,7 @@ def flow_design_matrix_with_orig(
     Raises
     ------
     ValueError
-        If *Xd* and *Xo* have incompatible shapes.
+        If *Xd* and *Xo* have incompatible row counts.
 
     Examples
     --------
@@ -420,38 +637,44 @@ def flow_design_matrix_with_orig(
         Xd_arr = Xd_arr[:, None]
     if Xo_arr.ndim == 1:
         Xo_arr = Xo_arr[:, None]
-    if Xd_arr.shape[0] != Xo_arr.shape[0]:
-        raise ValueError(
-            f"Xd and Xo must have the same number of rows, "
-            f"got {Xd_arr.shape[0]} and {Xo_arr.shape[0]}."
-        )
-    if Xd_arr.shape[1] != Xo_arr.shape[1]:
-        raise ValueError(
-            f"Xd and Xo must have the same number of columns, "
-            f"got {Xd_arr.shape[1]} and {Xo_arr.shape[1]}."
-        )
 
-    # Build base design using Xd for both dest and orig blocks
-    design = flow_design_matrix(Xd_arr, col_names=col_names, dist=dist)
-
-    # Override the X_orig block with actual Xo: kron(Xo, ones_n)
-    k = Xd_arr.shape[1]
+    k_d = Xd_arr.shape[1]
+    k_o = Xo_arr.shape[1]
     n = Xd_arr.shape[0]
-    ones_n = np.ones((n, 1), dtype=np.float64)
-    X_orig_actual = np.kron(Xo_arr, ones_n)  # (N, k)
 
-    # Splice into combined: intercept | ia | Xd_block | Xo_block | Xi_block [| dist]
-    combined = design.combined.copy()
-    combined[:, 2 + k : 2 + 2 * k] = X_orig_actual
+    if k_d == k_o:
+        # Symmetric case: delegate to flow_design_matrix and splice
+        design = flow_design_matrix(
+            Xd_arr, col_names=col_names, dist=dist, log_distance=log_distance
+        )
 
-    return FlowDesignMatrix(
-        X_dest=design.X_dest,
-        X_orig=X_orig_actual,
-        X_intra=design.X_intra,
-        intra_indicator=design.intra_indicator,
-        dist_vec=design.dist_vec,
-        combined=combined,
-        feature_names=design.feature_names,
-        n=design.n,
-        k=design.k,
-    )
+        # Override the X_orig block with actual Xo: kron(Xo, ones_n)
+        ones_n = np.ones((n, 1), dtype=np.float64)
+        X_orig_actual = np.kron(Xo_arr, ones_n)  # (N, k_o)
+
+        # Splice into combined: intercept | ia | Xd_block | Xo_block | Xi_block [| dist]
+        combined = design.combined.copy()
+        combined[:, 2 + k_d : 2 + k_d + k_o] = X_orig_actual
+
+        return FlowDesignMatrix(
+            X_dest=design.X_dest,
+            X_orig=X_orig_actual,
+            X_intra=design.X_intra,
+            intra_indicator=design.intra_indicator,
+            dist_vec=design.dist_vec,
+            combined=combined,
+            feature_names=design.feature_names,
+            n=design.n,
+            k_d=k_d,
+            k_o=k_o,
+            k=k_d,
+        )
+    else:
+        # Asymmetric case: k_d != k_o
+        return flow_design_matrix_asymmetric(
+            Xd_arr, Xo_arr,
+            col_names_d=col_names,
+            col_names_o=None,
+            dist=dist,
+            log_distance=log_distance,
+        )

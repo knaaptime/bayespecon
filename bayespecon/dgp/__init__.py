@@ -21,8 +21,12 @@ from .flows import (
     generate_panel_flow_data_separable,
     generate_panel_poisson_flow_data,
     generate_panel_poisson_flow_data_separable,
+    generate_panel_sem_flow_data,
+    generate_panel_sem_flow_data_separable,
     generate_poisson_flow_data,
     generate_poisson_flow_data_separable,
+    generate_sem_flow_data,
+    generate_sem_flow_data_separable,
 )
 from .nonlinear import (
     simulate_sar_tobit,
@@ -89,6 +93,10 @@ __all__ = [
     "generate_panel_flow_data_separable",
     "generate_panel_poisson_flow_data",
     "generate_panel_poisson_flow_data_separable",
+    "generate_panel_sem_flow_data",
+    "generate_panel_sem_flow_data_separable",
     "generate_poisson_flow_data",
     "generate_poisson_flow_data_separable",
+    "generate_sem_flow_data",
+    "generate_sem_flow_data_separable",
 ]

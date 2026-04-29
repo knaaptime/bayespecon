@@ -123,10 +123,14 @@ Flow Models
    :toctree: generated/
 
    FlowModel
+   OLSFlow
+   PoissonFlow
    SARFlow
    SARFlowSeparable
    PoissonSARFlow
    PoissonSARFlowSeparable
+   SEMFlow
+   SEMFlowSeparable
 
 
 Panel Flow Models
@@ -138,10 +142,14 @@ Panel Flow Models
    :toctree: generated/
 
    FlowPanelModel
+   OLSFlowPanel
+   PoissonFlowPanel
    SARFlowPanel
    SARFlowSeparablePanel
    PoissonSARFlowPanel
    PoissonSARFlowSeparablePanel
+   SEMFlowPanel
+   SEMFlowSeparablePanel
 
 
 
@@ -222,10 +230,17 @@ Data Generating Processes
 
 .. note::
 
-   All DGP simulators accept ``W`` (Graph/sparse/dense) and ``gdf`` inputs.
-   You may provide both together. In that case, ``W`` is used for simulation
-   and checked against ``gdf`` for dimensional compatibility; a ``ValueError``
-   is raised when they do not describe the same number of spatial units.
+   The cross-sectional and (scalar) panel DGP simulators accept ``W``
+   (Graph/sparse/dense) and ``gdf`` inputs.  You may provide both together;
+   in that case ``W`` is used for simulation and is checked against ``gdf``
+   for dimensional compatibility (a ``ValueError`` is raised when they do
+   not describe the same number of spatial units).
+
+   The flow DGPs below take ``G`` (libpysal Graph), ``gdf``, ``n``, and
+   ``knn_k`` instead.  All four are optional: when none is supplied the
+   DGP synthesises a point grid via
+   :func:`~bayespecon.dgp.utils.synth_point_geodataframe` and builds a
+   row-standardised KNN graph automatically.
 
 .. currentmodule:: bayespecon.dgp
 
@@ -245,52 +260,6 @@ Data Generating Processes
    simulate_panel_ols_fe
    simulate_panel_sar_fe
    simulate_panel_sem_fe
-
-
-Flow Models
------------
-
-.. currentmodule:: bayespecon.models.flow
-
-.. autosummary::
-   :toctree: generated/
-
-   FlowModel
-   SARFlow
-   SARFlowSeparable
-   PoissonSARFlow
-   PoissonSARFlowSeparable
-
-Panel Flow Models
-^^^^^^^^^^^^^^^^^
-
-.. currentmodule:: bayespecon.models.flow_panel
-
-.. autosummary::
-   :toctree: generated/
-
-   FlowPanelModel
-   SARFlowPanel
-   SARFlowSeparablePanel
-   PoissonSARFlowPanel
-   PoissonSARFlowSeparablePanel
-
-
-Graph Utilities
----------------
-
-.. currentmodule:: bayespecon.graph
-
-.. autosummary::
-   :toctree: generated/
-
-   FlowDesignMatrix
-   flow_design_matrix
-   flow_design_matrix_with_orig
-   flow_weight_matrices
-   destination_weights
-   origin_weights
-   network_weights
    simulate_panel_sdm_fe
    simulate_panel_sdem_fe
    simulate_panel_slx_fe
@@ -309,6 +278,21 @@ Graph Utilities
 
 Flow Data Generating Processes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Each flow DGP accepts ``n``, ``G``, ``gdf``, and ``knn_k`` as optional
+arguments and (unless ``gamma_dist=0.0``) appends a ``log_distance``
+column ``log(1 + d_{ij})`` with default coefficient ``gamma_dist=-0.5``.
+
+The Gaussian flow DGPs (``generate_flow_data``,
+``generate_panel_flow_data`` and their separable variants) default to
+``distribution="lognormal"``, returning strictly-positive flows
+``y = exp(eta)`` where ``eta`` is the latent SAR-filtered linear
+predictor (also exposed in the result dict as ``"eta_vec"`` /
+``"eta"``).  Pass ``distribution="normal"`` to recover the legacy
+Gaussian-on-y behaviour.  The Gaussian-likelihood flow models in
+``bayespecon.models.flow`` operate on the latent scale, so fit on
+``np.log(y)`` to recover the SAR parameters.  The Poisson DGPs are
+unchanged.
 
 .. currentmodule:: bayespecon.dgp
 

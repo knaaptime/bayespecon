@@ -12,7 +12,20 @@ from .panel_base import SpatialPanelModel
 
 
 class OLSPanelFE(SpatialPanelModel):
-    """Bayesian pooled/fixed-effects panel regression.
+    r"""Bayesian pooled and fixed-effects linear panel regression.
+
+    Implements the Gaussian panel model
+
+    .. math::
+
+        y_{it} = x_{it}'eta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),
+
+    where the included effects depend on ``model``: ``0`` pooled,
+    ``1`` unit effects, ``2`` time effects, ``3`` two-way effects. The
+    within transformation is handled by
+    :class:`~bayespecon.models.panel_base.SpatialPanelModel` before the
+    likelihood is evaluated.
 
     Parameters
     ----------
@@ -22,28 +35,9 @@ class OLSPanelFE(SpatialPanelModel):
 
     Notes
     -----
-    This class mirrors MATLAB ``ols_panel_FE_g`` behavior through the shared
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_sdm_joint_test"],
-        ).bayesian_panel_lm_sdm_joint_test(m), "Panel-LM-SDM-Joint"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_slx_error_joint_test"],
-        ).bayesian_panel_lm_slx_error_joint_test(m), "Panel-LM-SLX-Error-Joint"),
-    ]
-    :class:`~bayespecon.models.panel_base.SpatialPanelModel` transformation
-    pipeline.
+    This is the aspatial baseline for panel LM diagnostics and panel model
+    comparison. The spatial weights object ``W`` is accepted for API
+    consistency but does not enter the likelihood.
 
     **Robust regression**
 
@@ -56,7 +50,7 @@ class OLSPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -133,7 +127,17 @@ class OLSPanelFE(SpatialPanelModel):
 
 
 class SARPanelFE(SpatialPanelModel):
-    """Bayesian spatial lag panel regression.
+    r"""Bayesian spatial-lag panel regression.
+
+    Implements
+
+    .. math::
+
+        y_{it} = \\rho W y_{it} + x_{it}'\\beta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),
+
+    with the same pooled, unit-effect, time-effect, or two-way panel
+    transformation selected by ``model`` as in :class:`OLSPanelFE`.
 
     Parameters
     ----------
@@ -143,23 +147,8 @@ class SARPanelFE(SpatialPanelModel):
 
     Notes
     -----
-    This class mirrors MATLAB ``sar_panel_FE_g`` behavior under the common
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_wx_test"],
-        ).bayesian_panel_lm_wx_test(m), "Panel-LM-WX"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_robust_lm_wx_test"],
-        ).bayesian_panel_robust_lm_wx_test(m), "Panel-Robust-LM-WX"),
-    ]
-    panel transformation framework.
+    The likelihood combines the Gaussian observation density with the
+    spatial Jacobian term associated with :math:`I - \\rho W`.
 
     **Robust regression**
 
@@ -172,7 +161,7 @@ class SARPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -304,7 +293,19 @@ class SARPanelFE(SpatialPanelModel):
 
 
 class SEMPanelFE(SpatialPanelModel):
-    """Bayesian spatial error panel regression.
+    r"""Bayesian spatial-error panel regression.
+
+    Implements
+
+    .. math::
+
+        y_{it} = x_{it}'\\beta + \\alpha_i + \\tau_t + u_{it},
+        \\qquad u_{it} = \\lambda W u_{it} + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    Spatial dependence enters through the disturbance, while the panel
+    transformation selected by ``model`` absorbs pooled, unit, time, or
+    two-way effects before likelihood evaluation.
 
     Parameters
     ----------
@@ -312,25 +313,9 @@ class SEMPanelFE(SpatialPanelModel):
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
 
-    Notes
-    -----
-    This class mirrors MATLAB ``sem_panel_FE_g`` behavior under the common
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_wx_sem_test"],
-        ).bayesian_panel_lm_wx_sem_test(m), "Panel-LM-WX"),
-    ]
-    panel transformation framework.
-
     **Robust regression**
 
-    When ``robust=True``, the spatially-filtered error distribution is
+    When ``robust=True``, the spatially filtered error distribution is
     changed from Normal to Student-t, yielding a model that is robust to
     heavy-tailed outliers:
 
@@ -340,7 +325,7 @@ class SEMPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -506,25 +491,24 @@ class SEMPanelFE(SpatialPanelModel):
 
 
 class SDMPanelFE(SpatialPanelModel):
-    """Bayesian spatial Durbin panel regression.
+    r"""Bayesian spatial Durbin panel regression.
+
+    Implements
+
+    .. math::
+
+        y_{it} = \\rho W y_{it} + x_{it}'\\beta + W x_{it}'\\theta
+        + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    The coefficient vector sampled by the model stacks the local and
+    lagged-regressor blocks as :math:`[\\beta, \\theta]`.
 
     Parameters
     ----------
     formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
-
-    Notes
-    -----
-    This class mirrors MATLAB ``sdm_panel_FE_g`` behavior by augmenting the
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-    ]
-    design matrix with spatially lagged regressors ``W X``.
 
     **Robust regression**
 
@@ -537,7 +521,7 @@ class SDMPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -710,7 +694,18 @@ class SDMPanelFE(SpatialPanelModel):
 
 
 class SDEMPanelFE(SpatialPanelModel):
-    """Bayesian spatial Durbin error panel regression.
+    r"""Bayesian spatial Durbin error panel regression.
+
+    Implements
+
+    .. math::
+
+        y_{it} = x_{it}'\\beta + W x_{it}'\\theta + \\alpha_i + \\tau_t + u_{it},
+        \\qquad u_{it} = \\lambda W u_{it} + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    The sampled coefficient vector stacks the local and lagged-covariate
+    blocks as :math:`[\\beta, \\theta]`.
 
     Parameters
     ----------
@@ -718,21 +713,9 @@ class SDEMPanelFE(SpatialPanelModel):
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
 
-    Notes
-    -----
-    This class mirrors MATLAB ``sdem_panel_FE_g`` behavior using transformed
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-    ]
-    residual likelihood and Jacobian adjustment.
-
     **Robust regression**
 
-    When ``robust=True``, the spatially-filtered error distribution is
+    When ``robust=True``, the spatially filtered error distribution is
     changed from Normal to Student-t, yielding a model that is robust to
     heavy-tailed outliers:
 
@@ -742,7 +725,7 @@ class SDEMPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -939,51 +922,24 @@ class SDEMPanelFE(SpatialPanelModel):
 
 
 class SLXPanelFE(SpatialPanelModel):
-    """Bayesian SLX (Spatial Lag X) panel model with fixed effects.
+    r"""Bayesian SLX panel regression.
+
+    Implements
 
     .. math::
-        y_{it} = X_{it}\\beta_1 + (WX)_{it}\\beta_2 + \\mu_i + \\varepsilon_{it}
 
-    where :math:`\\varepsilon_{it} \\sim N(0, \\sigma^2)`. No spatial lag
-    on y, so no Jacobian adjustment is needed and NUTS converges without
-    difficulty.
+        y_{it} = x_{it}'\\beta + W x_{it}'\\theta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    There is no contemporaneous spatial lag on :math:`y`, so no Jacobian
+    adjustment is required. The coefficient vector stacks the local and
+    lagged-covariate blocks as :math:`[\\beta, \\theta]`.
 
     Parameters
     ----------
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_robust_lm_lag_sdm_test"],
-        ).bayesian_panel_robust_lm_lag_sdm_test(m), "Panel-Robust-LM-Lag-SDM"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_robust_lm_error_sdem_test"],
-        ).bayesian_panel_robust_lm_error_sdem_test(m), "Panel-Robust-LM-Error-SDEM"),
-    ]
     formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
-
-    Notes
-    -----
-    The ``priors`` dict supports the following keys:
-
-    - ``beta_mu`` (float, default 0): Prior mean for all beta coefficients.
-    - ``beta_sigma`` (float, default 1e6): Prior std for all beta coefficients (diffuse Normal).
-    - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior on sigma.
-
-    The design matrix is augmented with spatially lagged regressors
-    ``WX``, so ``beta`` covers both ``[X, WX]`` columns. This is the
-    panel analogue of the cross-sectional :class:`SLX` model.
 
     **Robust regression**
 
@@ -996,7 +952,7 @@ class SLXPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 

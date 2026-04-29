@@ -5,6 +5,7 @@ Import from here rather than from conftest.py to avoid sys.path issues.
 
 from __future__ import annotations
 
+import arviz as az
 import numpy as np
 import pandas as pd
 from libpysal.graph import Graph
@@ -670,136 +671,30 @@ def make_panel_sdem_fe_data(
     return y, X, df
 
 
-# ---------------------------------------------------------------------------
-# Flow (O-D) data generators
-# ---------------------------------------------------------------------------
 
 
-def make_flow_data(
-    rng: np.random.Generator,
-    G: Graph,
-    n: int,
-    rho_d: float = 0.25,
-    rho_o: float = 0.25,
-    rho_w: float = 0.10,
-    beta_d: np.ndarray | list | None = None,
-    beta_o: np.ndarray | list | None = None,
-    sigma: float = 1.0,
-) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    """Generate cross-sectional SAR flow data.
+def set_posterior_means(
+    model, beta: np.ndarray, rho: float | None = None
+) -> None:
+    """Inject posterior means into a model for testing without MCMC."""
+    posterior: dict[str, np.ndarray] = {
+        "beta": np.array([[beta]], dtype=float),
+    }
+    if rho is not None:
+        posterior["rho"] = np.array([[rho]], dtype=float)
+    model._idata = az.from_dict(posterior=posterior)
 
-    Returns (y_vec, X, col_names).
+
+def make_idata(samples_by_var: dict[str, np.ndarray]) -> az.InferenceData:
+    """Build an InferenceData from a dict of arrays.
+
+    Each array is treated as posterior draws. Arrays with one dimension are
+    expanded with a leading chain axis; otherwise they are passed through.
     """
-    if beta_d is None:
-        beta_d = [1.0, -0.5]
-    if beta_o is None:
-        beta_o = [0.5, 0.3]
-    out = dgp.generate_flow_data(
-        n=n,
-        G=G,
-        rho_d=rho_d,
-        rho_o=rho_o,
-        rho_w=rho_w,
-        beta_d=beta_d,
-        beta_o=beta_o,
-        sigma=sigma,
-        seed=int(rng.integers(0, 2**31)),
-    )
-    return out["y_vec"], out["X"], out["col_names"]
-
-
-def make_poisson_flow_data(
-    rng: np.random.Generator,
-    G: Graph,
-    n: int,
-    rho_d: float = 0.3,
-    rho_o: float = 0.2,
-    rho_w: float = 0.1,
-    beta_d: float | list[float] | None = None,
-    beta_o: float | list[float] | None = None,
-    k: int = 2,
-) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    """Generate cross-sectional Poisson flow data.
-
-    Returns (y_vec, X, col_names).
-    """
-    out = dgp.generate_poisson_flow_data(
-        n=n,
-        G=G,
-        rho_d=rho_d,
-        rho_o=rho_o,
-        rho_w=rho_w,
-        beta_d=beta_d,
-        beta_o=beta_o,
-        k=k,
-        seed=int(rng.integers(0, 2**31)),
-    )
-    return out["y_vec"], out["X"], out["col_names"]
-
-
-def make_panel_flow_data(
-    rng: np.random.Generator,
-    G: Graph,
-    n: int,
-    T: int,
-    rho_d: float = 0.25,
-    rho_o: float = 0.25,
-    rho_w: float = 0.10,
-    beta_d: np.ndarray | list | None = None,
-    beta_o: np.ndarray | list | None = None,
-    sigma: float = 1.0,
-    sigma_alpha: float = 0.5,
-) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    """Generate panel SAR flow data with O-D-pair random effects.
-
-    Returns (y, X, col_names) in time-first stacking order.
-    """
-    if beta_d is None:
-        beta_d = [1.0, -0.5]
-    if beta_o is None:
-        beta_o = [0.5, 0.3]
-    out = dgp.generate_panel_flow_data(
-        n=n,
-        T=T,
-        G=G,
-        rho_d=rho_d,
-        rho_o=rho_o,
-        rho_w=rho_w,
-        beta_d=beta_d,
-        beta_o=beta_o,
-        sigma=sigma,
-        sigma_alpha=sigma_alpha,
-        seed=int(rng.integers(0, 2**31)),
-    )
-    return out["y"], out["X"], out["col_names"]
-
-
-def make_panel_poisson_flow_data(
-    rng: np.random.Generator,
-    G: Graph,
-    n: int,
-    T: int,
-    rho_d: float = 0.3,
-    rho_o: float = 0.2,
-    rho_w: float = 0.1,
-    beta_d: float | list[float] | None = None,
-    beta_o: float | list[float] | None = None,
-    k: int = 2,
-) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    """Generate panel Poisson flow data (pooled, no unit effects).
-
-    Returns (y, X, col_names) in time-first stacking order.
-    """
-    out = dgp.generate_panel_poisson_flow_data(
-        n=n,
-        T=T,
-        G=G,
-        rho_d=rho_d,
-        rho_o=rho_o,
-        rho_w=rho_w,
-        beta_d=beta_d,
-        beta_o=beta_o,
-        k=k,
-        seed=int(rng.integers(0, 2**31)),
-    )
-    return out["y"], out["X"], out["col_names"]
+    posterior: dict[str, np.ndarray] = {}
+    for k, v in samples_by_var.items():
+        arr = np.asarray(v)
+        if arr.ndim == 1:
+            arr = arr[None, ...]
+        posterior[k] = arr
+    return az.from_dict(posterior=posterior)

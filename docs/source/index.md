@@ -26,6 +26,7 @@ Panel Models <user-guide/pedagogical_panel_models>
 Nonlinear Models <user-guide/nonlinear_models>
 Nonlinear Panel Models <user-guide/nonlinear_panel_models>
 Flow Models <user-guide/flow_models>
+Panel Flow Models <user-guide/panel_flow_models>
 Bayesian Spatial Diagnostics <user-guide/bayesian_lmtests>
 Comparing bayespecon vs spreg <user-guide/cross_sectional_spreg_comparison>
 Recovering Parameters <user-guide/faithfulness_bayespecon>

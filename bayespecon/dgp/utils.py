@@ -518,3 +518,162 @@ def make_panel_output_geodataframe(
 
     combined = pd.concat([unit_gdf.reset_index(drop=True), wide_df], axis=1)
     return gpd.GeoDataFrame(combined, geometry=unit_gdf.geometry.name)
+
+
+def synth_point_geodataframe(n: int) -> Any:
+    """Synthesize a point GeoDataFrame on a √n × √n grid.
+
+    Used by flow DGPs when the user does not supply a ``gdf`` so that a
+    consistent set of centroid coordinates is available for distance
+    computation.
+
+    Parameters
+    ----------
+    n : int
+        Number of points (rows) to generate.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        n-row GeoDataFrame whose ``geometry`` column contains
+        ``Point(c + 0.5, r + 0.5)`` cells laid out row-major on a
+        ``ceil(sqrt(n)) × ceil(sqrt(n))`` grid.
+    """
+    try:
+        import geopandas as gpd
+        from shapely.geometry import Point
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "synth_point_geodataframe requires optional dependencies "
+            "geopandas and shapely."
+        ) from exc
+
+    n = int(n)
+    if n <= 0:
+        raise ValueError("n must be a positive integer.")
+
+    n_cols = int(np.ceil(np.sqrt(n)))
+    geoms = []
+    for idx in range(n):
+        r, c = divmod(idx, n_cols)
+        geoms.append(Point(c + 0.5, r + 0.5))
+
+    return gpd.GeoDataFrame({"unit_id": np.arange(n)}, geometry=geoms)
+
+
+def pairwise_distance_matrix(gdf: Any) -> np.ndarray:
+    """Compute the dense ``n × n`` pairwise Euclidean distance matrix from a
+    GeoDataFrame.
+
+    Polygons are downcast to centroids first; points are used directly.
+    The resulting matrix has zero diagonal by construction and is symmetric.
+
+    This is the dense-matrix complement to
+    :meth:`libpysal.graph.Graph.build_distance_band`, which returns a
+    thresholded sparse graph; flow regressions need the full pairwise
+    distances to populate an O-D design column.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        Geometry source.  Polygons are reduced to centroids automatically.
+
+    Returns
+    -------
+    np.ndarray
+        ``(n, n)`` Euclidean distance matrix in the same units / CRS as
+        ``gdf.geometry``.
+    """
+    from scipy.spatial.distance import cdist
+
+    if gdf is None or not hasattr(gdf, "geometry"):
+        raise TypeError(
+            "pairwise_distance_matrix requires a GeoDataFrame-like object."
+        )
+
+    geom = gdf.geometry
+    # geopandas' .centroid is a no-op for points and yields polygon centroids
+    # otherwise; explicitly access .x / .y to obtain coordinates.
+    cents = geom.centroid
+    coords = np.column_stack([cents.x.to_numpy(), cents.y.to_numpy()])
+    return cdist(coords, coords)
+
+
+def _resolve_flow_geometry(
+    n: int | None = None,
+    G: Graph | None = None,
+    gdf: Any | None = None,
+    knn_k: int = 4,
+    default_n: int = 25,
+) -> tuple[int, Graph, Any]:
+    """Resolve ``(n, G, gdf)`` for flow DGPs from any combination of inputs.
+
+    The flow DGPs need a row-standardised spatial graph *G* (size ``n``)
+    and a point GeoDataFrame *gdf* (length ``n``) to derive a pairwise
+    distance matrix.  Either, both, or neither of *G* and *gdf* may be
+    supplied.  When *G* is missing it is constructed from *gdf* using
+    KNN contiguity (``k = knn_k``) and row-standardised.  When *gdf* is
+    missing a synthetic point grid is generated via
+    :func:`synth_point_geodataframe`.
+
+    Parameters
+    ----------
+    n : int, optional
+        Desired number of spatial units.  Ignored when *G* or *gdf* is
+        provided (the size is taken from those objects).  When neither
+        is supplied, falls back to *default_n*.
+    G : libpysal.graph.Graph, optional
+        Pre-built spatial graph.  If supplied it is row-standardised on
+        the way out (idempotent for already row-standard graphs).
+    gdf : geopandas.GeoDataFrame, optional
+        Point or polygon geometry.  Used both to build *G* (when
+        missing) and to compute distances downstream.
+    knn_k : int, default 4
+        Number of nearest neighbours used when building *G* from *gdf*.
+    default_n : int, default 25
+        Number of units used when neither *G* nor *gdf* is provided.
+
+    Returns
+    -------
+    n_actual : int
+        Resolved number of spatial units.
+    G : libpysal.graph.Graph
+        Row-standardised graph on *n_actual* units.
+    gdf : geopandas.GeoDataFrame
+        Geometry source on *n_actual* units (synthesized when not
+        supplied).
+
+    Raises
+    ------
+    ValueError
+        If both *G* and *gdf* are supplied but their sizes disagree, or
+        if *n* is supplied alongside *G* / *gdf* with an inconsistent
+        size.
+    """
+    if G is not None and gdf is not None:
+        if len(gdf) != G.n_nodes:
+            raise ValueError(
+                f"gdf has {len(gdf)} rows but G has {G.n_nodes} nodes."
+            )
+        n_actual = G.n_nodes
+    elif G is not None:
+        n_actual = G.n_nodes
+        gdf = synth_point_geodataframe(n_actual)
+    elif gdf is not None:
+        n_actual = len(gdf)
+        k_eff = max(1, min(int(knn_k), n_actual - 1))
+        G = Graph.build_knn(gdf, k=k_eff).transform("r")
+    else:
+        n_actual = int(n) if n is not None else int(default_n)
+        gdf = synth_point_geodataframe(n_actual)
+        k_eff = max(1, min(int(knn_k), n_actual - 1))
+        G = Graph.build_knn(gdf, k=k_eff).transform("r")
+
+    if n is not None and int(n) != n_actual:
+        raise ValueError(
+            f"n={n} disagrees with resolved geometry size {n_actual}."
+        )
+
+    # Ensure G is row-standardised
+    G = G.transform("r")
+    return n_actual, G, gdf

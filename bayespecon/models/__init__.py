@@ -7,10 +7,14 @@ single import surface.
 from .base import SpatialModel
 from .flow_panel import (
     FlowPanelModel,
+    OLSFlowPanel,
+    PoissonFlowPanel,
     PoissonSARFlowPanel,
     PoissonSARFlowSeparablePanel,
     SARFlowPanel,
     SARFlowSeparablePanel,
+    SEMFlowPanel,
+    SEMFlowSeparablePanel,
 )
 from .ols import OLS
 from .panel import (
@@ -74,8 +78,12 @@ __all__ = [
     "SEMPanelTobit",
     "SpatialPanelModel",
     "FlowPanelModel",
+    "OLSFlowPanel",
     "SARFlowPanel",
     "SARFlowSeparablePanel",
+    "SEMFlowPanel",
+    "SEMFlowSeparablePanel",
+    "PoissonFlowPanel",
     "PoissonSARFlowPanel",
     "PoissonSARFlowSeparablePanel",
 ]

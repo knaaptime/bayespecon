@@ -1005,6 +1005,80 @@ def flow_logdet_pytensor(
     return poly_part + tail_part
 
 
+def flow_logdet_numpy(
+    rho_d,
+    rho_o,
+    rho_w,
+    poly_a: np.ndarray,
+    poly_b: np.ndarray,
+    poly_c: np.ndarray,
+    poly_coeffs: np.ndarray,
+    miter_a: np.ndarray,
+    miter_b: np.ndarray,
+    miter_c: np.ndarray,
+    miter_coeffs: np.ndarray,
+    miter: int,
+    titer: int = 800,
+) -> np.ndarray:
+    """Vectorised numpy port of :func:`flow_logdet_pytensor`.
+
+    Evaluates :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`
+    for arrays of posterior draws ``(rho_d, rho_o, rho_w)``.  Used by
+    :class:`~bayespecon.models.flow.FlowModel`-derived models to attach a
+    complete pointwise log-likelihood to the InferenceData after sampling
+    (the ``pm.Potential("jacobian", ...)`` Jacobian term is not captured by
+    PyMC's automatic log-likelihood accounting).
+
+    Parameters
+    ----------
+    rho_d, rho_o, rho_w : array-like, shape (G,) or scalar
+        Posterior draws for the three spatial parameters.
+    poly_a, poly_b, poly_c, poly_coeffs, miter_a, miter_b, miter_c, miter_coeffs :
+        Precomputed exponent arrays and coefficients from
+        :func:`_flow_logdet_poly_coeffs`.
+    miter : int
+        Highest polynomial order included in the exact series.
+    titer : int, default 800
+        Highest order included in the geometric tail approximation.
+
+    Returns
+    -------
+    np.ndarray, shape (G,)
+        Log-determinant evaluated at each draw.
+    """
+    rho_d = np.atleast_1d(np.asarray(rho_d, dtype=np.float64))
+    rho_o = np.atleast_1d(np.asarray(rho_o, dtype=np.float64))
+    rho_w = np.atleast_1d(np.asarray(rho_w, dtype=np.float64))
+
+    # Polynomial part: vectorised over draws.
+    poly_part = (
+        poly_coeffs[None, :]
+        * np.power(rho_d[:, None], poly_a[None, :])
+        * np.power(rho_o[:, None], poly_b[None, :])
+        * np.power(rho_w[:, None], poly_c[None, :])
+    ).sum(axis=1)
+
+    # tr(W_F^miter) symbolically per draw.
+    trace_last = (
+        miter_coeffs[None, :]
+        * np.power(rho_d[:, None], miter_a[None, :])
+        * np.power(rho_o[:, None], miter_b[None, :])
+        * np.power(rho_w[:, None], miter_c[None, :])
+    ).sum(axis=1)
+
+    # Geometric tail (clip to avoid overflow at the boundary).
+    s_raw = rho_d + rho_o + rho_w
+    scalarparm = np.clip(s_raw, -1.0 + 1e-6, 1.0 - 1e-6)
+
+    j_arr = np.arange(1, titer - miter + 1, dtype=np.float64)
+    recip = 1.0 / (miter + j_arr)
+    tail_sum = (np.power(scalarparm[:, None], j_arr[None, :]) * recip[None, :]).sum(
+        axis=1
+    )
+
+    return poly_part - trace_last * tail_sum
+
+
 def _auto_logdet_method(n: int) -> str:
     """Choose the recommended logdet method based on matrix size.
 
@@ -1057,15 +1131,6 @@ def make_logdet_numpy_fn(
     n = eigs.shape[0]
     if method is None:
         method = _auto_logdet_method(n)
-
-    # Normalise legacy aliases
-    _legacy = {
-        "grid": "dense_grid",
-        "full": "sparse_grid",
-        "int": "spline",
-        "ichol": "ilu",
-    }
-    method = _legacy.get(method, method)
 
     if method == "eigenvalue":
         _eigs = eigs.real.astype(np.float64)
@@ -1180,14 +1245,6 @@ def make_logdet_numpy_vec_fn(
     if method is None:
         method = _auto_logdet_method(n)
 
-    _legacy = {
-        "grid": "dense_grid",
-        "full": "sparse_grid",
-        "int": "spline",
-        "ichol": "ilu",
-    }
-    method = _legacy.get(method, method)
-
     if method == "eigenvalue":
         _eigs = eigs.real.astype(np.float64)
 
@@ -1212,16 +1269,6 @@ def make_logdet_fn(
     rho_max: float = 1.0,
     T: int = 1,
 ):
-    # Map legacy method names to new ones for backward compatibility
-    legacy_map = {
-        "grid": "dense_grid",
-        "full": "sparse_grid",
-        "int": "spline",
-        "mc": "mc",
-        "ichol": "ilu",
-    }
-    if method is not None and method in legacy_map:
-        method = legacy_map[method]
     """Return a function (rho) -> pytensor log|I - rho*W| expression.
 
     Parameters

@@ -68,9 +68,7 @@ class OLS(SpatialModel):
           on :math:`\\sigma`.
         - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
           :math:`\\nu` (only used when ``robust=True``).
-    logdet_method : str, optional
-        Unused for OLS (no spatial lag); kept for API compatibility with
-        :class:`~bayespecon.models.base.SpatialModel`.
+
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal.
     """

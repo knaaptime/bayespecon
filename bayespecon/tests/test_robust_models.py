@@ -96,45 +96,25 @@ class TestRobustCrossSectional:
         )
         assert "beta" in idata.posterior
 
-    def test_sar_robust_builds_and_samples(self, sar_data):
-        y, X, W = sar_data
+    @pytest.mark.parametrize(
+        "cls,data_fixture,extra_var",
+        [
+            (OLS, "sar_data", "beta"),
+            (SAR, "sar_data", "rho"),
+            (SLX, "sar_data", "beta"),
+            (SEM, "sem_data", "lam"),
+            (SDM, "sar_data", "rho"),
+            (SDEM, "sem_data", "lam"),
+        ],
+        ids=lambda v: getattr(v, "__name__", str(v)),
+    )
+    def test_robust_builds_and_samples(self, request, cls, data_fixture, extra_var):
+        y, X, W = request.getfixturevalue(data_fixture)
         W_graph = W_to_graph(W)
-        model = SAR(y=y, X=X, W=W_graph, robust=True)
+        model = cls(y=y, X=X, W=W_graph, robust=True)
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior
-        assert "rho" in idata.posterior
-
-    def test_slx_robust_builds_and_samples(self, sar_data):
-        y, X, W = sar_data
-        W_graph = W_to_graph(W)
-        model = SLX(y=y, X=X, W=W_graph, robust=True)
-        idata = model.fit(**QUICK_KWARGS)
-        assert "nu" in idata.posterior
-        assert "beta" in idata.posterior
-
-    def test_sem_robust_builds_and_samples(self, sem_data):
-        y, X, W = sem_data
-        W_graph = W_to_graph(W)
-        model = SEM(y=y, X=X, W=W_graph, robust=True)
-        idata = model.fit(**QUICK_KWARGS)
-        assert "nu" in idata.posterior
-        assert "lam" in idata.posterior
-
-    def test_sdm_robust_builds_and_samples(self, sar_data):
-        y, X, W = sar_data
-        W_graph = W_to_graph(W)
-        model = SDM(y=y, X=X, W=W_graph, robust=True)
-        idata = model.fit(**QUICK_KWARGS)
-        assert "nu" in idata.posterior
-        assert "rho" in idata.posterior
-
-    def test_sdem_robust_builds_and_samples(self, sem_data):
-        y, X, W = sem_data
-        W_graph = W_to_graph(W)
-        model = SDEM(y=y, X=X, W=W_graph, robust=True)
-        idata = model.fit(**QUICK_KWARGS)
-        assert "nu" in idata.posterior
-        assert "lam" in idata.posterior
+        assert extra_var in idata.posterior
 
 
 # ---------------------------------------------------------------------------

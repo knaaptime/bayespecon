@@ -58,14 +58,7 @@ def _W_to_graph_raw(W: np.ndarray):
     return Graph.from_arrays(rows, cols, vals.astype(float))
 
 
-def _set_posterior_means(model, beta: np.ndarray, rho: float | None = None) -> None:
-    """Inject posterior means into a model for testing without MCMC."""
-    posterior: dict[str, np.ndarray] = {
-        "beta": np.array([[beta]], dtype=float),
-    }
-    if rho is not None:
-        posterior["rho"] = np.array([[rho]], dtype=float)
-    model._idata = az.from_dict(posterior=posterior)
+from .helpers import set_posterior_means as _set_posterior_means  # noqa: E402
 
 
 def _set_posterior_draws(

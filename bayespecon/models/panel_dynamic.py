@@ -164,10 +164,20 @@ class _DynamicPanelMixin:
 
 
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    """Dynamic non-spatial panel model with lagged dependent variable.
+    r"""Dynamic panel regression without contemporaneous spatial dependence.
 
-    Model:
-    ``y_t = phi * y_{t-1} + X_t * beta + W*X_t * gamma + e_t``.
+    Implements
+
+    .. math::
+
+        y_{it} = \\phi y_{i,t-1} + x_{it}'\\beta + (W x_{it})'\\theta + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),
+
+    where the :math:`(W x_{it})'\\theta` block is present only when the
+    base design marks covariates as laggable. The admissible panel
+    transformations are pooled, time effects, and two-way effects;
+    ``model=1`` is rejected by :class:`_DynamicPanelMixin` because unit
+    fixed effects with a lagged dependent variable induce Nickell bias.
 
     **Robust regression**
 
@@ -180,7 +190,7 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -332,10 +342,18 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    """Dynamic restricted spatial Durbin model for panels.
+    r"""Dynamic restricted spatial Durbin panel regression.
 
-    Model:
-    ``y_t = phi*y_{t-1} + rho*W*y_t - rho*phi*W*y_{t-1} + X_t*beta + W*X_t*gamma + e_t``.
+    Implements
+
+    .. math::
+
+        y_{it} = \\phi y_{i,t-1} + \\rho W y_{it} - \\rho \\phi W y_{i,t-1}
+        + x_{it}'\\beta + (W x_{it})'\\theta + \\varepsilon_{it},
+
+    where the restriction ties the lagged spatial spillover term to
+    :math:`-\\rho \\phi`. As with all dynamic classes here, ``model=1`` is
+    disallowed because of Nickell bias.
 
     **Robust regression**
 
@@ -348,7 +366,7 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -572,10 +590,18 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    """Dynamic unrestricted spatial Durbin model for panels.
+    r"""Dynamic unrestricted spatial Durbin panel regression.
 
-    Model:
-    ``y_t = phi*y_{t-1} + rho*W*y_t + theta*W*y_{t-1} + X_t*beta + W*X_t*gamma + e_t``.
+    Implements
+
+    .. math::
+
+        y_{it} = \\phi y_{i,t-1} + \\rho W y_{it} + \\psi W y_{i,t-1}
+        + x_{it}'\\beta + (W x_{it})'\\theta + \\varepsilon_{it},
+
+    where :math:`\\psi` is an unrestricted coefficient on the lagged
+    spatial outcome. As with the other dynamic specifications, admissible
+    panel transforms are pooled, time effects, and two-way effects.
 
     **Robust regression**
 
@@ -588,7 +614,7 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -817,15 +843,19 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    """Dynamic spatial lag panel model (SAR with lagged dependent variable).
+    r"""Dynamic spatial-lag panel regression.
 
-    Model:
-    ``y_t = phi*y_{t-1} + rho*W*y_t + X_t*beta + e_t``.
+    Implements
 
-    This is the dynamic analogue of :class:`SARPanelFE`, adding a
-    time-lagged dependent variable but no WX terms (no Durbin component).
-    The Jacobian ``|I - rho*W|^(T-1)`` accounts for the contemporaneous
-    spatial lag.
+    .. math::
+
+        y_{it} = \\phi y_{i,t-1} + \\rho W y_{it} + x_{it}'\\beta + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    This is the dynamic analogue of :class:`SARPanelFE`: it adds a lagged
+    dependent variable but no Durbin block. The Jacobian contribution is
+    based on :math:`|I - \\rho W|^{T-1}` for the contemporaneous spatial
+    lag.
 
     **Robust regression**
 
@@ -838,7 +868,7 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -1025,18 +1055,23 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    """Dynamic spatial error panel model (SEM with lagged dependent variable).
+    r"""Dynamic spatial-error panel regression.
 
-    Model:
-    ``y_t = phi*y_{t-1} + X_t*beta + u_t,  u_t = lambda*W*u_t + e_t``.
+    Implements
 
-    This is the dynamic analogue of :class:`SEMPanelFE`. The likelihood
-    uses transformed residuals ``(I - lambda*W)(y_t - phi*y_{t-1} - X_t*beta)``
-    with a Jacobian ``|I - lambda*W|^(T-1)``.
+    .. math::
+
+        y_{it} = \\phi y_{i,t-1} + x_{it}'\\beta + u_{it},
+        \\qquad u_{it} = \\lambda W u_{it} + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    The likelihood uses the filtered residuals
+    :math:`(I - \\lambda W)(y_t - \\phi y_{t-1} - X_t \\beta)` and the
+    associated Jacobian :math:`|I - \\lambda W|^{T-1}`.
 
     **Robust regression**
 
-    When ``robust=True``, the spatially-filtered error distribution is
+    When ``robust=True``, the spatially filtered error distribution is
     changed from Normal to Student-t, yielding a model that is robust to
     heavy-tailed outliers:
 
@@ -1046,7 +1081,7 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -1279,17 +1314,23 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    """Dynamic spatial Durbin error panel model (SDEM with lagged dependent variable).
+    r"""Dynamic spatial Durbin error panel regression.
 
-    Model:
-    ``y_t = phi*y_{t-1} + X_t*beta + W*X_t*theta + u_t,  u_t = lambda*W*u_t + e_t``.
+    Implements
 
-    This is the dynamic analogue of :class:`SDEMPanelFE`. The likelihood
-    uses transformed residuals with a Jacobian ``|I - lambda*W|^(T-1)``.
+    .. math::
+
+        y_{it} = \\phi y_{i,t-1} + x_{it}'\\beta + (W x_{it})'\\theta + u_{it},
+        \\qquad u_{it} = \\lambda W u_{it} + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    This is the dynamic analogue of :class:`SDEMPanelFE`: lagged outcome
+    persistence enters through :math:`\\phi`, while spatial dependence
+    remains in the disturbance.
 
     **Robust regression**
 
-    When ``robust=True``, the spatially-filtered error distribution is
+    When ``robust=True``, the spatially filtered error distribution is
     changed from Normal to Student-t, yielding a model that is robust to
     heavy-tailed outliers:
 
@@ -1299,7 +1340,7 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -1584,13 +1625,18 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    """Dynamic SLX panel model (SLX with lagged dependent variable).
+    r"""Dynamic SLX panel regression.
 
-    Model:
-    ``y_t = phi*y_{t-1} + X_t*beta_1 + W*X_t*beta_2 + e_t``.
+    Implements
 
-    This is the dynamic analogue of :class:`SLXPanelFE`. No spatial lag
-    on y, so no Jacobian adjustment is needed.
+    .. math::
+
+        y_{it} = \\phi y_{i,t-1} + x_{it}'\\beta + (W x_{it})'\\theta + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    This is the dynamic analogue of :class:`SLXPanelFE`. There is no
+    contemporaneous spatial lag on :math:`y`, so no Jacobian adjustment is
+    required.
 
     **Robust regression**
 
@@ -1603,7 +1649,7 @@ class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 

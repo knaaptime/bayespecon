@@ -210,8 +210,8 @@ class TestFlowDesignMatrix:
     def test_combined_columns_with_dist(self):
         from bayespecon.graph import flow_design_matrix
 
-        dist = np.random.default_rng(0).standard_normal((self.n, self.n))
-        dm = flow_design_matrix(self.X, dist=dist)
+        dist = np.abs(np.random.default_rng(0).standard_normal((self.n, self.n)))
+        dm = flow_design_matrix(self.X, dist=dist, log_distance=False)
         expected_cols = 1 + 1 + self.k + self.k + self.k + 1
         assert dm.combined.shape[1] == expected_cols
 
@@ -219,7 +219,7 @@ class TestFlowDesignMatrix:
         from bayespecon.graph import flow_design_matrix
 
         dist = np.arange(self.n * self.n, dtype=float).reshape(self.n, self.n)
-        dm = flow_design_matrix(self.X, dist=dist)
+        dm = flow_design_matrix(self.X, dist=dist, log_distance=False)
         assert dm.dist_vec is not None
         np.testing.assert_allclose(dm.dist_vec, dist.ravel(), atol=1e-12)
 

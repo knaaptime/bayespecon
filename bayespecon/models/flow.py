@@ -40,10 +40,11 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from ..graph import _validate_graph, flow_weight_matrices
+from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from ..logdet import (
     _flow_logdet_poly_coeffs,
     compute_flow_traces,
+    flow_logdet_numpy,
     flow_logdet_pytensor,
     make_flow_separable_logdet,
 )
@@ -74,6 +75,9 @@ def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray
     return dmask, omask, imask
 
 
+_EFFECT_KEYS = ("origin", "destination", "intra", "network", "total")
+
+
 def _compute_flow_effects_lesage(
     A_solve,
     dmask: np.ndarray,
@@ -82,9 +86,30 @@ def _compute_flow_effects_lesage(
     beta_d: np.ndarray,
     beta_o: np.ndarray,
     n: int,
-    k: int,
-) -> dict[str, float]:
-    """Compute scalar LeSage effects for one posterior draw.
+    k_d: int,
+    k_o: int | None = None,
+    beta_intra: Optional[np.ndarray] = None,
+) -> dict[str, np.ndarray]:
+    """Compute scalar LeSage / Thomas-Agnan effects for one posterior draw.
+
+    Implements the decomposition of Thomas-Agnan & LeSage (2014, §83.5).  For
+    each predictor *p*, two independent shocks are propagated through the
+    spatial filter so that origin-side and destination-side effects can be
+    reported separately when the design uses different attributes for the
+    origin and destination blocks.
+
+    The destination shock places ``β_d^{(p)}`` on every flow whose destination
+    equals region ``j`` (off-diagonal) and ``β_d^{(p)} + β_intra^{(p)}`` on the
+    intraregional flow ``(j, j)``.  The origin shock places ``β_o^{(p)}`` on
+    every flow whose origin equals region ``j``, including ``(j, j)``.  The
+    intra block is tied to the destination side because
+    :func:`bayespecon.graph.flow_design_matrix` constructs
+    ``X_intra = intra_indicator * X_dest``.
+
+    When ``k_d != k_o``, the destination and origin predictors are different
+    variables.  Destination-side effects have length ``k_d``, origin-side
+    effects have length ``k_o``, and combined effects have length
+    ``k_d + k_o`` (concatenated).
 
     Parameters
     ----------
@@ -93,52 +118,95 @@ def _compute_flow_effects_lesage(
         ``(N, n)`` where ``N = n * n``.  Must accept a 2-D right-hand side.
     dmask, omask, imask : np.ndarray, shape (N, n), dtype bool
         Region-shock masks from :func:`_build_flow_effect_masks`.
-    beta_d, beta_o : np.ndarray, shape (k,)
-        Destination and origin coefficient vectors for one posterior draw.
-    n, k : int
-        Number of regions and number of regional attribute predictors.
+    beta_d : np.ndarray, shape (k_d,)
+        Destination coefficient vector for one posterior draw.
+    beta_o : np.ndarray, shape (k_o,)
+        Origin coefficient vector for one posterior draw.
+    n : int
+        Number of regions.
+    k_d : int
+        Number of destination-side regional attribute predictors.
+    k_o : int or None
+        Number of origin-side regional attribute predictors.  If ``None``,
+        defaults to ``k_d`` (symmetric case).
+    beta_intra : np.ndarray, optional, shape (k_d,)
+        Coefficients on the ``intra_*`` design block.  If ``None``, treated as
+        zero (legacy behaviour).
 
     Returns
     -------
     dict
-        Keys ``"origin"``, ``"destination"``, ``"intra"``, ``"network"``,
-        ``"total"``; each value is a length-``k`` array of scalar effects.
+        Combined keys ``"origin"``, ``"destination"``, ``"intra"``,
+        ``"network"``, ``"total"`` (each length-``k_d + k_o``) plus the per-side keys
+        ``"dest_<eff>"`` (length ``k_d``) and ``"orig_<eff>"`` (length ``k_o``)
+        for the same five effects.  The combined values equal the concatenation
+        of the corresponding ``dest_*`` and ``orig_*`` arrays.
     """
+    if k_o is None:
+        k_o = k_d
     N = n * n
-    out_total = np.empty(k, dtype=np.float64)
-    out_intra = np.empty(k, dtype=np.float64)
-    out_origin = np.empty(k, dtype=np.float64)
-    out_dest = np.empty(k, dtype=np.float64)
-    out_network = np.empty(k, dtype=np.float64)
+    bi = (
+        np.zeros(k_d, dtype=np.float64)
+        if beta_intra is None
+        else np.asarray(beta_intra, dtype=np.float64)
+    )
 
-    for p in range(k):
+    out: dict[str, np.ndarray] = {}
+    for side in ("dest", "orig"):
+        k_side = k_d if side == "dest" else k_o
+        for eff in _EFFECT_KEYS:
+            out[f"{side}_{eff}"] = np.empty(k_side, dtype=np.float64)
+
+    for p in range(k_d):
         bd = float(beta_d[p])
+        bint = float(bi[p])
+
+        # Destination-side shock: β_d on flows with destination=j, plus β_intra
+        # at (j, j) since X_intra is built from X_dest.
+        shock_d = np.zeros((N, n), dtype=np.float64)
+        shock_d[dmask] = bd
+        shock_d[imask] = bd + bint
+        T_d = A_solve(shock_d)
+        total_d = T_d.sum() / N
+        intra_d = T_d[imask].sum() / N
+        origin_d = T_d[omask].sum() / N
+        dest_d = T_d[dmask].sum() / N
+        out["dest_total"][p] = total_d
+        out["dest_intra"][p] = intra_d
+        out["dest_origin"][p] = origin_d
+        out["dest_destination"][p] = dest_d
+        out["dest_network"][p] = total_d - origin_d - dest_d - intra_d
+
+    for p in range(k_o):
         bo = float(beta_o[p])
-        shock = np.zeros((N, n), dtype=np.float64)
-        shock[dmask] = bd
-        shock[omask] = bo
-        shock[imask] = bd + bo
 
-        T_resp = A_solve(shock)  # (N, n)
-        total = T_resp.sum() / N
-        intra = T_resp[imask].sum() / N
-        origin = T_resp[omask].sum() / N
-        dest = T_resp[dmask].sum() / N
-        network = total - origin - dest - intra
+        # Origin-side shock: β_o on flows with origin=j, including (j, j).
+        shock_o = np.zeros((N, n), dtype=np.float64)
+        shock_o[omask] = bo
+        shock_o[imask] = bo
+        T_o = A_solve(shock_o)
+        total_o = T_o.sum() / N
+        intra_o = T_o[imask].sum() / N
+        origin_o = T_o[omask].sum() / N
+        dest_o = T_o[dmask].sum() / N
+        out["orig_total"][p] = total_o
+        out["orig_intra"][p] = intra_o
+        out["orig_origin"][p] = origin_o
+        out["orig_destination"][p] = dest_o
+        out["orig_network"][p] = total_o - origin_o - dest_o - intra_o
 
-        out_total[p] = total
-        out_intra[p] = intra
-        out_origin[p] = origin
-        out_dest[p] = dest
-        out_network[p] = network
+    # Combined effects: concatenation of dest and orig (different variables
+    # when k_d != k_o, same variables summed when k_d == k_o).
+    if k_d == k_o:
+        # Symmetric case: sum dest and orig effects (same variables)
+        for eff in _EFFECT_KEYS:
+            out[eff] = out[f"dest_{eff}"] + out[f"orig_{eff}"]
+    else:
+        # Asymmetric case: concatenate dest and orig effects (different variables)
+        for eff in _EFFECT_KEYS:
+            out[eff] = np.concatenate([out[f"dest_{eff}"], out[f"orig_{eff}"]])
 
-    return {
-        "total": out_total,
-        "destination": out_dest,
-        "origin": out_origin,
-        "intra": out_intra,
-        "network": out_network,
-    }
+    return out
 
 
 class FlowModel(ABC):
@@ -201,6 +269,13 @@ class FlowModel(ABC):
         Number of Monte Carlo probes for trace estimation.
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), the destination and origin design blocks are
+        compared and symmetry is auto-detected.  Set explicitly to override
+        the heuristic — for example, when using
+        :func:`~bayespecon.graph.flow_design_matrix_with_orig` with distinct
+        attributes for the origin and destination sides.  Controls the default
+        behaviour of :meth:`spatial_effects` when ``mode="auto"``.
     """
 
     def __init__(
@@ -217,6 +292,7 @@ class FlowModel(ABC):
         titer: int = 800,
         trace_riter: int = 50,
         trace_seed: Optional[int] = None,
+        symmetric_xo_xd: Optional[bool] = None,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
@@ -272,19 +348,53 @@ class FlowModel(ABC):
         else:
             self._feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
 
-        # Infer k (number of regional attribute columns) for effects computation.
+        # Infer k_d and k_o (number of regional attribute columns) for effects computation.
         # Standard LeSage layout: [intercept, intra_indicator, dest_*, orig_*, intra_*, (dist)]
         if k is not None:
             self._k: int = k
+            self._k_d: int = k
+            self._k_o: int = k
         else:
             dest_cols = [
                 name for name in self._feature_names if name.startswith("dest_")
             ]
-            self._k = len(dest_cols)
-            if self._k == 0:
+            orig_cols = [
+                name for name in self._feature_names if name.startswith("orig_")
+            ]
+            self._k_d = len(dest_cols)
+            self._k_o = len(orig_cols)
+            self._k = self._k_d  # backward compat alias
+            if self._k_d == 0 and self._k_o == 0:
                 # Fallback: cannot infer k from column names; effects decomposition
                 # will not be available.  Set k=0 as a sentinel.
                 self._k = 0
+
+        # Locate β_intra slice (Thomas-Agnan & LeSage 2014, §83.4): coefficients
+        # on the `intra_*` block contribute to the intraregional shock.  When
+        # the design lacks these columns the intra contribution is zero.
+        if self._k_d > 0:
+            intra_cols = [
+                i
+                for i, name in enumerate(self._feature_names)
+                if name.startswith("intra_")
+            ]
+            self._intra_idx: Optional[np.ndarray] = (
+                np.asarray(intra_cols, dtype=np.int64) if intra_cols else None
+            )
+        else:
+            self._intra_idx = None
+
+        # Detect whether the destination and origin design blocks are
+        # identical (the symmetric Xo = Xd case).  When asymmetric the
+        # Thomas-Agnan & LeSage (2014, §83.5.2) shortcut of summing dest and
+        # orig effects is not appropriate, and `spatial_effects(mode="auto")`
+        # falls back to reporting both sides separately.
+        if symmetric_xo_xd is None and self._k_d > 0 and self._k_d == self._k_o and X_arr.shape[1] >= 2 + self._k_d + self._k_o:
+            dest_block = X_arr[:, 2 : 2 + self._k_d]
+            orig_block = X_arr[:, 2 + self._k_d : 2 + self._k_d + self._k_o]
+            self._symmetric_xo_xd: bool = bool(np.array_equal(dest_block, orig_block))
+        else:
+            self._symmetric_xo_xd = bool(symmetric_xo_xd) if symmetric_xo_xd is not None else (self._k_d == self._k_o)
 
         # Pre-compute logdet data for separable constraint: log|Lo⊗Ld| = n*f(ρ_d) + n*f(ρ_o).
         # Also keep _W_eigs for backward compatibility.
@@ -321,6 +431,11 @@ class FlowModel(ABC):
 
         # Cache region-shock masks for LeSage effects decomposition.
         self._dmask, self._omask, self._imask = _build_flow_effect_masks(self._n)
+
+        # Cache the symmetric 3x3 Kronecker trace matrix used by Bayesian
+        # LM diagnostics: T[i,j] = tr(W_i' W_j) + tr(W_i W_j) for
+        # (W_d, W_o, W_w).  Computed in O(nnz) from the base n x n graph.
+        self._T_flow_traces: np.ndarray = flow_trace_blocks(self._W_sparse)
 
         # Pre-compute flow log-det traces (only for "traces" method)
         if logdet_method == "traces":
@@ -381,6 +496,7 @@ class FlowModel(ABC):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
+        idata_kwargs: Optional[dict] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
@@ -401,6 +517,13 @@ class FlowModel(ABC):
             If True, include the high-dimensional fitted mean ``lambda`` in the
             stored posterior. Leaving this False reduces memory and conversion
             overhead for Poisson flow models.
+        idata_kwargs : dict, optional
+            Forwarded to ``pm.sample``.  Defaults to
+            ``{"log_likelihood": True}`` so that ``az.loo`` / ``az.waic`` /
+            ``az.compare`` work out of the box; for SAR flow variants the
+            captured Gaussian log-likelihood is post-processed to add the
+            Jacobian contribution from ``log|I_N - rho_d W_d - rho_o W_o
+            - rho_w W_w|``.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``.
 
@@ -408,6 +531,10 @@ class FlowModel(ABC):
         -------
         arviz.InferenceData
         """
+        idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
+        idata_kwargs.setdefault("log_likelihood", True)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+
         model = self._build_pymc_model()
         self._pymc_model = model
         self._approximation = None
@@ -423,8 +550,11 @@ class FlowModel(ABC):
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
                 **sample_kwargs,
             )
+        if compute_log_likelihood:
+            self._attach_complete_log_likelihood(self._idata)
         return self._idata
 
     def fit_approx(
@@ -434,6 +564,7 @@ class FlowModel(ABC):
         method: str = "advi",
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
+        compute_log_likelihood: bool = True,
         **fit_kwargs,
     ) -> az.InferenceData:
         """Fit a variational approximation and return posterior draws.
@@ -451,6 +582,10 @@ class FlowModel(ABC):
         store_lambda : bool, default False
             If True, keep the high-dimensional fitted mean ``lambda`` in the
             posterior draws.
+        compute_log_likelihood : bool, default True
+            If True, compute pointwise log-likelihood after sampling and
+            attach to the InferenceData (with Jacobian correction for SAR
+            flow variants), enabling ``az.loo`` / ``az.waic``.
         **fit_kwargs
             Additional keyword arguments forwarded to ``pm.fit``.
         """
@@ -472,6 +607,12 @@ class FlowModel(ABC):
                 random_seed=random_seed,
                 return_inferencedata=True,
             )
+            if compute_log_likelihood:
+                pm.compute_log_likelihood(
+                    self._idata,
+                    extend_inferencedata=True,
+                    progressbar=False,
+                )
 
         if (
             not store_lambda
@@ -480,6 +621,9 @@ class FlowModel(ABC):
             and "lambda" in self._idata.posterior.data_vars
         ):
             self._idata.posterior = self._idata.posterior.drop_vars("lambda")
+
+        if compute_log_likelihood:
+            self._attach_complete_log_likelihood(self._idata)
 
         return self._idata
 
@@ -528,6 +672,66 @@ class FlowModel(ABC):
         return coords
 
     # ------------------------------------------------------------------
+    # Pointwise log-likelihood (with Jacobian correction for SAR variants)
+    # ------------------------------------------------------------------
+
+    def _compute_jacobian_log_det(self, posterior) -> Optional[np.ndarray]:
+        """Per-draw :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`.
+
+        Returns ``None`` (the default) when no Jacobian correction is
+        required — for example, OLS / Poisson flow baselines (``A = I_N``)
+        and the Poisson SAR variants (the ``pm.Poisson("obs", ...)``
+        log-likelihood already captured by PyMC is the appropriate
+        pointwise density on observed counts).
+
+        Subclasses with a Gaussian observation model and a
+        ``pm.Potential("jacobian", ...)`` term must override this to return
+        an array of shape ``(n_draws,)`` with the per-draw log-determinant.
+        """
+        return None
+
+    def _attach_complete_log_likelihood(self, idata) -> None:
+        """Add Jacobian contribution to the pointwise log-likelihood.
+
+        ``pm.sample(idata_kwargs={"log_likelihood": True})`` only captures
+        observed-RV log densities, so the ``pm.Potential("jacobian", ...)``
+        contribution from ``log|I_N - rho_d W_d - rho_o W_o - rho_w W_w|``
+        is missing for SAR flow variants.  This helper recomputes the
+        complete pointwise log-likelihood and replaces the captured group.
+        """
+        if idata is None or not hasattr(idata, "log_likelihood"):
+            return
+        if "obs" not in idata.log_likelihood.data_vars:
+            return
+
+        jacobian_draws = self._compute_jacobian_log_det(idata.posterior)
+        if jacobian_draws is None:
+            return
+
+        import xarray as xr
+
+        ll_da = idata.log_likelihood["obs"]
+        n_chains = ll_da.sizes["chain"]
+        n_draws_per_chain = ll_da.sizes["draw"]
+        n_obs = int(np.prod(ll_da.shape[2:]))
+
+        ll_array = ll_da.values.reshape(n_chains * n_draws_per_chain, n_obs)
+        jacobian_draws = np.asarray(jacobian_draws, dtype=np.float64).reshape(-1)
+        if jacobian_draws.shape[0] != ll_array.shape[0]:
+            raise RuntimeError(
+                "Posterior draw count does not match log-likelihood shape: "
+                f"{jacobian_draws.shape[0]} vs {ll_array.shape[0]}."
+            )
+
+        ll_array = ll_array + jacobian_draws[:, None] / n_obs
+        ll_array = ll_array.reshape(n_chains, n_draws_per_chain, n_obs)
+
+        new_da = xr.DataArray(
+            ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
+        )
+        idata["log_likelihood"] = xr.Dataset({"obs": new_da})
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -550,13 +754,16 @@ class FlowModel(ABC):
         draws: Optional[int] = None,
         return_posterior_samples: bool = False,
         ci: float = 0.95,
+        mode: str = "auto",
     ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
         """Summarise posterior origin/destination/intra/network/total effects.
 
         Wraps :meth:`_compute_spatial_effects_posterior` to produce a tidy
         DataFrame indexed by predictor with posterior means, credible-interval
         bounds, and Bayesian p-values for each effect type (origin,
-        destination, intra, network, total).
+        destination, intra, network, total).  Following Thomas-Agnan & LeSage
+        (2014, §83.5.2), when destination and origin design blocks differ the
+        decomposition is reported separately for shocks applied to each side.
 
         Parameters
         ----------
@@ -566,13 +773,18 @@ class FlowModel(ABC):
             If True, also return the underlying posterior-draw arrays.
         ci : float, default 0.95
             Credible-interval coverage.
+        mode : {"auto", "combined", "separate"}, default "auto"
+            Controls whether destination- and origin-side effects are summed
+            or reported separately.  ``"auto"`` collapses to combined when
+            the destination and origin design blocks are identical
+            (``self._symmetric_xo_xd``) and reports both sides otherwise.
+            ``"combined"`` always sums; ``"separate"`` always reports both.
 
         Returns
         -------
         pandas.DataFrame, or (DataFrame, dict)
-            Long-format summary table.  When ``return_posterior_samples=True``,
-            the second element is the raw posterior dictionary returned by
-            :meth:`_compute_spatial_effects_posterior`.
+            Long-format summary indexed by ``(predictor, side, effect)`` where
+            ``side`` is one of ``"combined"``, ``"dest"``, ``"orig"``.
         """
         from ..diagnostics.spatial_effects import _compute_bayesian_pvalue
 
@@ -584,29 +796,70 @@ class FlowModel(ABC):
                 "in the design matrix.  Pass `k=` explicitly when constructing "
                 "the model."
             )
+        if mode not in {"auto", "combined", "separate"}:
+            raise ValueError(
+                f"mode must be 'auto', 'combined', or 'separate'; got {mode!r}."
+            )
 
         posterior = self._compute_spatial_effects_posterior(draws=draws)
 
-        # Predictor names: prefer dest_* labels stripped of the prefix.
-        feature_names = [
+        if mode == "auto":
+            effective_mode = "combined" if self._symmetric_xo_xd else "separate"
+        else:
+            effective_mode = mode
+
+        if effective_mode == "combined":
+            display = [("combined", eff) for eff in _EFFECT_KEYS]
+        else:
+            display = [
+                (side, eff) for side in ("dest", "orig") for eff in _EFFECT_KEYS
+            ]
+
+        # Predictor names: prefer dest_* and orig_* labels stripped of the prefix.
+        dest_feature_names = [
             name[len("dest_") :] if name.startswith("dest_") else name
             for name in self._feature_names
             if name.startswith("dest_")
-        ][: self._k]
-        if len(feature_names) != self._k:
-            feature_names = [f"x{i}" for i in range(self._k)]
+        ][: self._k_d]
+        if len(dest_feature_names) != self._k_d:
+            dest_feature_names = [f"x{i}" for i in range(self._k_d)]
+
+        orig_feature_names = [
+            name[len("orig_") :] if name.startswith("orig_") else name
+            for name in self._feature_names
+            if name.startswith("orig_")
+        ][: self._k_o]
+        if len(orig_feature_names) != self._k_o:
+            orig_feature_names = [f"y{i}" for i in range(self._k_o)]
+
+        # For combined mode: when k_d == k_o, combined effects are the sum
+        # of dest and orig (same variables), so use dest names.
+        # When k_d != k_o, combined effects are concatenated (different variables).
+        if self._k_d == self._k_o:
+            feature_names = dest_feature_names
+        else:
+            feature_names = dest_feature_names + orig_feature_names
 
         alpha = (1.0 - ci) / 2.0
         rows = []
-        for effect_name, samples in posterior.items():
+        for side, effect_name in display:
+            key = effect_name if side == "combined" else f"{side}_{effect_name}"
+            samples = posterior[key]
             means = samples.mean(axis=0)
             lower = np.quantile(samples, alpha, axis=0)
             upper = np.quantile(samples, 1.0 - alpha, axis=0)
             pvals = _compute_bayesian_pvalue(samples)
-            for j, fname in enumerate(feature_names):
+            if side == "combined":
+                fnames = feature_names
+            elif side == "dest":
+                fnames = dest_feature_names
+            else:
+                fnames = orig_feature_names
+            for j, fname in enumerate(fnames):
                 rows.append(
                     {
                         "predictor": fname,
+                        "side": side,
                         "effect": effect_name,
                         "mean": float(means[j]),
                         "ci_lower": float(lower[j]),
@@ -615,7 +868,7 @@ class FlowModel(ABC):
                     }
                 )
 
-        df = pd.DataFrame(rows).set_index(["predictor", "effect"])
+        df = pd.DataFrame(rows).set_index(["predictor", "side", "effect"])
         if return_posterior_samples:
             return df, posterior
         return df
@@ -807,6 +1060,26 @@ class SARFlow(FlowModel):
 
         return model
 
+    def _compute_jacobian_log_det(self, posterior) -> np.ndarray:
+        rho_d = posterior["rho_d"].values.reshape(-1)
+        rho_o = posterior["rho_o"].values.reshape(-1)
+        rho_w = posterior["rho_w"].values.reshape(-1)
+        return flow_logdet_numpy(
+            rho_d,
+            rho_o,
+            rho_w,
+            self._poly_a,
+            self._poly_b,
+            self._poly_c,
+            self._poly_coeffs,
+            self._miter_a,
+            self._miter_b,
+            self._miter_c,
+            self._miter_coeffs,
+            self.miter,
+            self.titer,
+        )
+
     def _compute_spatial_effects_posterior(
         self, draws: Optional[int] = None
     ) -> dict[str, np.ndarray]:
@@ -840,7 +1113,8 @@ class SARFlow(FlowModel):
 
         idata = self._idata
         n = self._n
-        k = self._k
+        k_d = self._k_d
+        k_o = self._k_o
 
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
@@ -850,7 +1124,12 @@ class SARFlow(FlowModel):
         )
 
         dest_start = 2
-        orig_start = 2 + k
+        orig_start = 2 + k_d
+        intra_start = 2 + k_d + k_o
+        has_intra = (
+            self._intra_idx is not None
+            and beta_draws.shape[1] >= intra_start + k_d
+        )
 
         n_draws_total = len(rho_d_draws)
         if draws is not None:
@@ -860,17 +1139,24 @@ class SARFlow(FlowModel):
             rho_w_draws = rho_w_draws[:n_draws_total]
             beta_draws = beta_draws[:n_draws_total]
 
-        out = {
-            key: np.zeros((n_draws_total, k), dtype=np.float64)
-            for key in ("origin", "destination", "intra", "network", "total")
-        }
+        out: dict[str, np.ndarray] = {}
+        for side in ("dest", "orig"):
+            k_side = k_d if side == "dest" else k_o
+            for eff in _EFFECT_KEYS:
+                out[f"{side}_{eff}"] = np.zeros((n_draws_total, k_side), dtype=np.float64)
+        k_combined = k_d + k_o if k_d != k_o else k_d
+        for eff in _EFFECT_KEYS:
+            out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
         for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             rw = float(rho_w_draws[idx])
-            beta_d_vec = beta_draws[idx, dest_start : dest_start + k]
-            beta_o_vec = beta_draws[idx, orig_start : orig_start + k]
+            beta_d_vec = beta_draws[idx, dest_start : dest_start + k_d]
+            beta_o_vec = beta_draws[idx, orig_start : orig_start + k_o]
+            beta_intra_vec = (
+                beta_draws[idx, intra_start : intra_start + k_d] if has_intra else None
+            )
 
             A = self._assemble_A(rd, ro, rw).tocsc()
             lu = sp.linalg.splu(A)
@@ -886,10 +1172,12 @@ class SARFlow(FlowModel):
                 beta_d_vec,
                 beta_o_vec,
                 n,
-                k,
+                k_d,
+                k_o=k_o,
+                beta_intra=beta_intra_vec,
             )
             for key, arr in res.items():
-                out[key][idx, :] = arr
+                out[key][idx, : len(arr)] = arr
 
         return out
 
@@ -988,6 +1276,22 @@ class SARFlowSeparable(FlowModel):
 
         return model
 
+    def _compute_jacobian_log_det(self, posterior) -> np.ndarray:
+        rho_d = np.asarray(posterior["rho_d"].values.reshape(-1), dtype=np.float64)
+        rho_o = np.asarray(posterior["rho_o"].values.reshape(-1), dtype=np.float64)
+        n = self._n
+        if self._W_eigs is not None:
+            eigs = self._W_eigs
+            ld_d = np.log(np.abs(1.0 - rho_d[:, None] * eigs[None, :])).sum(axis=1)
+            ld_o = np.log(np.abs(1.0 - rho_o[:, None] * eigs[None, :])).sum(axis=1)
+        else:
+            W_dense = self._W_sparse.toarray().astype(np.float64)
+            eigs = np.linalg.eigvals(W_dense).real.astype(np.float64)
+            self._W_eigs = eigs
+            ld_d = np.log(np.abs(1.0 - rho_d[:, None] * eigs[None, :])).sum(axis=1)
+            ld_o = np.log(np.abs(1.0 - rho_o[:, None] * eigs[None, :])).sum(axis=1)
+        return n * (ld_d + ld_o)
+
     def _compute_spatial_effects_posterior(
         self, draws: Optional[int] = None
     ) -> dict[str, np.ndarray]:
@@ -1015,7 +1319,8 @@ class SARFlowSeparable(FlowModel):
 
         idata = self._idata
         n = self._n
-        k = self._k
+        k_d = self._k_d
+        k_o = self._k_o
         W = self._W_sparse.tocsr()
         I_n = sp.eye(n, format="csr", dtype=np.float64)
 
@@ -1026,7 +1331,12 @@ class SARFlowSeparable(FlowModel):
         )
 
         dest_start = 2
-        orig_start = 2 + k
+        orig_start = 2 + k_d
+        intra_start = 2 + k_d + k_o
+        has_intra = (
+            self._intra_idx is not None
+            and beta_draws.shape[1] >= intra_start + k_d
+        )
 
         n_draws_total = len(rho_d_draws)
         if draws is not None:
@@ -1035,16 +1345,23 @@ class SARFlowSeparable(FlowModel):
             rho_o_draws = rho_o_draws[:n_draws_total]
             beta_draws = beta_draws[:n_draws_total]
 
-        out = {
-            key: np.zeros((n_draws_total, k), dtype=np.float64)
-            for key in ("origin", "destination", "intra", "network", "total")
-        }
+        out: dict[str, np.ndarray] = {}
+        for side in ("dest", "orig"):
+            k_side = k_d if side == "dest" else k_o
+            for eff in _EFFECT_KEYS:
+                out[f"{side}_{eff}"] = np.zeros((n_draws_total, k_side), dtype=np.float64)
+        k_combined = k_d + k_o if k_d != k_o else k_d
+        for eff in _EFFECT_KEYS:
+            out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
         for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
-            beta_d_vec = beta_draws[idx, dest_start : dest_start + k]
-            beta_o_vec = beta_draws[idx, orig_start : orig_start + k]
+            beta_d_vec = beta_draws[idx, dest_start : dest_start + k_d]
+            beta_o_vec = beta_draws[idx, orig_start : orig_start + k_o]
+            beta_intra_vec = (
+                beta_draws[idx, intra_start : intra_start + k_d] if has_intra else None
+            )
 
             Ld = (I_n - rd * W).tocsr()
             Lo = (I_n - ro * W).tocsr()
@@ -1060,10 +1377,12 @@ class SARFlowSeparable(FlowModel):
                 beta_d_vec,
                 beta_o_vec,
                 n,
-                k,
+                k_d,
+                k_o=k_o,
+                beta_intra=beta_intra_vec,
             )
             for key, arr in res.items():
-                out[key][idx, :] = arr
+                out[key][idx, : len(arr)] = arr
 
         return out
 
@@ -1125,6 +1444,12 @@ class PoissonSARFlow(SARFlow):
             )
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
+
+    def _compute_jacobian_log_det(self, posterior) -> Optional[np.ndarray]:
+        # Poisson observation density on observed counts is captured
+        # directly by PyMC; the pm.Potential("jacobian", ...) acts on the
+        # latent linear predictor, not on the observed-data density.
+        return None
 
     def _simulate_y_rep(
         self,
@@ -1243,6 +1568,12 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
 
+    def _compute_jacobian_log_det(self, posterior) -> Optional[np.ndarray]:
+        # Poisson observation density on observed counts is captured
+        # directly by PyMC; the pm.Potential("jacobian", ...) acts on the
+        # latent linear predictor, not on the observed-data density.
+        return None
+
     def _simulate_y_rep(
         self,
         rho_d: float,
@@ -1298,3 +1629,631 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
             )
 
         return model
+
+
+# ---------------------------------------------------------------------------
+# Model 5: OLSFlow — non-spatial gravity baseline (Thomas-Agnan & LeSage 2014)
+# ---------------------------------------------------------------------------
+
+
+class OLSFlow(FlowModel):
+    r"""Non-spatial Bayesian OD-flow gravity model (independence baseline).
+
+    Implements the conventional log-linear gravity model from
+    :cite:t:`thomasAgnan2014SpatialEconometric` (eq. 83.2):
+
+    .. math::
+
+        y = \alpha \iota_{N} + X_o \beta_o + X_d \beta_d + g\gamma + \varepsilon,
+        \quad \varepsilon \sim \mathcal{N}(0, \sigma^{2} I_{N})
+
+    with no spatial-lag terms.  Provided as a baseline for comparison with
+    :class:`SARFlow` / :class:`SARFlowSeparable` and to reproduce Table 83.1
+    of the chapter.
+
+    Parameters
+    ----------
+    y, G, X, col_names, k, priors, symmetric_xo_xd
+        See :class:`FlowModel`.  *G* is required for API symmetry but the
+        graph weights are not used in estimation.
+
+    Notes
+    -----
+    The ``priors`` dict supports ``beta_mu``, ``beta_sigma``, ``sigma_sigma``;
+    spatial keys (``rho_*``) are ignored.
+    """
+
+    def __init__(self, y, G, X, **kwargs):
+        # Skip log-determinant precomputation: A = I_N has |A| = 1.
+        kwargs.pop("logdet_method", None)
+        kwargs.pop("restrict_positive", None)
+        super().__init__(y, G, X, logdet_method="none", **kwargs)
+
+    def _build_pymc_model(self) -> pm.Model:
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y_vec.astype(np.float64))
+
+        with pm.Model(coords=self._model_coords()) as model:
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            mu = pt.dot(X_t, beta)
+            pm.Normal("obs", mu=mu, sigma=sigma, observed=y_t)
+
+        return model
+
+    def _simulate_y_rep(
+        self,
+        rho_d: float,  # unused
+        rho_o: float,  # unused
+        rho_w: float,  # unused
+        beta: np.ndarray,
+        sigma: Optional[float],
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        Xb = self._X_design @ beta
+        if sigma is None:
+            return Xb
+        return Xb + rng.normal(scale=float(sigma), size=self._N)
+
+    def posterior_predictive(
+        self,
+        n_draws: Optional[int] = None,
+        random_seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """Draw posterior-predictive flows for the OLS gravity model."""
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        post = self._idata.posterior
+        beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
+        sigma_draws = (
+            post["sigma"].values.reshape(-1) if "sigma" in post.data_vars else None
+        )
+
+        total = beta_draws.shape[0]
+        if n_draws is not None:
+            total = min(int(n_draws), total)
+            beta_draws = beta_draws[:total]
+            if sigma_draws is not None:
+                sigma_draws = sigma_draws[:total]
+
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g in range(total):
+            sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
+            out[g] = self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng)
+        return out
+
+    def _compute_spatial_effects_posterior(
+        self, draws: Optional[int] = None
+    ) -> dict[str, np.ndarray]:
+        r"""Closed-form Thomas-Agnan & LeSage (2014, Table 83.1) effects.
+
+        With :math:`A = I_N` the response to any shock equals the shock
+        itself, so the Thomas-Agnan decomposition simplifies analytically to:
+
+        .. math::
+
+            \mathrm{TE} = \beta_d + \beta_o, \qquad
+            \mathrm{NE} = 0, \qquad
+            \mathrm{IE} = (\beta_d + \beta_o + \beta_{\text{intra}}) / n,
+
+        with :math:`\mathrm{OE} = \beta_o (n-1)/n` and
+        :math:`\mathrm{DE} = \beta_d (n-1)/n`, and the symmetric
+        contributions ``β_intra / n`` distributed to the destination side.
+        """
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        idata = self._idata
+        n = self._n
+        k_d = self._k_d
+        k_o = self._k_o
+        beta_draws = idata.posterior["beta"].values.reshape(
+            -1, len(self._feature_names)
+        )
+
+        dest_start = 2
+        orig_start = 2 + k_d
+        intra_start = 2 + k_d + k_o
+        has_intra = (
+            self._intra_idx is not None
+            and beta_draws.shape[1] >= intra_start + k_d
+        )
+
+        n_draws_total = beta_draws.shape[0]
+        if draws is not None:
+            n_draws_total = min(draws, n_draws_total)
+            beta_draws = beta_draws[:n_draws_total]
+
+        bd = beta_draws[:, dest_start : dest_start + k_d]
+        bo = beta_draws[:, orig_start : orig_start + k_o]
+        bi = (
+            beta_draws[:, intra_start : intra_start + k_d]
+            if has_intra
+            else np.zeros((n_draws_total, k_d), dtype=np.float64)
+        )
+
+        # Per-region totals (averaged across all n perturbation regions).
+        # Destination shock contributes bd to one whole row plus bi at the
+        # diagonal cell; averaged over n regions: total_d = bd + bi / n.
+        zeros_d = np.zeros_like(bd)
+        zeros_o = np.zeros_like(bo)
+        out: dict[str, np.ndarray] = {}
+        out["dest_total"] = bd + bi / n
+        out["dest_destination"] = bd * (n - 1) / n
+        out["dest_intra"] = (bd + bi) / n
+        out["dest_origin"] = zeros_d.copy()
+        out["dest_network"] = zeros_d.copy()
+
+        out["orig_total"] = bo
+        out["orig_origin"] = bo * (n - 1) / n
+        out["orig_intra"] = bo / n
+        out["orig_destination"] = zeros_o.copy()
+        out["orig_network"] = zeros_o.copy()
+
+        if k_d == k_o:
+            # Symmetric case: sum dest and orig effects (same variables)
+            for eff in _EFFECT_KEYS:
+                out[eff] = out[f"dest_{eff}"] + out[f"orig_{eff}"]
+        else:
+            # Asymmetric case: concatenate dest and orig effects (different variables)
+            for eff in _EFFECT_KEYS:
+                out[eff] = np.concatenate([out[f"dest_{eff}"], out[f"orig_{eff}"]], axis=1)
+
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Model 6: PoissonFlow — non-spatial Poisson gravity baseline
+# ---------------------------------------------------------------------------
+
+
+class PoissonFlow(OLSFlow):
+    r"""Non-spatial Bayesian OD-flow Poisson gravity model (count baseline).
+
+    Aspatial count analogue of :class:`OLSFlow`: models origin-destination
+    flow **counts** :math:`y_{ij} \in \mathbb{N}_0` with a log-linear
+    gravity mean and no spatial-lag terms,
+
+    .. math::
+
+        y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \qquad
+        \log \boldsymbol{\lambda} = X\beta.
+
+    Provided as the count-data baseline analogue of :class:`OLSFlow`,
+    matching the role :class:`PoissonSARFlow` plays relative to
+    :class:`SARFlow`.  No spatial filter is applied (``A = I_N``), so there
+    is no log-determinant precomputation, no ``rho_*`` parameters, and no
+    ``sigma`` (the Poisson variance equals the mean).
+
+    Parameters
+    ----------
+    y : array-like, shape (n, n) or (N,)
+        Observed non-negative integer flow counts.  Float arrays whose
+        values are close to integers are silently rounded.
+    G : libpysal.graph.Graph
+        Graph on *n* units.  Required for API symmetry but the spatial
+        weights are not used in estimation.
+    X : np.ndarray or pandas.DataFrame, shape (N, p)
+        Full origin-destination design matrix.
+    **kwargs
+        Passed to :class:`FlowModel`.  ``beta_sigma`` defaults to **10**.
+
+    Notes
+    -----
+    The ``priors`` dict supports ``beta_mu`` and ``beta_sigma``; spatial
+    keys (``rho_*``) and ``sigma_sigma`` are ignored.  The closed-form
+    Thomas-Agnan & LeSage (2014, Table 83.1) effects from :class:`OLSFlow`
+    are reused unchanged: with :math:`A = I_N` the response to any shock
+    equals the shock itself, so the decomposition holds on the (log-mean)
+    linear-predictor scale.
+    """
+
+    def __init__(self, y, G, X, **kwargs):
+        y_arr = np.asarray(y)
+        if not np.issubdtype(y_arr.dtype, np.integer):
+            y_rounded = np.round(y_arr).astype(np.int64)
+            if not np.allclose(y_arr, y_rounded):
+                raise ValueError(
+                    "PoissonFlow requires integer-valued observations; "
+                    f"got dtype {y_arr.dtype} with non-integer values."
+                )
+            y_arr = y_rounded
+        if np.any(y_arr < 0):
+            raise ValueError(
+                "PoissonFlow requires non-negative integer observations."
+            )
+        super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
+        self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
+
+    def _build_pymc_model(self) -> pm.Model:
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 10.0)
+
+        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+
+        with pm.Model(coords=self._model_coords()) as model:
+            beta = pm.Normal(
+                "beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient"
+            )
+            eta = pt.dot(X_t, beta)
+            lam = pm.Deterministic("lambda", pt.exp(eta))
+            pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
+
+        return model
+
+    def _simulate_y_rep(
+        self,
+        rho_d: float,  # unused
+        rho_o: float,  # unused
+        rho_w: float,  # unused
+        beta: np.ndarray,
+        sigma: Optional[float],  # unused
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        eta = self._X_design @ beta
+        lam = np.exp(np.clip(eta, -50.0, 50.0))
+        return rng.poisson(lam).astype(np.float64)
+
+    def posterior_predictive(
+        self,
+        n_draws: Optional[int] = None,
+        random_seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """Draw posterior-predictive flow counts for the Poisson gravity model."""
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        post = self._idata.posterior
+        beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
+
+        total = beta_draws.shape[0]
+        if n_draws is not None:
+            total = min(int(n_draws), total)
+            beta_draws = beta_draws[:total]
+
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g in range(total):
+            out[g] = self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], None, rng)
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Model 7: SEMFlow — Spatial-error analogue of SARFlow (unrestricted 3-rho)
+# ---------------------------------------------------------------------------
+
+
+class SEMFlow(FlowModel):
+    r"""Bayesian spatial-error flow model with three free spatial parameters.
+
+    .. math::
+
+        y = X\beta + u, \qquad
+        B u = \varepsilon, \qquad
+        B = I_N - \lambda_d W_d - \lambda_o W_o - \lambda_w W_w,
+        \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I_N)
+
+    where :math:`W_d = I_n \otimes W`, :math:`W_o = W \otimes I_n`,
+    :math:`W_w = W \otimes W`.  The Kronecker spatial structure is identical
+    to :class:`SARFlow`, but the spatial filter acts on the *disturbance*
+    rather than the dependent variable.  Equivalently the model implies a
+    Gaussian likelihood with covariance :math:`\sigma^2 (B^\top B)^{-1}`.
+
+    Marginal mean is :math:`\mathbb{E}[y] = X\beta`, so there are no
+    :math:`X`-mediated spatial spillovers — the LeSage / Thomas-Agnan
+    decomposition reduces to the closed-form expressions used by
+    :class:`OLSFlow` (direct effect equals :math:`\beta`, network effect
+    equals zero).  Use :class:`SARFlow` if spillovers from observed
+    covariates are of interest.
+
+    Parameters
+    ----------
+    y, G, X, col_names, k, priors, logdet_method, miter, titer,
+    trace_riter, trace_seed
+        See :class:`FlowModel`.
+    restrict_positive : bool, default True
+        Same Dirichlet vs. quadratic-wall stability prior on
+        :math:`(\lambda_d, \lambda_o, \lambda_w)` as :class:`SARFlow`.
+
+    Notes
+    -----
+    Implementation: PyMC body uses precomputed lags of both ``y`` and ``X``
+    (``self._Wd``, ``self._Wo``, ``self._Ww`` applied to ``self._X_design``)
+    so that the residual :math:`B u = B y - B X \beta` is expressible as a
+    linear combination of fixed quantities — no symbolic sparse mat-vec is
+    required.  The Jacobian :math:`\log|B|` reuses the same trace-based
+    polynomial as :class:`SARFlow`.
+    """
+
+    def __init__(self, y, G, X, **kwargs):
+        super().__init__(y, G, X, **kwargs)
+        # Precompute lags of the design matrix (constant — no parameter dependence).
+        self._Wd_X: np.ndarray = np.asarray(self._Wd @ self._X_design, dtype=np.float64)
+        self._Wo_X: np.ndarray = np.asarray(self._Wo @ self._X_design, dtype=np.float64)
+        self._Ww_X: np.ndarray = np.asarray(self._Ww @ self._X_design, dtype=np.float64)
+
+    def _build_pymc_model(self) -> pm.Model:
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
+        Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
+        Ww_y_t = pt.as_tensor_variable(self._Ww_y.astype(np.float64))
+        Wd_X_t = pt.as_tensor_variable(self._Wd_X.astype(np.float64))
+        Wo_X_t = pt.as_tensor_variable(self._Wo_X.astype(np.float64))
+        Ww_X_t = pt.as_tensor_variable(self._Ww_X.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y_vec.astype(np.float64))
+
+        with pm.Model(coords=self._model_coords()) as model:
+            if self.restrict_positive:
+                lam_simplex = pm.Dirichlet("lam_simplex", a=np.ones(4))
+                lam_d = pm.Deterministic("lam_d", lam_simplex[0])
+                lam_o = pm.Deterministic("lam_o", lam_simplex[1])
+                lam_w = pm.Deterministic("lam_w", lam_simplex[2])
+            else:
+                lam_lower = self.priors.get("lam_lower", -1.0)
+                lam_upper = self.priors.get("lam_upper", 1.0)
+                lam_d = pm.Uniform("lam_d", lower=lam_lower, upper=lam_upper)
+                lam_o = pm.Uniform("lam_o", lower=lam_lower, upper=lam_upper)
+                lam_w = pm.Uniform("lam_w", lower=lam_lower, upper=lam_upper)
+                slack = 1.0 - lam_d - lam_o - lam_w
+                pm.Potential(
+                    "stability",
+                    pt.switch(slack > 0.0, 0.0, -1e6 * slack**2),
+                )
+
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+
+            # mu chosen so that y - mu = By - BXβ = Bu (the whitened residual).
+            mu = (
+                lam_d * Wd_y_t
+                + lam_o * Wo_y_t
+                + lam_w * Ww_y_t
+                + pt.dot(X_t, beta)
+                - lam_d * pt.dot(Wd_X_t, beta)
+                - lam_o * pt.dot(Wo_X_t, beta)
+                - lam_w * pt.dot(Ww_X_t, beta)
+            )
+            pm.Normal("obs", mu=mu, sigma=sigma, observed=y_t)
+
+            # Jacobian of the change of variables from epsilon = B*u to y:
+            # log|det B| has the same Kronecker structure as |det A|.
+            pm.Potential(
+                "jacobian",
+                flow_logdet_pytensor(
+                    lam_d,
+                    lam_o,
+                    lam_w,
+                    self._poly_a,
+                    self._poly_b,
+                    self._poly_c,
+                    self._poly_coeffs,
+                    self._miter_a,
+                    self._miter_b,
+                    self._miter_c,
+                    self._miter_coeffs,
+                    self.miter,
+                    self.titer,
+                ),
+            )
+
+        return model
+
+    def _compute_jacobian_log_det(self, posterior) -> np.ndarray:
+        lam_d = posterior["lam_d"].values.reshape(-1)
+        lam_o = posterior["lam_o"].values.reshape(-1)
+        lam_w = posterior["lam_w"].values.reshape(-1)
+        return flow_logdet_numpy(
+            lam_d,
+            lam_o,
+            lam_w,
+            self._poly_a,
+            self._poly_b,
+            self._poly_c,
+            self._poly_coeffs,
+            self._miter_a,
+            self._miter_b,
+            self._miter_c,
+            self._miter_coeffs,
+            self.miter,
+            self.titer,
+        )
+
+    def _simulate_y_rep(
+        self,
+        lam_d: float,
+        lam_o: float,
+        lam_w: float,
+        beta: np.ndarray,
+        sigma: Optional[float],
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        """SEM posterior-predictive: ``y_rep = X β + B^{-1} ε``."""
+        Xb = self._X_design @ beta
+        if sigma is None:
+            return Xb
+        B = self._assemble_A(lam_d, lam_o, lam_w)
+        eps = rng.normal(scale=float(sigma), size=self._N)
+        u = sp.linalg.spsolve(B, eps)
+        return Xb + u
+
+    def _compute_spatial_effects_posterior(
+        self, draws: Optional[int] = None
+    ) -> dict[str, np.ndarray]:
+        r"""Closed-form Thomas-Agnan & LeSage (2014, Table 83.1) effects.
+
+        The marginal mean :math:`\mathbb{E}[y] = X\beta` is unaffected by the
+        spatial-error filter, so the LeSage decomposition collapses to the
+        same closed form used by :class:`OLSFlow`: direct effect equals
+        :math:`\beta`, network effect equals zero, intra/origin/destination
+        contributions split :math:`\beta` per Table 83.1.
+        """
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        idata = self._idata
+        n = self._n
+        k_d = self._k_d
+        k_o = self._k_o
+        beta_draws = idata.posterior["beta"].values.reshape(
+            -1, len(self._feature_names)
+        )
+
+        dest_start = 2
+        orig_start = 2 + k_d
+        intra_start = 2 + k_d + k_o
+        has_intra = (
+            self._intra_idx is not None
+            and beta_draws.shape[1] >= intra_start + k_d
+        )
+
+        n_draws_total = beta_draws.shape[0]
+        if draws is not None:
+            n_draws_total = min(draws, n_draws_total)
+            beta_draws = beta_draws[:n_draws_total]
+
+        bd = beta_draws[:, dest_start : dest_start + k_d]
+        bo = beta_draws[:, orig_start : orig_start + k_o]
+        bi = (
+            beta_draws[:, intra_start : intra_start + k_d]
+            if has_intra
+            else np.zeros((n_draws_total, k_d), dtype=np.float64)
+        )
+
+        zeros_d = np.zeros_like(bd)
+        zeros_o = np.zeros_like(bo)
+        out: dict[str, np.ndarray] = {}
+        out["dest_total"] = bd + bi / n
+        out["dest_destination"] = bd * (n - 1) / n
+        out["dest_intra"] = (bd + bi) / n
+        out["dest_origin"] = zeros_d.copy()
+        out["dest_network"] = zeros_d.copy()
+
+        out["orig_total"] = bo
+        out["orig_origin"] = bo * (n - 1) / n
+        out["orig_intra"] = bo / n
+        out["orig_destination"] = zeros_o.copy()
+        out["orig_network"] = zeros_o.copy()
+
+        if k_d == k_o:
+            for eff in _EFFECT_KEYS:
+                out[eff] = out[f"dest_{eff}"] + out[f"orig_{eff}"]
+        else:
+            for eff in _EFFECT_KEYS:
+                out[eff] = np.concatenate(
+                    [out[f"dest_{eff}"], out[f"orig_{eff}"]], axis=1
+                )
+
+        return out
+
+
+# ---------------------------------------------------------------------------
+# Model 8: SEMFlowSeparable — separable SEM with lam_w = -lam_d * lam_o
+# ---------------------------------------------------------------------------
+
+
+class SEMFlowSeparable(SEMFlow):
+    r"""Bayesian separable spatial-error flow model with :math:`\lambda_w = -\lambda_d \lambda_o`.
+
+    Spatial-error analogue of :class:`SARFlowSeparable`.  The separability
+    constraint reduces :math:`\log|B|` to the eigenvalue / Chebyshev factored
+    form
+
+    .. math::
+
+        \log|B| = n \log|I_n - \lambda_d W| + n \log|I_n - \lambda_o W|
+
+    enabling :math:`O(n)` log-determinant evaluation per draw.  All other
+    properties (no :math:`X`-mediated spillovers, closed-form effects, etc.)
+    are identical to :class:`SEMFlow`.
+
+    Parameters
+    ----------
+    y, G, X, col_names, k, priors, miter, titer, trace_riter, trace_seed
+        See :class:`FlowModel`.
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly", "separable"}, default "eigenvalue"
+        Same options as :class:`SARFlowSeparable`.  ``"separable"`` is an
+        alias for ``"eigenvalue"``.
+    """
+
+    def __init__(self, y, G, X, **kwargs):
+        method = kwargs.pop("logdet_method", "eigenvalue")
+        if method == "separable":
+            method = "eigenvalue"
+        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        if method not in _VALID:
+            raise ValueError(
+                f"SEMFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
+                f"got {method!r}."
+            )
+        kwargs["logdet_method"] = method
+        super().__init__(y, G, X, **kwargs)
+
+    def _build_pymc_model(self) -> pm.Model:
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+        lam_lower = self.priors.get("lam_lower", -0.999)
+        lam_upper = self.priors.get("lam_upper", 0.999)
+
+        if self._separable_logdet_fn is None:
+            raise RuntimeError(
+                "SEMFlowSeparable requires precomputed logdet data; "
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+            )
+        Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
+        Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
+        Ww_y_t = pt.as_tensor_variable(self._Ww_y.astype(np.float64))
+        Wd_X_t = pt.as_tensor_variable(self._Wd_X.astype(np.float64))
+        Wo_X_t = pt.as_tensor_variable(self._Wo_X.astype(np.float64))
+        Ww_X_t = pt.as_tensor_variable(self._Ww_X.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y_vec.astype(np.float64))
+
+        with pm.Model(coords=self._model_coords()) as model:
+            lam_d = pm.Uniform("lam_d", lower=lam_lower, upper=lam_upper)
+            lam_o = pm.Uniform("lam_o", lower=lam_lower, upper=lam_upper)
+            lam_w = pm.Deterministic("lam_w", -lam_d * lam_o)
+
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+
+            mu = (
+                lam_d * Wd_y_t
+                + lam_o * Wo_y_t
+                + lam_w * Ww_y_t
+                + pt.dot(X_t, beta)
+                - lam_d * pt.dot(Wd_X_t, beta)
+                - lam_o * pt.dot(Wo_X_t, beta)
+                - lam_w * pt.dot(Ww_X_t, beta)
+            )
+            pm.Normal("obs", mu=mu, sigma=sigma, observed=y_t)
+
+            pm.Potential(
+                "jacobian",
+                self._separable_logdet_fn(lam_d, lam_o),
+            )
+
+        return model
+
+    def _compute_jacobian_log_det(self, posterior) -> np.ndarray:
+        lam_d = np.asarray(posterior["lam_d"].values.reshape(-1), dtype=np.float64)
+        lam_o = np.asarray(posterior["lam_o"].values.reshape(-1), dtype=np.float64)
+        n = self._n
+        if self._W_eigs is None:
+            self._W_eigs = np.linalg.eigvals(
+                self._W_sparse.toarray().astype(np.float64)
+            ).real.astype(np.float64)
+        eigs = self._W_eigs
+        ld_d = np.log(np.abs(1.0 - lam_d[:, None] * eigs[None, :])).sum(axis=1)
+        ld_o = np.log(np.abs(1.0 - lam_o[:, None] * eigs[None, :])).sum(axis=1)
+        return n * (ld_d + ld_o)

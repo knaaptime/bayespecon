@@ -9,23 +9,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import scipy.sparse as sp
-from libpysal.graph import Graph
 
 from bayespecon.tests.helpers import SAMPLE_KWARGS
-
-# ---------------------------------------------------------------------------
-# Shared fixtures
-# ---------------------------------------------------------------------------
-
-
-def _make_ring_graph(n: int) -> Graph:
-    """Ring-contiguity Graph (row-standardised) for n units."""
-    focal = np.concatenate([np.arange(n), np.arange(n)])
-    neighbor = np.concatenate([np.roll(np.arange(n), 1), np.roll(np.arange(n), -1)])
-    weight = np.ones(len(focal), dtype=float)
-    G = Graph.from_arrays(focal, neighbor, weight)
-    return G.transform("r")
-
 
 # ---------------------------------------------------------------------------
 # logdet flow helper functions
@@ -65,20 +50,22 @@ class TestBarryPaceTraces:
 
 class TestComputeFlowTraces:
     def test_shape(self):
+        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.logdet import compute_flow_traces
 
         n = 6
-        G = _make_ring_graph(n)
+        G = generate_flow_data(n=n, seed=0)["G"]
         W = G.sparse.tocsr().astype(np.float64)
         traces = compute_flow_traces(W, miter=5, riter=20, random_state=0)
         assert traces.shape == (5,)
 
     def test_tr_W2_close_to_exact(self):
         """tr(W^2) estimate should be within 20% of exact for ring graph."""
+        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.logdet import compute_flow_traces
 
         n = 10
-        G = _make_ring_graph(n)
+        G = generate_flow_data(n=n, seed=0)["G"]
         W = G.sparse.tocsr().astype(np.float64)
         exact_tr_W2 = float(W.multiply(W.T).sum())
         traces = compute_flow_traces(W, miter=5, riter=200, random_state=42)
@@ -148,8 +135,10 @@ class TestFlowLogdetSeparableIdentity:
             flow_logdet_pytensor,
         )
 
+        from bayespecon.dgp.flows import generate_flow_data
+
         n = 5
-        G = _make_ring_graph(n)
+        G = generate_flow_data(n=n, seed=0)["G"]
         W = G.sparse.tocsr().astype(np.float64)
         miter = 10
         traces = compute_flow_traces(W, miter=miter, riter=50, random_state=7)
@@ -195,8 +184,10 @@ class TestFlowLogdetSeparableIdentity:
             logdet_eigenvalue,
         )
 
+        from bayespecon.dgp.flows import generate_flow_data
+
         n = 5
-        G = _make_ring_graph(n)
+        G = generate_flow_data(n=n, seed=0)["G"]
         W = G.sparse.tocsr().astype(np.float64)
         eigs = np.linalg.eigvals(W.toarray()).real
 
@@ -247,16 +238,20 @@ class TestFlowLogdetSeparableIdentity:
 
 class TestFlowModelConstruction:
     def setup_method(self):
-        from bayespecon.graph import flow_design_matrix
+        from bayespecon.dgp.flows import generate_flow_data
 
         self.n = 5
         self.N = self.n * self.n
+        out = generate_flow_data(
+            n=self.n, rho_d=0.0, rho_o=0.0, rho_w=0.0,
+            beta_d=[1.0, -0.5], beta_o=[0.5, 0.3], sigma=1.0, seed=10,
+        )
+        self.G = out["G"]
+        self.X_regional = out["X_regional"]
+        self.design = out["design"]
+        self.X = out["X"]
+        self.col_names = out["col_names"]
         rng = np.random.default_rng(10)
-        self.G = _make_ring_graph(self.n)
-        self.X_regional = rng.standard_normal((self.n, 2))
-        self.design = flow_design_matrix(self.X_regional)
-        self.X = self.design.combined  # (N, p) full O-D design matrix
-        self.col_names = self.design.feature_names
         self.y_vec = rng.standard_normal(self.N)
         self.y_mat = self.y_vec.reshape(self.n, self.n)
 
@@ -303,14 +298,19 @@ class TestFlowModelConstruction:
         with pytest.raises(ValueError, match="N="):
             SARFlow(np.zeros(self.N + 1), self.G, self.X, miter=5, trace_seed=0)
 
-    def test_mismatched_beta_shapes_raises_on_dgp(self):
-        """generate_flow_data should raise when beta_d and beta_o differ in length."""
+    def test_asymmetric_beta_shapes_work_in_dgp(self):
+        """generate_flow_data should support beta_d and beta_o of different lengths."""
         from bayespecon.dgp.flows import generate_flow_data
 
-        with pytest.raises(ValueError, match="beta_d and beta_o"):
-            generate_flow_data(
-                self.n, self.G, 0.2, 0.2, 0.1, [1.0], [1.0, 2.0], sigma=1.0, seed=0
-            )
+        data = generate_flow_data(
+            n=self.n, rho_d=0.2, rho_o=0.2, rho_w=0.1,
+            beta_d=[1.0], beta_o=[1.0, 2.0], sigma=1.0, seed=0,
+        )
+        # Design matrix should have k_d=1 dest cols + k_o=2 orig cols + k_d=1 intra cols
+        assert data["design"].k_d == 1
+        assert data["design"].k_o == 2
+        assert data["beta_d"].shape == (1,)
+        assert data["beta_o"].shape == (2,)
 
     def test_pymc_model_builds_without_error(self):
         from bayespecon.models.flow import SARFlow
@@ -345,13 +345,13 @@ class TestFlowModelConstruction:
 class TestGenerateFlowData:
     def setup_method(self):
         self.n = 5
-        self.G = _make_ring_graph(self.n)
 
     def test_output_keys(self):
         from bayespecon.dgp.flows import generate_flow_data
 
         out = generate_flow_data(
-            self.n, self.G, 0.2, 0.2, 0.1, [1.0, -0.5], [0.5, 0.3], sigma=1.0, seed=0
+            n=self.n, rho_d=0.2, rho_o=0.2, rho_w=0.1,
+            beta_d=[1.0, -0.5], beta_o=[0.5, 0.3], sigma=1.0, seed=0,
         )
         expected = {
             "y_vec",
@@ -375,7 +375,8 @@ class TestGenerateFlowData:
         from bayespecon.dgp.flows import generate_flow_data
 
         out = generate_flow_data(
-            self.n, self.G, 0.2, 0.2, 0.1, [1.0], [0.5], sigma=1.0, seed=1
+            n=self.n, rho_d=0.2, rho_o=0.2, rho_w=0.1,
+            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=1,
         )
         assert out["y_vec"].shape == (self.n * self.n,)
         assert out["y_mat"].shape == (self.n, self.n)
@@ -384,7 +385,8 @@ class TestGenerateFlowData:
         from bayespecon.dgp.flows import generate_flow_data
 
         out = generate_flow_data(
-            self.n, self.G, 0.2, 0.2, 0.1, [1.0], [0.5], sigma=1.0, seed=2
+            n=self.n, rho_d=0.2, rho_o=0.2, rho_w=0.1,
+            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=2,
         )
         np.testing.assert_allclose(out["y_vec"], out["y_mat"].ravel(), atol=1e-12)
 
@@ -392,10 +394,12 @@ class TestGenerateFlowData:
         from bayespecon.dgp.flows import generate_flow_data
 
         out1 = generate_flow_data(
-            self.n, self.G, 0.2, 0.2, 0.1, [1.0], [0.5], sigma=1.0, seed=99
+            n=self.n, rho_d=0.2, rho_o=0.2, rho_w=0.1,
+            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=99,
         )
         out2 = generate_flow_data(
-            self.n, self.G, 0.2, 0.2, 0.1, [1.0], [0.5], sigma=1.0, seed=99
+            n=self.n, rho_d=0.2, rho_o=0.2, rho_w=0.1,
+            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=99,
         )
         np.testing.assert_allclose(out1["y_vec"], out2["y_vec"], atol=1e-12)
 
@@ -403,12 +407,58 @@ class TestGenerateFlowData:
         from bayespecon.dgp.flows import generate_flow_data
 
         out1 = generate_flow_data(
-            self.n, self.G, 0.2, 0.2, 0.1, [1.0], [0.5], sigma=1.0, seed=1
+            n=self.n, rho_d=0.2, rho_o=0.2, rho_w=0.1,
+            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=1,
         )
         out2 = generate_flow_data(
-            self.n, self.G, 0.2, 0.2, 0.1, [1.0], [0.5], sigma=1.0, seed=2
+            n=self.n, rho_d=0.2, rho_o=0.2, rho_w=0.1,
+            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=2,
         )
         assert not np.allclose(out1["y_vec"], out2["y_vec"])
+
+
+class TestFlowDistributionDefault:
+    """``distribution`` argument: default lognormal, opt-in normal."""
+
+    n = 5
+    kwargs = dict(rho_d=0.2, rho_o=0.2, rho_w=0.1,
+                  beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=11)
+
+    def test_default_is_lognormal_positive(self):
+        from bayespecon.dgp.flows import generate_flow_data
+
+        out = generate_flow_data(n=self.n, **self.kwargs)
+        assert out["distribution"] == "lognormal"
+        assert (out["y_vec"] > 0).all()
+        np.testing.assert_allclose(np.log(out["y_vec"]), out["eta_vec"], atol=1e-10)
+        np.testing.assert_allclose(
+            out["eta_vec"], out["eta_mat"].ravel(), atol=1e-12
+        )
+
+    def test_normal_optin_matches_eta(self):
+        from bayespecon.dgp.flows import generate_flow_data
+
+        out = generate_flow_data(n=self.n, distribution="normal", **self.kwargs)
+        assert out["distribution"] == "normal"
+        np.testing.assert_array_equal(out["y_vec"], out["eta_vec"])
+
+    def test_invalid_distribution_raises(self):
+        from bayespecon.dgp.flows import generate_flow_data
+
+        with pytest.raises(ValueError, match="distribution"):
+            generate_flow_data(n=self.n, distribution="poisson", **self.kwargs)
+
+    def test_panel_default_is_lognormal_positive(self):
+        from bayespecon.dgp.flows import generate_panel_flow_data
+
+        out = generate_panel_flow_data(
+            n=4, T=2, rho_d=0.2, rho_o=0.1, rho_w=0.05,
+            beta_d=[1.0], beta_o=[0.5], sigma=0.5, sigma_alpha=0.0, seed=3,
+        )
+        assert out["distribution"] == "lognormal"
+        assert out["params_true"]["distribution"] == "lognormal"
+        assert (out["y"] > 0).all()
+        np.testing.assert_allclose(np.log(out["y"]), out["eta"], atol=1e-10)
 
 
 # ---------------------------------------------------------------------------
@@ -424,18 +474,17 @@ class TestSARFlowFitSmoke:
         from bayespecon.dgp.flows import generate_flow_data
 
         self.n = 5
-        self.G = _make_ring_graph(self.n)
         out = generate_flow_data(
-            self.n,
-            self.G,
-            0.25,
-            0.25,
-            0.10,
-            [1.0, -0.5],
-            [0.5, 0.3],
+            n=self.n,
+            rho_d=0.25,
+            rho_o=0.25,
+            rho_w=0.10,
+            beta_d=[1.0, -0.5],
+            beta_o=[0.5, 0.3],
             sigma=1.0,
             seed=42,
         )
+        self.G = out["G"]
         self.y = out["y_vec"]
         self.X = out["X"]  # (N, p) full O-D design matrix
         self.col_names = out["col_names"]
@@ -525,8 +574,9 @@ class TestEffectsAccountingIdentity:
         from bayespecon.models.flow import SARFlowSeparable
 
         n = 4
-        G = _make_ring_graph(n)
-        out = generate_flow_data(n, G, 0.3, 0.2, -0.06, [1.0], [0.5], sigma=0.5, seed=7)
+        out = generate_flow_data(n=n, rho_d=0.3, rho_o=0.2, rho_w=-0.06,
+                                 beta_d=[1.0], beta_o=[0.5], sigma=0.5, seed=7)
+        G = out["G"]
         model = SARFlowSeparable(
             out["y_vec"], G, out["X"], col_names=out["col_names"], trace_seed=0
         )
@@ -554,10 +604,11 @@ class TestSparseFlowSolveOp:
 
     @pytest.fixture(autouse=True)
     def _build_op(self):
+        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.ops import SparseFlowSolveOp
 
         n = 4
-        G = _make_ring_graph(n)
+        G = generate_flow_data(n=n, seed=0)["G"]
         W = G.sparse.astype(np.float64).tocsr()
         # Row-standardise
         row_sums = np.asarray(W.sum(axis=1)).ravel()
@@ -1051,7 +1102,7 @@ POISSON_SAMPLE_KWARGS: dict = dict(
 # Separable Poisson: bilinear rho_w term makes the posterior harder to tune;
 # extra steps ensure the mass matrix adapts before drawing
 POISSON_SEP_SAMPLE_KWARGS: dict = dict(
-    tune=800, draws=800, chains=2, random_seed=42, progressbar=False
+    tune=400, draws=400, chains=2, random_seed=42, progressbar=False
 )
 
 # Tolerances — wider than standard panel models because 3 spatial
@@ -1078,18 +1129,17 @@ class TestSARFlowSeparableLogdetMethods:
         from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.models.flow import SARFlowSeparable
 
-        G = _make_ring_graph(5)
         out = generate_flow_data(
-            5,
-            G,
-            0.3,
-            0.2,
-            -0.06,
-            np.array([0.5, -0.3]),
-            np.array([0.4, 0.2]),
+            n=5,
+            rho_d=0.3,
+            rho_o=0.2,
+            rho_w=-0.06,
+            beta_d=np.array([0.5, -0.3]),
+            beta_o=np.array([0.4, 0.2]),
             sigma=1.0,
             seed=0,
         )
+        G = out["G"]
         model = SARFlowSeparable(
             out["y_vec"],
             G,
@@ -1124,10 +1174,11 @@ class TestSARFlowSeparableLogdetMethods:
         from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.models.flow import SARFlowSeparable
 
-        G = _make_ring_graph(4)
         out = generate_flow_data(
-            4, G, 0.2, 0.1, -0.02, np.array([1.0]), np.array([0.5]), sigma=1.0, seed=1
+            n=4, rho_d=0.2, rho_o=0.1, rho_w=-0.02,
+            beta_d=np.array([1.0]), beta_o=np.array([0.5]), sigma=1.0, seed=1,
         )
+        G = out["G"]
         with pytest.raises(ValueError, match="logdet_method"):
             SARFlowSeparable(
                 out["y_vec"],
@@ -1147,20 +1198,21 @@ class TestSARFlowRecovery:
         from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.models.flow import SARFlow
 
-        G = _make_ring_graph(FLOW_N)
         out = generate_flow_data(
-            FLOW_N,
-            G,
-            RHO_D_TRUE,
-            RHO_O_TRUE,
-            RHO_W_TRUE,
-            BETA_D_TRUE,
-            BETA_O_TRUE,
+            n=FLOW_N,
+            rho_d=RHO_D_TRUE,
+            rho_o=RHO_O_TRUE,
+            rho_w=RHO_W_TRUE,
+            beta_d=BETA_D_TRUE,
+            beta_o=BETA_O_TRUE,
             sigma=SIGMA_TRUE,
             seed=42,
         )
+        G = out["G"]
+        # Default DGP is lognormal; SARFlow has Gaussian likelihood, so fit on
+        # the latent scale.  np.log(y_vec) == eta_vec by construction.
         model = SARFlow(
-            out["y_vec"],
+            np.log(out["y_vec"]),
             G,
             out["X"],
             col_names=out["col_names"],
@@ -1206,19 +1258,19 @@ class TestSARFlowSeparableRecovery:
         from bayespecon.dgp.flows import generate_flow_data_separable
         from bayespecon.models.flow import SARFlowSeparable
 
-        G = _make_ring_graph(FLOW_N_SEP)
         out = generate_flow_data_separable(
-            FLOW_N_SEP,
-            G,
-            RHO_D_SEP_TRUE,
-            RHO_O_SEP_TRUE,
-            BETA_D_TRUE,
-            BETA_O_TRUE,
+            n=FLOW_N_SEP,
+            rho_d=RHO_D_SEP_TRUE,
+            rho_o=RHO_O_SEP_TRUE,
+            beta_d=BETA_D_TRUE,
+            beta_o=BETA_O_TRUE,
             sigma=SIGMA_TRUE,
             seed=42,
         )
+        G = out["G"]
+        # Default DGP is lognormal; fit on the latent (log) scale.
         model = SARFlowSeparable(
-            out["y_vec"],
+            np.log(out["y_vec"]),
             G,
             out["X"],
             col_names=out["col_names"],
@@ -1244,13 +1296,18 @@ class TestSARFlowSeparableRecovery:
 class TestPoissonFlowRecovery:
     """PoissonSARFlow posterior means should be close to true DGP values."""
 
+    # Larger N than the smoke-test default: NUTS on the 3-parameter Poisson
+    # SAR flow likelihood is prohibitively slow, and at n=8 the rho's are
+    # weakly identified. n=12 (144 OD pairs) gives ADVI enough signal.
+    N_REC = 12
+
     @pytest.fixture(scope="class")
     def fitted_poisson(self):
         from bayespecon.dgp.flows import generate_poisson_flow_data
         from bayespecon.models.flow import PoissonSARFlow
 
         data = generate_poisson_flow_data(
-            n=8,
+            n=self.N_REC,
             rho_d=POI_RHO_D_TRUE,
             rho_o=POI_RHO_O_TRUE,
             rho_w=POI_RHO_W_TRUE,
@@ -1264,7 +1321,18 @@ class TestPoissonFlowRecovery:
             col_names=data["col_names"],
             trace_seed=0,
         )
-        idata = model.fit(**POISSON_SAMPLE_KWARGS)
+        # Mean-field ADVI: NUTS on this likelihood is prohibitively slow and
+        # full-rank ADVI is numerically unstable (the Cholesky factor over the
+        # rho parameters can drive proposals outside the SAR stationary
+        # region, making the flow operator singular). See the same treatment
+        # in TestPoissonFlowPanelRecovery / TestPoissonFlowSeparablePanelRecovery.
+        idata = model.fit_approx(
+            method="advi",
+            n=20000,
+            draws=2000,
+            random_seed=42,
+            progressbar=False,
+        )
         return idata
 
     def test_poisson_flow_recovers_rho_d(self, fitted_poisson):
@@ -1295,13 +1363,11 @@ class TestPoissonFlowSeparableRecovery:
         from bayespecon.dgp.flows import generate_poisson_flow_data_separable
         from bayespecon.models.flow import PoissonSARFlowSeparable
 
-        G = _make_ring_graph(12)  # 144 O-D pairs — same size as SAR separable test
         data = generate_poisson_flow_data_separable(
             n=12,
             rho_d=POI_RHO_D_SEP_TRUE,
             rho_o=POI_RHO_O_SEP_TRUE,
             seed=42,
-            G=G,
         )
         G = data["G"]
         model = PoissonSARFlowSeparable(
@@ -1377,138 +1443,6 @@ class TestKronSolveUtilities:
         np.testing.assert_allclose(h_mat[:, 0], h_vec, atol=1e-12)
 
 
-# ---------------------------------------------------------------------------
-# Effects: new vectorized implementation matches old loop-based output
-# ---------------------------------------------------------------------------
-
-
-class TestEffectsNumericalRegression:
-    """Verify refactored effects methods produce identical numbers to the old loop code."""
-
-    @staticmethod
-    def _old_effects(A, ones_N, n, N, k, beta_d_vec, beta_o_vec):
-        """Reference implementation (the original loop-based code)."""
-        ia = np.eye(n, dtype=np.float64).ravel()
-        solve_A = sp.linalg.factorized(A.tocsc())
-
-        out_total = np.zeros(k)
-        out_intra = np.zeros(k)
-        out_dest = np.zeros(k)
-        out_orig = np.zeros(k)
-
-        for p in range(k):
-            bd = float(beta_d_vec[p])
-            bo = float(beta_o_vec[p])
-
-            z_p = np.zeros(N, dtype=np.float64)
-            for j in range(n):
-                z_p[np.arange(n) * n + j] += bd
-            for i in range(n):
-                z_p[i * n + np.arange(n)] += bo
-
-            T_p = solve_A(z_p)
-            intra_mask = ia.astype(bool)
-            T_intra = np.zeros(N)
-            T_intra[intra_mask] = T_p[intra_mask]
-
-            T_dest = np.zeros(N)
-            T_orig = np.zeros(N)
-            for j in range(n):
-                T_dest[np.arange(n) * n + j] = T_p[np.arange(n) * n + j]
-            for i in range(n):
-                T_orig[i * n + np.arange(n)] = T_p[i * n + np.arange(n)]
-
-            out_total[p] = float(ones_N @ T_p) / N
-            out_intra[p] = float(ones_N @ T_intra) / N
-            out_dest[p] = float(ones_N @ T_dest) / N
-            out_orig[p] = float(ones_N @ T_orig) / N
-
-        return out_total, out_intra, out_dest, out_orig
-
-    @staticmethod
-    def _new_effects_general(A, ones_N, n, N, k, beta_d_vec, beta_o_vec):
-        """New vectorized implementation (general model path)."""
-        intra_mask = np.eye(n, dtype=bool).ravel()
-        t_ones = sp.linalg.spsolve(A, ones_N)
-        scale = beta_d_vec + beta_o_vec
-        T_all = t_ones[:, np.newaxis] * scale[np.newaxis, :]
-        totals = T_all.mean(axis=0)
-        intras = T_all[intra_mask, :].sum(axis=0) / N
-        return totals, intras, totals.copy(), totals.copy()
-
-    @staticmethod
-    def _new_effects_kron(Lo, Ld, ones_N, n, N, k, beta_d_vec, beta_o_vec):
-        """New Kronecker implementation (separable model path)."""
-        from bayespecon.ops import kron_solve_vec
-
-        intra_mask = np.eye(n, dtype=bool).ravel()
-        t_ones = kron_solve_vec(Lo, Ld, ones_N, n)
-        scale = beta_d_vec + beta_o_vec
-        T_all = t_ones[:, np.newaxis] * scale[np.newaxis, :]
-        totals = T_all.mean(axis=0)
-        intras = T_all[intra_mask, :].sum(axis=0) / N
-        return totals, intras, totals.copy(), totals.copy()
-
-    @pytest.fixture(autouse=True)
-    def _setup(self):
-        rng = np.random.default_rng(7)
-        self.n = 5
-        self.N = self.n**2
-        self.k = 3
-
-        W_dense = rng.random((self.n, self.n))
-        W_dense /= W_dense.sum(axis=1, keepdims=True)
-        W = sp.csr_matrix(W_dense)
-
-        rd, ro = 0.25, 0.35
-        rw = -rd * ro
-        Wd = sp.kron(sp.eye(self.n), W, format="csr")
-        Wo = sp.kron(W, sp.eye(self.n), format="csr")
-        Ww = sp.kron(W, W, format="csr")
-        self.A = sp.eye(self.N, format="csr") - rd * Wd - ro * Wo - rw * Ww
-        I_n = sp.eye(self.n, format="csr", dtype=np.float64)
-        self.Ld = (I_n - rd * W).tocsr()
-        self.Lo = (I_n - ro * W).tocsr()
-        self.ones_N = np.ones(self.N)
-        self.bd = rng.random(self.k)
-        self.bo = rng.random(self.k)
-
-    def test_general_total_matches_old(self):
-        old_tot, _, _, _ = self._old_effects(
-            self.A, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
-        )
-        new_tot, _, _, _ = self._new_effects_general(
-            self.A, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
-        )
-        np.testing.assert_allclose(new_tot, old_tot, atol=1e-12)
-
-    def test_general_intra_matches_old(self):
-        _, old_intra, _, _ = self._old_effects(
-            self.A, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
-        )
-        _, new_intra, _, _ = self._new_effects_general(
-            self.A, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
-        )
-        np.testing.assert_allclose(new_intra, old_intra, atol=1e-12)
-
-    def test_kron_total_matches_general(self):
-        new_tot_gen, _, _, _ = self._new_effects_general(
-            self.A, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
-        )
-        new_tot_kron, _, _, _ = self._new_effects_kron(
-            self.Lo, self.Ld, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
-        )
-        np.testing.assert_allclose(new_tot_kron, new_tot_gen, atol=1e-10)
-
-    def test_kron_intra_matches_general(self):
-        _, new_intra_gen, _, _ = self._new_effects_general(
-            self.A, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
-        )
-        _, new_intra_kron, _, _ = self._new_effects_kron(
-            self.Lo, self.Ld, self.ones_N, self.n, self.N, self.k, self.bd, self.bo
-        )
-        np.testing.assert_allclose(new_intra_kron, new_intra_gen, atol=1e-10)
-
 
 # ---------------------------------------------------------------------------
 # Public spatial_effects + posterior_predictive (Phase 3.3)
@@ -1522,10 +1456,8 @@ class TestFlowSpatialEffectsAndPPC:
         from bayespecon.models.flow import SARFlow
 
         n = 5
-        G = _make_ring_graph(n)
         data = generate_flow_data(
             n=n,
-            G=G,
             rho_d=0.2,
             rho_o=0.15,
             rho_w=0.1,
@@ -1534,6 +1466,7 @@ class TestFlowSpatialEffectsAndPPC:
             sigma=1.0,
             seed=11,
         )
+        G = data["G"]
         model = SARFlow(
             data["y_vec"],
             data["G"],
@@ -1546,7 +1479,7 @@ class TestFlowSpatialEffectsAndPPC:
 
     def test_spatial_effects_returns_dataframe(self, fitted):
         df = fitted.spatial_effects()
-        assert df.index.names == ["predictor", "effect"]
+        assert df.index.names == ["predictor", "side", "effect"]
         assert {"mean", "ci_lower", "ci_upper", "bayes_pvalue"} <= set(df.columns)
         # Five effect labels per predictor.
         effects = set(df.index.get_level_values("effect"))
@@ -1657,10 +1590,8 @@ class TestFlowEffectsLeSageDecomposition:
         from bayespecon.models.flow import SARFlow, _build_flow_effect_masks
 
         n = 4
-        G = _make_ring_graph(n)
         data = generate_flow_data(
             n=n,
-            G=G,
             rho_d=0.2,
             rho_o=0.15,
             rho_w=0.1,
@@ -1669,6 +1600,7 @@ class TestFlowEffectsLeSageDecomposition:
             sigma=1.0,
             seed=3,
         )
+        G = data["G"]
         model = SARFlow(
             data["y_vec"],
             data["G"],
@@ -1690,6 +1622,8 @@ class TestFlowEffectsLeSageDecomposition:
         k = model._k
         beta_d = beta[2 : 2 + k]
         beta_o = beta[2 + k : 2 + 2 * k]
+        # Posterior β_intra (DGP value is 0, but the fitted draw is generally nonzero).
+        beta_intra = beta[2 + 2 * k : 2 + 3 * k]
 
         N = n * n
         dmask, omask, imask = _build_flow_effect_masks(n)
@@ -1703,7 +1637,9 @@ class TestFlowEffectsLeSageDecomposition:
             shock = np.zeros((N, n))
             shock[dmask] = beta_d[p]
             shock[omask] = beta_o[p]
-            shock[imask] = beta_d[p] + beta_o[p]
+            # X_intra = intra_indicator * X_dest, so shocking X_dest also shocks
+            # the intra cell by β_intra (Thomas-Agnan & LeSage 2014, §83.5).
+            shock[imask] = beta_d[p] + beta_o[p] + beta_intra[p]
             T_resp = lu.solve(shock)
             ref_total = T_resp.sum() / N
             ref_intra = T_resp[imask].sum() / N
@@ -1730,10 +1666,8 @@ class TestFlowEffectsLeSageDecomposition:
         )
 
         n = 4
-        G = _make_ring_graph(n)
         data = generate_flow_data(
             n=n,
-            G=G,
             rho_d=0.2,
             rho_o=0.15,
             rho_w=-0.2 * 0.15,
@@ -1742,6 +1676,7 @@ class TestFlowEffectsLeSageDecomposition:
             sigma=1.0,
             seed=4,
         )
+        G = data["G"]
         # Compute reference effects directly with both code paths at the same parameter point.
         from bayespecon.ops import kron_solve_matrix
 
@@ -1792,11 +1727,12 @@ class TestFlowPanelSpatialEffectsAndPPC:
     @pytest.fixture(scope="class")
     def fitted_panel(self):
         from bayespecon.graph import flow_design_matrix
+        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.models.flow_panel import SARFlowPanel
 
         n = 4
         T = 3
-        G = _make_ring_graph(n)
+        G = generate_flow_data(n=n, seed=0)["G"]
         rng = np.random.default_rng(5)
         y_list, X_list = [], []
         col_names = None
@@ -1822,7 +1758,7 @@ class TestFlowPanelSpatialEffectsAndPPC:
 
     def test_panel_spatial_effects_dataframe(self, fitted_panel):
         df = fitted_panel.spatial_effects()
-        assert df.index.names == ["predictor", "effect"]
+        assert df.index.names == ["predictor", "side", "effect"]
         effects = set(df.index.get_level_values("effect"))
         assert effects == {"origin", "destination", "intra", "network", "total"}
 
@@ -1840,3 +1776,415 @@ class TestFlowPanelSpatialEffectsAndPPC:
         y_rep = fitted_panel.posterior_predictive(n_draws=5, random_seed=11)
         assert y_rep.shape == (5, fitted_panel._N_flow * fitted_panel._T)
         assert np.all(np.isfinite(y_rep))
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Thomas-Agnan & LeSage (2014) enhancements
+# ---------------------------------------------------------------------------
+
+
+class TestFlowEffectsAsymmetricAndIntra:
+    """Tests for the new asymmetric Xo/Xd shocks and beta_intra contribution."""
+
+    def test_helper_intra_shock_includes_beta_intra(self):
+        """β_intra adds (β_intra)/n to the intra effect on the dest side under A=I."""
+        from bayespecon.models.flow import (
+            _build_flow_effect_masks,
+            _compute_flow_effects_lesage,
+        )
+
+        n, k = 4, 1
+        dmask, omask, imask = _build_flow_effect_masks(n)
+        beta_d = np.array([1.0])
+        beta_o = np.array([0.5])
+        beta_intra = np.array([2.0])
+
+        res_with = _compute_flow_effects_lesage(
+            lambda rhs: rhs, dmask, omask, imask,
+            beta_d, beta_o, n, k, beta_intra=beta_intra,
+        )
+        res_without = _compute_flow_effects_lesage(
+            lambda rhs: rhs, dmask, omask, imask,
+            beta_d, beta_o, n, k, beta_intra=None,
+        )
+        # Intra increases by β_intra/n (single perturbed region averaged).
+        assert np.isclose(
+            res_with["intra"][0] - res_without["intra"][0],
+            beta_intra[0] / n,
+        )
+        # Total increases by β_intra/n as well.
+        assert np.isclose(
+            res_with["total"][0] - res_without["total"][0],
+            beta_intra[0] / n,
+        )
+        # Network unchanged (intra is part of the "owner" region's column).
+        assert np.isclose(res_with["network"][0], res_without["network"][0])
+
+    def test_helper_per_side_keys_decompose_combined(self):
+        """combined_eff == dest_eff + orig_eff for every effect type."""
+        from bayespecon.models.flow import (
+            _EFFECT_KEYS,
+            _build_flow_effect_masks,
+            _compute_flow_effects_lesage,
+        )
+
+        n, k = 5, 2
+        dmask, omask, imask = _build_flow_effect_masks(n)
+        rng = np.random.default_rng(7)
+        beta_d = rng.standard_normal(k)
+        beta_o = rng.standard_normal(k)
+        beta_intra = rng.standard_normal(k)
+
+        res = _compute_flow_effects_lesage(
+            lambda rhs: rhs, dmask, omask, imask,
+            beta_d, beta_o, n, k, beta_intra=beta_intra,
+        )
+        for eff in _EFFECT_KEYS:
+            np.testing.assert_allclose(
+                res[eff], res[f"dest_{eff}"] + res[f"orig_{eff}"], atol=1e-12
+            )
+
+    def test_asymmetric_design_separate_mode(self):
+        """Asymmetric Xo!=Xd auto-detects to 'separate' mode and reports both sides."""
+        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.graph import flow_design_matrix_with_orig
+        from bayespecon.models.flow import SARFlow
+
+        n = 4
+        rng = np.random.default_rng(0)
+        Xd = rng.standard_normal((n, 1))
+        Xo = rng.standard_normal((n, 1))  # different from Xd
+
+        data = generate_flow_data(
+            n=n, rho_d=0.1, rho_o=0.1, rho_w=0.05,
+            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=1,
+        )
+        G = data["G"]
+        # Override design with asymmetric Xo!=Xd
+        design = flow_design_matrix_with_orig(Xd, Xo, col_names=["x"])
+        model = SARFlow(
+            data["y_vec"], G, design.combined,
+            col_names=design.feature_names, trace_seed=0,
+        )
+        assert model._symmetric_xo_xd is False
+        model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
+        df = model.spatial_effects()  # auto -> separate
+        sides = set(df.index.get_level_values("side"))
+        assert sides == {"dest", "orig"}
+
+    def test_combined_mode_matches_dest_plus_orig(self):
+        """mode='combined' equals the sum of per-side rows from mode='separate'."""
+        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.models.flow import SARFlow
+
+        n = 4
+        data = generate_flow_data(
+            n=n, rho_d=0.15, rho_o=0.1, rho_w=0.05,
+            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=2,
+        )
+        model = SARFlow(
+            data["y_vec"], data["G"], data["X"],
+            col_names=data["col_names"], trace_seed=0,
+        )
+        model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
+        df_combined = model.spatial_effects(mode="combined")
+        df_separate = model.spatial_effects(mode="separate")
+
+        for eff in ("origin", "destination", "intra", "network", "total"):
+            cmean = df_combined.xs(eff, level="effect")["mean"].iloc[0]
+            d = df_separate.xs(("dest", eff), level=("side", "effect"))["mean"].iloc[0]
+            o = df_separate.xs(("orig", eff), level=("side", "effect"))["mean"].iloc[0]
+            assert np.isclose(cmean, d + o, atol=1e-10)
+
+
+class TestOLSFlowEffects:
+    """Tests for the new non-spatial OLSFlow gravity baseline."""
+
+    def test_olsflow_fits_and_effects_table_83_1(self):
+        """OLSFlow analytic effects: TE = βd + βo, NE = 0, IE = (βd+βo+β_intra)/n."""
+        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.models.flow import OLSFlow
+
+        n = 5
+        # ρ = 0 in the DGP so the OLS model is correctly specified.
+        data = generate_flow_data(
+            n=n, rho_d=0.0, rho_o=0.0, rho_w=0.0,
+            beta_d=[1.0], beta_o=[0.5], sigma=0.1, seed=0,
+        )
+        # DGP defaults to lognormal; OLS fit on the latent (log) scale.
+        model = OLSFlow(np.log(data["y_vec"]), data["G"], data["X"],
+                        col_names=data["col_names"])
+        model.fit(draws=40, tune=40, chains=1, progressbar=False, random_seed=0)
+        df = model.spatial_effects(mode="combined")
+
+        # NE = 0 exactly (closed form).
+        assert np.isclose(df.xs("network", level="effect")["mean"].iloc[0], 0.0)
+        # TE close to βd + βo (sampling-noise tolerance).
+        te = df.xs("total", level="effect")["mean"].iloc[0]
+        assert np.isclose(te, 1.0 + 0.5, atol=0.2)
+        # IE = (TE + β_intra)/n with β_intra ≈ 0 in the DGP.
+        ie = df.xs("intra", level="effect")["mean"].iloc[0]
+        assert np.isclose(ie, te / n, atol=0.1)
+
+    def test_olsflow_posterior_predictive_shape(self):
+        """OLSFlow posterior_predictive returns (n_draws, N) finite values."""
+        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.models.flow import OLSFlow
+
+        n = 4
+        data = generate_flow_data(
+            n=n, rho_d=0.0, rho_o=0.0, rho_w=0.0,
+            beta_d=[1.0], beta_o=[0.5], sigma=0.5, seed=1,
+        )
+        model = OLSFlow(data["y_vec"], data["G"], data["X"],
+                        col_names=data["col_names"])
+        model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
+        y_rep = model.posterior_predictive(n_draws=5, random_seed=3)
+        assert y_rep.shape == (5, n * n)
+        assert np.all(np.isfinite(y_rep))
+
+
+class TestPoissonGravityFlow:
+    """Tests for the new aspatial Poisson gravity flow baseline (PoissonFlow)."""
+
+    @pytest.fixture
+    def small_data(self):
+        from bayespecon.dgp.flows import generate_poisson_flow_data
+
+        # rho = 0 so the aspatial PoissonFlow is correctly specified.
+        return generate_poisson_flow_data(
+            n=6, rho_d=0.0, rho_o=0.0, rho_w=0.0, seed=0
+        )
+
+    def test_constructs_and_builds_pymc_model(self, small_data):
+        from bayespecon.models.flow import PoissonFlow
+
+        model = PoissonFlow(
+            small_data["y_vec"], small_data["G"], small_data["X"],
+            col_names=small_data["col_names"],
+        )
+        assert model._y_int_vec.dtype == np.int64
+        pm_model = model._build_pymc_model()
+        names = {v.name for v in pm_model.unobserved_RVs}
+        # No spatial-lag or sigma parameters should be sampled.
+        assert "rho_d" not in names and "rho_o" not in names and "rho_w" not in names
+        assert "sigma" not in names
+        assert "beta" in names
+
+    def test_rounds_close_floats_and_rejects_negatives(self, small_data):
+        from bayespecon.models.flow import PoissonFlow
+
+        y_float = small_data["y_vec"].astype(np.float64) + 1e-14
+        m = PoissonFlow(y_float, small_data["G"], small_data["X"],
+                        col_names=small_data["col_names"])
+        assert m._y_int_vec.dtype == np.int64
+
+        y_bad = small_data["y_vec"].astype(np.float64) + 0.5
+        with pytest.raises(ValueError, match="integer-valued"):
+            PoissonFlow(y_bad, small_data["G"], small_data["X"],
+                        col_names=small_data["col_names"])
+
+        y_neg = small_data["y_vec"].copy()
+        y_neg[0] = -1
+        with pytest.raises(ValueError, match="non-negative"):
+            PoissonFlow(y_neg, small_data["G"], small_data["X"],
+                        col_names=small_data["col_names"])
+
+    def test_posterior_predictive_shape_and_integer(self, small_data):
+        from bayespecon.models.flow import PoissonFlow
+
+        model = PoissonFlow(
+            small_data["y_vec"], small_data["G"], small_data["X"],
+            col_names=small_data["col_names"],
+        )
+        model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
+        y_rep = model.posterior_predictive(n_draws=5, random_seed=3)
+        assert y_rep.shape == (5, model._N)
+        assert np.all(y_rep >= 0)
+        assert np.allclose(y_rep, np.round(y_rep))
+
+    def test_spatial_effects_match_olsflow_pattern(self, small_data):
+        """NE = 0 (closed form under A=I_N), keys parity with OLSFlow."""
+        from bayespecon.models.flow import PoissonFlow
+
+        model = PoissonFlow(
+            small_data["y_vec"], small_data["G"], small_data["X"],
+            col_names=small_data["col_names"],
+        )
+        model.fit(draws=40, tune=40, chains=1, progressbar=False, random_seed=0)
+        df = model.spatial_effects(mode="combined")
+        assert np.isclose(df.xs("network", level="effect")["mean"].iloc[0], 0.0)
+
+
+@pytest.mark.slow
+class TestPoissonGravityFlowRecovery:
+    """PoissonFlow posterior β should recover DGP coefficients under rho=0."""
+
+    def test_recovers_beta(self):
+        from bayespecon.dgp.flows import generate_poisson_flow_data
+        from bayespecon.models.flow import PoissonFlow
+
+        beta_d = np.array([0.5, -0.3])
+        beta_o = np.array([0.4, 0.2])
+        data = generate_poisson_flow_data(
+            n=10, rho_d=0.0, rho_o=0.0, rho_w=0.0,
+            beta_d=beta_d, beta_o=beta_o, seed=42,
+        )
+        model = PoissonFlow(
+            data["y_vec"], data["G"], data["X"],
+            col_names=data["col_names"], trace_seed=0,
+        )
+        idata = model.fit(**POISSON_SAMPLE_KWARGS)
+        beta_hat = idata.posterior["beta"].mean(dim=("chain", "draw")).values
+        # Layout: [intercept, intra, βd₁, βd₂, βo₁, βo₂] (matches OLSFlow)
+        # Compare destination/origin slope blocks within Poisson tolerance.
+        bd_hat = beta_hat[2 : 2 + len(beta_d)]
+        bo_hat = beta_hat[2 + len(beta_d) : 2 + 2 * len(beta_d)]
+        assert np.allclose(bd_hat, beta_d, atol=ABS_TOL_BETA_POI), (
+            f"βd: expected {beta_d}, got {bd_hat}"
+        )
+        assert np.allclose(bo_hat, beta_o, atol=ABS_TOL_BETA_POI), (
+            f"βo: expected {beta_o}, got {bo_hat}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Pointwise log-likelihood (with Jacobian correction)
+# ---------------------------------------------------------------------------
+
+
+class TestFlowLogLikelihood:
+    """Verify ``log_likelihood`` group is attached and usable for model
+    comparison via ``az.loo`` / ``az.waic`` / ``az.compare``."""
+
+    def setup_method(self):
+        from bayespecon.dgp.flows import (
+            generate_flow_data,
+            generate_poisson_flow_data,
+        )
+
+        self.n = 5
+        self.gauss = generate_flow_data(
+            n=self.n, rho_d=0.20, rho_o=0.20, rho_w=0.05,
+            beta_d=[1.0, -0.5], beta_o=[0.5, 0.3], sigma=1.0, seed=0,
+        )
+        self.G = self.gauss["G"]
+        self.poi = generate_poisson_flow_data(n=self.n, k=2, seed=0)
+
+    def _check_loo(self, idata):
+        import arviz as az
+
+        assert hasattr(idata, "log_likelihood")
+        assert "obs" in idata.log_likelihood.data_vars
+        ll = idata.log_likelihood["obs"].values
+        assert ll.shape[2] == self.n * self.n  # N obs
+        assert np.isfinite(ll).all()
+        loo = az.loo(idata)
+        assert np.isfinite(loo.elpd_loo)
+
+    def test_sar_flow_loglik(self):
+        from bayespecon.models.flow import SARFlow
+
+        m = SARFlow(
+            self.gauss["y_vec"], self.G, self.gauss["X"],
+            col_names=self.gauss["col_names"],
+            miter=5, titer=50, trace_seed=0, restrict_positive=True,
+        )
+        idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
+        self._check_loo(idata)
+
+    def test_sar_flow_separable_loglik(self):
+        from bayespecon.models.flow import SARFlowSeparable
+
+        m = SARFlowSeparable(
+            self.gauss["y_vec"], self.G, self.gauss["X"],
+            col_names=self.gauss["col_names"], trace_seed=0,
+        )
+        idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
+        self._check_loo(idata)
+
+    def test_ols_flow_loglik(self):
+        from bayespecon.models.flow import OLSFlow
+
+        m = OLSFlow(
+            self.gauss["y_vec"], self.G, self.gauss["X"],
+            col_names=self.gauss["col_names"],
+        )
+        idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
+        self._check_loo(idata)
+
+    def test_poisson_flow_loglik(self):
+        from bayespecon.models.flow import PoissonFlow
+
+        m = PoissonFlow(
+            self.poi["y_vec"], self.poi["G"], self.poi["X"],
+            col_names=self.poi["col_names"], trace_seed=0,
+        )
+        idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
+        # PoissonFlow uses self.poi's own G (not self.G); validate against m._N.
+        import arviz as az
+        assert hasattr(idata, "log_likelihood")
+        ll = idata.log_likelihood["obs"].values
+        assert ll.shape[2] == m._N
+        assert np.isfinite(ll).all()
+        loo = az.loo(idata)
+        assert np.isfinite(loo.elpd_loo)
+
+    def test_compare_flow_models(self):
+        """az.compare runs across SARFlow/SARFlowSeparable/OLSFlow."""
+        import arviz as az
+        from bayespecon.models.flow import OLSFlow, SARFlow, SARFlowSeparable
+
+        m_sar = SARFlow(
+            self.gauss["y_vec"], self.G, self.gauss["X"],
+            col_names=self.gauss["col_names"],
+            miter=5, titer=50, trace_seed=0, restrict_positive=True,
+        )
+        m_sep = SARFlowSeparable(
+            self.gauss["y_vec"], self.G, self.gauss["X"],
+            col_names=self.gauss["col_names"], trace_seed=0,
+        )
+        m_ols = OLSFlow(
+            self.gauss["y_vec"], self.G, self.gauss["X"],
+            col_names=self.gauss["col_names"],
+        )
+        kw = dict(draws=40, tune=40, chains=1, progressbar=False, random_seed=0)
+        idata_sar = m_sar.fit(**kw)
+        idata_sep = m_sep.fit(**kw)
+        idata_ols = m_ols.fit(**kw)
+        comp = az.compare(
+            {"sar": idata_sar, "sep": idata_sep, "ols": idata_ols}
+        )
+        assert "rank" in comp.columns
+        assert len(comp) == 3
+
+    def test_sar_flow_jacobian_matches_pytensor(self):
+        """SARFlow._compute_jacobian_log_det matches pytensor logdet at draws."""
+        import pytensor
+        import pytensor.tensor as pt
+
+        from bayespecon.logdet import flow_logdet_pytensor
+        from bayespecon.models.flow import SARFlow
+
+        m = SARFlow(
+            self.gauss["y_vec"], self.G, self.gauss["X"],
+            col_names=self.gauss["col_names"],
+            miter=5, titer=50, trace_seed=0, restrict_positive=True,
+        )
+        idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
+        post = idata.posterior
+        np_jac = m._compute_jacobian_log_det(post)
+
+        a, b, c = pt.scalar("a"), pt.scalar("b"), pt.scalar("c")
+        expr = flow_logdet_pytensor(
+            a, b, c,
+            m._poly_a, m._poly_b, m._poly_c, m._poly_coeffs,
+            m._miter_a, m._miter_b, m._miter_c, m._miter_coeffs,
+            m.miter, m.titer,
+        )
+        fn = pytensor.function([a, b, c], expr)
+        rd = post["rho_d"].values.reshape(-1)
+        ro = post["rho_o"].values.reshape(-1)
+        rw = post["rho_w"].values.reshape(-1)
+        pt_jac = np.array([float(fn(x, y, z)) for x, y, z in zip(rd, ro, rw)])
+        np.testing.assert_allclose(np_jac, pt_jac, atol=1e-10)

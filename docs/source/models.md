@@ -1,189 +1,197 @@
-## Supported Models
+# Supported Models
 
-### Cross Sectional Models
+## Cross Sectional Models
 
-#### OLS
+### OLS
 
 $$y = X\beta + \epsilon$$
 
-#### SLX
+### SLX
 
 $$y = X\beta + WX\theta + \epsilon$$
 
-#### SAR
+### SAR
 
 $$y = \rho Wy + X\beta + \epsilon$$
 
-#### SEM
+### SEM
 
-$$y = X\beta + u, u = \lambda Wu + \epsilon$$
+$$y = X\beta + u, \quad u = \lambda Wu + \epsilon$$
 
-#### SDM
+### SDM
 
 $$y = \rho Wy + X\beta + WX\theta + \epsilon$$
 
-#### SDEM
+### SDEM
 
-$$y = X\beta + WX\theta + u,  u = \lambda Wu + \epsilon$$
+$$y = X\beta + WX\theta + u, \quad u = \lambda Wu + \epsilon$$
 
-### Panel Models
+## Panel Models
 
-#### OLS panel
+### OLS panel
 
 $$y_{it} = x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
 
-#### SAR panel
+### SAR panel
 
-$$y_{it} = \rho Wy_{it} + x_{it} ' \beta + a_i + \tau_t + \epsilon_{it}$$
+$$y_{it} = \rho Wy_{it} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
 
-#### SEM panel
+### SEM panel
 
-$$y_{it} = x_{it}' \beta + a_i + \tau_t + u_{it}, u_{it}=\lambda Wu_{it} + \epsilon_{it}$$
+$$y_{it} = x_{it}' \beta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda Wu_{it} + \epsilon_{it}$$
 
-#### SDM panel
+### SDM panel
 
-$$y_{it} = \rho Wy_{it} + x_{it} ' \beta + Wx_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
+$$y_{it} = \rho Wy_{it} + x_{it}' \beta + Wx_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
 
-#### SDEM panel
+### SDEM panel
 
-$$y_{it} = x_{it} ' \beta + Wx_{it}' \theta + a_i + \tau_t + u_{it}, u_{it}=\lambda Wu_{it} + \epsilon_{it}$$
-#### SLX panel
+$$y_{it} = x_{it}' \beta + Wx_{it}' \theta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda Wu_{it} + \epsilon_{it}$$
 
-$$y_{it} = x_{it}'\beta + Wx_{it}'\theta + a_i + \tau_t + \epsilon_{it}$$
+### SLX panel
 
-#### OLS panel (Random Effects)
+$$y_{it} = x_{it}' \beta + Wx_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
+
+### OLS panel (Random Effects)
 
 $$y_{it} = x_{it}' \beta + \alpha_i + \tau_t + \epsilon_{it}, \quad \alpha_i \sim N(0, \sigma_\alpha^2)$$
 
-#### SAR panel (Random Effects)
+### SAR panel (Random Effects)
 
 $$y_{it} = \rho W y_{it} + x_{it}' \beta + \alpha_i + \tau_t + \epsilon_{it}, \quad \alpha_i \sim N(0, \sigma_\alpha^2)$$
 
-#### SEM panel (Random Effects)
+### SEM panel (Random Effects)
 
 $$y_{it} = x_{it}' \beta + \alpha_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}, \quad \alpha_i \sim N(0, \sigma_\alpha^2)$$
 
+### SDEM panel (Random Effects)
 
-### Dynamic Panel Models
+$$y_{it} = x_{it}' \beta + W x_{it}' \theta + \alpha_i + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}, \quad \alpha_i \sim N(0, \sigma_\alpha^2)$$
 
-#### OLSPanelDynamic (Dynamic Linear Model)
+## Dynamic Panel Models
 
-$$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
+### OLSPanelDynamic (Dynamic Linear Model)
 
-#### SDMRPanelDynamic (Dynamic Restricted Spatial Durbin)
+$$y_{it} = \phi y_{i,t-1} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
 
-$$y_{it} = \phi y_{i, t-1} + \rho W y_{it} - \rho \phi W y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
+### SDMRPanelDynamic (Dynamic Restricted Spatial Durbin)
 
-#### SDMUPanelDynamic (Dynamic Unrestricted Spatial Durbin)
+$$y_{it} = \phi y_{i,t-1} + \rho W y_{it} - \rho \phi W y_{i,t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
 
-$$y_{it} = \phi y_{i, t-1} + \rho W y_{it} + \theta W y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
+### SDMUPanelDynamic (Dynamic Unrestricted Spatial Durbin)
 
-#### SARPanelDynamic (Dynamic SAR)
+$$y_{it} = \phi y_{i,t-1} + \rho W y_{it} + \theta W y_{i,t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
 
-$$y_{it} = \phi y_{i, t-1} + \rho W y_{it} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
+### SARPanelDynamic (Dynamic SAR)
 
-#### SEMPanelDynamic (Dynamic SEM)
+$$y_{it} = \phi y_{i,t-1} + \rho W y_{it} + x_{it}' \beta + a_i + \tau_t + \epsilon_{it}$$
 
-$$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}$$
+### SEMPanelDynamic (Dynamic SEM)
 
-#### SDEMPanelDynamic (Dynamic SDEM)
+$$y_{it} = \phi y_{i,t-1} + x_{it}' \beta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}$$
 
-$$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}$$
+### SDEMPanelDynamic (Dynamic SDEM)
 
-#### SLXPanelDynamic (Dynamic SLX)
+$$y_{it} = \phi y_{i,t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + u_{it}, \quad u_{it} = \lambda W u_{it} + \epsilon_{it}$$
 
-$$y_{it} = \phi y_{i, t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
+### SLXPanelDynamic (Dynamic SLX)
 
+$$y_{it} = \phi y_{i,t-1} + x_{it}' \beta + W x_{it}' \theta + a_i + \tau_t + \epsilon_{it}$$
 
-### Non-Linear Models
+## Non-Linear Models
 
-#### Spatial Probit
+### Spatial Probit
 
-For binary outcomes $y_i \in \{0,1\}$, latent utilities $y^*$ follow a spatial lag:
+$$y^* = \rho W y^* + X\beta + a + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, I), \quad y_i = \mathbf{1}[y_i^* > 0]$$
 
-$$y^* = \rho W y^* + X\beta + a + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, I)$$
+### Tobit (SAR Tobit)
 
-where $a$ are region-level random effects and $y_i = \mathbf{1}[y^*_i > 0]$.
+$$y_i = \max(c, y_i^*), \quad y^* = \rho W y^* + X\beta + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
 
-#### SAR Tobit
+### Tobit (SEM Tobit)
 
-For censored outcomes, the spatial autoregressive Tobit specifies:
+$$y_i = \max(c, y_i^*), \quad y^* = X\beta + u, \quad u = \lambda Wu + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
 
-$$y^* = \rho W y^* + X\beta + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
-$$y_i = \max(c,\, y^*_i)$$
+### Tobit (SDM Tobit)
 
-where $c$ is the censoring threshold (default 0).
+$$y_i = \max(c, y_i^*), \quad y^* = \rho W y^* + X\beta + WX\theta + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
 
-#### SEM Tobit
+### Panel Tobit (SAR)
 
-The spatial error Tobit places spatial dependence in the disturbance:
+$$y_{it} = \max(c, y_{it}^*), \quad y_t^* = \rho W y_t^* + X_t\beta + \varepsilon_t$$
 
-$$y^* = X\beta + u, \quad u = \lambda W u + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
-$$y_i = \max(c,\, y^*_i)$$
+### Panel Tobit (SEM)
 
-#### SDM Tobit
+$$y_{it} = \max(c, y_{it}^*), \quad y_t^* = X_t\beta + u_t, \quad u_t = \lambda W u_t + \varepsilon_t$$
 
-The spatial Durbin Tobit combines a spatial lag with spatially lagged covariates in the latent outcome:
+## Flow Models
 
-$$y^* = \rho W y^* + X\beta + WX\theta + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
-$$y_i = \max(c,\, y^*_i)$$
+Vectorize the origin-destination flow matrix to $y \in \mathbb{R}^{N}$ with $N = n^2$, and define destination, origin, and network weight matrices as $W_d$, $W_o$, and $W_w$.
 
-### Non-Linear Panel Models
+### OLSFlow
 
-#### SARPanelTobit
+$$y = X\beta + \varepsilon$$
 
-spatial lag in the latent outcome:
+### PoissonFlow
 
-$$y_t^* = \rho W y_t^* + X_t \beta + \varepsilon_t$$
+$$y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = X\beta$$
 
-#### SEMPanelTobit
+### SARFlow
 
-spatial lag in the disturbance:
+$$y = \rho_d W_d y + \rho_o W_o y + \rho_w W_w y + X\beta + \varepsilon$$
 
-$$y^*_t = X_t \beta + u_t,  u_t = \lambda W u_t + \varepsilon_t$$
+### SARFlowSeparable
 
-### Flow Models
+$$y = \rho_d W_d y + \rho_o W_o y - \rho_d \rho_o W_w y + X\beta + \varepsilon$$
 
-Origin-destination flow matrices $Y$ (size $n \times n$) are vectorized to $y$ of length $N = n^2$. The destination, origin, and origin-destination weight matrices are $W_d = I_n \otimes W$, $W_o = W \otimes I_n$, $W_w = W \otimes W$.
+### PoissonSARFlow
 
-#### SARFlow
+$$y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = A(\boldsymbol{\rho})^{-1} X\beta$$
 
-$$y = \rho_d W_d y + \rho_o W_o y + \rho_w W_w y + X\beta + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
+### PoissonSARFlowSeparable
 
-#### SARFlowSeparable
+$$y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = A(\boldsymbol{\rho})^{-1} X\beta, \quad \rho_w = -\rho_d \rho_o$$
 
-Imposes the separability constraint $\rho_w = -\rho_d \rho_o$, enabling an exact $\mathcal{O}(n)$ log-determinant via eigenvalue factorization:
+### SEMFlow
 
-$$y = \rho_d W_d y + \rho_o W_o y - \rho_d\rho_o W_w y + X\beta + \varepsilon$$
+$$y = X\beta + u, \quad u = \lambda_d W_d u + \lambda_o W_o u + \lambda_w W_w u + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
 
-#### PoissonSARFlow
+### SEMFlowSeparable
 
-For count-valued flows, the mean is filtered through the spatial multiplier $A(\boldsymbol{\rho}) = I - \rho_d W_d - \rho_o W_o - \rho_w W_w$:
+$$y = X\beta + u, \quad u = \lambda_d W_d u + \lambda_o W_o u - \lambda_d \lambda_o W_w u + \varepsilon, \quad \varepsilon \sim \mathcal{N}(0, \sigma^2 I)$$
 
-$$y_{ij} \sim \text{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = A(\boldsymbol{\rho})^{-1} X\beta$$
+## Panel Flow Models
 
-#### PoissonSARFlowSeparable
+Stack the flow models above across $T$ periods in time-first order. The Poisson panel variants currently operate in pooled mode.
 
-Poisson flow with separability constraint $\rho_w = -\rho_d \rho_o$:
+### OLSFlowPanel
 
-$$y_{ij} \sim \text{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = A(\boldsymbol{\rho})^{-1} X\beta, \quad \rho_w = -\rho_d\rho_o$$
+$$y_t = X_t\beta + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0, \sigma^2 I_N)$$
 
-### Panel Flow Models
+### PoissonFlowPanel
 
-Time-stacked versions of the flow models above. Observations are stacked time-first across $T$ periods. Poisson variants are restricted to pooled mode.
+$$y_{ij,t} \sim \operatorname{Poisson}(\lambda_{ij,t}), \quad \log \boldsymbol{\lambda}_t = X_t\beta$$
 
-#### SARFlowPanel
+### SARFlowPanel
 
 $$y_t = \rho_d W_d y_t + \rho_o W_o y_t + \rho_w W_w y_t + X_t\beta + \varepsilon_t$$
 
-#### SARFlowSeparablePanel
+### SARFlowSeparablePanel
 
-$$y_t = \rho_d W_d y_t + \rho_o W_o y_t - \rho_d\rho_o W_w y_t + X_t\beta + \varepsilon_t$$
+$$y_t = \rho_d W_d y_t + \rho_o W_o y_t - \rho_d \rho_o W_w y_t + X_t\beta + \varepsilon_t$$
 
-#### PoissonSARFlowPanel
+### PoissonSARFlowPanel
 
-$$y_{ijt} \sim \text{Poisson}(\lambda_{ijt}), \quad \log \boldsymbol{\lambda}_t = A(\boldsymbol{\rho})^{-1} X_t\beta$$
+$$y_{ij,t} \sim \operatorname{Poisson}(\lambda_{ij,t}), \quad \log \boldsymbol{\lambda}_t = A(\boldsymbol{\rho})^{-1} X_t\beta$$
 
-#### PoissonSARFlowSeparablePanel
+### PoissonSARFlowSeparablePanel
 
-$$y_{ijt} \sim \text{Poisson}(\lambda_{ijt}), \quad \log \boldsymbol{\lambda}_t = A(\boldsymbol{\rho})^{-1} X_t\beta, \quad \rho_w = -\rho_d\rho_o$$
+$$y_{ij,t} \sim \operatorname{Poisson}(\lambda_{ij,t}), \quad \log \boldsymbol{\lambda}_t = A(\boldsymbol{\rho})^{-1} X_t\beta, \quad \rho_w = -\rho_d \rho_o$$
+
+### SEMFlowPanel
+
+$$y_t = X_t\beta + u_t, \quad u_t = \lambda_d W_d u_t + \lambda_o W_o u_t + \lambda_w W_w u_t + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0, \sigma^2 I_N)$$
+
+### SEMFlowSeparablePanel
+
+$$y_t = X_t\beta + u_t, \quad u_t = \lambda_d W_d u_t + \lambda_o W_o u_t - \lambda_d \lambda_o W_w u_t + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0, \sigma^2 I_N)$$
