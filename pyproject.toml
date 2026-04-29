@@ -22,6 +22,9 @@ dependencies = [
     "pandas",
 ]
 
+[project.optional-dependencies]
+viz = ["graphviz"]
+
 
 [tool.setuptools.packages.find]
 include = ["bayespecon", "bayespecon.*"]
@@ -66,6 +69,8 @@ ignore = [
     "E741",  # ambiguous variable name — math notation (l, I, O) is intentional
     "E402",  # module-level import not at top — used for conditional/optional imports
 ]
+extend-select = ["I"]
+
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]

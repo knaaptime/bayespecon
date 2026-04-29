@@ -21,7 +21,6 @@ from bayespecon.dgp.utils import (
     synth_point_geodataframe,
 )
 
-
 N = 5
 G = generate_flow_data(n=N, seed=0)["G"]
 BETA_D = [1.0, -0.5]
@@ -130,9 +129,8 @@ class TestDistanceColumnPresent:
 
 class TestDistanceFromUserGdf:
     def test_user_point_gdf(self):
-        from scipy.spatial.distance import cdist
-
         import geopandas as gpd
+        from scipy.spatial.distance import cdist
         from shapely.geometry import Point
 
         rng = np.random.default_rng(0)
@@ -145,9 +143,8 @@ class TestDistanceFromUserGdf:
         np.testing.assert_allclose(out["dist"], cdist(coords, coords), atol=1e-12)
 
     def test_polygon_gdf_uses_centroids(self):
-        from scipy.spatial.distance import cdist
-
         import geopandas as gpd
+        from scipy.spatial.distance import cdist
         from shapely.geometry import box
 
         # 5 unit squares stacked in a row → centroids at (i+0.5, 0.5)

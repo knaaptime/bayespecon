@@ -16,8 +16,8 @@ import arviz as az
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
-from pytensor import sparse as pts
 import xarray as xr
+from pytensor import sparse as pts
 
 from .base import SpatialModel
 
@@ -64,9 +64,9 @@ class SDEM(SpatialModel):
         (
             lambda m: __import__(
                 "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_lag_test"],
-            ).bayesian_lm_lag_test(m),
-            "LM-Lag",
+                fromlist=["bayesian_lm_lag_sdem_test"],
+            ).bayesian_lm_lag_sdem_test(m),
+            "LM-Lag-SDEM",
         ),
     ]
 
@@ -78,6 +78,7 @@ class SDEM(SpatialModel):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         idata_kwargs: Optional[dict] = None,
+        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> "az.InferenceData":
         """Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
@@ -112,11 +113,20 @@ class SDEM(SpatialModel):
             - \\log(\\sigma) - \\frac{1}{2}\\log(2\\pi)
             + \\frac{1}{n} \\log |I - \\lambda W |
         """
+        from ._sampler import (
+            prepare_compile_kwargs,
+            prepare_idata_kwargs,
+            resolve_sampler,
+        )
+
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
 
         model = self._build_pymc_model()
         self._pymc_model = model
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -125,6 +135,7 @@ class SDEM(SpatialModel):
                 target_accept=target_accept,
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
 

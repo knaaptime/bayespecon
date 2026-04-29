@@ -13,6 +13,8 @@ from bayespecon import SAR, SDEM, SDM, SLX
 from .helpers import (
     W_to_graph,
     make_line_W,
+)
+from .helpers import (
     set_posterior_means as _set_posterior_means,
 )
 

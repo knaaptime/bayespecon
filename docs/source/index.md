@@ -30,6 +30,7 @@ Panel Flow Models <user-guide/panel_flow_models>
 Bayesian Spatial Diagnostics <user-guide/bayesian_lmtests>
 Comparing bayespecon vs spreg <user-guide/cross_sectional_spreg_comparison>
 Recovering Parameters <user-guide/faithfulness_bayespecon>
+Spatial Diagnostics Recovery <user-guide/spatial_diagnostics_recovery>
 Replicating Elhorst et al 2024 <user-guide/jgsy2024_replication_bayespecon>
 Log-Determinant Methods <user-guide/logdet_profiling>
 Sampling Backends <user-guide/sampling_backend_profiling>

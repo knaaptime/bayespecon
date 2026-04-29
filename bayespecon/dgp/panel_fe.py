@@ -1,4 +1,23 @@
-"""Panel fixed-effects style DGP functions."""
+"""Panel fixed-effects style DGP functions.
+
+The :func:`simulate_panel_sdm_fe` and :func:`simulate_panel_sdem_fe`
+generators are the most general lag-on-y and lag-on-error panel DGPs.
+The simpler models in this module (``sar``, ``sem``, ``slx``, ``ols``)
+are thin wrappers that call the corresponding core kernel with
+parameter restrictions:
+
+==================  ==========  ==========
+Wrapper             :math:`\\rho`     :math:`\\gamma` (WX)
+==================  ==========  ==========
+``ols_fe``          0           0
+``sar_fe``          free        0
+``slx_fe``          0           free
+``sdm_fe``          free        free
+==================  ==========  ==========
+
+The corresponding error-side restrictions hold for ``sem_fe`` /
+``sdem_fe`` (with :math:`\\lambda` replacing :math:`\\rho`).
+"""
 
 from __future__ import annotations
 
@@ -23,6 +42,139 @@ def _panel_finalize(
     return y, X, {"unit": idx_df["unit"].to_numpy(), "time": idx_df["time"].to_numpy()}
 
 
+def _simulate_panel_sdm_fe_core(
+    *,
+    N: int,
+    T: int,
+    Wd: np.ndarray,
+    beta1: np.ndarray,
+    beta2: np.ndarray,
+    rho: float,
+    sigma: float,
+    sigma_alpha: float,
+    err_hetero: bool,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Panel SDM-FE kernel.
+
+    ``y_t = (I - rho W)^-1 (X_t beta1 + W X_t[:,1:] beta2 + alpha + eps_t)``.
+
+    Allows ``rho=0`` (skips the spatial solve) and ``len(beta2)==0``
+    (skips the WX term), nesting the SAR/SLX/OLS panel DGPs.
+    """
+    has_wx = len(beta2) > 0
+    use_solve = rho != 0.0
+    A_inv = np.linalg.inv(np.eye(N) - rho * Wd) if use_solve else None
+
+    alpha = rng.normal(0.0, sigma_alpha, N)
+    y_list, X_list = [], []
+    for _ in range(T):
+        Xt = make_design_matrix(rng, N, k=max(len(beta1) - 1, 0), add_intercept=True)
+        if has_wx:
+            Wx = Wd @ Xt[:, 1:]
+            if Wx.shape[1] != len(beta2):
+                raise ValueError(
+                    "len(beta2) must match number of non-intercept regressors."
+                )
+            wx_beta = Wx @ beta2
+        else:
+            wx_beta = 0.0
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
+        rhs = Xt @ beta1 + wx_beta + alpha + eps
+        yt = A_inv @ rhs if use_solve else rhs
+        y_list.append(yt)
+        X_list.append(Xt)
+    return _panel_finalize(y_list, X_list, N, T)
+
+
+def _simulate_panel_sdem_fe_core(
+    *,
+    N: int,
+    T: int,
+    Wd: np.ndarray,
+    beta1: np.ndarray,
+    beta2: np.ndarray,
+    lam: float,
+    sigma: float,
+    sigma_alpha: float,
+    err_hetero: bool,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Panel SDEM-FE kernel.
+
+    ``u_t = (I - lam W)^-1 eps_t`` and
+    ``y_t = X_t beta1 + W X_t[:,1:] beta2 + alpha + u_t``.
+
+    Allows ``lam=0`` and ``len(beta2)==0`` to nest SEM/SLX/OLS panel DGPs.
+    """
+    has_wx = len(beta2) > 0
+    use_solve = lam != 0.0
+    A_inv = np.linalg.inv(np.eye(N) - lam * Wd) if use_solve else None
+
+    alpha = rng.normal(0.0, sigma_alpha, N)
+    y_list, X_list = [], []
+    for _ in range(T):
+        Xt = make_design_matrix(rng, N, k=max(len(beta1) - 1, 0), add_intercept=True)
+        if has_wx:
+            Wx = Wd @ Xt[:, 1:]
+            if Wx.shape[1] != len(beta2):
+                raise ValueError(
+                    "len(beta2) must match number of non-intercept regressors."
+                )
+            wx_beta = Wx @ beta2
+        else:
+            wx_beta = 0.0
+        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
+            N
+        )
+        u = A_inv @ eps if use_solve else eps
+        yt = Xt @ beta1 + wx_beta + alpha + u
+        y_list.append(yt)
+        X_list.append(Xt)
+    return _panel_finalize(y_list, X_list, N, T)
+
+
+def _maybe_geodataframe(
+    *,
+    y: np.ndarray,
+    X: np.ndarray,
+    idx: dict,
+    N: int,
+    T: int,
+    Wd: np.ndarray,
+    Wg,
+    params_true: dict,
+    create_gdf: bool,
+    gdf,
+    geometry_type: str,
+    wide: bool,
+) -> dict:
+    out = {
+        "y": y,
+        "X": X,
+        "unit": idx["unit"],
+        "time": idx["time"],
+        "W_dense": Wd,
+        "W_graph": Wg,
+        "params_true": params_true,
+    }
+    if create_gdf or gdf is not None or wide:
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
+    return out
+
+
 def simulate_panel_ols_fe(
     N: int,
     T: int,
@@ -41,31 +193,15 @@ def simulate_panel_ols_fe(
 ) -> dict:
     """Simulate pooled data compatible with OLSPanelFE model assumptions.
 
-    Parameters
-    ----------
-    N, T : int
-        Number of units and time periods.
-    beta : np.ndarray, optional
-        Coefficients including intercept.
-    sigma : float, default=1.0
-        Idiosyncratic noise scale.
-    sigma_alpha : float, default=0.5
-        Unit effect scale used in simulation.
-    err_hetero : bool, default=False
-        If True, generate heteroskedastic innovations with
-        observation-specific standard deviations
-        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
-    rng, seed
-        Random state controls.
-    W, gdf, contiguity
-        Optional spatial structure accepted for API consistency. For OLS this is
-        returned but not used in the data equation.
+    Equivalent to :func:`simulate_panel_sdm_fe` with ``rho=0`` and ``beta2=[]``;
+    the spatial weights matrix is required for shape validation but does not
+    appear in the data equation.
 
     Returns
     -------
     dict
         Keys: ``y``, ``X``, ``unit``, ``time``, ``W_dense``, ``W_graph``,
-        ``params_true``.
+        ``params_true`` with ``{beta, sigma, sigma_alpha}``.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, contiguity=contiguity)
@@ -76,40 +212,32 @@ def simulate_panel_ols_fe(
         beta = np.array([1.0, 2.0], dtype=float)
     beta = np.asarray(beta, dtype=float)
 
-    alpha = rng.normal(0.0, sigma_alpha, N)
-    y_list, X_list = [], []
-    for _ in range(T):
-        Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
-            N
-        )
-        yt = Xt @ beta + alpha + eps
-        y_list.append(yt)
-        X_list.append(Xt)
-
-    y, X, idx = _panel_finalize(y_list, X_list, N, T)
-    out = {
-        "y": y,
-        "X": X,
-        "unit": idx["unit"],
-        "time": idx["time"],
-        "W_dense": Wd,
-        "W_graph": Wg,
-        "params_true": {"beta": beta, "sigma": sigma, "sigma_alpha": sigma_alpha},
-    }
-    if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(
-            y,
-            X,
-            idx["unit"],
-            idx["time"],
-            N,
-            T,
-            gdf=gdf,
-            geometry_type=geometry_type,
-            wide=wide,
-        )
-    return out
+    y, X, idx = _simulate_panel_sdm_fe_core(
+        N=N,
+        T=T,
+        Wd=Wd,
+        beta1=beta,
+        beta2=np.empty(0, dtype=float),
+        rho=0.0,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
+    return _maybe_geodataframe(
+        y=y,
+        X=X,
+        idx=idx,
+        N=N,
+        T=T,
+        Wd=Wd,
+        Wg=Wg,
+        params_true={"beta": beta, "sigma": sigma, "sigma_alpha": sigma_alpha},
+        create_gdf=create_gdf,
+        gdf=gdf,
+        geometry_type=geometry_type,
+        wide=wide,
+    )
 
 
 def simulate_panel_sar_fe(
@@ -132,37 +260,9 @@ def simulate_panel_sar_fe(
 ) -> dict:
     """Simulate SAR panel data in time-first stacking order.
 
-    DGP
-    ---
-    For each period ``t``:
-    ``y_t = (I-rho W)^(-1) (X_t beta + alpha + eps_t)``.
+    DGP: ``y_t = (I - rho W)^-1 (X_t beta + alpha + eps_t)``.
 
-    Parameters
-    ----------
-    N, T : int
-        Number of units and time periods.
-    rho : float, default=0.4
-        Spatial lag coefficient.
-    beta : np.ndarray, optional
-        Coefficients including intercept.
-    sigma : float, default=1.0
-        Idiosyncratic noise scale.
-    sigma_alpha : float, default=0.5
-        Unit effect scale.
-    err_hetero : bool, default=False
-        If True, generate heteroskedastic innovations with
-        observation-specific standard deviations
-        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
-    rng, seed
-        Random state controls.
-    W, gdf, contiguity
-        Spatial structure input and GeoDataFrame neighbor rule.
-
-    Returns
-    -------
-    dict
-        Keys: ``y``, ``X``, ``unit``, ``time``, ``W_dense``, ``W_graph``,
-        ``params_true``.
+    Equivalent to :func:`simulate_panel_sdm_fe` with ``beta2=[]``.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
@@ -173,46 +273,37 @@ def simulate_panel_sar_fe(
         beta = np.array([1.0, 2.0], dtype=float)
     beta = np.asarray(beta, dtype=float)
 
-    alpha = rng.normal(0.0, sigma_alpha, N)
-    A_inv = np.linalg.inv(np.eye(N) - rho * Wd)
-    y_list, X_list = [], []
-    for _ in range(T):
-        Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
-            N
-        )
-        yt = A_inv @ (Xt @ beta + alpha + eps)
-        y_list.append(yt)
-        X_list.append(Xt)
-
-    y, X, idx = _panel_finalize(y_list, X_list, N, T)
-    out = {
-        "y": y,
-        "X": X,
-        "unit": idx["unit"],
-        "time": idx["time"],
-        "W_dense": Wd,
-        "W_graph": Wg,
-        "params_true": {
+    y, X, idx = _simulate_panel_sdm_fe_core(
+        N=N,
+        T=T,
+        Wd=Wd,
+        beta1=beta,
+        beta2=np.empty(0, dtype=float),
+        rho=rho,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
+    return _maybe_geodataframe(
+        y=y,
+        X=X,
+        idx=idx,
+        N=N,
+        T=T,
+        Wd=Wd,
+        Wg=Wg,
+        params_true={
             "rho": rho,
             "beta": beta,
             "sigma": sigma,
             "sigma_alpha": sigma_alpha,
         },
-    }
-    if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(
-            y,
-            X,
-            idx["unit"],
-            idx["time"],
-            N,
-            T,
-            gdf=gdf,
-            geometry_type=geometry_type,
-            wide=wide,
-        )
-    return out
+        create_gdf=create_gdf,
+        gdf=gdf,
+        geometry_type=geometry_type,
+        wide=wide,
+    )
 
 
 def simulate_panel_sem_fe(
@@ -235,36 +326,9 @@ def simulate_panel_sem_fe(
 ) -> dict:
     """Simulate SEM panel data in time-first stacking order.
 
-    DGP
-    ---
-    ``u_t = (I-lam W)^(-1) eps_t`` and ``y_t = X_t beta + alpha + u_t``.
+    DGP: ``u_t = (I - lam W)^-1 eps_t`` and ``y_t = X_t beta + alpha + u_t``.
 
-    Parameters
-    ----------
-    N, T : int
-        Number of units and time periods.
-    lam : float, default=0.4
-        Spatial error coefficient.
-    beta : np.ndarray, optional
-        Coefficients including intercept.
-    sigma : float, default=1.0
-        Idiosyncratic noise scale.
-    sigma_alpha : float, default=0.5
-        Unit effect scale.
-    err_hetero : bool, default=False
-        If True, generate heteroskedastic innovations with
-        observation-specific standard deviations
-        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
-    rng, seed
-        Random state controls.
-    W, gdf, contiguity
-        Spatial structure input and GeoDataFrame neighbor rule.
-
-    Returns
-    -------
-    dict
-        Keys: ``y``, ``X``, ``unit``, ``time``, ``W_dense``, ``W_graph``,
-        ``params_true``.
+    Equivalent to :func:`simulate_panel_sdem_fe` with ``beta2=[]``.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
@@ -275,46 +339,37 @@ def simulate_panel_sem_fe(
         beta = np.array([1.0, 2.0], dtype=float)
     beta = np.asarray(beta, dtype=float)
 
-    alpha = rng.normal(0.0, sigma_alpha, N)
-    A_inv = np.linalg.inv(np.eye(N) - lam * Wd)
-    y_list, X_list = [], []
-    for _ in range(T):
-        Xt = make_design_matrix(rng, N, k=max(len(beta) - 1, 0), add_intercept=True)
-        u = A_inv @ (
-            (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
-        )
-        yt = Xt @ beta + alpha + u
-        y_list.append(yt)
-        X_list.append(Xt)
-
-    y, X, idx = _panel_finalize(y_list, X_list, N, T)
-    out = {
-        "y": y,
-        "X": X,
-        "unit": idx["unit"],
-        "time": idx["time"],
-        "W_dense": Wd,
-        "W_graph": Wg,
-        "params_true": {
+    y, X, idx = _simulate_panel_sdem_fe_core(
+        N=N,
+        T=T,
+        Wd=Wd,
+        beta1=beta,
+        beta2=np.empty(0, dtype=float),
+        lam=lam,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
+    return _maybe_geodataframe(
+        y=y,
+        X=X,
+        idx=idx,
+        N=N,
+        T=T,
+        Wd=Wd,
+        Wg=Wg,
+        params_true={
             "lam": lam,
             "beta": beta,
             "sigma": sigma,
             "sigma_alpha": sigma_alpha,
         },
-    }
-    if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(
-            y,
-            X,
-            idx["unit"],
-            idx["time"],
-            N,
-            T,
-            gdf=gdf,
-            geometry_type=geometry_type,
-            wide=wide,
-        )
-    return out
+        create_gdf=create_gdf,
+        gdf=gdf,
+        geometry_type=geometry_type,
+        wide=wide,
+    )
 
 
 def simulate_panel_sdm_fe(
@@ -337,37 +392,10 @@ def simulate_panel_sdm_fe(
 ) -> dict:
     """Simulate SDM panel FE data.
 
-    DGP
-    ---
-    ``y_t = (I-rho W)^(-1) (X_t beta1 + W X_t[:,1:] beta2 + alpha + eps_t)``.
+    DGP: ``y_t = (I - rho W)^-1 (X_t beta1 + W X_t[:,1:] beta2 + alpha + eps_t)``.
 
-    Parameters
-    ----------
-    N, T : int
-        Number of units and time periods.
-    rho : float, default=0.4
-        Spatial lag coefficient.
-    beta1 : np.ndarray, optional
-        Coefficients on ``X`` including intercept.
-    beta2 : np.ndarray, optional
-        Coefficients on spatially lagged non-intercept regressors.
-    sigma : float, default=1.0
-        Idiosyncratic noise scale.
-    sigma_alpha : float, default=0.5
-        Unit effect scale.
-    err_hetero : bool, default=False
-        If True, generate heteroskedastic innovations with
-        observation-specific standard deviations
-        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
-    rng, seed
-        Random state controls.
-    W, gdf, contiguity
-        Spatial structure input and GeoDataFrame neighbor rule.
-
-    Returns
-    -------
-    dict
-        Includes time-first stacked arrays and panel index columns.
+    This is the general lag-on-y panel-FE DGP; SAR/SLX/OLS panel-FE are
+    nested by setting ``beta2=[]`` and/or ``rho=0``.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, contiguity=contiguity)
@@ -381,52 +409,38 @@ def simulate_panel_sdm_fe(
         beta2 = np.array([0.8], dtype=float)
     beta2 = np.asarray(beta2, dtype=float)
 
-    alpha = rng.normal(0.0, sigma_alpha, N)
-    A_inv = np.linalg.inv(np.eye(N) - rho * Wd)
-    y_list, X_list = [], []
-    for _ in range(T):
-        Xt = make_design_matrix(rng, N, k=max(len(beta1) - 1, 0), add_intercept=True)
-        Wx = Wd @ Xt[:, 1:]
-        if Wx.shape[1] != len(beta2):
-            raise ValueError(
-                "len(beta2) must match number of non-intercept regressors."
-            )
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
-            N
-        )
-        yt = A_inv @ (Xt @ beta1 + Wx @ beta2 + alpha + eps)
-        y_list.append(yt)
-        X_list.append(Xt)
-
-    y, X, idx = _panel_finalize(y_list, X_list, N, T)
-    out = {
-        "y": y,
-        "X": X,
-        "unit": idx["unit"],
-        "time": idx["time"],
-        "W_dense": Wd,
-        "W_graph": Wg,
-        "params_true": {
+    y, X, idx = _simulate_panel_sdm_fe_core(
+        N=N,
+        T=T,
+        Wd=Wd,
+        beta1=beta1,
+        beta2=beta2,
+        rho=rho,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
+    return _maybe_geodataframe(
+        y=y,
+        X=X,
+        idx=idx,
+        N=N,
+        T=T,
+        Wd=Wd,
+        Wg=Wg,
+        params_true={
             "rho": rho,
             "beta1": beta1,
             "beta2": beta2,
             "sigma": sigma,
             "sigma_alpha": sigma_alpha,
         },
-    }
-    if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(
-            y,
-            X,
-            idx["unit"],
-            idx["time"],
-            N,
-            T,
-            gdf=gdf,
-            geometry_type=geometry_type,
-            wide=wide,
-        )
-    return out
+        create_gdf=create_gdf,
+        gdf=gdf,
+        geometry_type=geometry_type,
+        wide=wide,
+    )
 
 
 def simulate_panel_sdem_fe(
@@ -449,38 +463,11 @@ def simulate_panel_sdem_fe(
 ) -> dict:
     """Simulate SDEM panel FE data.
 
-    DGP
-    ---
-    ``u_t = (I-lam W)^(-1) eps_t`` and
+    DGP: ``u_t = (I - lam W)^-1 eps_t`` and
     ``y_t = X_t beta1 + W X_t[:,1:] beta2 + alpha + u_t``.
 
-    Parameters
-    ----------
-    N, T : int
-        Number of units and time periods.
-    lam : float, default=0.4
-        Spatial error coefficient.
-    beta1 : np.ndarray, optional
-        Coefficients on ``X`` including intercept.
-    beta2 : np.ndarray, optional
-        Coefficients on spatially lagged non-intercept regressors.
-    sigma : float, default=1.0
-        Idiosyncratic noise scale.
-    sigma_alpha : float, default=0.5
-        Unit effect scale.
-    err_hetero : bool, default=False
-        If True, generate heteroskedastic innovations with
-        observation-specific standard deviations
-        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
-    rng, seed
-        Random state controls.
-    W, gdf, contiguity
-        Spatial structure input and GeoDataFrame neighbor rule.
-
-    Returns
-    -------
-    dict
-        Includes time-first stacked arrays and panel index columns.
+    This is the general lag-on-error panel-FE DGP; SEM/SLX/OLS panel-FE
+    are nested by setting ``beta2=[]`` and/or ``lam=0``.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, contiguity=contiguity)
@@ -494,52 +481,38 @@ def simulate_panel_sdem_fe(
         beta2 = np.array([0.8], dtype=float)
     beta2 = np.asarray(beta2, dtype=float)
 
-    alpha = rng.normal(0.0, sigma_alpha, N)
-    A_inv = np.linalg.inv(np.eye(N) - lam * Wd)
-    y_list, X_list = [], []
-    for _ in range(T):
-        Xt = make_design_matrix(rng, N, k=max(len(beta1) - 1, 0), add_intercept=True)
-        Wx = Wd @ Xt[:, 1:]
-        if Wx.shape[1] != len(beta2):
-            raise ValueError(
-                "len(beta2) must match number of non-intercept regressors."
-            )
-        u = A_inv @ (
-            (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(N)
-        )
-        yt = Xt @ beta1 + Wx @ beta2 + alpha + u
-        y_list.append(yt)
-        X_list.append(Xt)
-
-    y, X, idx = _panel_finalize(y_list, X_list, N, T)
-    out = {
-        "y": y,
-        "X": X,
-        "unit": idx["unit"],
-        "time": idx["time"],
-        "W_dense": Wd,
-        "W_graph": Wg,
-        "params_true": {
+    y, X, idx = _simulate_panel_sdem_fe_core(
+        N=N,
+        T=T,
+        Wd=Wd,
+        beta1=beta1,
+        beta2=beta2,
+        lam=lam,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
+    return _maybe_geodataframe(
+        y=y,
+        X=X,
+        idx=idx,
+        N=N,
+        T=T,
+        Wd=Wd,
+        Wg=Wg,
+        params_true={
             "lam": lam,
             "beta1": beta1,
             "beta2": beta2,
             "sigma": sigma,
             "sigma_alpha": sigma_alpha,
         },
-    }
-    if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(
-            y,
-            X,
-            idx["unit"],
-            idx["time"],
-            N,
-            T,
-            gdf=gdf,
-            geometry_type=geometry_type,
-            wide=wide,
-        )
-    return out
+        create_gdf=create_gdf,
+        gdf=gdf,
+        geometry_type=geometry_type,
+        wide=wide,
+    )
 
 
 def simulate_panel_slx_fe(
@@ -561,35 +534,9 @@ def simulate_panel_slx_fe(
 ) -> dict:
     """Simulate SLX panel FE data.
 
-    DGP
-    ---
-    ``y_t = X_t beta1 + W X_t[:,1:] beta2 + alpha + eps_t``.
+    DGP: ``y_t = X_t beta1 + W X_t[:,1:] beta2 + alpha + eps_t``.
 
-    Parameters
-    ----------
-    N, T : int
-        Number of units and time periods.
-    beta1 : np.ndarray, optional
-        Coefficients on ``X`` including intercept.
-    beta2 : np.ndarray, optional
-        Coefficients on spatially lagged non-intercept regressors.
-    sigma : float, default=1.0
-        Idiosyncratic noise scale.
-    sigma_alpha : float, default=0.5
-        Unit effect scale.
-    err_hetero : bool, default=False
-        If True, generate heteroskedastic innovations with
-        observation-specific standard deviations
-        :math:`\\sigma_i = \\sigma \\sqrt{1 + \\|x_{it}\\|^2}` per period.
-    rng, seed
-        Random state controls.
-    W, gdf, contiguity
-        Spatial structure input and GeoDataFrame neighbor rule.
-
-    Returns
-    -------
-    dict
-        Includes time-first stacked arrays and panel index columns.
+    Equivalent to :func:`simulate_panel_sdm_fe` with ``rho=0``.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, contiguity=contiguity)
@@ -603,47 +550,34 @@ def simulate_panel_slx_fe(
         beta2 = np.array([0.8], dtype=float)
     beta2 = np.asarray(beta2, dtype=float)
 
-    alpha = rng.normal(0.0, sigma_alpha, N)
-    y_list, X_list = [], []
-    for _ in range(T):
-        Xt = make_design_matrix(rng, N, k=max(len(beta1) - 1, 0), add_intercept=True)
-        Wx = Wd @ Xt[:, 1:]
-        if Wx.shape[1] != len(beta2):
-            raise ValueError(
-                "len(beta2) must match number of non-intercept regressors."
-            )
-        eps = (_hetero_scale(Xt, sigma) if err_hetero else sigma) * rng.standard_normal(
-            N
-        )
-        yt = Xt @ beta1 + Wx @ beta2 + alpha + eps
-        y_list.append(yt)
-        X_list.append(Xt)
-
-    y, X, idx = _panel_finalize(y_list, X_list, N, T)
-    out = {
-        "y": y,
-        "X": X,
-        "unit": idx["unit"],
-        "time": idx["time"],
-        "W_dense": Wd,
-        "W_graph": Wg,
-        "params_true": {
+    y, X, idx = _simulate_panel_sdm_fe_core(
+        N=N,
+        T=T,
+        Wd=Wd,
+        beta1=beta1,
+        beta2=beta2,
+        rho=0.0,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
+    return _maybe_geodataframe(
+        y=y,
+        X=X,
+        idx=idx,
+        N=N,
+        T=T,
+        Wd=Wd,
+        Wg=Wg,
+        params_true={
             "beta1": beta1,
             "beta2": beta2,
             "sigma": sigma,
             "sigma_alpha": sigma_alpha,
         },
-    }
-    if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(
-            y,
-            X,
-            idx["unit"],
-            idx["time"],
-            N,
-            T,
-            gdf=gdf,
-            geometry_type=geometry_type,
-            wide=wide,
-        )
-    return out
+        create_gdf=create_gdf,
+        gdf=gdf,
+        geometry_type=geometry_type,
+        wide=wide,
+    )

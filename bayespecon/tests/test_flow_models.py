@@ -129,13 +129,12 @@ class TestFlowLogdetSeparableIdentity:
         """log|I| = 0, so at rho=0 the log-det should be ~0."""
         import pytensor.tensor as pt
 
+        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.logdet import (
             _flow_logdet_poly_coeffs,
             compute_flow_traces,
             flow_logdet_pytensor,
         )
-
-        from bayespecon.dgp.flows import generate_flow_data
 
         n = 5
         G = generate_flow_data(n=n, seed=0)["G"]
@@ -177,14 +176,13 @@ class TestFlowLogdetSeparableIdentity:
         import pytensor
         import pytensor.tensor as pt
 
+        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.logdet import (
             _flow_logdet_poly_coeffs,
             compute_flow_traces,
             flow_logdet_pytensor,
             logdet_eigenvalue,
         )
-
-        from bayespecon.dgp.flows import generate_flow_data
 
         n = 5
         G = generate_flow_data(n=n, seed=0)["G"]
@@ -1800,8 +1798,8 @@ class TestFlowPanelSpatialEffectsAndPPC:
 
     @pytest.fixture(scope="class")
     def fitted_panel(self):
-        from bayespecon.graph import flow_design_matrix
         from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.graph import flow_design_matrix
         from bayespecon.models.flow_panel import SARFlowPanel
 
         n = 4
@@ -2287,7 +2285,7 @@ class TestFlowLogLikelihood:
             col_names=self.poi["col_names"],
             trace_seed=0,
         )
-        idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
+        idata = m.fit(draws=200, tune=300, chains=1, progressbar=False, random_seed=0)
         # PoissonFlow uses self.poi's own G (not self.G); validate against m._N.
         import arviz as az
 
@@ -2301,6 +2299,7 @@ class TestFlowLogLikelihood:
     def test_compare_flow_models(self):
         """az.compare runs across SARFlow/SARFlowSeparable/OLSFlow."""
         import arviz as az
+
         from bayespecon.models.flow import OLSFlow, SARFlow, SARFlowSeparable
 
         m_sar = SARFlow(

@@ -59,6 +59,88 @@ def _attach_optional_gdf(
     )
 
 
+def _simulate_sdm_core(
+    *,
+    nobs: int,
+    Wd: np.ndarray | None,
+    X: np.ndarray,
+    beta1: np.ndarray,
+    beta2: np.ndarray,
+    rho: float,
+    sigma: float,
+    err_hetero: bool,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """SDM kernel: ``y = (I - rho W)^-1 (X beta1 + WX beta2 + eps)``.
+
+    Allows degenerate cases that nest the simpler models:
+
+    * ``len(beta2) == 0`` skips the WX term (collapses SDM -> SAR / OLS).
+    * ``rho == 0`` skips the spatial solve (collapses SDM -> SLX / OLS).
+    * ``Wd is None`` is permitted only when both restrictions above hold,
+      enabling the OLS path with no weights matrix.
+    """
+    has_wx = len(beta2) > 0
+    if has_wx:
+        if Wd is None:
+            raise ValueError("W must be supplied when beta2 is non-empty.")
+        Wx = Wd @ X[:, 1:]
+        if Wx.shape[1] != len(beta2):
+            raise ValueError(
+                "len(beta2) must match number of non-intercept regressors."
+            )
+        wx_beta = Wx @ beta2
+    else:
+        wx_beta = 0.0
+
+    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    rhs = X @ beta1 + wx_beta + eps
+    if Wd is None or rho == 0.0:
+        return rhs
+    _check_rho_stability(rho, Wd, name="rho")
+    return np.linalg.solve(np.eye(nobs) - rho * Wd, rhs)
+
+
+def _simulate_sdem_core(
+    *,
+    nobs: int,
+    Wd: np.ndarray | None,
+    X: np.ndarray,
+    beta1: np.ndarray,
+    beta2: np.ndarray,
+    lam: float,
+    sigma: float,
+    err_hetero: bool,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """SDEM kernel: ``y = X beta1 + WX beta2 + (I - lam W)^-1 eps``.
+
+    Same nesting semantics as :func:`_simulate_sdm_core`: ``beta2=[]``
+    drops the WX term, ``lam=0`` drops the error solve, and ``Wd=None``
+    is allowed only when both restrictions hold.
+    """
+    has_wx = len(beta2) > 0
+    if has_wx:
+        if Wd is None:
+            raise ValueError("W must be supplied when beta2 is non-empty.")
+        Wx = Wd @ X[:, 1:]
+        if Wx.shape[1] != len(beta2):
+            raise ValueError(
+                "len(beta2) must match number of non-intercept regressors."
+            )
+        wx_beta = Wx @ beta2
+    else:
+        wx_beta = 0.0
+
+    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    if Wd is None or lam == 0.0:
+        u = eps
+    else:
+        _check_rho_stability(lam, Wd, name="lam")
+        u = np.linalg.solve(np.eye(nobs) - lam * Wd, eps)
+    return X @ beta1 + wx_beta + u
+
+
 def simulate_sar(
     n: int | None = None,
     W=None,
@@ -113,6 +195,11 @@ def simulate_sar(
     -------
     dict
         Keys: ``y``, ``X``, ``W_dense``, ``W_graph``, ``params_true``.
+
+    Notes
+    -----
+    Equivalent to ``simulate_sdm`` with ``beta2=[]`` (no WX terms); see
+    :func:`simulate_sdm` for the unified Spatial Durbin form.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
@@ -123,9 +210,17 @@ def simulate_sar(
     beta = np.asarray(beta, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
-    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
-    _check_rho_stability(rho, Wd, name="rho")
-    y = np.linalg.solve(np.eye(nobs) - rho * Wd, X @ beta + eps)
+    y = _simulate_sdm_core(
+        nobs=nobs,
+        Wd=Wd,
+        X=X,
+        beta1=beta,
+        beta2=np.empty(0, dtype=float),
+        rho=rho,
+        sigma=sigma,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
     out = {
         "y": y,
         "X": X,
@@ -202,6 +297,12 @@ def simulate_ols(
           intercept in the first column.
         - ``params_true`` : dict with ``beta`` and ``sigma``.
         - ``gdf`` : GeoDataFrame (only present when ``create_gdf=True``).
+
+    Notes
+    -----
+    Equivalent to ``simulate_sdm`` with ``rho=0`` and ``beta2=[]``; the
+    spatial weights matrix is ignored even when supplied. See
+    :func:`simulate_sdm` for the unified Spatial Durbin form.
     """
     rng = ensure_rng(rng, seed)
 
@@ -219,8 +320,17 @@ def simulate_ols(
     beta = np.asarray(beta, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
-    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
-    y = X @ beta + eps
+    y = _simulate_sdm_core(
+        nobs=nobs,
+        Wd=None,
+        X=X,
+        beta1=beta,
+        beta2=np.empty(0, dtype=float),
+        rho=0.0,
+        sigma=sigma,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
 
     out: dict = {
         "y": y,
@@ -258,6 +368,11 @@ def simulate_sem(
     -------
     dict
         Keys: ``y``, ``X``, ``W_dense``, ``W_graph``, ``params_true``.
+
+    Notes
+    -----
+    Equivalent to ``simulate_sdem`` with ``beta2=[]`` (no WX terms); see
+    :func:`simulate_sdem` for the unified Spatial Durbin Error form.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
@@ -268,10 +383,17 @@ def simulate_sem(
     beta = np.asarray(beta, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
-    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
-    _check_rho_stability(lam, Wd, name="lam")
-    u = np.linalg.solve(np.eye(nobs) - lam * Wd, eps)
-    y = X @ beta + u
+    y = _simulate_sdem_core(
+        nobs=nobs,
+        Wd=Wd,
+        X=X,
+        beta1=beta,
+        beta2=np.empty(0, dtype=float),
+        lam=lam,
+        sigma=sigma,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
     out = {
         "y": y,
         "X": X,
@@ -320,14 +442,16 @@ def simulate_slx(
     beta2 = np.asarray(beta2, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta1) - 1, 0), add_intercept=True)
-    Wx = Wd @ X[:, 1:]
-    if Wx.shape[1] != len(beta2):
-        raise ValueError("len(beta2) must match number of non-intercept regressors.")
-
-    y = (
-        X @ beta1
-        + Wx @ beta2
-        + (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    y = _simulate_sdm_core(
+        nobs=nobs,
+        Wd=Wd,
+        X=X,
+        beta1=beta1,
+        beta2=beta2,
+        rho=0.0,
+        sigma=sigma,
+        err_hetero=err_hetero,
+        rng=rng,
     )
     out = {
         "y": y,
@@ -378,13 +502,17 @@ def simulate_sdm(
     beta2 = np.asarray(beta2, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta1) - 1, 0), add_intercept=True)
-    Wx = Wd @ X[:, 1:]
-    if Wx.shape[1] != len(beta2):
-        raise ValueError("len(beta2) must match number of non-intercept regressors.")
-
-    eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
-    _check_rho_stability(rho, Wd, name="rho")
-    y = np.linalg.solve(np.eye(nobs) - rho * Wd, X @ beta1 + Wx @ beta2 + eps)
+    y = _simulate_sdm_core(
+        nobs=nobs,
+        Wd=Wd,
+        X=X,
+        beta1=beta1,
+        beta2=beta2,
+        rho=rho,
+        sigma=sigma,
+        err_hetero=err_hetero,
+        rng=rng,
+    )
     out = {
         "y": y,
         "X": X,
@@ -434,16 +562,17 @@ def simulate_sdem(
     beta2 = np.asarray(beta2, dtype=float)
 
     X = make_design_matrix(rng, nobs, k=max(len(beta1) - 1, 0), add_intercept=True)
-    Wx = Wd @ X[:, 1:]
-    if Wx.shape[1] != len(beta2):
-        raise ValueError("len(beta2) must match number of non-intercept regressors.")
-
-    u = np.linalg.solve(
-        np.eye(nobs) - lam * Wd,
-        (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs),
+    y = _simulate_sdem_core(
+        nobs=nobs,
+        Wd=Wd,
+        X=X,
+        beta1=beta1,
+        beta2=beta2,
+        lam=lam,
+        sigma=sigma,
+        err_hetero=err_hetero,
+        rng=rng,
     )
-    _check_rho_stability(lam, Wd, name="lam")
-    y = X @ beta1 + Wx @ beta2 + u
     out = {
         "y": y,
         "X": X,

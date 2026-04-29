@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -20,6 +20,7 @@ from ..logdet import (
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
 from .base import _is_row_standardized_csr
 
 
@@ -697,6 +698,7 @@ class SpatialPanelModel(ABC):
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
+        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Sample the posterior for the panel model.
@@ -713,6 +715,10 @@ class SpatialPanelModel(ABC):
             NUTS target acceptance probability.
         random_seed : int, optional
             Random seed used by PyMC.
+        sampler : str, optional
+            NUTS backend (``"pymc"``, ``"blackjax"``, ``"numpyro"``,
+            ``"nutpie"``, or ``None`` for the package default).  See
+            :meth:`bayespecon.models.base.BaseSpatialModel.fit`.
         **sample_kwargs
             Extra keyword arguments forwarded to :func:`pymc.sample`.
 
@@ -721,8 +727,14 @@ class SpatialPanelModel(ABC):
         arviz.InferenceData
             Posterior samples and diagnostics.
         """
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
         model = self._build_pymc_model()
         self._pymc_model = model
+        if "idata_kwargs" in sample_kwargs:
+            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
+                sample_kwargs["idata_kwargs"], model, nuts_sampler
+            )
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -730,6 +742,7 @@ class SpatialPanelModel(ABC):
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
         return self._idata
@@ -922,49 +935,14 @@ class SpatialPanelModel(ABC):
         spatial_diagnostics_decision : Model-selection decision based on
             the test results.
         """
-        from ..diagnostics.bayesian_lmtests import BayesianLMTestResult
+        from .base import SpatialModel
 
         self._require_fit()
+        return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
 
-        rows: dict[str, dict] = {}
-        raw_results: dict[str, BayesianLMTestResult] = {}
-
-        for test_fn, label in self._spatial_diagnostics_tests:
-            try:
-                result = test_fn(self)
-                rows[label] = {
-                    "statistic": result.mean,
-                    "median": result.median,
-                    "df": result.df,
-                    "p_value": result.bayes_pvalue,
-                    "ci_lower": result.credible_interval[0],
-                    "ci_upper": result.credible_interval[1],
-                }
-                raw_results[label] = result
-            except (ValueError, np.linalg.LinAlgError) as exc:
-                rows[label] = {
-                    "statistic": np.nan,
-                    "median": np.nan,
-                    "df": np.nan,
-                    "p_value": np.nan,
-                    "ci_lower": np.nan,
-                    "ci_upper": np.nan,
-                    "error": str(exc),
-                }
-
-        df = pd.DataFrame.from_dict(rows, orient="index")
-        df.index.name = "test"
-
-        idata = self._idata
-        n_draws = int(idata.posterior.sizes.get("draw", 0))
-        n_chains = int(idata.posterior.sizes.get("chain", 1))
-        df.attrs["model_type"] = self.__class__.__name__
-        df.attrs["n_draws"] = n_draws * n_chains
-        df.attrs["_raw_results"] = raw_results
-
-        return df
-
-    def spatial_diagnostics_decision(self, alpha: float = 0.05) -> str:
+    def spatial_diagnostics_decision(
+        self, alpha: float = 0.05, format: str = "graphviz"
+    ) -> Any:
         """Return a model-selection decision from Bayesian LM test results.
 
         Implements the decision tree from :cite:t:`koley2024UseNot`
@@ -976,11 +954,21 @@ class SpatialPanelModel(ABC):
         ----------
         alpha : float, default 0.05
             Significance level for the Bayesian p-values.
+        format : {"graphviz", "ascii", "model"}, default "graphviz"
+            Output format. ``"model"`` returns the recommended-model name
+            string. ``"ascii"`` returns an indented box-drawing rendering
+            of the full decision tree with the chosen path highlighted.
+            ``"graphviz"`` returns a :class:`graphviz.Digraph` object that
+            renders inline in Jupyter; if the optional ``graphviz`` package
+            is not installed a :class:`UserWarning` is issued and the
+            ASCII rendering is returned instead.
 
         Returns
         -------
-        str
-            Recommended model name (e.g. ``"SARPanelFE"``, ``"SDMPanelFE"``).
+        str or graphviz.Digraph
+            Recommended model name when ``format="model"``, an ASCII tree
+            string when ``format="ascii"``, or a ``graphviz.Digraph`` when
+            ``format="graphviz"`` (with ASCII fallback on missing dep).
 
         See Also
         --------
@@ -991,7 +979,10 @@ class SpatialPanelModel(ABC):
         :cite:t:`koley2024UseNot`, :cite:t:`anselin1996SimpleDiagnostic`,
         :cite:t:`elhorst2014SpatialEconometrics`
         """
+        from ..diagnostics import _decision_trees as _dt
+
         diag = self.spatial_diagnostics()
+        model_type = self.__class__.__name__
 
         def _sig(test_name: str) -> bool:
             if test_name not in diag.index:
@@ -999,96 +990,34 @@ class SpatialPanelModel(ABC):
             pval = diag.loc[test_name, "p_value"]
             return not np.isnan(pval) and pval < alpha
 
-        model_type = self.__class__.__name__
+        def _lag_le_error() -> bool:
+            return (
+                diag.loc["Panel-LM-Lag", "p_value"]
+                <= diag.loc["Panel-LM-Error", "p_value"]
+            )
 
-        # Determine the "FE" or "RE" suffix for the recommended model
-        suffix = "FE" if "FE" in model_type else "RE" if "RE" in model_type else ""
+        spec = _dt.get_panel_spec(model_type)
+        decision, path = _dt.evaluate(
+            spec,
+            sig_lookup=_sig,
+            predicate_lookup={"panel_lag_pval_le_error_pval": _lag_le_error},
+        )
 
-        # --- OLSPanelFE / OLSPanelRE decision tree ---
-        if model_type.startswith("OLSPanel"):
-            lag = _sig("Panel-LM-Lag")
-            error = _sig("Panel-LM-Error")
-            sdm_joint = _sig("Panel-LM-SDM-Joint")
-            slx_err_joint = _sig("Panel-LM-SLX-Error-Joint")
+        p_values: dict[str, float] = {}
+        for test_name in diag.index:
+            pv = diag.loc[test_name, "p_value"]
+            if not np.isnan(pv):
+                p_values[str(test_name)] = float(pv)
 
-            if sdm_joint or slx_err_joint:
-                if lag and not error:
-                    return f"SARPanel{suffix}"
-                elif error and not lag:
-                    return f"SEMPanel{suffix}"
-                elif lag and error:
-                    if (
-                        diag.loc["Panel-LM-Lag", "p_value"]
-                        <= diag.loc["Panel-LM-Error", "p_value"]
-                    ):
-                        return f"SARPanel{suffix}"
-                    else:
-                        return f"SEMPanel{suffix}"
-                else:
-                    return model_type
-            else:
-                if lag and not error:
-                    return f"SARPanel{suffix}"
-                elif error and not lag:
-                    return f"SEMPanel{suffix}"
-                elif lag and error:
-                    if (
-                        diag.loc["Panel-LM-Lag", "p_value"]
-                        <= diag.loc["Panel-LM-Error", "p_value"]
-                    ):
-                        return f"SARPanel{suffix}"
-                    else:
-                        return f"SEMPanel{suffix}"
-                else:
-                    return model_type
-
-        # --- SARPanelFE/RE decision tree ---
-        elif model_type.startswith("SARPanel"):
-            if _sig("Panel-LM-Error"):
-                return f"SARARPanel{suffix}"
-            elif _sig("Panel-Robust-LM-WX") or _sig("Panel-LM-WX"):
-                return f"SDMPanel{suffix}"
-            else:
-                return model_type
-
-        # --- SEMPanelFE/RE decision tree ---
-        elif model_type.startswith("SEMPanel"):
-            if _sig("Panel-LM-Lag"):
-                return f"SARARPanel{suffix}"
-            elif _sig("Panel-LM-WX"):
-                return f"SDEMPanel{suffix}"
-            else:
-                return model_type
-
-        # --- SLXPanelFE decision tree ---
-        elif model_type.startswith("SLXPanel"):
-            rlag = _sig("Panel-Robust-LM-Lag-SDM")
-            rerr = _sig("Panel-Robust-LM-Error-SDEM")
-            if rlag and rerr:
-                return f"MANSARPanel{suffix}"
-            elif rlag:
-                return f"SDMPanel{suffix}"
-            elif rerr:
-                return f"SDEMPanel{suffix}"
-            else:
-                return model_type
-
-        # --- SDMPanelFE decision tree ---
-        elif model_type.startswith("SDMPanel"):
-            if _sig("Panel-LM-Error"):
-                return f"MANSARPanel{suffix}"
-            else:
-                return model_type
-
-        # --- SDEMPanelFE decision tree ---
-        elif model_type.startswith("SDEMPanel"):
-            if _sig("Panel-LM-Lag"):
-                return f"MANSARPanel{suffix}"
-            else:
-                return model_type
-
-        else:
-            return model_type
+        return _dt.render(
+            spec,
+            path,
+            decision,
+            p_values=p_values,
+            alpha=alpha,
+            fmt=format,
+            title=f"{model_type} decision tree (alpha={alpha})",
+        )
 
     def spatial_effects(
         self, return_posterior_samples: bool = False

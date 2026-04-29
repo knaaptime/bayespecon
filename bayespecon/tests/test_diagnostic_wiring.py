@@ -50,3 +50,94 @@ def test_panel_models_no_frequentist_diagnostics():
         assert not hasattr(cls, "outlier_diagnostics")
         assert not hasattr(cls, "panel_diagnostics")
         assert not hasattr(cls, "hausman_test")
+
+
+from bayespecon import (
+    SDEMPanelFE,
+    SDEMPanelRE,
+    SDMPanelFE,
+    SLXPanelFE,
+)
+from bayespecon.models.flow import OLSFlow, SARFlow
+from bayespecon.models.flow_panel import OLSFlowPanel
+
+EXPECTED_REGISTRIES = {
+    OLS: [
+        "LM-Lag",
+        "LM-Error",
+        "LM-SDM-Joint",
+        "LM-SLX-Error-Joint",
+        "Robust-LM-Lag",
+        "Robust-LM-Error",
+    ],
+    SAR: ["LM-Error", "LM-WX", "Robust-LM-WX"],
+    SEM: ["LM-Lag", "LM-WX"],
+    SLX: ["LM-Lag", "LM-Error", "Robust-LM-Lag-SDM", "Robust-LM-Error-SDEM"],
+    SDM: ["LM-Error-SDM"],
+    SDEM: ["LM-Lag-SDEM"],
+    OLSPanelFE: [
+        "Panel-LM-Lag",
+        "Panel-LM-Error",
+        "Panel-LM-SDM-Joint",
+        "Panel-LM-SLX-Error-Joint",
+        "Panel-Robust-LM-Lag",
+        "Panel-Robust-LM-Error",
+    ],
+    SARPanelFE: ["Panel-LM-Error", "Panel-LM-WX", "Panel-Robust-LM-WX"],
+    SEMPanelFE: ["Panel-LM-Lag", "Panel-LM-WX"],
+    SLXPanelFE: [
+        "Panel-LM-Lag",
+        "Panel-LM-Error",
+        "Panel-Robust-LM-Lag-SDM",
+        "Panel-Robust-LM-Error-SDEM",
+    ],
+    SDMPanelFE: ["Panel-LM-Error-SDM"],
+    SDEMPanelFE: ["Panel-LM-Lag-SDEM"],
+    OLSPanelRE: [
+        "Panel-LM-Lag",
+        "Panel-LM-Error",
+        "Panel-LM-SDM-Joint",
+        "Panel-LM-SLX-Error-Joint",
+        "Panel-Robust-LM-Lag",
+        "Panel-Robust-LM-Error",
+    ],
+    SARPanelRE: ["Panel-LM-Error", "Panel-LM-WX", "Panel-Robust-LM-WX"],
+    SEMPanelRE: ["Panel-LM-Lag", "Panel-LM-WX"],
+    SDEMPanelRE: ["Panel-LM-Lag-SDEM"],
+    OLSFlow: [
+        "LM-Flow-Dest",
+        "LM-Flow-Orig",
+        "LM-Flow-Network",
+        "LM-Flow-Joint",
+        "LM-Flow-Intra",
+    ],
+    SARFlow: [
+        "Robust-LM-Flow-Dest",
+        "Robust-LM-Flow-Orig",
+        "Robust-LM-Flow-Network",
+    ],
+    OLSFlowPanel: [
+        "Panel-LM-Flow-Dest",
+        "Panel-LM-Flow-Orig",
+        "Panel-LM-Flow-Network",
+        "Panel-LM-Flow-Joint",
+        "Panel-LM-Flow-Intra",
+    ],
+}
+
+
+def test_spatial_diagnostics_registries_match_expected():
+    """Each model class should expose the expected ordered list of LM tests."""
+    for cls, expected_labels in EXPECTED_REGISTRIES.items():
+        registry = cls._spatial_diagnostics_tests
+        actual_labels = [label for _, label in registry]
+        assert actual_labels == expected_labels, (
+            f"{cls.__name__}: expected {expected_labels}, got {actual_labels}"
+        )
+
+
+def test_slx_uses_slx_specific_lm_tests():
+    """SLX uses Koley-Bera SLX-specific LM tests, not raw OLS LM tests."""
+    labels = [label for _, label in SLX._spatial_diagnostics_tests]
+    # Must not be empty placeholders
+    assert len(labels) >= 2

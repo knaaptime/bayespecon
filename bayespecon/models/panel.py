@@ -54,6 +54,51 @@ class OLSPanelFE(SpatialPanelModel):
     variance exists.
     """
 
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_test"],
+            ).bayesian_panel_lm_lag_test(m),
+            "Panel-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_test"],
+            ).bayesian_panel_lm_error_test(m),
+            "Panel-LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_sdm_joint_test"],
+            ).bayesian_panel_lm_sdm_joint_test(m),
+            "Panel-LM-SDM-Joint",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_slx_error_joint_test"],
+            ).bayesian_panel_lm_slx_error_joint_test(m),
+            "Panel-LM-SLX-Error-Joint",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_lag_test"],
+            ).bayesian_panel_robust_lm_lag_test(m),
+            "Panel-Robust-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_error_test"],
+            ).bayesian_panel_robust_lm_error_test(m),
+            "Panel-Robust-LM-Error",
+        ),
+    ]
+
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for pooled/FE panel regression.
 
@@ -164,6 +209,30 @@ class SARPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_test"],
+            ).bayesian_panel_lm_error_test(m),
+            "Panel-LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_wx_test"],
+            ).bayesian_panel_lm_wx_test(m),
+            "Panel-LM-WX",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_wx_test"],
+            ).bayesian_panel_robust_lm_wx_test(m),
+            "Panel-Robust-LM-WX",
+        ),
+    ]
 
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for SAR panel regression.
@@ -328,6 +397,23 @@ class SEMPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_test"],
+            ).bayesian_panel_lm_lag_test(m),
+            "Panel-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_wx_sem_test"],
+            ).bayesian_panel_lm_wx_sem_test(m),
+            "Panel-LM-WX",
+        ),
+    ]
 
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for SEM panel regression.
@@ -524,6 +610,16 @@ class SDMPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_sdm_test"],
+            ).bayesian_panel_lm_error_sdm_test(m),
+            "Panel-LM-Error-SDM",
+        ),
+    ]
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
@@ -728,6 +824,16 @@ class SDEMPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_sdem_test"],
+            ).bayesian_panel_lm_lag_sdem_test(m),
+            "Panel-LM-Lag-SDEM",
+        ),
+    ]
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
@@ -955,6 +1061,37 @@ class SLXPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_test"],
+            ).bayesian_panel_lm_lag_test(m),
+            "Panel-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_test"],
+            ).bayesian_panel_lm_error_test(m),
+            "Panel-LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_lag_sdm_test"],
+            ).bayesian_panel_robust_lm_lag_sdm_test(m),
+            "Panel-Robust-LM-Lag-SDM",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_error_sdem_test"],
+            ).bayesian_panel_robust_lm_error_sdem_test(m),
+            "Panel-Robust-LM-Error-SDEM",
+        ),
+    ]
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]

@@ -139,6 +139,7 @@ def _make_mock_ols_model_with_wx(y, X, WX, W_sparse, beta_noise=0.1, draws=100):
     model._WX = WX
     model._Wy = Wy
     model._W_sparse = W_sparse
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
 
@@ -786,13 +787,15 @@ class TestBayesianPanelRobustLMErrorSDEMTest:
 
 
 class TestSpatialDiagnosticsMethod:
-    """Test the spatial_diagnostics() and spatial_diagnostics_decision()
+    """Test the spatial_diagnostics() and spatial_diagnostics_decision(format="model")
     methods on model classes."""
 
     def _make_model_with_class(
         self, y, X, W_sparse, cls, WX=None, beta_noise=0.1, draws=100, rho_noise=None
     ):
         """Build a mock model that has the right class for spatial_diagnostics."""
+        from bayespecon.models import SDEM, SDM
+
         n, k = X.shape
         beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
         beta_samples = np.tile(beta_ols, (draws, 1))
@@ -801,10 +804,22 @@ class TestSpatialDiagnosticsMethod:
 
         Wy = np.asarray(W_sparse @ y, dtype=np.float64)
 
-        posterior = {"beta": beta_samples[:, None, :], "sigma": np.ones(draws)[:, None]}
+        # Pad beta to match k + k_wx if WX has columns and class needs it
+        k_wx = 0 if WX is None else WX.shape[1]
+        if cls in (SDM, SDEM) and k_wx > 0:
+            extra = rng.normal(scale=beta_noise, size=(draws, k_wx))
+            beta_full = np.hstack([beta_samples, extra])
+        else:
+            beta_full = beta_samples
+
+        posterior = {"beta": beta_full[:, None, :], "sigma": np.ones(draws)[:, None]}
         if rho_noise is not None:
             rho_samples = rng.normal(scale=rho_noise, size=draws)
             posterior["rho"] = rho_samples[:, None]
+        if cls is SDM:
+            posterior.setdefault("rho", rng.normal(scale=0.05, size=draws)[:, None])
+        if cls is SDEM:
+            posterior["lam"] = rng.normal(scale=0.05, size=draws)[:, None]
 
         idata = az.from_dict(
             posterior=posterior,
@@ -827,7 +842,7 @@ class TestSpatialDiagnosticsMethod:
         return obj
 
     def test_ols_spatial_diagnostics_returns_dataframe(self):
-        """OLS.spatial_diagnostics() should return a DataFrame with 4 tests."""
+        """OLS.spatial_diagnostics() should return a DataFrame with 6 tests."""
         from bayespecon.models import OLS
 
         y, X, W_dense, W_sparse = make_sar_sem_data(n=16)
@@ -836,12 +851,14 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 4
+        assert len(df) == 6
         assert set(df.index) == {
             "LM-Lag",
             "LM-Error",
             "LM-SDM-Joint",
             "LM-SLX-Error-Joint",
+            "Robust-LM-Lag",
+            "Robust-LM-Error",
         }
         assert "statistic" in df.columns
         assert "p_value" in df.columns
@@ -896,7 +913,7 @@ class TestSpatialDiagnosticsMethod:
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 1
-        assert df.index[0] == "LM-Error"
+        assert df.index[0] == "LM-Error-SDM"
 
     def test_sdem_spatial_diagnostics_returns_dataframe(self):
         """SDEM.spatial_diagnostics() should return a DataFrame with 1 test."""
@@ -909,7 +926,7 @@ class TestSpatialDiagnosticsMethod:
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 1
-        assert df.index[0] == "LM-Lag"
+        assert df.index[0] == "LM-Lag-SDEM"
 
     def test_sem_spatial_diagnostics_returns_dataframe(self):
         """SEM.spatial_diagnostics() should return a DataFrame with 2 tests."""
@@ -925,13 +942,13 @@ class TestSpatialDiagnosticsMethod:
         assert set(df.index) == {"LM-Lag", "LM-WX"}
 
     def test_spatial_diagnostics_decision_returns_string(self):
-        """spatial_diagnostics_decision() should return a model name string."""
+        """spatial_diagnostics_decision(format="model") should return a model name string."""
         from bayespecon.models import OLS
 
         y, X, W_dense, W_sparse = make_sar_sem_data(n=16)
         model = self._make_model_with_class(y, X, W_sparse, OLS)
 
-        decision = model.spatial_diagnostics_decision()
+        decision = model.spatial_diagnostics_decision(format="model")
         assert isinstance(decision, str)
         assert len(decision) > 0
 
@@ -943,7 +960,7 @@ class TestSpatialDiagnosticsMethod:
         model = self._make_model_with_class(y, X, W_sparse, OLS)
 
         # With very small n and random data, p-values are often > 0.05
-        decision = model.spatial_diagnostics_decision(alpha=0.001)
+        decision = model.spatial_diagnostics_decision(alpha=0.001, format="model")
         assert decision == "OLS"
 
     def test_spatial_diagnostics_requires_fit(self):
@@ -978,9 +995,84 @@ class TestSpatialDiagnosticsMethod:
 
         df = model.spatial_diagnostics()
         raw = df.attrs.get("_raw_results", {})
-        assert len(raw) == 4
+        assert len(raw) == 6
         for label, result in raw.items():
             assert isinstance(result, BayesianLMTestResult)
+
+    # ------------------------------------------------------------------
+    # Decision-tree branch coverage (regression tests for the
+    # SDM/SDEM lookup fixes and the OLS robust-pair upgrade).
+    # ------------------------------------------------------------------
+
+    def test_sdm_decision_uses_lm_error_sdm(self, monkeypatch):
+        """SDM decision must consult LM-Error-SDM (not the old LM-Error)."""
+        from bayespecon.models import SDM
+
+        y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
+        model = self._make_model_with_class(y, X, W_sparse, SDM, WX=WX)
+
+        # Monkeypatch spatial_diagnostics to return a controlled DataFrame
+        df = pd.DataFrame(
+            {"p_value": [0.001]},
+            index=["LM-Error-SDM"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
+        )
+
+        df2 = pd.DataFrame({"p_value": [0.9]}, index=["LM-Error-SDM"])
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df2)
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
+
+    def test_sdem_decision_uses_lm_lag_sdem(self, monkeypatch):
+        """SDEM decision must consult LM-Lag-SDEM (not the old LM-Lag)."""
+        from bayespecon.models import SDEM
+
+        y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
+        model = self._make_model_with_class(y, X, W_sparse, SDEM, WX=WX)
+
+        df = pd.DataFrame({"p_value": [0.001]}, index=["LM-Lag-SDEM"])
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
+        )
+
+        df2 = pd.DataFrame({"p_value": [0.9]}, index=["LM-Lag-SDEM"])
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df2)
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
+
+    def test_ols_decision_uses_robust_pair_when_both_naive_significant(
+        self, monkeypatch
+    ):
+        """OLS branch should disambiguate via Robust-LM-Lag/Robust-LM-Error."""
+        from bayespecon.models import OLS
+
+        y, X, W_dense, W_sparse = make_sar_sem_data(n=16)
+        model = self._make_model_with_class(y, X, W_sparse, OLS)
+
+        def make_df(rlag_p, rerr_p):
+            return pd.DataFrame(
+                {"p_value": [0.001, 0.001, rlag_p, rerr_p]},
+                index=[
+                    "LM-Lag",
+                    "LM-Error",
+                    "Robust-LM-Lag",
+                    "Robust-LM-Error",
+                ],
+            )
+
+        # Robust-Lag fires only -> SAR
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.001, 0.9))
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SAR"
+
+        # Robust-Error fires only -> SEM
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.9, 0.001))
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SEM"
+
+        # Both robust fire -> SARAR
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.001, 0.001))
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SARAR"
 
 
 # ---------------------------------------------------------------------------

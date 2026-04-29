@@ -18,6 +18,7 @@ dependencies:
   - pytest-xdist
   - openpyxl
   - lazy_loader
+  - fastprogress
 
   # docs
   - numpydoc

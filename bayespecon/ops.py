@@ -138,9 +138,11 @@ gradient step.  Memory: :math:`O(n^2)` vs :math:`O(N^2) = O(n^4)`.
 from __future__ import annotations
 
 import itertools
+import os
 
 import numpy as np
 import pytensor.tensor as pt
+import scipy.linalg as sla
 import scipy.sparse as sp
 from pytensor.graph.basic import Apply
 
@@ -148,6 +150,67 @@ from pytensor.graph.basic import Apply
 # pytensor does not incorrectly merge two distinct Op instances during graph
 # optimisation (relevant when multiple flow models exist in one Python session).
 _op_id_counter = itertools.count()
+
+
+# ---------------------------------------------------------------------------
+# Dense-LAPACK fast path for the Kronecker family
+# ---------------------------------------------------------------------------
+#
+# For n in the regime that fits in memory (n^2 weights matrix), calling
+# ``scipy.linalg.lu_factor`` (LAPACK ``dgetrf``) on the dense ``L_k = I - rho_k W``
+# is several times faster than ``scipy.sparse.linalg.splu``: SuperLU spends
+# most of its time in symbolic factorisation overhead at these sizes, whereas
+# ``dgetrf`` is a single BLAS-3 kernel.  The forward and adjoint passes share
+# the same factorisation (``lu_solve(..., trans=0)`` vs ``trans=1``), so one
+# factorisation per Kronecker leg covers both directions.
+#
+# The threshold below caps the dense path so very large problems still use
+# SuperLU.  Tunable via the ``BAYESPECON_KRON_DENSE_MAX`` env var.
+
+
+def _kron_dense_max() -> int:
+    """Largest ``n`` for which the Kronecker Ops use dense LAPACK over SuperLU."""
+    try:
+        return int(os.environ.get("BAYESPECON_KRON_DENSE_MAX", "512"))
+    except (TypeError, ValueError):
+        return 512
+
+
+class _DenseLU:
+    """Lightweight wrapper exposing the same ``solve`` API as ``SuperLU``.
+
+    Holds a LAPACK ``(lu, piv)`` pair from :func:`scipy.linalg.lu_factor`
+    and dispatches via :func:`scipy.linalg.lu_solve`.  ``trans="T"`` maps to
+    LAPACK ``trans=1`` (transpose, no conjugate, real matrices).
+    """
+
+    __slots__ = ("_lu", "_piv")
+
+    def __init__(self, A_dense: np.ndarray) -> None:
+        self._lu, self._piv = sla.lu_factor(
+            A_dense, overwrite_a=False, check_finite=False
+        )
+
+    def solve(self, rhs: np.ndarray, trans: str = "N") -> np.ndarray:
+        t = 1 if trans == "T" else 0
+        return sla.lu_solve((self._lu, self._piv), rhs, trans=t, check_finite=False)
+
+
+def _factor_kron_factor(
+    W_dense: np.ndarray, W_sparse: sp.csr_matrix, rho: float, n: int
+):
+    """Return an LU factorisation of ``I - rho * W`` using dense LAPACK when small.
+
+    Falls back to ``scipy.sparse.linalg.splu`` for ``n > BAYESPECON_KRON_DENSE_MAX``.
+    The returned object exposes ``.solve(rhs, trans=...)`` regardless of path.
+    """
+    if n <= _kron_dense_max() and W_dense is not None:
+        L = np.eye(n, dtype=np.float64) - float(rho) * W_dense
+        return _DenseLU(L)
+    L_sparse = (
+        sp.eye(n, format="csr", dtype=np.float64) - float(rho) * W_sparse
+    ).tocsc()
+    return sp.linalg.splu(L_sparse)
 
 
 class _SparseFlowVJPOp(pt.Op):
@@ -596,6 +659,8 @@ class _KroneckerFlowVJPOp(pt.Op):
         self._W = W.tocsr().astype(np.float64)
         self._n = n
         self._I = sp.eye(n, format="csr", dtype=np.float64)
+        # Cached dense view of W; ~n^2 * 8 bytes (trivial for n <= 500).
+        self._W_dense = self._W.toarray() if n <= _kron_dense_max() else None
         self._op_id = next(_op_id_counter)
         super().__init__()
 
@@ -613,10 +678,10 @@ class _KroneckerFlowVJPOp(pt.Op):
     def perform(self, node, inputs, outputs):
         rd, ro, eta, g = inputs
         n = self._n
-        Ld = (self._I - float(rd) * self._W).tocsr()
-        Lo = (self._I - float(ro) * self._W).tocsr()
-        lu_d = sp.linalg.splu(Ld.tocsc())
-        lu_o = sp.linalg.splu(Lo.tocsc())
+        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n)
+        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n)
+        Ld = self._I - float(rd) * self._W  # only used for L_d @ H below
+        Lo = self._I - float(ro) * self._W  # only used for L_o @ ... below
 
         H_eta = np.asarray(eta, dtype=np.float64).reshape(n, n, order="F")
 
@@ -753,6 +818,7 @@ class KroneckerFlowSolveOp(pt.Op):
         self._W = W.tocsr().astype(np.float64)
         self._n = n
         self._I = sp.eye(n, format="csr", dtype=np.float64)
+        self._W_dense = self._W.toarray() if n <= _kron_dense_max() else None
         self._vjp_op = _KroneckerFlowVJPOp(self._W, n)
         self._op_id = next(_op_id_counter)
         super().__init__()
@@ -775,10 +841,8 @@ class KroneckerFlowSolveOp(pt.Op):
         """
         rd, ro, b = inputs
         n = self._n
-        Ld = (self._I - float(rd) * self._W).tocsr()
-        Lo = (self._I - float(ro) * self._W).tocsr()
-        lu_d = sp.linalg.splu(Ld.tocsc())
-        lu_o = sp.linalg.splu(Lo.tocsc())
+        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n)
+        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n)
 
         Hb = b.reshape(n, n, order="F")
         Hp = np.asarray(lu_d.solve(np.asarray(Hb, dtype=np.float64)), dtype=np.float64)
@@ -872,6 +936,7 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
         self._W = W.tocsr().astype(np.float64)
         self._n = n
         self._I = sp.eye(n, format="csr", dtype=np.float64)
+        self._W_dense = self._W.toarray() if n <= _kron_dense_max() else None
         self._op_id = next(_op_id_counter)
         super().__init__()
 
@@ -941,10 +1006,10 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
     def perform(self, node, inputs, outputs):
         rd, ro, H_eta, G = inputs
         n = self._n
-        Ld = (self._I - float(rd) * self._W).tocsr()
-        Lo = (self._I - float(ro) * self._W).tocsr()
-        lu_d = sp.linalg.splu(Ld.tocsc())
-        lu_o = sp.linalg.splu(Lo.tocsc())
+        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n)
+        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n)
+        Ld = self._I - float(rd) * self._W  # used only for sparse matmul below
+        Lo = self._I - float(ro) * self._W  # used only for sparse multiply below
 
         H_eta = np.asarray(H_eta, dtype=np.float64)
         H_v = self._kron_solve(
@@ -1023,6 +1088,7 @@ class KroneckerFlowSolveMatrixOp(pt.Op):
         self._W = W.tocsr().astype(np.float64)
         self._n = n
         self._I = sp.eye(n, format="csr", dtype=np.float64)
+        self._W_dense = self._W.toarray() if n <= _kron_dense_max() else None
         self._vjp_op = _KroneckerFlowVJPMatrixOp(self._W, n)
         self._op_id = next(_op_id_counter)
         super().__init__()
@@ -1047,10 +1113,9 @@ class KroneckerFlowSolveMatrixOp(pt.Op):
         3. Permute and reshape :math:`Z` back to :math:`(N, T)`.
         """
         rd, ro, B = inputs
-        Ld = (self._I - float(rd) * self._W).tocsr()
-        Lo = (self._I - float(ro) * self._W).tocsr()
-        lu_d = sp.linalg.splu(Ld.tocsc())
-        lu_o = sp.linalg.splu(Lo.tocsc())
+        n = self._n
+        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n)
+        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n)
 
         # Forward: (Lo⊗Ld) η = b  →  Ld H' Lo^T = H_b
         # Step 1: Ld H' = R;  Step 2: Lo^T Z = H'^T (batched over T)
@@ -1161,3 +1226,11 @@ def kron_solve_matrix(
     return np.asarray(
         Z3.transpose(1, 0, 2).reshape(n * n, k, order="F"), dtype=np.float64
     )
+
+
+# ---------------------------------------------------------------------------
+# JAX dispatch registration (no-op when JAX is not installed)
+# ---------------------------------------------------------------------------
+from ._jax_dispatch import register_jax_dispatch as _register_jax_dispatch
+
+_register_jax_dispatch()

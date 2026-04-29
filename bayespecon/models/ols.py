@@ -103,6 +103,20 @@ class OLS(SpatialModel):
             ).bayesian_lm_slx_error_joint_test(m),
             "LM-SLX-Error-Joint",
         ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_lag_test"],
+            ).bayesian_robust_lm_lag_test(m),
+            "Robust-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_error_test"],
+            ).bayesian_robust_lm_error_test(m),
+            "Robust-LM-Error",
+        ),
     ]
 
     def _build_pymc_model(self) -> pm.Model:

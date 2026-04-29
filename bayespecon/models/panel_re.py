@@ -48,25 +48,6 @@ class OLSPanelRE(SpatialPanelModel):
         :class:`libpysal.graph.Graph` (the modern libpysal graph API) or any
         :class:`scipy.sparse` matrix.  The legacy :class:`libpysal.weights.W`
         object is **not** accepted directly; pass ``w.sparse`` or convert with
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_sdm_joint_test"],
-        ).bayesian_panel_lm_sdm_joint_test(m), "Panel-LM-SDM-Joint"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_slx_error_joint_test"],
-        ).bayesian_panel_lm_slx_error_joint_test(m), "Panel-LM-SLX-Error-Joint"),
-    ]
         ``libpysal.graph.Graph.from_W(w)``.
         Unused in the RE likelihood but required by the base class for
         consistency (e.g. computing spatial lags for SDM/SDEM variants).
@@ -101,6 +82,51 @@ class OLSPanelRE(SpatialPanelModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_test"],
+            ).bayesian_panel_lm_lag_test(m),
+            "Panel-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_test"],
+            ).bayesian_panel_lm_error_test(m),
+            "Panel-LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_sdm_joint_test"],
+            ).bayesian_panel_lm_sdm_joint_test(m),
+            "Panel-LM-SDM-Joint",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_slx_error_joint_test"],
+            ).bayesian_panel_lm_slx_error_joint_test(m),
+            "Panel-LM-SLX-Error-Joint",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_lag_test"],
+            ).bayesian_panel_robust_lm_lag_test(m),
+            "Panel-Robust-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_error_test"],
+            ).bayesian_panel_robust_lm_error_test(m),
+            "Panel-Robust-LM-Error",
+        ),
+    ]
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)  # RE always uses raw (pooled) data
@@ -220,21 +246,6 @@ class SARPanelRE(SpatialPanelModel):
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
         ``model`` is forced to 0 (no within-transform demeaning).
 
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_wx_test"],
-        ).bayesian_panel_lm_wx_test(m), "Panel-LM-WX"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_robust_lm_wx_test"],
-        ).bayesian_panel_robust_lm_wx_test(m), "Panel-Robust-LM-WX"),
-    ]
-
     Notes
     -----
     The ``priors`` dict supports the following keys:
@@ -259,6 +270,30 @@ class SARPanelRE(SpatialPanelModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_test"],
+            ).bayesian_panel_lm_error_test(m),
+            "Panel-LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_wx_test"],
+            ).bayesian_panel_lm_wx_test(m),
+            "Panel-LM-WX",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_wx_test"],
+            ).bayesian_panel_robust_lm_wx_test(m),
+            "Panel-Robust-LM-WX",
+        ),
+    ]
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -421,17 +456,6 @@ class SEMPanelRE(SpatialPanelModel):
     Parameters
     ----------
     formula, data, y, X, W, unit_col, time_col, N, T, priors, logdet_method
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_wx_sem_test"],
-        ).bayesian_panel_lm_wx_sem_test(m), "Panel-LM-WX"),
-    ]
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
         ``model`` is forced to 0.
 
@@ -460,6 +484,23 @@ class SEMPanelRE(SpatialPanelModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_test"],
+            ).bayesian_panel_lm_lag_test(m),
+            "Panel-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_wx_sem_test"],
+            ).bayesian_panel_lm_wx_sem_test(m),
+            "Panel-LM-WX",
+        ),
+    ]
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -691,9 +732,9 @@ class SDEMPanelRE(SpatialPanelModel):
         (
             lambda m: __import__(
                 "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_test"],
-            ).bayesian_panel_lm_lag_test(m),
-            "Panel-LM-Lag",
+                fromlist=["bayesian_panel_lm_lag_sdem_test"],
+            ).bayesian_panel_lm_lag_sdem_test(m),
+            "Panel-LM-Lag-SDEM",
         ),
     ]
 

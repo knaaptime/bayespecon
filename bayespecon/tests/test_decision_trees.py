@@ -1,0 +1,359 @@
+"""Fast unit tests for bayespecon.diagnostics._decision_trees.
+
+Tests TreeNode, evaluate, render_ascii, render, get_spec, and get_panel_spec
+covering branches not exercised by the integration tests.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from bayespecon.diagnostics._decision_trees import (
+    TreeNode,
+    evaluate,
+    get_panel_spec,
+    get_spec,
+    render,
+    render_ascii,
+)
+
+# ---------------------------------------------------------------------------
+# TreeNode basics
+# ---------------------------------------------------------------------------
+
+
+class TestTreeNode:
+    def test_simple_tree(self):
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        assert tree.kind == "test"
+        assert tree.name == "LM-Lag"
+        assert tree.if_true == "SAR"
+        assert tree.if_false == "OLS"
+
+    def test_predicate_node(self):
+        tree = TreeNode(
+            kind="predicate",
+            name="p comparison",
+            if_true="SAR",
+            if_false="SEM",
+            predicate_id="lag_le_error",
+        )
+        assert tree.predicate_id == "lag_le_error"
+
+
+# ---------------------------------------------------------------------------
+# evaluate
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluate:
+    def test_leaf_string(self):
+        result, path = evaluate("OLS", sig_lookup=lambda _: False)
+        assert result == "OLS"
+        assert path == []
+
+    def test_single_test_sig(self):
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda n: n == "LM-Lag")
+        assert result == "SAR"
+        assert len(path) == 1
+        assert path[0][1] is True
+
+    def test_single_test_not_sig(self):
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: False)
+        assert result == "OLS"
+        assert path[0][1] is False
+
+    def test_nested_tree(self):
+        inner = TreeNode(kind="test", name="LM-Error", if_true="SEM", if_false="OLS")
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false=inner)
+        result, path = evaluate(tree, sig_lookup=lambda n: n == "LM-Error")
+        assert result == "SEM"
+        assert len(path) == 2
+
+    def test_predicate_node(self):
+        tree = TreeNode(
+            kind="predicate",
+            name="p comparison",
+            if_true="SAR",
+            if_false="SEM",
+            predicate_id="lag_le_error",
+        )
+        result, path = evaluate(
+            tree,
+            sig_lookup=lambda _: False,
+            predicate_lookup={"lag_le_error": lambda: True},
+        )
+        assert result == "SAR"
+
+    def test_predicate_false(self):
+        tree = TreeNode(
+            kind="predicate",
+            name="p comparison",
+            if_true="SAR",
+            if_false="SEM",
+            predicate_id="lag_le_error",
+        )
+        result, path = evaluate(
+            tree,
+            sig_lookup=lambda _: False,
+            predicate_lookup={"lag_le_error": lambda: False},
+        )
+        assert result == "SEM"
+
+    def test_predicate_missing_id_raises(self):
+        tree = TreeNode(
+            kind="predicate",
+            name="p comparison",
+            if_true="SAR",
+            if_false="SEM",
+            predicate_id=None,
+        )
+        with pytest.raises(ValueError, match="predicate node missing predicate_id"):
+            evaluate(tree, sig_lookup=lambda _: False)
+
+    def test_predicate_missing_lookup_raises(self):
+        tree = TreeNode(
+            kind="predicate",
+            name="p comparison",
+            if_true="SAR",
+            if_false="SEM",
+            predicate_id="missing_key",
+        )
+        with pytest.raises(KeyError):
+            evaluate(tree, sig_lookup=lambda _: False, predicate_lookup={})
+
+    def test_unknown_node_kind_raises(self):
+        tree = TreeNode(kind="bad", name="x", if_true="A", if_false="B")
+        with pytest.raises(ValueError, match="unknown node kind"):
+            evaluate(tree, sig_lookup=lambda _: False)
+
+
+# ---------------------------------------------------------------------------
+# render_ascii
+# ---------------------------------------------------------------------------
+
+
+class TestRenderAscii:
+    def test_leaf(self):
+        result = render_ascii("OLS", [], "OLS")
+        assert "OLS" in result
+        assert "SELECTED" in result
+
+    def test_simple_tree(self):
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda n: n == "LM-Lag")
+        text = render_ascii(tree, path, result)
+        assert "SAR" in text
+        assert "SELECTED" in text
+
+
+# ---------------------------------------------------------------------------
+# render dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestRenderDispatch:
+    def test_model_format(self):
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        output = render(tree, path, result, fmt="model")
+        assert output == "SAR"
+
+    def test_ascii_format(self):
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        output = render(tree, path, result, fmt="ascii")
+        assert isinstance(output, str)
+        assert "SAR" in output
+
+    def test_unknown_format_raises(self):
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        with pytest.raises(ValueError, match="unknown format"):
+            render(tree, path, result, fmt="bad_format")
+
+    def test_graphviz_fallback_warns(self, monkeypatch):
+        """When graphviz is not installed, should warn and fall back to ASCII."""
+        from bayespecon.diagnostics import _decision_trees as _dt
+
+        monkeypatch.setattr(_dt, "graphviz_available", lambda: False)
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        with pytest.warns(UserWarning, match="graphviz package is not installed"):
+            output = render(tree, path, result, fmt="graphviz")
+        assert isinstance(output, str)
+
+
+# ---------------------------------------------------------------------------
+# get_spec / get_panel_spec
+# ---------------------------------------------------------------------------
+
+
+class TestGetSpec:
+    def test_ols_spec(self):
+        tree = get_spec("OLS")
+        assert isinstance(tree, TreeNode)
+
+    def test_sar_spec(self):
+        tree = get_spec("SAR")
+        assert isinstance(tree, TreeNode)
+
+    def test_sem_spec(self):
+        tree = get_spec("SEM")
+        assert isinstance(tree, TreeNode)
+
+    def test_slx_spec(self):
+        tree = get_spec("SLX")
+        assert isinstance(tree, TreeNode)
+
+    def test_sdm_spec(self):
+        tree = get_spec("SDM")
+        assert isinstance(tree, TreeNode)
+
+    def test_sdem_spec(self):
+        tree = get_spec("SDEM")
+        assert isinstance(tree, TreeNode)
+
+    def test_unknown_returns_string(self):
+        result = get_spec("UnknownModel")
+        assert result == "UnknownModel"
+
+    def test_ols_tree_evaluate_all_sig(self):
+        """Walk the OLS tree with all tests significant → SARAR."""
+        tree = get_spec("OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        assert result == "SARAR"
+
+    def test_ols_tree_evaluate_none_sig(self):
+        """Walk the OLS tree with no tests significant → OLS."""
+        tree = get_spec("OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: False)
+        assert result == "OLS"
+
+    def test_ols_tree_only_lag_sig(self):
+        """Only LM-Lag significant → SAR."""
+        tree = get_spec("OLS")
+
+        def lookup(name):
+            return name == "LM-Lag"
+
+        result, path = evaluate(tree, sig_lookup=lookup)
+        assert result == "SAR"
+
+    def test_ols_tree_only_error_sig(self):
+        """Only LM-Error significant → SEM."""
+        tree = get_spec("OLS")
+
+        def lookup(name):
+            return name == "LM-Error"
+
+        result, path = evaluate(tree, sig_lookup=lookup)
+        assert result == "SEM"
+
+    def test_ols_tree_robust_lag_only(self):
+        """Both naive sig, robust lag only → SAR."""
+        tree = get_spec("OLS")
+
+        def lookup(name):
+            return name in ("LM-Lag", "LM-Error", "Robust-LM-Lag")
+
+        result, path = evaluate(tree, sig_lookup=lookup)
+        assert result == "SAR"
+
+    def test_ols_tree_robust_error_only(self):
+        """Both naive sig, robust error only → SEM."""
+        tree = get_spec("OLS")
+
+        def lookup(name):
+            return name in ("LM-Lag", "LM-Error", "Robust-LM-Error")
+
+        result, path = evaluate(tree, sig_lookup=lookup)
+        assert result == "SEM"
+
+    def test_ols_tree_robust_both(self):
+        """Both naive and both robust sig → SARAR."""
+        tree = get_spec("OLS")
+
+        def lookup(name):
+            return name in (
+                "LM-Lag",
+                "LM-Error",
+                "Robust-LM-Lag",
+                "Robust-LM-Error",
+            )
+
+        result, path = evaluate(tree, sig_lookup=lookup)
+        assert result == "SARAR"
+
+    def test_ols_tree_robust_neither_predicate(self):
+        """Both naive sig, neither robust → predicate fallback."""
+        tree = get_spec("OLS")
+
+        def lookup(name):
+            return name in ("LM-Lag", "LM-Error")
+
+        result, path = evaluate(
+            tree,
+            sig_lookup=lookup,
+            predicate_lookup={"lag_pval_le_error_pval": lambda: True},
+        )
+        assert result == "SAR"
+
+    def test_ols_tree_robust_neither_predicate_false(self):
+        tree = get_spec("OLS")
+
+        def lookup(name):
+            return name in ("LM-Lag", "LM-Error")
+
+        result, path = evaluate(
+            tree,
+            sig_lookup=lookup,
+            predicate_lookup={"lag_pval_le_error_pval": lambda: False},
+        )
+        assert result == "SEM"
+
+
+class TestGetPanelSpec:
+    def test_ols_fe_spec(self):
+        tree = get_panel_spec("OLSPanelFE")
+        assert isinstance(tree, TreeNode)
+
+    def test_sar_fe_spec(self):
+        tree = get_panel_spec("SARPanelFE")
+        assert isinstance(tree, TreeNode)
+
+    def test_sem_fe_spec(self):
+        tree = get_panel_spec("SEMPanelFE")
+        assert isinstance(tree, TreeNode)
+
+    def test_slx_fe_spec(self):
+        tree = get_panel_spec("SLXPanelFE")
+        assert isinstance(tree, TreeNode)
+
+    def test_sdm_fe_spec(self):
+        tree = get_panel_spec("SDMPanelFE")
+        assert isinstance(tree, TreeNode)
+
+    def test_sdem_fe_spec(self):
+        tree = get_panel_spec("SDEMPanelFE")
+        assert isinstance(tree, TreeNode)
+
+    def test_ols_re_spec(self):
+        tree = get_panel_spec("OLSPanelRE")
+        assert isinstance(tree, TreeNode)
+
+    def test_unknown_returns_string(self):
+        result = get_panel_spec("UnknownPanel")
+        assert result == "UnknownPanel"
+
+    def test_panel_ols_all_sig(self):
+        tree = get_panel_spec("OLSPanelFE")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        assert "SARAR" in result
+
+    def test_panel_ols_none_sig(self):
+        tree = get_panel_spec("OLSPanelFE")
+        result, path = evaluate(tree, sig_lookup=lambda _: False)
+        assert "OLS" in result

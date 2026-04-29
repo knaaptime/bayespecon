@@ -328,12 +328,27 @@ class FlowPanelModel(ABC):
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
+        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
+        from ._sampler import (
+            prepare_compile_kwargs,
+            prepare_idata_kwargs,
+            resolve_sampler,
+        )
+
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop(
+            "nuts_sampler",
+            resolve_sampler(
+                sampler,
+                requires_c_backend=getattr(self, "_requires_c_backend", False),
+                model_name=type(self).__name__,
+            ),
+        )
 
         model = self._build_pymc_model()
         self._pymc_model = model
@@ -343,6 +358,8 @@ class FlowPanelModel(ABC):
                 model,
                 store_lambda=False,
             )
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -351,6 +368,7 @@ class FlowPanelModel(ABC):
                 target_accept=target_accept,
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
         if compute_log_likelihood:
@@ -426,6 +444,28 @@ class FlowPanelModel(ABC):
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
         return az.summary(self._idata, var_names=var_names, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Class-level registry of Bayesian LM specification tests.
+    # ------------------------------------------------------------------
+    _spatial_diagnostics_tests: list[tuple] = []
+
+    def spatial_diagnostics(self) -> pd.DataFrame:
+        """Run Bayesian LM specification tests for flow panel models.
+
+        See :meth:`bayespecon.models.base.SpatialModel.spatial_diagnostics`
+        for the column schema.
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been fit yet.
+        """
+        from .base import SpatialModel
+
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet. Call fit() first.")
+        return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
 
     def _model_coords(self, extra: Optional[dict] = None) -> dict:
         """Return named dimensions for PyMC model coordinates."""
@@ -1422,6 +1462,44 @@ class OLSFlowPanel(FlowPanelModel):
     log-determinant precomputation is skipped (``A = I_N`` with
     :math:`|A| = 1`).
     """
+
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_flow_dest_test"],
+            ).bayesian_panel_lm_flow_dest_test(m),
+            "Panel-LM-Flow-Dest",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_flow_orig_test"],
+            ).bayesian_panel_lm_flow_orig_test(m),
+            "Panel-LM-Flow-Orig",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_flow_network_test"],
+            ).bayesian_panel_lm_flow_network_test(m),
+            "Panel-LM-Flow-Network",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_flow_joint_test"],
+            ).bayesian_panel_lm_flow_joint_test(m),
+            "Panel-LM-Flow-Joint",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_flow_intra_test"],
+            ).bayesian_panel_lm_flow_intra_test(m),
+            "Panel-LM-Flow-Intra",
+        ),
+    ]
 
     def __init__(self, y, G, X, T, **kwargs):
         # Skip log-determinant precomputation: A = I_N has |A| = 1.
