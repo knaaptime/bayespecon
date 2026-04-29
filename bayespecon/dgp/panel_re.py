@@ -6,7 +6,11 @@ named for compatibility with random-effects model tests and workflows.
 
 from __future__ import annotations
 
-from .panel_fe import simulate_panel_ols_fe, simulate_panel_sar_fe, simulate_panel_sem_fe
+from .panel_fe import (
+    simulate_panel_ols_fe,
+    simulate_panel_sar_fe,
+    simulate_panel_sem_fe,
+)
 
 
 def simulate_panel_ols_re(*, err_hetero: bool = False, **kwargs) -> dict:

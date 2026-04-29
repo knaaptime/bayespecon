@@ -6,7 +6,8 @@ imported from test files directly without conftest injection.
 All tests are marked slow because they run MCMC. Run them with::
 
     pytest -m slow
-    pytest           # skips slow by default (see pyproject.toml)
+    pytest -m recovery   # parameter recovery tests only
+    pytest               # skips slow by default (see pyproject.toml)
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import numpy as np
 import pytest
 from libpysal.graph import Graph
 
-from .helpers import PANEL_N, make_line_W, make_rook_W, W_to_graph
+from .helpers import PANEL_N, W_to_graph, make_line_W, make_rook_W
 
 SIDE = 6  # 36 cross-sectional units
 

@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from bayespecon import dgp
+
 from .helpers import W_to_graph, make_rook_W
 
 
@@ -120,6 +121,7 @@ def test_panel_generators_run_with_dense_W() -> None:
         dgp.simulate_panel_sdmu_fe(N=N, T=T, W=W, rng=rng),
         dgp.simulate_panel_sar_tobit_fe(N=N, T=T, W=W, rng=rng),
         dgp.simulate_panel_sem_tobit_fe(N=N, T=T, W=W, rng=rng),
+        dgp.simulate_panel_slx_fe(N=N, T=T, W=W, rng=rng),
     ]
 
     for out in panel_outs:
@@ -182,7 +184,9 @@ def test_cross_sectional_create_gdf_reuses_input_geometry() -> None:
     polys = [box(j, i, j + 1, i + 1) for i in range(3) for j in range(3)]
     gdf = gpd.GeoDataFrame({"id": range(9)}, geometry=polys)
 
-    gdf_out = dgp.simulate_sar(gdf=gdf, seed=123, create_gdf=True, geometry_type="point")
+    gdf_out = dgp.simulate_sar(
+        gdf=gdf, seed=123, create_gdf=True, geometry_type="point"
+    )
     assert isinstance(gdf_out, gpd.GeoDataFrame)
     assert len(gdf_out) == len(gdf)
     assert gdf_out.geom_type.eq("Polygon").all()
@@ -288,7 +292,9 @@ def test_panel_tobit_create_gdf() -> None:
     gpd = pytest.importorskip("geopandas")
     N, T = 9, 3
     W = make_rook_W(3)
-    result = dgp.simulate_panel_sar_tobit_fe(N=N, T=T, W=W, seed=42, create_gdf=True, censoring=0.0)
+    result = dgp.simulate_panel_sar_tobit_fe(
+        N=N, T=T, W=W, seed=42, create_gdf=True, censoring=0.0
+    )
     assert isinstance(result, tuple)
     unit_gdf, long_df = result
     assert isinstance(unit_gdf, gpd.GeoDataFrame)
@@ -367,9 +373,13 @@ def test_panel_fe_err_hetero_runs_and_preserves_shape() -> None:
     N, T = 9, 3
     W = make_rook_W(3)
 
-    for sim_fn in [dgp.simulate_panel_ols_fe, dgp.simulate_panel_sar_fe,
-                   dgp.simulate_panel_sem_fe, dgp.simulate_panel_sdm_fe,
-                   dgp.simulate_panel_sdem_fe]:
+    for sim_fn in [
+        dgp.simulate_panel_ols_fe,
+        dgp.simulate_panel_sar_fe,
+        dgp.simulate_panel_sem_fe,
+        dgp.simulate_panel_sdm_fe,
+        dgp.simulate_panel_sdem_fe,
+    ]:
         out_homo = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=False)
         out_hetero = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=True)
         assert out_homo["y"].shape == out_hetero["y"].shape
@@ -383,8 +393,11 @@ def test_panel_re_err_hetero_forwarded() -> None:
     N, T = 9, 3
     W = make_rook_W(3)
 
-    for sim_fn in [dgp.simulate_panel_ols_re, dgp.simulate_panel_sar_re,
-                   dgp.simulate_panel_sem_re]:
+    for sim_fn in [
+        dgp.simulate_panel_ols_re,
+        dgp.simulate_panel_sar_re,
+        dgp.simulate_panel_sem_re,
+    ]:
         out = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=True)
         assert out["y"].shape == (N * T,)
 
@@ -395,10 +408,15 @@ def test_dynamic_panel_err_hetero_runs_and_preserves_shape() -> None:
     N, T = 9, 3
     W = make_rook_W(3)
 
-    for sim_fn in [dgp.simulate_panel_dlm_fe, dgp.simulate_panel_sdmr_fe,
-                   dgp.simulate_panel_sdmu_fe, dgp.simulate_panel_sar_dynamic_fe,
-                   dgp.simulate_panel_sem_dynamic_fe, dgp.simulate_panel_sdem_dynamic_fe,
-                   dgp.simulate_panel_slx_dynamic_fe]:
+    for sim_fn in [
+        dgp.simulate_panel_dlm_fe,
+        dgp.simulate_panel_sdmr_fe,
+        dgp.simulate_panel_sdmu_fe,
+        dgp.simulate_panel_sar_dynamic_fe,
+        dgp.simulate_panel_sem_dynamic_fe,
+        dgp.simulate_panel_sdem_dynamic_fe,
+        dgp.simulate_panel_slx_dynamic_fe,
+    ]:
         out_homo = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=False)
         out_hetero = sim_fn(N=N, T=T, W=W, rng=rng, err_hetero=True)
         assert out_homo["y"].shape == out_hetero["y"].shape
@@ -411,7 +429,11 @@ def test_tobit_err_hetero_forwarded() -> None:
     W = make_rook_W(3)
 
     # Cross-sectional tobit
-    for sim_fn in [dgp.simulate_sar_tobit, dgp.simulate_sem_tobit, dgp.simulate_sdm_tobit]:
+    for sim_fn in [
+        dgp.simulate_sar_tobit,
+        dgp.simulate_sem_tobit,
+        dgp.simulate_sdm_tobit,
+    ]:
         out = sim_fn(W=W, rng=rng, err_hetero=True)
         assert "y_latent" in out
         assert "censored_mask" in out

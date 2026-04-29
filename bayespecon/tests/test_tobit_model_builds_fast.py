@@ -6,8 +6,9 @@ import arviz as az
 import numpy as np
 import pymc as pm
 
-from bayespecon import SARTobit, SEMTobit, SDMTobit, SARPanelTobit, SEMPanelTobit
-from .helpers  import W_to_graph, make_line_W
+from bayespecon import SARPanelTobit, SARTobit, SDMTobit, SEMPanelTobit, SEMTobit
+
+from .helpers import W_to_graph, make_line_W
 
 
 def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:

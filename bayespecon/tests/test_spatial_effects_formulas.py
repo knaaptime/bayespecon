@@ -6,20 +6,15 @@ InferenceData objects. They verify that impacts match MATLAB-style formulas.
 
 from __future__ import annotations
 
-import arviz as az
 import numpy as np
 
 from bayespecon import SAR, SDEM, SDM, SLX
-from .helpers  import W_to_graph, make_line_W
 
-
-def _set_posterior_means(model, beta: np.ndarray, rho: float | None = None) -> None:
-    posterior: dict[str, np.ndarray] = {
-        "beta": np.array([[beta]], dtype=float),
-    }
-    if rho is not None:
-        posterior["rho"] = np.array([[rho]], dtype=float)
-    model._idata = az.from_dict(posterior=posterior)
+from .helpers import (
+    W_to_graph,
+    make_line_W,
+    set_posterior_means as _set_posterior_means,
+)
 
 
 def _build_inputs(n: int = 5) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

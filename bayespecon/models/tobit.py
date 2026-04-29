@@ -14,8 +14,8 @@ from __future__ import annotations
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
+from pytensor import sparse as pts
 
-from ..logdet import make_logdet_fn
 from .base import SpatialModel
 
 
@@ -25,7 +25,12 @@ class _SpatialTobitBase(SpatialModel):
     def __init__(self, *args, censoring: float = 0.0, **kwargs):
         self.censoring = float(censoring)
         super().__init__(*args, **kwargs)
-        self._censored_mask = self._y <= self.censoring + 1e-12
+        # Censored observations are those at (or below) the censoring point.
+        # Use exact comparison: ``y_i == censoring`` is the definition of a
+        # left-censored observation; an arbitrary ``+ 1e-12`` slack would
+        # silently mark uncensored values that happen to be just above the
+        # threshold as censored.
+        self._censored_mask = self._y <= self.censoring
         self._censored_idx = np.where(self._censored_mask)[0]
 
     def _latent_y_tensor(self) -> pt.TensorVariable:
@@ -43,8 +48,12 @@ class _SpatialTobitBase(SpatialModel):
         """Posterior mean of latent y* on the observed index set."""
         y_lat = self._y.copy().astype(float)
         if self._censored_idx.size > 0 and "y_cens_gap" in self._idata.posterior:
-            gap_hat = self._idata.posterior["y_cens_gap"].mean(("chain", "draw")).to_numpy()
-            y_lat[self._censored_idx] = self.censoring - np.asarray(gap_hat, dtype=float)
+            gap_hat = (
+                self._idata.posterior["y_cens_gap"].mean(("chain", "draw")).to_numpy()
+            )
+            y_lat[self._censored_idx] = self.censoring - np.asarray(
+                gap_hat, dtype=float
+            )
         return y_lat
 
 
@@ -81,20 +90,31 @@ class SARTobit(_SpatialTobitBase):
     freedom, and :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30.
     """
+
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_error_test"],
-        ).bayesian_lm_error_test(m), "LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_wx_test"],
-        ).bayesian_lm_wx_test(m), "LM-WX"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_robust_lm_wx_test"],
-        ).bayesian_robust_lm_wx_test(m), "Robust-LM-WX"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_error_test"],
+            ).bayesian_lm_error_test(m),
+            "LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_wx_test"],
+            ).bayesian_lm_wx_test(m),
+            "LM-WX",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_wx_test"],
+            ).bayesian_robust_lm_wx_test(m),
+            "Robust-LM-WX",
+        ),
     ]
+
     def _build_pymc_model(self) -> pm.Model:
         rho_lower = self.priors.get("rho_lower", -1.0)
         rho_upper = self.priors.get("rho_upper", 1.0)
@@ -102,13 +122,8 @@ class SARTobit(_SpatialTobitBase):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=rho_lower,
-            rho_max=rho_upper,
-        )
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        logdet_fn = self._logdet_pytensor_fn
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -116,11 +131,17 @@ class SARTobit(_SpatialTobitBase):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             y_lat = self._latent_y_tensor()
-            resid = y_lat - rho * pt.dot(W_pt, y_lat) - pt.dot(self._X, beta)
+            resid = (
+                y_lat
+                - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten()
+                - pt.dot(self._X, beta)
+            )
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_resid = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid).sum()
+                logp_resid = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid
+                ).sum()
             else:
                 logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
             pm.Potential("resid_loglik", logp_resid)
@@ -133,15 +154,7 @@ class SARTobit(_SpatialTobitBase):
         beta = self._posterior_mean("beta")
         eigs = self._W_eigs
         mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        if self._is_row_std:
-            mean_row_sum = 1.0 / (1.0 - rho)
-        else:
-            mean_row_sum = float(
-                np.linalg.solve(
-                    np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray(),
-                    np.ones(self._W_sparse.shape[0]),
-                ).mean()
-            )
+        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
         ni = self._nonintercept_indices
         direct = mean_diag * beta[ni]
         total = mean_row_sum * beta[ni]
@@ -153,9 +166,12 @@ class SARTobit(_SpatialTobitBase):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
 
         if isinstance(self, SARTobit):
@@ -164,17 +180,7 @@ class SARTobit(_SpatialTobitBase):
             eigs = self._W_eigs.real.astype(np.float64)
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
-            if self._is_row_std:
-                mean_row_sum = 1.0 / (1.0 - rho_draws)
-            else:
-                n = self._W_sparse.shape[0]
-                W_dense = self._W_dense
-                ones = np.ones(n)
-                G = rho_draws.shape[0]
-                mean_row_sum = np.empty(G)
-                for g in range(G):
-                    A = np.eye(n) - rho_draws[g] * W_dense
-                    mean_row_sum[g] = np.linalg.solve(A, ones).mean()
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
             ni = self._nonintercept_indices
             direct_samples = mean_diag[:, None] * beta_draws[:, ni]
             total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
@@ -193,44 +199,46 @@ class SARTobit(_SpatialTobitBase):
             k = self._X.shape[1]
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
-            beta2_draws = beta_draws[:, k:k + kw]
+            beta2_draws = beta_draws[:, k : k + kw]
             eigs = self._W_eigs.real.astype(np.float64)
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)
-            if self._is_row_std:
-                mean_row_sum_M = 1.0 / (1.0 - rho_draws)
-                mean_row_sum_MW = mean_row_sum_M
-            else:
-                n = self._W_sparse.shape[0]
-                W_dense = self._W_dense
-                ones = np.ones(n)
-                G = rho_draws.shape[0]
-                mean_row_sum_M = np.empty(G)
-                mean_row_sum_MW = np.empty(G)
-                for g in range(G):
-                    A = np.eye(n) - rho_draws[g] * W_dense
-                    M_ones = np.linalg.solve(A, ones)
-                    mean_row_sum_M[g] = M_ones.mean()
-                    mean_row_sum_MW[g] = (W_dense @ M_ones).mean()
+            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
+            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = np.column_stack([
-                beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-                for idx, j in enumerate(wx_idx)
-            ])
-            total_samples = np.column_stack([
-                beta1_draws[:, j] * mean_row_sum_M + beta2_draws[:, idx] * mean_row_sum_MW
-                for idx, j in enumerate(wx_idx)
-            ])
+            direct_samples = np.column_stack(
+                [
+                    beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
+                    for idx, j in enumerate(wx_idx)
+                ]
+            )
+            total_samples = np.column_stack(
+                [
+                    beta1_draws[:, j] * mean_row_sum_M
+                    + beta2_draws[:, idx] * mean_row_sum_MW
+                    for idx, j in enumerate(wx_idx)
+                ]
+            )
             indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Reported fitted mean: ``max(c, E[y* | X, params])``.
+
+        The structural latent mean for SAR-Tobit is
+        :math:`E[y^* \\mid X] = (I - \\rho W)^{-1} X \\beta`, evaluated at the
+        posterior mean of :math:`(\\rho, \\beta)`. Censored observations are
+        reported at the censoring point ``c`` (consistent with the
+        observation rule ``y = max(c, y*)``).
+        """
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
-        y_lat = self._posterior_latent_y_mean()
-        return rho * (self._W_dense @ y_lat) + self._X @ beta
+        n = self._y.shape[0]
+        A = np.eye(n) - rho * self._W_dense
+        structural = np.linalg.solve(A, self._X @ beta)
+        return np.maximum(self.censoring, structural)
 
     def fit(
         self,
@@ -266,7 +274,6 @@ class SARTobit(_SpatialTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import pytensor
         import xarray as xr
         from scipy.stats import norm
 
@@ -286,9 +293,16 @@ class SARTobit(_SpatialTobitBase):
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
 
-        # Get posterior mean of latent y* for computing mu
-        y_lat = self._posterior_latent_y_mean()
-        mu = rho_f[:, None] * (W @ y_lat)[None, :] + beta_f @ X.T  # (s, n)
+        # Structural latent mean per draw: mu = (I - rho W)^{-1} X beta.
+        # We deliberately do NOT plug the posterior mean of the latent y*
+        # into mu: the pointwise observed-data likelihood must be a function
+        # of the model parameters only (not of latent quantities), otherwise
+        # marginal-likelihood / WAIC / LOO comparisons are biased.
+        I_n = np.eye(n)
+        Xb = beta_f @ X.T  # (s, n)
+        mu = np.empty((s, n), dtype=np.float64)
+        for i in range(s):
+            mu[i] = np.linalg.solve(I_n - rho_f[i] * W, Xb[i])
 
         # Tobit pointwise log-likelihood
         ll = np.empty((s, n), dtype=np.float64)
@@ -297,6 +311,7 @@ class SARTobit(_SpatialTobitBase):
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
+
             # Uncensored: log t(y | mu, sigma, nu)
             ll[:, uncens] = (
                 gammaln((nu_f[:, None] + 1) / 2)
@@ -326,9 +341,8 @@ class SARTobit(_SpatialTobitBase):
                 (censoring - mu[:, censored]) / sigma_f[:, None]
             )
 
-        # Eigenvalue-based Jacobian: log|I - rho*W| / n (pure numpy)
-        eigs = self._W_eigs.real.astype(np.float64)
-        jac = np.array([np.sum(np.log(np.abs(1.0 - rv * eigs))) for rv in rho_f])  # (n_draws,)
+        # Jacobian (respects logdet_method)
+        jac = self._logdet_numpy_vec_fn(rho_f)  # (n_draws,)
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
@@ -365,16 +379,24 @@ class SEMTobit(_SpatialTobitBase):
     where :math:`T_\\nu` is the Student-t CDF and
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
+
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_lag_test"],
-        ).bayesian_lm_lag_test(m), "LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_wx_sem_test"],
-        ).bayesian_lm_wx_sem_test(m), "LM-WX"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_lag_test"],
+            ).bayesian_lm_lag_test(m),
+            "LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_wx_sem_test"],
+            ).bayesian_lm_wx_sem_test(m),
+            "LM-WX",
+        ),
     ]
+
     def _build_pymc_model(self) -> pm.Model:
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
@@ -382,13 +404,8 @@ class SEMTobit(_SpatialTobitBase):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=lam_lower,
-            rho_max=lam_upper,
-        )
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        logdet_fn = self._logdet_pytensor_fn
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -397,11 +414,13 @@ class SEMTobit(_SpatialTobitBase):
 
             y_lat = self._latent_y_tensor()
             resid = y_lat - pt.dot(self._X, beta)
-            eps = resid - lam * pt.dot(W_pt, resid)
+            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
@@ -419,9 +438,12 @@ class SEMTobit(_SpatialTobitBase):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
 
         if isinstance(self, SARTobit):
@@ -430,17 +452,7 @@ class SEMTobit(_SpatialTobitBase):
             eigs = self._W_eigs.real.astype(np.float64)
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
-            if self._is_row_std:
-                mean_row_sum = 1.0 / (1.0 - rho_draws)
-            else:
-                n = self._W_sparse.shape[0]
-                W_dense = self._W_dense
-                ones = np.ones(n)
-                G = rho_draws.shape[0]
-                mean_row_sum = np.empty(G)
-                for g in range(G):
-                    A = np.eye(n) - rho_draws[g] * W_dense
-                    mean_row_sum[g] = np.linalg.solve(A, ones).mean()
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
             ni = self._nonintercept_indices
             direct_samples = mean_diag[:, None] * beta_draws[:, ni]
             total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
@@ -459,42 +471,41 @@ class SEMTobit(_SpatialTobitBase):
             k = self._X.shape[1]
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
-            beta2_draws = beta_draws[:, k:k + kw]
+            beta2_draws = beta_draws[:, k : k + kw]
             eigs = self._W_eigs.real.astype(np.float64)
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)
-            if self._is_row_std:
-                mean_row_sum_M = 1.0 / (1.0 - rho_draws)
-                mean_row_sum_MW = mean_row_sum_M
-            else:
-                n = self._W_sparse.shape[0]
-                W_dense = self._W_dense
-                ones = np.ones(n)
-                G = rho_draws.shape[0]
-                mean_row_sum_M = np.empty(G)
-                mean_row_sum_MW = np.empty(G)
-                for g in range(G):
-                    A = np.eye(n) - rho_draws[g] * W_dense
-                    M_ones = np.linalg.solve(A, ones)
-                    mean_row_sum_M[g] = M_ones.mean()
-                    mean_row_sum_MW[g] = (W_dense @ M_ones).mean()
+            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
+            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = np.column_stack([
-                beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-                for idx, j in enumerate(wx_idx)
-            ])
-            total_samples = np.column_stack([
-                beta1_draws[:, j] * mean_row_sum_M + beta2_draws[:, idx] * mean_row_sum_MW
-                for idx, j in enumerate(wx_idx)
-            ])
+            direct_samples = np.column_stack(
+                [
+                    beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
+                    for idx, j in enumerate(wx_idx)
+                ]
+            )
+            total_samples = np.column_stack(
+                [
+                    beta1_draws[:, j] * mean_row_sum_M
+                    + beta2_draws[:, idx] * mean_row_sum_MW
+                    for idx, j in enumerate(wx_idx)
+                ]
+            )
             indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Reported fitted mean: ``max(c, E[y* | X, params])``.
+
+        For SEM-Tobit the structural latent mean is
+        :math:`E[y^* \\mid X] = X\\beta` (the spatial filter operates on the
+        error term and integrates out). Censored entries are reported at
+        the censoring point.
+        """
         beta = self._posterior_mean("beta")
-        return self._X @ beta
+        return np.maximum(self.censoring, self._X @ beta)
 
     def fit(
         self,
@@ -533,8 +544,6 @@ class SEMTobit(_SpatialTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import pytensor
-        import pytensor.tensor as pt_ll
         import xarray as xr
         from scipy.stats import norm
 
@@ -563,6 +572,7 @@ class SEMTobit(_SpatialTobitBase):
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
+
             ll[:, uncens] = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -588,9 +598,8 @@ class SEMTobit(_SpatialTobitBase):
                 (censoring - mu[:, censored]) / sigma_f[:, None]
             )
 
-        # Eigenvalue-based Jacobian: log|I - lam*W| / n (pure numpy)
-        eigs = self._W_eigs.real.astype(np.float64)
-        jac = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_f])  # (n_draws,)
+        # Jacobian (respects logdet_method)
+        jac = self._logdet_numpy_vec_fn(lam_f)  # (n_draws,)
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
@@ -627,12 +636,17 @@ class SDMTobit(_SpatialTobitBase):
     where :math:`T_\\nu` is the Student-t CDF and
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
+
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_error_test"],
-        ).bayesian_lm_error_test(m), "LM-Error"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_error_test"],
+            ).bayesian_lm_error_test(m),
+            "LM-Error",
+        ),
     ]
+
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
@@ -645,13 +659,8 @@ class SDMTobit(_SpatialTobitBase):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=rho_lower,
-            rho_max=rho_upper,
-        )
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        logdet_fn = self._logdet_pytensor_fn
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -659,11 +668,17 @@ class SDMTobit(_SpatialTobitBase):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             y_lat = self._latent_y_tensor()
-            resid = y_lat - rho * pt.dot(W_pt, y_lat) - pt.dot(Z, beta)
+            resid = (
+                y_lat
+                - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten()
+                - pt.dot(Z, beta)
+            )
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_resid = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid).sum()
+                logp_resid = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid
+                ).sum()
             else:
                 logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
             pm.Potential("resid_loglik", logp_resid)
@@ -676,29 +691,27 @@ class SDMTobit(_SpatialTobitBase):
         beta = self._posterior_mean("beta")
         k = self._X.shape[1]
         kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k:k + kw]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
 
         eigs = self._W_eigs
         inv_eigs = 1.0 / (1.0 - rho * eigs)
         mean_diag_M = float(np.mean(inv_eigs.real))
         mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
-        if self._is_row_std:
-            mean_row_sum_M = 1.0 / (1.0 - rho)
-            mean_row_sum_MW = mean_row_sum_M
-        else:
-            ones = np.ones(self._W_sparse.shape[0])
-            A = np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray()
-            M_ones = np.linalg.solve(A, ones)
-            mean_row_sum_M = float(M_ones.mean())
-            mean_row_sum_MW = float((self._W_sparse.toarray() @ M_ones).mean())
-        direct = np.array([
-            beta1[j] * mean_diag_M + b2 * mean_diag_MW
-            for j, b2 in zip(self._wx_column_indices, beta2)
-        ])
-        total = np.array([
-            beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-            for j, b2 in zip(self._wx_column_indices, beta2)
-        ])
+        rho_arr = np.array([rho])
+        mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
+        mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
+        direct = np.array(
+            [
+                beta1[j] * mean_diag_M + b2 * mean_diag_MW
+                for j, b2 in zip(self._wx_column_indices, beta2)
+            ]
+        )
+        total = np.array(
+            [
+                beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
+                for j, b2 in zip(self._wx_column_indices, beta2)
+            ]
+        )
         indirect = total - direct
 
         return {
@@ -708,9 +721,12 @@ class SDMTobit(_SpatialTobitBase):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
 
         if isinstance(self, SARTobit):
@@ -719,17 +735,7 @@ class SDMTobit(_SpatialTobitBase):
             eigs = self._W_eigs.real.astype(np.float64)
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
-            if self._is_row_std:
-                mean_row_sum = 1.0 / (1.0 - rho_draws)
-            else:
-                n = self._W_sparse.shape[0]
-                W_dense = self._W_dense
-                ones = np.ones(n)
-                G = rho_draws.shape[0]
-                mean_row_sum = np.empty(G)
-                for g in range(G):
-                    A = np.eye(n) - rho_draws[g] * W_dense
-                    mean_row_sum[g] = np.linalg.solve(A, ones).mean()
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
             ni = self._nonintercept_indices
             direct_samples = mean_diag[:, None] * beta_draws[:, ni]
             total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
@@ -748,45 +754,46 @@ class SDMTobit(_SpatialTobitBase):
             k = self._X.shape[1]
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
-            beta2_draws = beta_draws[:, k:k + kw]
+            beta2_draws = beta_draws[:, k : k + kw]
             eigs = self._W_eigs.real.astype(np.float64)
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)
-            if self._is_row_std:
-                mean_row_sum_M = 1.0 / (1.0 - rho_draws)
-                mean_row_sum_MW = mean_row_sum_M
-            else:
-                n = self._W_sparse.shape[0]
-                W_dense = self._W_dense
-                ones = np.ones(n)
-                G = rho_draws.shape[0]
-                mean_row_sum_M = np.empty(G)
-                mean_row_sum_MW = np.empty(G)
-                for g in range(G):
-                    A = np.eye(n) - rho_draws[g] * W_dense
-                    M_ones = np.linalg.solve(A, ones)
-                    mean_row_sum_M[g] = M_ones.mean()
-                    mean_row_sum_MW[g] = (W_dense @ M_ones).mean()
+            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
+            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = np.column_stack([
-                beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-                for idx, j in enumerate(wx_idx)
-            ])
-            total_samples = np.column_stack([
-                beta1_draws[:, j] * mean_row_sum_M + beta2_draws[:, idx] * mean_row_sum_MW
-                for idx, j in enumerate(wx_idx)
-            ])
+            direct_samples = np.column_stack(
+                [
+                    beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
+                    for idx, j in enumerate(wx_idx)
+                ]
+            )
+            total_samples = np.column_stack(
+                [
+                    beta1_draws[:, j] * mean_row_sum_M
+                    + beta2_draws[:, idx] * mean_row_sum_MW
+                    for idx, j in enumerate(wx_idx)
+                ]
+            )
             indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Reported fitted mean: ``max(c, E[y* | X, params])``.
+
+        The structural latent mean for SDM-Tobit is
+        :math:`E[y^* \\mid X] = (I - \\rho W)^{-1} (X\\beta_1 + WX\\beta_2)`,
+        evaluated at posterior means; censored entries are reported at
+        the censoring point.
+        """
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
-        y_lat = self._posterior_latent_y_mean()
         Z = np.hstack([self._X, self._WX])
-        return rho * (self._W_dense @ y_lat) + Z @ beta
+        n = self._y.shape[0]
+        A = np.eye(n) - rho * self._W_dense
+        structural = np.linalg.solve(A, Z @ beta)
+        return np.maximum(self.censoring, structural)
 
     def fit(
         self,
@@ -824,8 +831,6 @@ class SDMTobit(_SpatialTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import pytensor
-        import pytensor.tensor as pt_ll
         import xarray as xr
         from scipy.stats import norm
 
@@ -845,9 +850,13 @@ class SDMTobit(_SpatialTobitBase):
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
 
-        # Get posterior mean of latent y* for computing mu
-        y_lat = self._posterior_latent_y_mean()
-        mu = rho_f[:, None] * (W @ y_lat)[None, :] + beta_f @ Z.T  # (s, n)
+        # Structural latent mean per draw: mu = (I - rho W)^{-1} Z beta.
+        # See SARTobit.fit for rationale (must not depend on posterior y*).
+        I_n = np.eye(n)
+        Zb = beta_f @ Z.T  # (s, n)
+        mu = np.empty((s, n), dtype=np.float64)
+        for i in range(s):
+            mu[i] = np.linalg.solve(I_n - rho_f[i] * W, Zb[i])
 
         # Tobit pointwise log-likelihood
         ll = np.empty((s, n), dtype=np.float64)
@@ -856,6 +865,7 @@ class SDMTobit(_SpatialTobitBase):
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
+
             ll[:, uncens] = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -881,9 +891,8 @@ class SDMTobit(_SpatialTobitBase):
                 (censoring - mu[:, censored]) / sigma_f[:, None]
             )
 
-        # Eigenvalue-based Jacobian: log|I - rho*W| / n (pure numpy)
-        eigs = self._W_eigs.real.astype(np.float64)
-        jac = np.array([np.sum(np.log(np.abs(1.0 - rv * eigs))) for rv in rho_f])  # (n_draws,)
+        # Jacobian (respects logdet_method)
+        jac = self._logdet_numpy_vec_fn(rho_f)  # (n_draws,)
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)

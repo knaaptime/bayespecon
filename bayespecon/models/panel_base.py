@@ -14,9 +14,46 @@ import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
+from ..logdet import (
+    _auto_logdet_method,
+    make_logdet_fn,
+    make_logdet_numpy_fn,
+    make_logdet_numpy_vec_fn,
+)
+from .base import _is_row_standardized_csr
+
 
 def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
     """Apply panel demeaning transformation.
+
+    Implements the within-transformation for two-way fixed-effects panel
+    models prior to the spatial filter.  In the SAR-FE setting we model
+
+    .. math::
+
+        y_{it} = \\rho \\sum_j W_{ij} y_{jt} + X_{it}\\beta + \\mu_i
+                 + \\alpha_t + \\varepsilon_{it},
+
+    and concentrate out the fixed effects by demeaning *both* sides of
+    the equation before the spatial lag is applied.  Because :math:`W`
+    operates only across units (within a period), the within-period
+    demeaning commutes with :math:`W` (i.e. ``W (M_T y) = M_T (W y)``)
+    so the order of "demean then apply :math:`W`" or "apply :math:`W`
+    then demean" yields the same likelihood — a fact exploited in
+    Lee & Yu (2010) and Elhorst (2014, ch. 3).  This is why
+    :func:`bayespecon.models.panel.SARPanel` builds ``Wy`` from the
+    *demeaned* ``y`` returned here without an additional Jacobian
+    correction beyond the standard :math:`T\\,\\log|I_N - \\rho W|`
+    panel Jacobian.
+
+    References
+    ----------
+    Lee, L.-F. & Yu, J. (2010). Estimation of spatial autoregressive
+    panel data models with fixed effects.  *Journal of Econometrics*,
+    154(2), 165–185.
+
+    Elhorst, J.P. (2014). *Spatial Econometrics: From Cross-Sectional
+    Data to Spatial Panels*. Springer.
 
     Parameters
     ----------
@@ -38,6 +75,13 @@ def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
     """
     y2 = y.reshape(T, N)
     X3 = X.reshape(T, N, X.shape[1])
+
+    if model in (1, 3) and T < 2:
+        raise ValueError(
+            f"Unit fixed effects (model={model}) require T >= 2 to identify "
+            "within-unit variation, but T=" + str(T) + " was supplied. "
+            "Use model=0 (pooled) or model=2 (time FE) when T=1."
+        )
 
     if model == 0:
         y_with = y2
@@ -96,7 +140,7 @@ def _as_dense_W(W: Union[Graph, sp.spmatrix, np.ndarray], N: int, T: int) -> np.
         return Wn
 
     raise ValueError(
-        f"W has shape {Wn.shape}; expected (N,N)=({N},{N}) or (N*T,N*T)=({N*T},{N*T})."
+        f"W has shape {Wn.shape}; expected (N,N)=({N},{N}) or (N*T,N*T)=({N * T},{N * T})."
     )
 
 
@@ -119,11 +163,10 @@ def _parse_panel_W(
     if isinstance(W, Graph):
         W_csr = W.sparse.tocsr().astype(np.float64)
         transform = getattr(W, "transformation", None)
-        row_std = transform in ("r", "R")
+        row_std = transform in ("r", "R") or _is_row_standardized_csr(W_csr)
     elif sp.issparse(W):
         W_csr = W.tocsr().astype(np.float64)
-        row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
-        row_std = bool(np.allclose(row_sums, 1.0, atol=1e-6))
+        row_std = _is_row_standardized_csr(W_csr)
     elif hasattr(W, "sparse") and hasattr(W, "transform"):
         raise TypeError(
             "W appears to be a legacy libpysal.weights.W object. "
@@ -148,7 +191,7 @@ def _parse_panel_W(
     else:
         raise ValueError(
             f"W has shape {W_csr.shape} but data has N={N} units (T={T} periods). "
-            f"W must be ({N},{N}) or ({N*T},{N*T})."
+            f"W must be ({N},{N}) or ({N * T},{N * T})."
         )
 
     if not row_std:
@@ -187,6 +230,14 @@ class SpatialPanelModel(ABC):
         Required in matrix mode if not inferable.
     model
         0 pooled, 1 unit FE, 2 time FE, 3 two-way FE.
+    priors : dict, optional
+        Override default priors. Keys depend on the model subclass; see
+        each model's docstring for supported keys.
+    logdet_method : str, optional
+        How to compute ``log|I - rho*W|``. When ``None``, the method is
+        auto-selected from the cross-sectional ``N x N`` weights size via
+        :func:`bayespecon.logdet._auto_logdet_method`: ``"eigenvalue"`` for
+        ``N <= 2000`` and ``"chebyshev"`` otherwise.
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal,
         yielding a model that is robust to heavy-tailed outliers. When
@@ -209,7 +260,7 @@ class SpatialPanelModel(ABC):
         T: Optional[int] = None,
         model: int = 0,
         priors: Optional[dict] = None,
-        logdet_method: str = "eigenvalue",
+        logdet_method: str | None = None,
         robust: bool = False,
     ):
         if W is None:
@@ -242,7 +293,9 @@ class SpatialPanelModel(ABC):
             units = d[unit_col].nunique()
             times = d[time_col].nunique()
             if units * times != len(d):
-                raise ValueError("Data are not a balanced panel after sorting by time/unit.")
+                raise ValueError(
+                    "Data are not a balanced panel after sorting by time/unit."
+                )
             self._N = units
             self._T = times
             self._panel_index = d[[time_col, unit_col]].copy()
@@ -263,13 +316,19 @@ class SpatialPanelModel(ABC):
             if self._N * self._T != len(y_arr):
                 raise ValueError("N*T must equal number of stacked observations.")
         else:
-            raise ValueError("Provide either (formula,data,unit_col,time_col) or (y,X,N,T).")
+            raise ValueError(
+                "Provide either (formula,data,unit_col,time_col) or (y,X,N,T)."
+            )
 
         self._y_raw = y_arr
         self._X_raw = X_arr
 
-        self._wx_column_indices = self._spatial_lag_column_indices(self._X_raw, self._feature_names)
-        self._wx_feature_names = [self._feature_names[i] for i in self._wx_column_indices]
+        self._wx_column_indices = self._spatial_lag_column_indices(
+            self._X_raw, self._feature_names
+        )
+        self._wx_feature_names = [
+            self._feature_names[i] for i in self._wx_column_indices
+        ]
 
         # Validate W and store as N×N CSR. Dense expansion is deferred.
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
@@ -278,36 +337,76 @@ class SpatialPanelModel(ABC):
             self._W_sparse.toarray().astype(np.float64)
         )
 
-        self._y, self._X = _demean_panel(self._y_raw, self._X_raw, self._N, self._T, self.model)
+        self._y, self._X = _demean_panel(
+            self._y_raw, self._X_raw, self._N, self._T, self.model
+        )
 
         # Compute spatial lags with the sparse Kronecker block W⊗I_T, avoiding
         # full dense materialisation.  For an N×N unit matrix W, the panel lag
         # of a stacked vector v (length N*T, ordered T×N) is equivalent to
         # applying W row-wise within each time period.
+        # Store a numpy logdet callable for post-sampling LL Jacobians.
+        self._logdet_numpy_fn = make_logdet_numpy_fn(
+            self._W_sparse, self._W_eigs.real, method=self.logdet_method
+        )
+        # Vectorized version: evaluates logdet over an array of rho draws in one call.
+        self._logdet_numpy_vec_fn = make_logdet_numpy_vec_fn(
+            self._W_sparse, self._W_eigs.real, method=self.logdet_method
+        )
+        # Store the correct W argument for logdet calls.
+        # For eigenvalue method (explicit or auto-selected for n ≤ 2000),
+        # pass 1-D eigenvalues to avoid O(n²) dense materialisation.
+        # For other methods, pass the 2-D dense matrix.
+        _resolved_logdet = (
+            self.logdet_method
+            if self.logdet_method is not None
+            else _auto_logdet_method(self._W_sparse.shape[0])
+        )
+        self._W_for_logdet: np.ndarray = (
+            self._W_eigs.real.astype(np.float64)
+            if _resolved_logdet in ("eigenvalue", "chebyshev")
+            else self._W_sparse.toarray().astype(np.float64)
+        )
+        # Store a pytensor logdet callable for use in _build_pymc_model.
+        self._logdet_pytensor_fn = make_logdet_fn(
+            self._W_for_logdet, method=self.logdet_method, T=self._T
+        )
+
         self._Wy = self._sparse_panel_lag(self._y)
         if self._wx_column_indices:
-            self._WX = np.column_stack([
-                self._sparse_panel_lag(self._X[:, j])
-                for j in self._wx_column_indices
-            ])
+            # Single batched sparse multiply across all WX columns, replacing
+            # the per-column Python loop that previously paid an O(k_wx)
+            # overhead.
+            self._WX = self._sparse_panel_lag(self._X[:, self._wx_column_indices])
         else:
             self._WX = np.empty((self._X.shape[0], 0), dtype=float)
 
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
-        """Apply the panel spatial lag W⊗I_T to a stacked vector *v*.
+        """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
 
-        For each of the T time periods the N-length slice is multiplied by the
-        N×N sparse weight matrix, staying sparse until the final concatenation.
+        Accepts either a 1-D stacked vector of length ``N*T`` or a 2-D matrix
+        ``(N*T, k)`` whose columns will all be lagged in a single batched
+        sparse multiply.  Stays sparse until the final reshape.
         """
         W = self._W_sparse
         N, T = self._N, self._T
+        v = np.asarray(v, dtype=float)
         if W.shape[0] == N:
-            # Stack is ordered (T, N); reshape and apply W period by period.
-            chunks = v.reshape(T, N)  # (T, N)
-            return np.asarray((W @ chunks.T).T, dtype=float).ravel()
-        else:
-            # Full (N*T)×(N*T) block matrix provided.
+            if v.ndim == 1:
+                # Stack ordered (T, N); apply W per period in one matmul.
+                chunks = v.reshape(T, N)  # (T, N)
+                return np.asarray((W @ chunks.T).T, dtype=float).ravel()
+            # 2-D path: (N*T, k) → reshape so all periods/columns become a
+            # single dense block, perform ONE sparse matmul, then reshape back.
+            k = v.shape[1]
+            chunks = v.reshape(T, N, k)  # (T, N, k)
+            mat = chunks.transpose(1, 0, 2).reshape(N, T * k)
+            out = np.asarray(W @ mat, dtype=float)  # (N, T*k)
+            return out.reshape(N, T, k).transpose(1, 0, 2).reshape(T * N, k)
+        # Full (N*T)×(N*T) block matrix provided.
+        if v.ndim == 1:
             return np.asarray(W @ v, dtype=float)
+        return np.asarray(W @ v, dtype=float)
 
     @property
     def _W_dense(self) -> np.ndarray:
@@ -315,6 +414,128 @@ class SpatialPanelModel(ABC):
         if self._W_dense_cache is None:
             self._W_dense_cache = _as_dense_W(self._W_sparse, self._N, self._T)
         return self._W_dense_cache
+
+    @property
+    def _W_sparse_NT(self) -> "sp.csr_matrix":
+        """Sparse (N*T)×(N*T) Kronecker-block weight matrix ``I_T ⊗ W_n``.
+
+        Cached on first access. Used by symbolic (PyMC/PyTensor) likelihoods
+        to avoid the O((N*T)²) memory footprint of :attr:`_W_dense` while
+        still exposing a single linear operator that can be applied to a
+        stacked panel residual vector.
+        """
+        if not hasattr(self, "_W_sparse_NT_cache") or self._W_sparse_NT_cache is None:
+            W = self._W_sparse
+            if W.shape[0] == self._N:
+                # Force ``csr_matrix`` (not ``csr_array``) so the result is
+                # accepted by :mod:`pytensor.sparse`, which currently only
+                # supports the legacy ``scipy.sparse`` matrix API.
+                self._W_sparse_NT_cache = sp.csr_matrix(
+                    sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
+                )
+            else:
+                # Caller already supplied a full (N*T)×(N*T) matrix.
+                self._W_sparse_NT_cache = sp.csr_matrix(W)
+        return self._W_sparse_NT_cache
+
+    @property
+    def _W_pt_sparse(self):
+        """PyTensor sparse variable wrapping :attr:`_W_sparse_NT`.
+
+        Cached so that repeated PyMC model builds reuse the same symbolic
+        sparse weight operator, avoiding redundant ``as_sparse_variable`` calls.
+        """
+        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
+            from pytensor import sparse as pts
+
+            self._W_pt_sparse_cache = pts.as_sparse_variable(
+                sp.csc_matrix(self._W_sparse_NT)
+            )
+        return self._W_pt_sparse_cache
+
+    @property
+    def _T_ww(self) -> float:
+        """Trace of W'W + W², cached on first access.
+
+        Computed as ``||W||_F² + sum(W * W')`` using sparse operations,
+        which is O(nnz) rather than O(n²).
+        """
+        if not hasattr(self, "_T_ww_cache"):
+            from ..graph import sparse_trace_WtW_plus_WW
+
+            self._T_ww_cache = sparse_trace_WtW_plus_WW(self._W_sparse)
+        return self._T_ww_cache
+
+    def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
+        """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
+
+        For row-standardised W this is the scalar ``1/(1 - rho)``.
+        For non-row-standardised W the eigenvalue decomposition is used:
+        ``mean_row_sum = (1/n) * ones' V diag(1/(1-rho*omega)) V^{-1} ones``,
+        where the vector ``c = V^{-1} ones`` is pre-computed once.
+
+        Parameters
+        ----------
+        rho_draws : np.ndarray, shape (G,)
+            Spatial autoregressive parameter draws.
+
+        Returns
+        -------
+        np.ndarray, shape (G,)
+            Mean row sum for each draw.
+        """
+        if self._is_row_std:
+            return 1.0 / (1.0 - rho_draws)
+
+        # Eigenvalue-based computation: precompute c = V^{-1} @ ones once.
+        if not hasattr(self, "_eig_inv_ones"):
+            W_dense = self._W_dense
+            eigs, V = np.linalg.eig(W_dense)
+            self._W_eigs_full = eigs.real.astype(np.float64)
+            self._V_full = V.real.astype(np.float64)
+            self._eig_inv_ones = np.linalg.solve(
+                self._V_full, np.ones(W_dense.shape[0])
+            )
+
+        c = self._eig_inv_ones
+        eigs = self._W_eigs_full
+        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
+        V_col_sums = self._V_full.sum(axis=0)  # (n,)
+        return (1.0 / len(c)) * (inv_eigs * c[None, :]) @ V_col_sums
+
+    def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
+        """Compute mean row sum of (I - rho*W)^{-1} W for each posterior draw.
+
+        For row-standardised W this equals ``1/(1 - rho)`` (same as
+        ``_batch_mean_row_sum``) because row sums of M@W = row sums of M
+        when W is row-standardised.
+
+        For non-row-standardised W the eigenvalue decomposition is used:
+        ``mean_row_sum_MW = (1/n) * ones' V diag(omega/(1-rho*omega)) V^{-1} ones``.
+
+        Parameters
+        ----------
+        rho_draws : np.ndarray, shape (G,)
+            Spatial autoregressive parameter draws.
+
+        Returns
+        -------
+        np.ndarray, shape (G,)
+            Mean row sum of M@W for each draw.
+        """
+        if self._is_row_std:
+            return 1.0 / (1.0 - rho_draws)
+
+        # Ensure eigenvalue decomposition is available
+        if not hasattr(self, "_eig_inv_ones"):
+            _ = self._batch_mean_row_sum(rho_draws[:1])
+
+        c = self._eig_inv_ones
+        eigs = self._W_eigs_full
+        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
+        eig_weighted = eigs[None, :] * inv_eigs  # omega / (1 - rho*omega)
+        V_col_sums = self._V_full.sum(axis=0)  # (n,)
+        return (1.0 / len(c)) * (eig_weighted * c[None, :]) @ V_col_sums
 
     @property
     def _nonintercept_indices(self) -> list[int]:
@@ -349,7 +570,9 @@ class SpatialPanelModel(ABC):
         return [self._feature_names[i] for i in self._nonintercept_indices]
 
     @staticmethod
-    def _spatial_lag_column_indices(X: np.ndarray, feature_names: list[str]) -> list[int]:
+    def _spatial_lag_column_indices(
+        X: np.ndarray, feature_names: list[str]
+    ) -> list[int]:
         """Return indices of regressors that should receive spatial lags.
 
         Constant columns are treated as intercept-like and excluded, which
@@ -407,7 +630,9 @@ class SpatialPanelModel(ABC):
         """Compute direct/indirect/total effects at posterior mean."""
 
     @abstractmethod
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         Returns
@@ -523,6 +748,20 @@ class SpatialPanelModel(ABC):
         term is absent.  This method adds the per-observation Jacobian
         contribution ``log|I - ρW| * T / n`` to each pointwise LL value.
 
+        Notes
+        -----
+        The full panel log-determinant of the spatial filter is
+        :math:`T \\log|I_N - \\rho W|` because the stacked
+        :math:`(N T) \\times (N T)` filter is
+        :math:`I_T \\otimes (I_N - \\rho W)`, whose determinant is
+        :math:`|I_N - \\rho W|^T` by the Kronecker product rule.  Dividing
+        by :math:`n = N T` distributes that scalar Jacobian uniformly
+        over the per-observation pointwise log-likelihood entries that
+        ArviZ expects, so quantities like LOO and WAIC are computed on a
+        per-observation log density.  For dynamic panels the time
+        dimension is ``T - 1`` (one period is consumed by the lag), so
+        callers pass ``T = T - 1`` here.
+
         Parameters
         ----------
         idata : arviz.InferenceData
@@ -541,9 +780,8 @@ class SpatialPanelModel(ABC):
         n = self._y.shape[0]
         param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
 
-        # Eigenvalue-based Jacobian: log|I - param*W| * T (pure numpy)
-        eigs = self._W_eigs.real.astype(np.float64)
-        jacobian = np.array([np.sum(np.log(np.abs(1.0 - v * eigs))) for v in param_draws]) * T  # (n_draws,)
+        # Jacobian: log|I - param*W| * T (pure numpy, respects logdet_method)
+        jacobian = self._logdet_numpy_vec_fn(param_draws) * T  # (n_draws,)
         ll_jac = jacobian[:, None] / n  # (n_draws, 1)
 
         # Add Jacobian to each variable in the log_likelihood group
@@ -558,7 +796,9 @@ class SpatialPanelModel(ABC):
             # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
             new_vals = da.values + ll_jac_3d
             new_vars[var_name] = xr.DataArray(
-                new_vals, dims=da.dims, coords={k: v for k, v in da.coords.items() if k != da.dims[-1]}
+                new_vals,
+                dims=da.dims,
+                coords={k: v for k, v in da.coords.items() if k != da.dims[-1]},
             )
 
         idata["log_likelihood"] = xr.Dataset(new_vars)
@@ -777,7 +1017,10 @@ class SpatialPanelModel(ABC):
                 elif error and not lag:
                     return f"SEMPanel{suffix}"
                 elif lag and error:
-                    if diag.loc["Panel-LM-Lag", "p_value"] <= diag.loc["Panel-LM-Error", "p_value"]:
+                    if (
+                        diag.loc["Panel-LM-Lag", "p_value"]
+                        <= diag.loc["Panel-LM-Error", "p_value"]
+                    ):
                         return f"SARPanel{suffix}"
                     else:
                         return f"SEMPanel{suffix}"
@@ -789,7 +1032,10 @@ class SpatialPanelModel(ABC):
                 elif error and not lag:
                     return f"SEMPanel{suffix}"
                 elif lag and error:
-                    if diag.loc["Panel-LM-Lag", "p_value"] <= diag.loc["Panel-LM-Error", "p_value"]:
+                    if (
+                        diag.loc["Panel-LM-Lag", "p_value"]
+                        <= diag.loc["Panel-LM-Error", "p_value"]
+                    ):
                         return f"SARPanel{suffix}"
                     else:
                         return f"SEMPanel{suffix}"
@@ -876,16 +1122,24 @@ class SpatialPanelModel(ABC):
         from ..diagnostics.spatial_effects import _build_effects_dataframe
 
         self._require_fit()
-        direct_samples, indirect_samples, total_samples = self._compute_spatial_effects_posterior()
+        direct_samples, indirect_samples, total_samples = (
+            self._compute_spatial_effects_posterior()
+        )
 
         # Determine feature names based on the shape of the posterior samples.
         # Models with WX terms (SDM, SLX, SDEM) report effects only for
         # lagged covariates (k_wx columns), while models without WX terms
         # (SAR, SEM) report effects for non-intercept covariates.
         k_effects = direct_samples.shape[1]
-        if hasattr(self, "_wx_feature_names") and len(self._wx_feature_names) == k_effects:
+        if (
+            hasattr(self, "_wx_feature_names")
+            and len(self._wx_feature_names) == k_effects
+        ):
             feature_names = list(self._wx_feature_names)
-        elif hasattr(self, "_nonintercept_feature_names") and len(self._nonintercept_feature_names) == k_effects:
+        elif (
+            hasattr(self, "_nonintercept_feature_names")
+            and len(self._nonintercept_feature_names) == k_effects
+        ):
             feature_names = list(self._nonintercept_feature_names)
         else:
             feature_names = list(self._feature_names[:k_effects])
@@ -916,5 +1170,3 @@ class SpatialPanelModel(ABC):
             f"{self.__class__.__name__}(N={self._N}, T={self._T}, n={n}, "
             f"k={k}, model={self.model}, features={self._feature_names})"
         )
-
-

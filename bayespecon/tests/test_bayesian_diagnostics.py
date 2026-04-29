@@ -1,30 +1,31 @@
+from unittest.mock import MagicMock
+
+import arviz as az
 import numpy as np
 import pandas as pd
-import arviz as az
 import pytest
-from unittest.mock import MagicMock
 
 from bayespecon.diagnostics.bayesian_lmtests import (
     BayesianLMTestResult,
-    bayesian_lm_lag_test,
     bayesian_lm_error_test,
-    bayesian_lm_wx_test,
+    bayesian_lm_lag_test,
     bayesian_lm_sdm_joint_test,
     bayesian_lm_slx_error_joint_test,
-    bayesian_robust_lm_lag_sdm_test,
-    bayesian_robust_lm_wx_test,
-    bayesian_robust_lm_error_sdem_test,
+    bayesian_lm_wx_test,
+    bayesian_panel_lm_error_test,
     # Panel LM tests
     bayesian_panel_lm_lag_test,
-    bayesian_panel_lm_error_test,
-    bayesian_panel_robust_lm_lag_test,
-    bayesian_panel_robust_lm_error_test,
-    bayesian_panel_lm_wx_test,
     bayesian_panel_lm_sdm_joint_test,
     bayesian_panel_lm_slx_error_joint_test,
-    bayesian_panel_robust_lm_lag_sdm_test,
-    bayesian_panel_robust_lm_wx_test,
+    bayesian_panel_lm_wx_test,
     bayesian_panel_robust_lm_error_sdem_test,
+    bayesian_panel_robust_lm_error_test,
+    bayesian_panel_robust_lm_lag_sdm_test,
+    bayesian_panel_robust_lm_lag_test,
+    bayesian_panel_robust_lm_wx_test,
+    bayesian_robust_lm_error_sdem_test,
+    bayesian_robust_lm_lag_sdm_test,
+    bayesian_robust_lm_wx_test,
 )
 
 
@@ -38,6 +39,7 @@ def make_sar_sem_data(n=20, seed=42):
     W_dense[0, -1] = W_dense[-1, 0] = 1
     W_dense = W_dense / W_dense.sum(axis=1, keepdims=True)
     import scipy.sparse as sp
+
     W_sparse = sp.csr_matrix(W_dense)
     return y, X, W_dense, W_sparse
 
@@ -65,6 +67,7 @@ def _make_mock_model(y, X, W_sparse, beta_noise=0.1, draws=100):
     model._WX = np.empty((n, 0), dtype=float)
     model._Wy = Wy
     model._W_sparse = W_sparse
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
 
@@ -166,6 +169,7 @@ def _make_mock_sar_model(y, X, WX, W_sparse, beta_noise=0.1, rho_noise=0.05, dra
     model._WX = WX
     model._Wy = Wy
     model._W_sparse = W_sparse
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
 
@@ -196,6 +200,7 @@ def _make_mock_slx_model(y, X, WX, W_sparse, beta_noise=0.1, draws=100):
     model._WX = WX
     model._Wy = Wy
     model._W_sparse = W_sparse
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
 
@@ -212,6 +217,7 @@ def _make_data_with_wx(n=20, k_wx=2, seed=42):
     W_dense[0, -1] = W_dense[-1, 0] = 1
     W_dense = W_dense / W_dense.sum(axis=1, keepdims=True)
     import scipy.sparse as sp
+
     W_sparse = sp.csr_matrix(W_dense)
     return y, X, WX, W_dense, W_sparse
 
@@ -458,6 +464,7 @@ def _make_panel_data(N=6, T=3, k_wx=0, seed=42):
     W_dense[0, -1] = W_dense[-1, 0] = 1
     W_dense = W_dense / W_dense.sum(axis=1, keepdims=True)
     import scipy.sparse as sp
+
     W_sparse = sp.csr_matrix(W_dense)
 
     # WX columns (spatially lagged X, applied period-by-period)
@@ -468,7 +475,9 @@ def _make_panel_data(N=6, T=3, k_wx=0, seed=42):
             for t in range(T):
                 start = t * N
                 end = (t + 1) * N
-                wx_j[start:end] = W_dense @ X[start:end, 1]  # lag the non-constant column
+                wx_j[start:end] = (
+                    W_dense @ X[start:end, 1]
+                )  # lag the non-constant column
             WX_list.append(wx_j)
         WX = np.column_stack(WX_list)
     else:
@@ -510,11 +519,14 @@ def _make_mock_panel_ols_model(N=6, T=3, k_wx=0, beta_noise=0.1, draws=100, seed
     model._W_eigs = W_eigs
     model._N = N
     model._T = T
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
 
 
-def _make_mock_panel_sar_model(N=6, T=3, k_wx=2, beta_noise=0.1, rho_noise=0.05, draws=100, seed=42):
+def _make_mock_panel_sar_model(
+    N=6, T=3, k_wx=2, beta_noise=0.1, rho_noise=0.05, draws=100, seed=42
+):
     """Build a mock SAR panel model for panel LM tests."""
     y, X, WX, Wy, W_dense, W_sparse, W_eigs, N, T = _make_panel_data(N, T, k_wx, seed)
 
@@ -542,6 +554,7 @@ def _make_mock_panel_sar_model(N=6, T=3, k_wx=2, beta_noise=0.1, rho_noise=0.05,
     model._W_eigs = W_eigs
     model._N = N
     model._T = T
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
 
@@ -573,6 +586,7 @@ def _make_mock_panel_slx_model(N=6, T=3, k_wx=2, beta_noise=0.1, draws=100, seed
     model._W_eigs = W_eigs
     model._N = N
     model._T = T
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
 
@@ -775,8 +789,9 @@ class TestSpatialDiagnosticsMethod:
     """Test the spatial_diagnostics() and spatial_diagnostics_decision()
     methods on model classes."""
 
-    def _make_model_with_class(self, y, X, W_sparse, cls, WX=None,
-                                beta_noise=0.1, draws=100, rho_noise=None):
+    def _make_model_with_class(
+        self, y, X, W_sparse, cls, WX=None, beta_noise=0.1, draws=100, rho_noise=None
+    ):
         """Build a mock model that has the right class for spatial_diagnostics."""
         n, k = X.shape
         beta_ols = np.linalg.lstsq(X, y, rcond=None)[0]
@@ -822,7 +837,12 @@ class TestSpatialDiagnosticsMethod:
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 4
-        assert set(df.index) == {"LM-Lag", "LM-Error", "LM-SDM-Joint", "LM-SLX-Error-Joint"}
+        assert set(df.index) == {
+            "LM-Lag",
+            "LM-Error",
+            "LM-SDM-Joint",
+            "LM-SLX-Error-Joint",
+        }
         assert "statistic" in df.columns
         assert "p_value" in df.columns
         assert "df" in df.columns
@@ -859,8 +879,10 @@ class TestSpatialDiagnosticsMethod:
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 4
         assert set(df.index) == {
-            "LM-Lag", "LM-Error",
-            "Robust-LM-Lag-SDM", "Robust-LM-Error-SDEM",
+            "LM-Lag",
+            "LM-Error",
+            "Robust-LM-Lag-SDM",
+            "Robust-LM-Error-SDEM",
         }
 
     def test_sdm_spatial_diagnostics_returns_dataframe(self):
@@ -959,3 +981,225 @@ class TestSpatialDiagnosticsMethod:
         assert len(raw) == 4
         for label, result in raw.items():
             assert isinstance(result, BayesianLMTestResult)
+
+
+# ---------------------------------------------------------------------------
+# Bayesian LM tests for spatial flow models
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def _flow_ring_graph():
+    """Ring graph on n=6 nodes, row-standardised."""
+    from libpysal.graph import Graph
+
+    n = 6
+    focal = np.concatenate([np.arange(n), np.arange(n)])
+    neighbor = np.concatenate([np.roll(np.arange(n), 1), np.roll(np.arange(n), -1)])
+    G = Graph.from_arrays(focal, neighbor, np.ones(2 * n)).transform("r")
+    return n, G
+
+
+@pytest.fixture(scope="module")
+def fitted_olsflow(_flow_ring_graph):
+    from bayespecon.dgp.flows import generate_flow_data
+    from bayespecon.models.flow import OLSFlow
+
+    n, G = _flow_ring_graph
+    data = generate_flow_data(
+        n=n,
+        G=G,
+        rho_d=0.0,
+        rho_o=0.0,
+        rho_w=0.0,
+        beta_d=[1.0],
+        beta_o=[0.5],
+        sigma=0.3,
+        seed=0,
+    )
+    ols = OLSFlow(data["y_vec"], data["G"], data["X"], col_names=data["col_names"])
+    ols.fit(draws=150, tune=150, chains=2, progressbar=False, random_seed=0)
+    return ols
+
+
+@pytest.fixture(scope="module")
+def fitted_sarflow(_flow_ring_graph):
+    from bayespecon.dgp.flows import generate_flow_data
+    from bayespecon.models.flow import SARFlow
+
+    n, G = _flow_ring_graph
+    data = generate_flow_data(
+        n=n,
+        G=G,
+        rho_d=0.3,
+        rho_o=0.1,
+        rho_w=0.0,
+        beta_d=[1.0],
+        beta_o=[0.5],
+        sigma=0.3,
+        seed=0,
+    )
+    sar = SARFlow(
+        data["y_vec"],
+        data["G"],
+        data["X"],
+        col_names=data["col_names"],
+        logdet_method="traces",
+        restrict_positive=False,
+    )
+    sar.fit(draws=150, tune=150, chains=2, progressbar=False, random_seed=0)
+    return sar
+
+
+class TestFlowLMTests:
+    def test_marginal_dest(self, fitted_olsflow):
+        from bayespecon import bayesian_lm_flow_dest_test
+
+        r = bayesian_lm_flow_dest_test(fitted_olsflow)
+        assert isinstance(r, BayesianLMTestResult)
+        assert r.df == 1
+        assert r.test_type == "bayesian_lm_flow_dest"
+        assert r.lm_samples.ndim == 1
+        assert np.all(r.lm_samples >= 0)
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_marginal_orig(self, fitted_olsflow):
+        from bayespecon import bayesian_lm_flow_orig_test
+
+        r = bayesian_lm_flow_orig_test(fitted_olsflow)
+        assert r.df == 1
+        assert r.test_type == "bayesian_lm_flow_orig"
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_marginal_network(self, fitted_olsflow):
+        from bayespecon import bayesian_lm_flow_network_test
+
+        r = bayesian_lm_flow_network_test(fitted_olsflow)
+        assert r.df == 1
+        assert r.test_type == "bayesian_lm_flow_network"
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_joint(self, fitted_olsflow):
+        from bayespecon import bayesian_lm_flow_joint_test
+
+        r = bayesian_lm_flow_joint_test(fitted_olsflow)
+        assert r.df == 3
+        assert r.test_type == "bayesian_lm_flow_joint"
+        assert np.all(r.lm_samples >= 0)
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_intra(self, fitted_olsflow):
+        from bayespecon import bayesian_lm_flow_intra_test
+
+        r = bayesian_lm_flow_intra_test(fitted_olsflow)
+        assert r.df >= 1
+        assert r.test_type == "bayesian_lm_flow_intra"
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_robust_dest(self, fitted_sarflow):
+        from bayespecon import bayesian_robust_lm_flow_dest_test
+
+        r = bayesian_robust_lm_flow_dest_test(fitted_sarflow)
+        assert r.df == 1
+        assert r.test_type == "bayesian_robust_lm_flow_dest"
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_robust_orig(self, fitted_sarflow):
+        from bayespecon import bayesian_robust_lm_flow_orig_test
+
+        r = bayesian_robust_lm_flow_orig_test(fitted_sarflow)
+        assert r.df == 1
+        assert r.test_type == "bayesian_robust_lm_flow_orig"
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_robust_network(self, fitted_sarflow):
+        from bayespecon import bayesian_robust_lm_flow_network_test
+
+        r = bayesian_robust_lm_flow_network_test(fitted_sarflow)
+        assert r.df == 1
+        assert r.test_type == "bayesian_robust_lm_flow_network"
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+
+@pytest.fixture(scope="module")
+def fitted_olsflow_panel(_flow_ring_graph):
+    from bayespecon.dgp.flows import generate_flow_data
+    from bayespecon.models.flow_panel import OLSFlowPanel
+
+    n, G = _flow_ring_graph
+    T_periods = 3
+    y_stack = []
+    X_stack = []
+    col_names = None
+    for t in range(T_periods):
+        d = generate_flow_data(
+            n=n,
+            G=G,
+            rho_d=0.0,
+            rho_o=0.0,
+            rho_w=0.0,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=0.3,
+            seed=10 + t,
+        )
+        y_stack.append(d["y_vec"])
+        X_stack.append(d["X"])
+        col_names = d["col_names"]
+
+    y_panel = np.concatenate(y_stack)
+    X_panel = np.vstack(X_stack)
+
+    model = OLSFlowPanel(
+        y_panel,
+        G,
+        X_panel,
+        T=T_periods,
+        col_names=col_names,
+        model=0,
+    )
+    model.fit(draws=150, tune=150, chains=2, progressbar=False, random_seed=0)
+    return model
+
+
+class TestFlowPanelLMTests:
+    def test_marginal_dest(self, fitted_olsflow_panel):
+        from bayespecon import bayesian_panel_lm_flow_dest_test
+
+        r = bayesian_panel_lm_flow_dest_test(fitted_olsflow_panel)
+        assert r.df == 1
+        assert r.test_type == "bayesian_panel_lm_flow_dest"
+        assert np.all(r.lm_samples >= 0)
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+        assert r.details["T"] == 3
+
+    def test_marginal_orig_network(self, fitted_olsflow_panel):
+        from bayespecon import (
+            bayesian_panel_lm_flow_network_test,
+            bayesian_panel_lm_flow_orig_test,
+        )
+
+        for fn, tt in (
+            (bayesian_panel_lm_flow_orig_test, "bayesian_panel_lm_flow_orig"),
+            (bayesian_panel_lm_flow_network_test, "bayesian_panel_lm_flow_network"),
+        ):
+            r = fn(fitted_olsflow_panel)
+            assert r.df == 1
+            assert r.test_type == tt
+            assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_joint(self, fitted_olsflow_panel):
+        from bayespecon import bayesian_panel_lm_flow_joint_test
+
+        r = bayesian_panel_lm_flow_joint_test(fitted_olsflow_panel)
+        assert r.df == 3
+        assert r.test_type == "bayesian_panel_lm_flow_joint"
+        assert 0.0 <= r.bayes_pvalue <= 1.0
+
+    def test_intra(self, fitted_olsflow_panel):
+        from bayespecon import bayesian_panel_lm_flow_intra_test
+
+        r = bayesian_panel_lm_flow_intra_test(fitted_olsflow_panel)
+        assert r.df >= 1
+        assert r.test_type == "bayesian_panel_lm_flow_intra"
+        assert 0.0 <= r.bayes_pvalue <= 1.0

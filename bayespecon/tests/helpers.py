@@ -5,12 +5,12 @@ Import from here rather than from conftest.py to avoid sys.path issues.
 
 from __future__ import annotations
 
+import arviz as az
 import numpy as np
 import pandas as pd
 from libpysal.graph import Graph
 
 from bayespecon import dgp
-
 
 # ---------------------------------------------------------------------------
 # Sampling settings (moderate draws for reliable recovery, not too slow)
@@ -21,13 +21,14 @@ SAMPLE_KWARGS: dict = dict(
 )
 
 # Panel dimensions
-PANEL_N = 10   # cross-sectional units (larger N for reliable recovery)
-PANEL_T = 10   # time periods
+PANEL_N = 10  # cross-sectional units (larger N for reliable recovery)
+PANEL_T = 10  # time periods
 
 
 # ---------------------------------------------------------------------------
 # Spatial weight helpers
 # ---------------------------------------------------------------------------
+
 
 def make_rook_W(side: int) -> np.ndarray:
     """Row-standardized rook-contiguity weights on a ``side x side`` grid."""
@@ -83,6 +84,7 @@ def W_to_graph(W_dense: np.ndarray) -> Graph:
 # ---------------------------------------------------------------------------
 # Cross-sectional data generators
 # ---------------------------------------------------------------------------
+
 
 def make_sar_data(
     rng: np.random.Generator,
@@ -163,6 +165,7 @@ def make_sdem_data(
 # ---------------------------------------------------------------------------
 # Panel data generators  (time-first stacking: obs t*N+i → unit i)
 # ---------------------------------------------------------------------------
+
 
 def make_panel_ols_data(
     rng: np.random.Generator,
@@ -340,6 +343,7 @@ def make_panel_sdmu_data(
 # Spatial probit data generator
 # ---------------------------------------------------------------------------
 
+
 def make_spatial_probit_data(
     rng: np.random.Generator,
     W: np.ndarray,
@@ -373,6 +377,7 @@ def make_spatial_probit_data(
 # ---------------------------------------------------------------------------
 # Tobit data generators
 # ---------------------------------------------------------------------------
+
 
 def make_sar_tobit_data(
     rng: np.random.Generator,
@@ -488,6 +493,7 @@ def make_panel_sem_tobit_data(
 # Dynamic DE (direct-estimation) panel data generators
 # ---------------------------------------------------------------------------
 
+
 def make_panel_sar_dynamic_data(
     rng: np.random.Generator,
     W: np.ndarray,
@@ -501,8 +507,15 @@ def make_panel_sar_dynamic_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate dynamic SAR panel FE data."""
     out = dgp.simulate_panel_sar_dynamic_fe(
-        N=N, T=T, W=W, rho=rho, phi=phi, beta=beta,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        rho=rho,
+        phi=phi,
+        beta=beta,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -523,8 +536,15 @@ def make_panel_sem_dynamic_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate dynamic SEM panel FE data."""
     out = dgp.simulate_panel_sem_dynamic_fe(
-        N=N, T=T, W=W, lam=lam, phi=phi, beta=beta,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        lam=lam,
+        phi=phi,
+        beta=beta,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -545,8 +565,15 @@ def make_panel_sdem_dynamic_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate dynamic SDEM panel FE data."""
     out = dgp.simulate_panel_sdem_dynamic_fe(
-        N=N, T=T, W=W, lam=lam, phi=phi, beta=beta,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        lam=lam,
+        phi=phi,
+        beta=beta,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -566,8 +593,14 @@ def make_panel_slx_dynamic_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate dynamic SLX panel FE data."""
     out = dgp.simulate_panel_slx_dynamic_fe(
-        N=N, T=T, W=W, phi=phi, beta=beta,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        phi=phi,
+        beta=beta,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -578,6 +611,7 @@ def make_panel_slx_dynamic_data(
 # ---------------------------------------------------------------------------
 # Static SDM / SDEM panel data generators (for FE recovery tests)
 # ---------------------------------------------------------------------------
+
 
 def make_panel_sdm_fe_data(
     rng: np.random.Generator,
@@ -592,8 +626,15 @@ def make_panel_sdm_fe_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate SDM panel FE data with WX terms."""
     out = dgp.simulate_panel_sdm_fe(
-        N=N, T=T, W=W, rho=rho, beta1=beta1, beta2=beta2,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        rho=rho,
+        beta1=beta1,
+        beta2=beta2,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
@@ -614,10 +655,42 @@ def make_panel_sdem_fe_data(
 ) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
     """Generate SDEM panel FE data with WX terms."""
     out = dgp.simulate_panel_sdem_fe(
-        N=N, T=T, W=W, lam=lam, beta1=beta1, beta2=beta2,
-        sigma=sigma, sigma_alpha=sigma_alpha, rng=rng,
+        N=N,
+        T=T,
+        W=W,
+        lam=lam,
+        beta1=beta1,
+        beta2=beta2,
+        sigma=sigma,
+        sigma_alpha=sigma_alpha,
+        rng=rng,
     )
     y, X = out["y"], out["X"]
     units, times = out["unit"], out["time"]
     df = pd.DataFrame({"y": y, "x1": X[:, 1], "unit": units, "time": times})
     return y, X, df
+
+
+def set_posterior_means(model, beta: np.ndarray, rho: float | None = None) -> None:
+    """Inject posterior means into a model for testing without MCMC."""
+    posterior: dict[str, np.ndarray] = {
+        "beta": np.array([[beta]], dtype=float),
+    }
+    if rho is not None:
+        posterior["rho"] = np.array([[rho]], dtype=float)
+    model._idata = az.from_dict(posterior=posterior)
+
+
+def make_idata(samples_by_var: dict[str, np.ndarray]) -> az.InferenceData:
+    """Build an InferenceData from a dict of arrays.
+
+    Each array is treated as posterior draws. Arrays with one dimension are
+    expanded with a leading chain axis; otherwise they are passed through.
+    """
+    posterior: dict[str, np.ndarray] = {}
+    for k, v in samples_by_var.items():
+        arr = np.asarray(v)
+        if arr.ndim == 1:
+            arr = arr[None, ...]
+        posterior[k] = arr
+    return az.from_dict(posterior=posterior)

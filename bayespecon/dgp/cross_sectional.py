@@ -2,11 +2,44 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
 
-from .utils import _hetero_scale, ensure_rng, make_design_matrix, make_output_geodataframe, resolve_weights
+from .utils import (
+    _hetero_scale,
+    ensure_rng,
+    make_design_matrix,
+    make_output_geodataframe,
+    resolve_weights,
+)
+
+
+def _check_rho_stability(rho: float, W: np.ndarray, name: str = "rho") -> None:
+    """Warn when ``|rho|`` exceeds the spectral stability bound of W.
+
+    The DGP map :math:`y = (I - \\rho W)^{-1} u` is well-defined iff
+    :math:`(I - \\rho W)` is invertible, which requires
+    :math:`|\\rho| < 1 / \\max_i |\\omega_i|` where :math:`\\omega_i`
+    are the (real-part) eigenvalues of :math:`W`.  For row-standardised
+    W this bound is ``1``.  We emit a UserWarning rather than raising
+    so that callers running deliberate boundary tests can proceed.
+    """
+    try:
+        eig_max = float(np.max(np.abs(np.linalg.eigvals(W).real)))
+    except np.linalg.LinAlgError:
+        return
+    if eig_max <= 0.0:
+        return
+    bound = 1.0 / eig_max
+    if abs(rho) >= bound:
+        warnings.warn(
+            f"{name}={rho:g} is outside the stability domain "
+            f"|{name}| < {bound:g} (1/max|eig(W)|); the simulated draw "
+            "may be numerically singular or unbounded.",
+            stacklevel=3,
+        )
 
 
 def _attach_optional_gdf(
@@ -91,6 +124,7 @@ def simulate_sar(
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
     eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    _check_rho_stability(rho, Wd, name="rho")
     y = np.linalg.solve(np.eye(nobs) - rho * Wd, X @ beta + eps)
     out = {
         "y": y,
@@ -235,6 +269,7 @@ def simulate_sem(
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
     eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    _check_rho_stability(lam, Wd, name="lam")
     u = np.linalg.solve(np.eye(nobs) - lam * Wd, eps)
     y = X @ beta + u
     out = {
@@ -289,7 +324,11 @@ def simulate_slx(
     if Wx.shape[1] != len(beta2):
         raise ValueError("len(beta2) must match number of non-intercept regressors.")
 
-    y = X @ beta1 + Wx @ beta2 + (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    y = (
+        X @ beta1
+        + Wx @ beta2
+        + (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    )
     out = {
         "y": y,
         "X": X,
@@ -344,6 +383,7 @@ def simulate_sdm(
         raise ValueError("len(beta2) must match number of non-intercept regressors.")
 
     eps = (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs)
+    _check_rho_stability(rho, Wd, name="rho")
     y = np.linalg.solve(np.eye(nobs) - rho * Wd, X @ beta1 + Wx @ beta2 + eps)
     out = {
         "y": y,
@@ -398,7 +438,11 @@ def simulate_sdem(
     if Wx.shape[1] != len(beta2):
         raise ValueError("len(beta2) must match number of non-intercept regressors.")
 
-    u = np.linalg.solve(np.eye(nobs) - lam * Wd, (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs))
+    u = np.linalg.solve(
+        np.eye(nobs) - lam * Wd,
+        (_hetero_scale(X, sigma) if err_hetero else sigma) * rng.standard_normal(nobs),
+    )
+    _check_rho_stability(lam, Wd, name="lam")
     y = X @ beta1 + Wx @ beta2 + u
     out = {
         "y": y,

@@ -15,7 +15,7 @@ The probit link is used directly via ``P(y=1) = Phi(X\\beta + \\Delta a)``.
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -121,7 +121,9 @@ class SpatialProbit:
                 mobs=mobs,
             )
         else:
-            raise ValueError("Provide either (formula, data, region_col) or (y, X, region_ids/mobs).")
+            raise ValueError(
+                "Provide either (formula, data, region_col) or (y, X, region_ids/mobs)."
+            )
 
         if self._X.shape[0] != self._y.shape[0]:
             raise ValueError("X and y must have the same number of observations.")
@@ -136,9 +138,11 @@ class SpatialProbit:
             )
 
     @staticmethod
-    def _as_dense_region_W(W: Union[Graph, "sp.spmatrix", np.ndarray]) -> np.ndarray:
-        import scipy.sparse as sp
+    def _as_dense_region_W(W: Union[Graph, Any, np.ndarray]) -> np.ndarray:
         import warnings
+
+        import scipy.sparse as sp
+
         if isinstance(W, Graph):
             W_csr = W.sparse.tocsr().astype(float)
             transform = getattr(W, "transformation", None)

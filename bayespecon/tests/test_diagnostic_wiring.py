@@ -5,8 +5,8 @@ from __future__ import annotations
 from bayespecon import (
     OLS,
     SAR,
-    SDM,
     SDEM,
+    SDM,
     SEM,
     SLX,
     OLSPanelFE,

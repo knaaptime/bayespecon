@@ -1,7 +1,7 @@
 def bayesian_panel_lm_wx_sem_test(
     model,
 ) -> "BayesianLMTestResult":
-    """Bayesian panel LM test for WX coefficients in SEM (H₀: γ = 0 | SEM).
+    r"""Bayesian panel LM test for WX coefficients in SEM (H₀: γ = 0 | SEM).
 
     Tests whether spatially lagged covariates (WX) should be added to a
     panel SEM model, i.e., whether the SEM panel model should be extended to an SDEM panel.
@@ -69,8 +69,8 @@ def bayesian_panel_lm_wx_sem_test(
     J_gamma_gamma = (WX.T @ WX) / sigma2_mean  # (k_wx, k_wx)
 
     # LM = g' J^{-1} g for each draw
-    J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
-    LM = np.array([g_gamma[g] @ J_inv @ g_gamma[g] for g in range(g_gamma.shape[0])])
+    J_inv = _safe_inv(J_gamma_gamma, "J_gamma_gamma (panel WX-SEM)")
+    LM = np.einsum("di,ij,dj->d", g_gamma, J_inv, g_gamma)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -96,7 +96,7 @@ def bayesian_panel_lm_wx_sem_test(
 def bayesian_lm_wx_sem_test(
     model,
 ) -> "BayesianLMTestResult":
-    """Bayesian LM test for WX coefficients in SEM (H₀: γ = 0 | SEM).
+    r"""Bayesian LM test for WX coefficients in SEM (H₀: γ = 0 | SEM).
 
     Tests whether spatially lagged covariates (WX) should be added to a
     SEM model, i.e., whether the SEM model should be extended to an SDEM
@@ -168,8 +168,8 @@ def bayesian_lm_wx_sem_test(
     J_gamma_gamma = (WX.T @ WX) / sigma2_mean  # (k_wx, k_wx)
 
     # LM = g' J^{-1} g for each draw
-    J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
-    LM = np.array([g_gamma[g] @ J_inv @ g_gamma[g] for g in range(g_gamma.shape[0])])
+    J_inv = _safe_inv(J_gamma_gamma, "J_gamma_gamma (LM-WX-SEM)")
+    LM = np.einsum("di,ij,dj->d", g_gamma, J_inv, g_gamma)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -206,6 +206,45 @@ from typing import Any, Dict, Tuple
 import arviz as az
 import numpy as np
 from scipy import stats as sp_stats
+
+
+def _safe_inv(M: np.ndarray, label: str = "information matrix") -> np.ndarray:
+    """Robust matrix inverse for LM-test information / cross-product matrices.
+
+    Adds a tiny ridge (``1e-12 * I``) to prevent exact singularity, checks the
+    condition number of the regularised matrix, and emits a ``RuntimeWarning``
+    plus falls back to ``np.linalg.pinv`` when ``cond > 1e12``. This replaces
+    the previous silent ``np.linalg.inv(M + 1e-12 * np.eye(...))`` pattern,
+    which masked rank-deficient information matrices without notice.
+
+    Parameters
+    ----------
+    M : np.ndarray
+        Square matrix to invert (typically a Fisher information block or
+        :math:`X^\\top X`).
+    label : str
+        Human-readable label used in the warning message.
+
+    Returns
+    -------
+    np.ndarray
+        Either ``inv(M + ε I)`` (well-conditioned) or ``pinv(M)``
+        (ill-conditioned).
+    """
+    M = np.asarray(M, dtype=np.float64)
+    n = M.shape[0]
+    M_reg = M + 1e-12 * np.eye(n)
+    cond = np.linalg.cond(M_reg)
+    if not np.isfinite(cond) or cond > 1e12:
+        import warnings
+
+        warnings.warn(
+            f"{label} is ill-conditioned (cond={cond:.2e}); falling back to pseudo-inverse.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return np.linalg.pinv(M)
+    return np.linalg.inv(M_reg)
 
 
 @dataclass
@@ -250,7 +289,7 @@ class BayesianLMTestResult:
 
     def to_dict(self):
         """Convert the test result to a dictionary."""
-        d =  {
+        d = {
             "lm_samples": self.lm_samples,
             "mean": self.mean,
             "median": self.median,
@@ -267,7 +306,9 @@ class BayesianLMTestResult:
     def to_series(self):
         """Convert the test result to a pandas Series."""
         import pandas as pd
+
         return pd.Series(self.to_dict())
+
 
 def _get_posterior_draws(idata: az.InferenceData, param: str) -> np.ndarray:
     """Extract posterior draws for a parameter from an ArviZ InferenceData object.
@@ -309,7 +350,12 @@ def bayesian_lm_lag_test(
     The variance is:
 
     .. math::
-        V = \\mathbb{E}\\left[ \\sum_{i} (e_i W y_i)^2 \\right]
+        V = T_{WW} \\bar{\\sigma}^2 + \\|W\\mathbf{y}\\|^2
+
+    where :math:`T_{WW} = \\mathrm{tr}(W^\\top W + W^2)` and
+    :math:`\\bar{\\sigma}^2` is the posterior mean of :math:`\\sigma^2`.
+    This matches the Fisher information denominator of the classical LM-lag
+    test (:cite:p:`anselin1996SimpleTest`).
 
     The LM statistic is:
 
@@ -346,12 +392,16 @@ def bayesian_lm_lag_test(
         X = model._X
     # Wy is pre-computed and stored as a dense array — no need to materialize W
     Wy = model._Wy
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    # T_ww = tr(W'W + W²) — cached on the model
+    T_ww = model._T_ww
     fitted = beta_draws @ X.T  # (draws, n)
     resid = y[None, :] - fitted  # (draws, n)
     # Score for each draw: S = resid @ Wy
     S = np.dot(resid, Wy)  # (draws,)
-    # Variance: V = mean(resid^2 @ Wy^2)
-    V = np.mean(np.sum(resid**2 * Wy**2, axis=1))
+    # Variance: V = T_ww * sigma2_mean + ||Wy||^2  (Fisher information denominator)
+    V = T_ww * sigma2_mean + float(np.dot(Wy, Wy))
     LM = S**2 / (V + 1e-12)
     mean = float(np.mean(LM))
     median = float(np.median(LM))
@@ -388,7 +438,12 @@ def bayesian_lm_error_test(
     The variance is:
 
     .. math::
-        V = \\mathbb{E}\\left[ \\sum_{i} (e_i (W \\mathbf{e})_i)^2 \\right]
+        V = T_{WW} \\bar{\\sigma}^2
+
+    where :math:`T_{WW} = \\mathrm{tr}(W^\\top W + W^2)` and
+    :math:`\\bar{\\sigma}^2` is the posterior mean of :math:`\\sigma^2`.
+    This matches the Fisher information denominator of the classical LM-error
+    test (:cite:p:`anselin1996SimpleTest`).
 
     The LM statistic is:
 
@@ -429,10 +484,14 @@ def bayesian_lm_error_test(
     # sparse matmul: (draws, n) @ (n, n)^T = (draws, n)
     # We = W @ resid.T = (n, draws) then transpose to (draws, n)
     We = (W_sp @ resid.T).T  # (draws, n)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    # T_ww = tr(W'W + W²) — cached on the model
+    T_ww = model._T_ww
     # Score for each draw: S = resid * We (element-wise, then sum)
     S = np.sum(resid * We, axis=1)  # (draws,)
-    # Variance: V = mean(sum((resid * We)^2))
-    V = np.mean(np.sum((resid * We) ** 2, axis=1))
+    # Variance: V = T_ww * sigma2_mean  (Fisher information denominator)
+    V = T_ww * sigma2_mean
     LM = S**2 / (V + 1e-12)
     mean = float(np.mean(LM))
     median = float(np.median(LM))
@@ -532,8 +591,8 @@ def bayesian_lm_wx_test(
     J_gamma_gamma = (WX.T @ WX) / sigma2_mean  # (k_wx, k_wx)
 
     # LM = g' J^{-1} g for each draw
-    J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
-    LM = np.array([g_gamma[g] @ J_inv @ g_gamma[g] for g in range(g_gamma.shape[0])])
+    J_inv = _safe_inv(J_gamma_gamma, "J_gamma_gamma (LM-WX)")
+    LM = np.einsum("di,ij,dj->d", g_gamma, J_inv, g_gamma)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -644,8 +703,8 @@ def bayesian_lm_sdm_joint_test(
     J[1:, 1:] = (WX.T @ WX) / sigma2_mean
 
     # LM = g' J^{-1} g for each draw
-    J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
-    LM = np.array([g[d] @ J_inv @ g[d] for d in range(g.shape[0])])
+    J_inv = _safe_inv(J, "J (SDM joint)")
+    LM = np.einsum("di,ij,dj->d", g, J_inv, g)
 
     df = p
     mean = float(np.mean(LM))
@@ -749,9 +808,8 @@ def bayesian_lm_slx_error_joint_test(
     # so we use the information matrix instead (Dogan et al. 2021, Proposition 1).
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    WtW = W_sp.T @ W_sp
-    WW = W_sp @ W_sp
-    T_ww = float(WtW.diagonal().sum() + WW.diagonal().sum())
+    # T_ww = tr(W'W + W²) — cached on the model
+    T_ww = model._T_ww
     p = 1 + k_wx
     J = np.zeros((p, p))
     J[0, 0] = T_ww  # J_{lambda,lambda} = tr(W'W + W^2)
@@ -759,8 +817,8 @@ def bayesian_lm_slx_error_joint_test(
     J[1:, 1:] = (WX.T @ WX) / sigma2_mean
 
     # LM = g' J^{-1} g for each draw
-    J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
-    LM = np.array([g[d] @ J_inv @ g[d] for d in range(g.shape[0])])
+    J_inv = _safe_inv(J, "J (SLX-error joint)")
+    LM = np.einsum("di,ij,dj->d", g, J_inv, g)
 
     df = p
     mean = float(np.mean(LM))
@@ -791,6 +849,7 @@ def _info_matrix_blocks_sdm(
     W_sparse,
     sigma2: float,
     Wy_hat: np.ndarray | None = None,
+    T_ww: float | None = None,
 ) -> dict:
     """Compute partitioned information matrix blocks for SDM specification.
 
@@ -833,17 +892,19 @@ def _info_matrix_blocks_sdm(
         Dictionary with keys ``J_rho_rho``, ``J_rho_gamma``, ``J_gamma_gamma``,
         ``T_ww`` (trace of W'W + W²).
     """
-    n = X.shape[0]
+    X.shape[0]
     k_wx = WX.shape[1]
 
-    # T = tr(W'W + W²) = tr(W'W) + tr(W²)
-    WtW = W_sparse.T @ W_sparse
-    WW = W_sparse @ W_sparse
-    T_ww = float(WtW.diagonal().sum() + WW.diagonal().sum())
+    # T = tr(W'W + W²) = ||W||_F^2 + sum(W*W') [O(nnz)]
+    if T_ww is None:
+        T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
 
-    # J_{ρρ·σ} = n + T_ww
-    # Under H₀ from OLS: this matches spreg's J_{11} after conditioning on σ²
-    J_rho_rho = float(n + T_ww)
+    # J_{ρρ·σ} = (Wŷ)'(Wŷ)/σ² + T_ww  (Fisher information for ρ in SAR/SDM model)
+    # When Wy_hat is not available, fall back to T_ww (error-model null only)
+    if Wy_hat is not None:
+        J_rho_rho = float((Wy_hat @ Wy_hat) / sigma2 + T_ww)
+    else:
+        J_rho_rho = float(T_ww)
 
     # J_{γγ·σ} = (WX)'(WX) / σ²
     J_gamma_gamma = (WX.T @ WX) / sigma2  # (k_wx, k_wx)
@@ -872,6 +933,7 @@ def _info_matrix_blocks_sdem(
     WX: np.ndarray,
     W_sparse,
     sigma2: float,
+    T_ww: float | None = None,
 ) -> dict:
     """Compute partitioned information matrix blocks for SDEM specification.
 
@@ -899,10 +961,9 @@ def _info_matrix_blocks_sdem(
         Dictionary with keys ``J_lam_lam``, ``J_lam_gamma``, ``J_gamma_gamma``,
         ``T_ww``.
     """
-    # T = tr(W'W + W²)
-    WtW = W_sparse.T @ W_sparse
-    WW = W_sparse @ W_sparse
-    T_ww = float(WtW.diagonal().sum() + WW.diagonal().sum())
+    # T = tr(W'W + W²) = ||W||_F^2 + sum(W*W') [O(nnz)]
+    if T_ww is None:
+        T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
 
     # J_{λλ·σ} = T_ww  (for error model under H₀: λ=0)
     J_lam_lam = T_ww
@@ -1018,7 +1079,9 @@ def bayesian_robust_lm_lag_sdm_test(
 
     # Information matrix blocks (evaluated at posterior mean of sigma²)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    info = _info_matrix_blocks_sdm(X, WX, W_sp, sigma2_mean, Wy_hat=Wy_hat)
+    info = _info_matrix_blocks_sdm(
+        X, WX, W_sp, sigma2_mean, Wy_hat=Wy_hat, T_ww=model._T_ww
+    )
 
     J_rho_rho = info["J_rho_rho"]
     J_rho_gamma = info["J_rho_gamma"]  # (k_wx,)
@@ -1026,7 +1089,9 @@ def bayesian_robust_lm_lag_sdm_test(
 
     # Neyman adjustment: g_rho* = g_rho - J_{ργ·σ} J_{γγ·σ}^{-1} g_gamma
     if k_wx > 0:
-        J_gamma_gamma_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
+        J_gamma_gamma_inv = _safe_inv(
+            J_gamma_gamma, "J_gamma_gamma (robust LM-lag-SDM)"
+        )
         neyman_coef = J_rho_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_rho_star = g_rho - adjustment
@@ -1158,7 +1223,9 @@ def bayesian_robust_lm_wx_test(
 
     # Information matrix blocks (evaluated at posterior mean of sigma²)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    info = _info_matrix_blocks_sdm(X, WX, W_sp, sigma2_mean, Wy_hat=Wy_hat)
+    info = _info_matrix_blocks_sdm(
+        X, WX, W_sp, sigma2_mean, Wy_hat=Wy_hat, T_ww=model._T_ww
+    )
 
     J_rho_rho = info["J_rho_rho"]
     J_rho_gamma = info["J_rho_gamma"]  # (k_wx,)
@@ -1176,7 +1243,9 @@ def bayesian_robust_lm_wx_test(
 
     # Adjusted weight matrix: C*_{γγ} = P_{γγ} J_{γ·ρ}
     # P_{γγ} = I - J_{γρ·σ} J_{ρρ·σ}^{-1} J_{ργ·σ} J_{γ·ρ}^{-1}
-    J_gamma_given_rho_inv = np.linalg.inv(J_gamma_given_rho + 1e-12 * np.eye(k_wx))
+    J_gamma_given_rho_inv = _safe_inv(
+        J_gamma_given_rho, "J_gamma_given_rho (robust LM-WX)"
+    )
     P_gamma = (
         np.eye(k_wx)
         - np.outer(J_rho_gamma, J_rho_gamma)
@@ -1193,13 +1262,8 @@ def bayesian_robust_lm_wx_test(
     C_star = P_gamma @ J_gamma_given_rho  # (k_wx, k_wx)
 
     # Robust LM = g_gamma*' C*^{-1} g_gamma* for each draw
-    C_star_inv = np.linalg.inv(C_star + 1e-12 * np.eye(k_wx))
-    LM = np.array(
-        [
-            g_gamma_star[d] @ C_star_inv @ g_gamma_star[d]
-            for d in range(g_gamma_star.shape[0])
-        ]
-    )
+    C_star_inv = _safe_inv(C_star, "C_star (robust LM-WX)")
+    LM = np.einsum("di,ij,dj->d", g_gamma_star, C_star_inv, g_gamma_star)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -1299,7 +1363,7 @@ def bayesian_robust_lm_error_sdem_test(
 
     # Information matrix blocks (evaluated at posterior mean of sigma²)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    info = _info_matrix_blocks_sdem(X, WX, W_sp, sigma2_mean)
+    info = _info_matrix_blocks_sdem(X, WX, W_sp, sigma2_mean, T_ww=model._T_ww)
 
     J_lam_lam = info["J_lam_lam"]
     J_lam_gamma = info["J_lam_gamma"]  # (k_wx,)
@@ -1307,7 +1371,9 @@ def bayesian_robust_lm_error_sdem_test(
 
     # Neyman adjustment: g_lambda* = g_lambda - J_{λγ·σ} J_{γγ·σ}^{-1} g_gamma
     if k_wx > 0:
-        J_gamma_gamma_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
+        J_gamma_gamma_inv = _safe_inv(
+            J_gamma_gamma, "J_gamma_gamma (robust LM-error-SDEM)"
+        )
         neyman_coef = J_lam_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_lambda_star = g_lambda - adjustment
@@ -1433,9 +1499,9 @@ def _panel_trace_WtW_WW(W_sparse) -> float:
     float
         Trace of W'W + W².
     """
-    WtW = W_sparse.T @ W_sparse
-    WW = W_sparse @ W_sparse
-    return float(WtW.diagonal().sum() + WW.diagonal().sum())
+    # tr(W'W) = ||W||_F^2 = sum(W_ij^2)  [O(nnz)]
+    # tr(W^2) = sum_ij W_ij * W_ji = sum(W * W.T)  [O(nnz)]
+    return float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
 
 
 def _panel_info_matrix_blocks(
@@ -1448,6 +1514,7 @@ def _panel_info_matrix_blocks(
     T: int,
     y_hat: np.ndarray | None = None,
     Wy_hat: np.ndarray | None = None,
+    T_ww: float | None = None,
 ) -> dict:
     """Compute partitioned information matrix blocks for panel models.
 
@@ -1501,7 +1568,8 @@ def _panel_info_matrix_blocks(
     k_wx = WX.shape[1]
 
     # tr(W'W + W²) from N×N matrix
-    T_ww = _panel_trace_WtW_WW(W_sparse)
+    if T_ww is None:
+        T_ww = _panel_trace_WtW_WW(W_sparse)
     T_mult = T  # multiplier from Kronecker structure
 
     # J_{λλ·σ} = T * tr(W'W + W²)
@@ -1517,7 +1585,7 @@ def _panel_info_matrix_blocks(
             Wy_hat = _panel_spatial_lag(W_sparse, y_hat, N, T_mult)
 
         # M = I - X(X'X)^{-1}X' (annihilator matrix)
-        XtX_inv = np.linalg.inv(X.T @ X + 1e-12 * np.eye(X.shape[1]))
+        XtX_inv = _safe_inv(X.T @ X, "X'X (panel info blocks)")
         M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
         WbMWb = float(Wy_hat @ M_Wy)
         J_rho_rho = (WbMWb + T_mult * T_ww) / sigma2
@@ -1606,7 +1674,6 @@ def bayesian_panel_lm_lag_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    y = model._y
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
@@ -1634,11 +1701,11 @@ def bayesian_panel_lm_lag_test(
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)  # (n,)
 
     # Annihilator matrix: M = I - X(X'X)^{-1}X'
-    XtX_inv = np.linalg.inv(X.T @ X + 1e-12 * np.eye(X.shape[1]))
+    XtX_inv = _safe_inv(X.T @ X, "X'X (panel LM-lag)")
     M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
     WbMWb = float(Wy_hat @ M_Wy)
 
-    T_ww = _panel_trace_WtW_WW(W_sp)
+    T_ww = model._T_ww
     J_val = WbMWb + T * T_ww * sigma2_mean
 
     # LM = S² / (sigma2 * J_val) for each draw
@@ -1709,8 +1776,6 @@ def bayesian_panel_lm_error_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    y = model._y
-    X = model._X
     W_sp = model._W_sparse
     N = model._N
     T = model._T
@@ -1729,7 +1794,7 @@ def bayesian_panel_lm_error_test(
     S = np.sum(resid * We_panel, axis=1)  # (draws,)
 
     # Variance: V = sigma^4 * T * tr(W'W + W²)
-    T_ww = _panel_trace_WtW_WW(W_sp)
+    T_ww = model._T_ww
     sigma2_draws = sigma_draws**2  # (draws,)
     V = sigma2_draws**2 * T * T_ww  # (draws,)
 
@@ -1788,7 +1853,6 @@ def bayesian_panel_robust_lm_lag_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    y = model._y
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
@@ -1814,11 +1878,11 @@ def bayesian_panel_robust_lm_lag_test(
     sigma2_mean = float(np.mean(sigma_draws**2))
     y_hat = X @ beta_mean
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
-    XtX_inv = np.linalg.inv(X.T @ X + 1e-12 * np.eye(X.shape[1]))
+    XtX_inv = _safe_inv(X.T @ X, "X'X (panel robust LM-lag)")
     M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
     WbMWb = float(Wy_hat @ M_Wy)
 
-    T_ww = _panel_trace_WtW_WW(W_sp)
+    T_ww = model._T_ww
     J_val = WbMWb + T * T_ww * sigma2_mean
 
     # Robust LM = (S_lag/σ² - S_err/σ²)² / (J - T*tr)
@@ -1884,7 +1948,6 @@ def bayesian_panel_robust_lm_error_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    y = model._y
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
@@ -1910,11 +1973,11 @@ def bayesian_panel_robust_lm_error_test(
     sigma2_mean = float(np.mean(sigma_draws**2))
     y_hat = X @ beta_mean
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
-    XtX_inv = np.linalg.inv(X.T @ X + 1e-12 * np.eye(X.shape[1]))
+    XtX_inv = _safe_inv(X.T @ X, "X'X (panel robust LM-error)")
     M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
     WbMWb = float(Wy_hat @ M_Wy)
 
-    T_ww = _panel_trace_WtW_WW(W_sp)
+    T_ww = model._T_ww
     J_val = WbMWb + T * T_ww * sigma2_mean
 
     # Robust LM = (S_err/σ² - T*tr/J * S_lag/σ²)² / (T*tr*(1 - T*tr/J))
@@ -2002,7 +2065,6 @@ def bayesian_panel_lm_wx_test(
     X = model._X
     WX = model._WX
     Wy = model._Wy
-    W_sp = model._W_sparse
     k_wx = WX.shape[1]
     N = model._N
     T = model._T
@@ -2035,8 +2097,8 @@ def bayesian_panel_lm_wx_test(
     J_gamma_gamma = (WX.T @ WX) / sigma2_mean  # (k_wx, k_wx)
 
     # LM = g' J^{-1} g for each draw
-    J_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
-    LM = np.array([g_gamma[g] @ J_inv @ g_gamma[g] for g in range(g_gamma.shape[0])])
+    J_inv = _safe_inv(J_gamma_gamma, "J_gamma_gamma (panel LM-WX)")
+    LM = np.einsum("di,ij,dj->d", g_gamma, J_inv, g_gamma)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -2094,7 +2156,6 @@ def bayesian_panel_lm_sdm_joint_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to :math:`1 + k_{wx}`.
     """
-    y = model._y
     X = model._X
     WX = model._WX
     Wy = model._Wy
@@ -2131,6 +2192,7 @@ def bayesian_panel_lm_sdm_joint_test(
         N,
         T,
         y_hat=y_hat,
+        T_ww=model._T_ww,
     )
 
     p = 1 + k_wx
@@ -2142,8 +2204,8 @@ def bayesian_panel_lm_sdm_joint_test(
         J[1:, 1:] = info["J_gamma_gamma"]
 
     # LM = g' J^{-1} g for each draw
-    J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
-    LM = np.array([g[d] @ J_inv @ g[d] for d in range(g.shape[0])])
+    J_inv = _safe_inv(J, "J (panel SDM joint)")
+    LM = np.einsum("di,ij,dj->d", g, J_inv, g)
 
     df = p
     mean = float(np.mean(LM))
@@ -2201,8 +2263,6 @@ def bayesian_panel_lm_slx_error_joint_test(
         Dataclass containing LM samples, summary statistics, and metadata.
         The ``df`` field is set to :math:`1 + k_{wx}`.
     """
-    y = model._y
-    X = model._X
     WX = model._WX
     W_sp = model._W_sparse
     k_wx = WX.shape[1]
@@ -2228,7 +2288,7 @@ def bayesian_panel_lm_slx_error_joint_test(
 
     # Information matrix
     sigma2_mean = float(np.mean(sigma_draws**2))
-    T_ww = _panel_trace_WtW_WW(W_sp)
+    T_ww = model._T_ww
 
     p = 1 + k_wx
     J = np.zeros((p, p))
@@ -2238,8 +2298,8 @@ def bayesian_panel_lm_slx_error_joint_test(
         J[1:, 1:] = (WX.T @ WX) / sigma2_mean
 
     # LM = g' J^{-1} g for each draw
-    J_inv = np.linalg.inv(J + 1e-12 * np.eye(p))
-    LM = np.array([g[d] @ J_inv @ g[d] for d in range(g.shape[0])])
+    J_inv = _safe_inv(J, "J (panel SLX-error joint)")
+    LM = np.einsum("di,ij,dj->d", g, J_inv, g)
 
     df = p
     mean = float(np.mean(LM))
@@ -2335,6 +2395,7 @@ def bayesian_panel_robust_lm_lag_sdm_test(
         N,
         T,
         Wy_hat=Wy_hat,
+        T_ww=model._T_ww,
     )
 
     J_rho_rho = info["J_rho_rho"]
@@ -2343,7 +2404,9 @@ def bayesian_panel_robust_lm_lag_sdm_test(
 
     # Neyman adjustment
     if k_wx > 0:
-        J_gamma_gamma_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
+        J_gamma_gamma_inv = _safe_inv(
+            J_gamma_gamma, "J_gamma_gamma (panel robust LM-lag-SDM)"
+        )
         neyman_coef = J_rho_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_rho_star = g_rho - adjustment
@@ -2456,6 +2519,7 @@ def bayesian_panel_robust_lm_wx_test(
         N,
         T,
         Wy_hat=Wy_hat,
+        T_ww=model._T_ww,
     )
 
     J_rho_rho = info["J_rho_rho"]
@@ -2472,7 +2536,9 @@ def bayesian_panel_robust_lm_wx_test(
     g_gamma_star = g_gamma - np.outer(g_rho, neyman_coef)  # (draws, k_wx)
 
     # Adjusted weight matrix: C*_{γγ} = P_{γγ} J_{γ·ρ}
-    J_gamma_given_rho_inv = np.linalg.inv(J_gamma_given_rho + 1e-12 * np.eye(k_wx))
+    J_gamma_given_rho_inv = _safe_inv(
+        J_gamma_given_rho, "J_gamma_given_rho (panel robust LM-WX)"
+    )
     P_gamma = (
         np.eye(k_wx)
         - (np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12))
@@ -2482,13 +2548,8 @@ def bayesian_panel_robust_lm_wx_test(
     C_star = P_gamma @ J_gamma_given_rho  # (k_wx, k_wx)
 
     # Robust LM = g_gamma*' C*^{-1} g_gamma* for each draw
-    C_star_inv = np.linalg.inv(C_star + 1e-12 * np.eye(k_wx))
-    LM = np.array(
-        [
-            g_gamma_star[d] @ C_star_inv @ g_gamma_star[d]
-            for d in range(g_gamma_star.shape[0])
-        ]
-    )
+    C_star_inv = _safe_inv(C_star, "C_star (panel robust LM-WX)")
+    LM = np.einsum("di,ij,dj->d", g_gamma_star, C_star_inv, g_gamma_star)
 
     df = k_wx
     mean = float(np.mean(LM))
@@ -2572,7 +2633,7 @@ def bayesian_panel_robust_lm_error_sdem_test(
 
     # Information matrix blocks
     sigma2_mean = float(np.mean(sigma_draws**2))
-    T_ww = _panel_trace_WtW_WW(W_sp)
+    T_ww = model._T_ww
 
     J_lam_lam = T * T_ww
     J_lam_gamma = np.zeros(k_wx)  # zero under H₀
@@ -2580,7 +2641,9 @@ def bayesian_panel_robust_lm_error_sdem_test(
 
     # Neyman adjustment (no-op since J_lam_gamma = 0)
     if k_wx > 0:
-        J_gamma_gamma_inv = np.linalg.inv(J_gamma_gamma + 1e-12 * np.eye(k_wx))
+        J_gamma_gamma_inv = _safe_inv(
+            J_gamma_gamma, "J_gamma_gamma (panel robust LM-error-SDEM)"
+        )
         neyman_coef = J_lam_gamma @ J_gamma_gamma_inv  # zeros
         adjustment = g_gamma @ neyman_coef  # zeros
         g_lambda_star = g_lambda - adjustment
@@ -2607,4 +2670,1044 @@ def bayesian_panel_robust_lm_error_sdem_test(
         test_type="bayesian_panel_robust_lm_error_sdem",
         df=df,
         details={"n_draws": LM.shape[0], "k_wx": k_wx, "N": N, "T": T},
+    )
+
+
+# =====================================================================
+# Bayesian LM diagnostics for spatial flow (origin-destination) models
+# =====================================================================
+#
+# These tests extend the Dogan et al. (2021) Bayesian LM framework to the
+# OD-flow filter A = I_N - rho_d W_d - rho_o W_o - rho_w W_w used by the
+# SARFlow family.  The score blocks come from the conditional Gaussian
+# log-likelihood of an OLSFlow null model; the information matrix uses the
+# cached Kronecker-trace block ``model._T_flow_traces`` (see
+# :func:`bayespecon.graph.flow_trace_blocks`).  Robust variants pull a
+# fitted SARFlow as the unrestricted alternative and apply the
+# Neyman-orthogonal score adjustment.
+#
+# Conventions:
+#   - Score for spatial-lag direction i evaluated at OLSFlow draws:
+#         g_i^{(g)} = (W_i y)^T e^{(g)} ,    e^{(g)} = y - X beta^{(g)}
+#   - Information matrix J = T_flow_traces * sigma2_bar + Q,
+#     with Q[i,j] = (W_i y)^T (W_j y).
+#   - chi^2 reference at the posterior-mean LM, df given per test.
+
+
+def _flow_score_info(model, *, restrict_keys=("d", "o", "w")):
+    """Return per-draw score matrix and the (3,3) information matrix.
+
+    Parameters
+    ----------
+    model : OLSFlow
+        Fitted flow model providing ``inference_data`` (with ``beta`` and
+        ``sigma`` posterior draws), the cached spatial lags
+        ``_Wd_y``/``_Wo_y``/``_Ww_y``, the cached trace matrix
+        ``_T_flow_traces``, and the design matrix ``_X_design``.
+    restrict_keys : tuple of {"d","o","w"}
+        Subset of the three spatial-lag directions to keep (in order).
+        Mainly for test readability — the joint test uses the full triple.
+
+    Returns
+    -------
+    G : np.ndarray, shape (n_draws, k)
+        Score draws, ``G[g, i] = (W_i y)^T e_g``.
+    J : np.ndarray, shape (k, k)
+        Information matrix
+        ``J = T_flow_traces[K, K] * sigma2_bar + Q[K, K]``
+        with ``Q[i, j] = (W_i y)^T (W_j y)``.
+    """
+    y = np.asarray(model._y_vec, dtype=np.float64)
+    X = np.asarray(model._X_design, dtype=np.float64)
+    Wy_all = np.column_stack(
+        [
+            np.asarray(model._Wd_y, dtype=np.float64),
+            np.asarray(model._Wo_y, dtype=np.float64),
+            np.asarray(model._Ww_y, dtype=np.float64),
+        ]
+    )  # (N, 3)
+    idx = {"d": 0, "o": 1, "w": 2}
+    cols = np.array([idx[k] for k in restrict_keys], dtype=int)
+    Wy = Wy_all[:, cols]  # (N, k)
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (n_draws, p)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (n_draws,)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T  # (n_draws, N)
+    resid = y[None, :] - fitted  # (n_draws, N)
+
+    G = resid @ Wy  # (n_draws, k)
+
+    Q = Wy.T @ Wy  # (k, k)
+    T_blk = model._T_flow_traces[np.ix_(cols, cols)]
+    J = T_blk * sigma2_mean + Q  # (k, k)
+
+    return G, J
+
+
+def _flow_marginal_lm(model, key: str, test_type: str) -> BayesianLMTestResult:
+    """Helper for the three marginal LM tests (dest / orig / network)."""
+    G, J = _flow_score_info(model, restrict_keys=(key,))
+    s = G[:, 0]
+    v = float(J[0, 0])
+    LM = s**2 / (v + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type=test_type,
+        df=df,
+        details={"n_draws": LM.shape[0], "direction": key},
+    )
+
+
+def bayesian_lm_flow_dest_test(model) -> BayesianLMTestResult:
+    r"""Bayesian LM test for an omitted destination-side spatial lag.
+
+    Tests :math:`H_0\colon \rho_d = 0` against the SARFlow alternative,
+    using a fitted :class:`~bayespecon.models.flow.OLSFlow` as the null
+    model.  For each posterior draw :math:`g` the residual is
+    :math:`e_g = y - X \beta_g`; the score is
+    :math:`s_g = (W_d y)^\top e_g` and the information-matrix denominator
+    is
+
+    .. math::
+
+        V = \operatorname{tr}(W_d^\top W_d + W_d^2)\,\bar\sigma^{2}
+            + \|W_d y\|^{2},
+
+    with :math:`\bar\sigma^{2}` the posterior mean of :math:`\sigma^{2}`.
+    The Bayesian p-value is :math:`1 - F_{\chi^{2}_{1}}(\overline{LM})`.
+    """
+    return _flow_marginal_lm(model, "d", "bayesian_lm_flow_dest")
+
+
+def bayesian_lm_flow_orig_test(model) -> BayesianLMTestResult:
+    r"""Bayesian LM test for an omitted origin-side spatial lag
+    (:math:`H_0\colon \rho_o = 0`).  See :func:`bayesian_lm_flow_dest_test`."""
+    return _flow_marginal_lm(model, "o", "bayesian_lm_flow_orig")
+
+
+def bayesian_lm_flow_network_test(model) -> BayesianLMTestResult:
+    r"""Bayesian LM test for an omitted network spatial lag
+    (:math:`H_0\colon \rho_w = 0`).  See :func:`bayesian_lm_flow_dest_test`."""
+    return _flow_marginal_lm(model, "w", "bayesian_lm_flow_network")
+
+
+def bayesian_lm_flow_joint_test(model) -> BayesianLMTestResult:
+    r"""Joint Bayesian LM test for the SARFlow filter
+    (:math:`H_0\colon \rho_d = \rho_o = \rho_w = 0`).
+
+    For each posterior draw :math:`g` of the :class:`OLSFlow` null,
+    builds the score vector
+    :math:`g_g = ((W_d y)^\top e_g, (W_o y)^\top e_g, (W_w y)^\top e_g)^\top`
+    and the information matrix
+
+    .. math::
+
+        J = T_{\text{flow}}\,\bar\sigma^{2} + Q, \qquad
+        Q_{ij} = (W_i y)^\top (W_j y),
+
+    where :math:`T_{\text{flow}}` is the cached :math:`3\times 3` Kronecker
+    trace matrix from :func:`bayespecon.graph.flow_trace_blocks`.  The
+    statistic is :math:`LM_g = g_g^\top J^{-1} g_g`, distributed
+    :math:`\chi^{2}_3` under :math:`H_0`.
+    """
+    G, J = _flow_score_info(model, restrict_keys=("d", "o", "w"))
+    J_inv = _safe_inv(J, "J (flow joint LM)")
+    LM = np.einsum("di,ij,dj->d", G, J_inv, G)
+
+    df = 3
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_lm_flow_joint",
+        df=df,
+        details={"n_draws": LM.shape[0]},
+    )
+
+
+# ---------------------------------------------------------------------
+# Robust (Neyman-orthogonal) variants — alternative model is a fitted
+# SARFlow.  For each posterior draw g of (rho_d, rho_o, rho_w, beta,
+# sigma) we build the spatially-filtered residual
+#     e_g = y - rho_d^g W_d y - rho_o^g W_o y - rho_w^g W_w y - X beta_g
+# and form the full 3-vector score g_g = (W_d y, W_o y, W_w y)^T e_g.
+# The information matrix uses the SARFlow posterior mean of sigma^2.
+# Marginal robust tests then apply the Neyman adjustment with respect to
+# the two nuisance directions.
+# ---------------------------------------------------------------------
+
+
+def _flow_robust_score_info(sarflow_model):
+    """Return per-draw 3-vector score and the (3,3) information matrix
+    for a fitted :class:`SARFlow`.
+
+    The score is evaluated at the SARFlow posterior draws of
+    ``(rho_d, rho_o, rho_w, beta)``; the information matrix uses the
+    SARFlow posterior mean of :math:`\\sigma^{2}`.
+    """
+    y = np.asarray(sarflow_model._y_vec, dtype=np.float64)
+    X = np.asarray(sarflow_model._X_design, dtype=np.float64)
+    Wd_y = np.asarray(sarflow_model._Wd_y, dtype=np.float64)
+    Wo_y = np.asarray(sarflow_model._Wo_y, dtype=np.float64)
+    Ww_y = np.asarray(sarflow_model._Ww_y, dtype=np.float64)
+    Wy = np.column_stack([Wd_y, Wo_y, Ww_y])  # (N, 3)
+
+    idata = sarflow_model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")
+    rho_d_draws = _get_posterior_draws(idata, "rho_d").reshape(-1)
+    rho_o_draws = _get_posterior_draws(idata, "rho_o").reshape(-1)
+    rho_w_draws = _get_posterior_draws(idata, "rho_w").reshape(-1)
+    sigma_draws = _get_posterior_draws(idata, "sigma").reshape(-1)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T  # (n_draws, N)
+    rho_stack = np.column_stack([rho_d_draws, rho_o_draws, rho_w_draws])  # (n,3)
+    spatial = rho_stack @ Wy.T  # (n_draws, N)
+    resid = y[None, :] - spatial - fitted
+
+    G = resid @ Wy  # (n_draws, 3)
+
+    Q = Wy.T @ Wy
+    J = sarflow_model._T_flow_traces * sigma2_mean + Q
+
+    return G, J
+
+
+def _flow_robust_marginal_lm(
+    sarflow_model, target: int, test_type: str
+) -> BayesianLMTestResult:
+    """Neyman-orthogonal LM for a single direction with two nuisances."""
+    G, J = _flow_robust_score_info(sarflow_model)
+    nuisance = [i for i in (0, 1, 2) if i != target]
+    g_t = G[:, target]
+    g_n = G[:, nuisance]  # (n_draws, 2)
+    J_tt = float(J[target, target])
+    J_tn = J[target, nuisance]  # (2,)
+    J_nn = J[np.ix_(nuisance, nuisance)]  # (2, 2)
+
+    J_nn_inv = _safe_inv(J_nn, f"J_nuisance (flow robust {test_type})")
+    # adjusted score: g_t* = g_t - J_{t,n} J_{n,n}^{-1} g_n
+    adj = g_n @ (J_nn_inv @ J_tn)
+    g_star = g_t - adj
+    V_star = J_tt - float(J_tn @ J_nn_inv @ J_tn)
+    LM = g_star**2 / (V_star + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    direction = {0: "d", 1: "o", 2: "w"}[target]
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type=test_type,
+        df=df,
+        details={"n_draws": LM.shape[0], "direction": direction},
+    )
+
+
+def bayesian_robust_lm_flow_dest_test(sarflow_model) -> BayesianLMTestResult:
+    r"""Robust Bayesian LM test for :math:`\rho_d` adjusting for
+    :math:`(\rho_o, \rho_w)` nuisance via the Neyman-orthogonal score
+    (:cite:t:`dogan2021BayesianRobust`).  Requires a fitted
+    :class:`~bayespecon.models.flow.SARFlow`."""
+    return _flow_robust_marginal_lm(sarflow_model, 0, "bayesian_robust_lm_flow_dest")
+
+
+def bayesian_robust_lm_flow_orig_test(sarflow_model) -> BayesianLMTestResult:
+    r"""Robust Bayesian LM test for :math:`\rho_o` adjusting for
+    :math:`(\rho_d, \rho_w)` nuisance.  See :func:`bayesian_robust_lm_flow_dest_test`."""
+    return _flow_robust_marginal_lm(sarflow_model, 1, "bayesian_robust_lm_flow_orig")
+
+
+def bayesian_robust_lm_flow_network_test(sarflow_model) -> BayesianLMTestResult:
+    r"""Robust Bayesian LM test for :math:`\rho_w` adjusting for
+    :math:`(\rho_d, \rho_o)` nuisance.  See :func:`bayesian_robust_lm_flow_dest_test`."""
+    return _flow_robust_marginal_lm(sarflow_model, 2, "bayesian_robust_lm_flow_network")
+
+
+# ---------------------------------------------------------------------
+# Phase 5 — WX-style test for the intra-block in OLSFlow.
+# ---------------------------------------------------------------------
+
+
+def bayesian_lm_flow_intra_test(model) -> BayesianLMTestResult:
+    r"""Bayesian LM (WX-style) test for the intra block in an OLSFlow null.
+
+    Tests :math:`H_0\colon \beta_{\text{intra}} = 0` in the gravity model
+
+    .. math::
+
+        y = \alpha + g \gamma + X_d \beta_d + X_o \beta_o
+            + X_{\text{intra}} \beta_{\text{intra}} + \varepsilon,
+
+    using a fitted :class:`OLSFlow` whose design already contains the
+    intra block (the standard layout from
+    :func:`bayespecon.graph.flow_design_matrix`).  Per posterior draw the
+    intra-block score is :math:`g_g = X_{\text{intra}}^\top e_g` with
+    :math:`e_g = y - X \beta_g` (full-design residual) and the variance
+    is :math:`V = X_{\text{intra}}^\top X_{\text{intra}} / \bar\sigma^{2}`,
+    matching the SDM-style WX information block of
+    :cite:t:`dogan2021BayesianRobust`.  The statistic is
+    :math:`LM_g = g_g^\top V^{-1} g_g`, df :math:`= k_{\text{intra}}`.
+
+    Notes
+    -----
+    The test treats the intra block as the "WX" addition relative to a
+    null with the same dest/orig coefficients but no intra columns.  The
+    score is evaluated at the OLSFlow draws — this is asymptotically
+    equivalent to refitting an "OLSFlow without intra" null when the
+    intra block is orthogonal to ``X_dest``/``X_orig`` (typically the
+    case for the diagonal-mask layout used by ``flow_design_matrix``).
+    """
+    intra_idx = getattr(model, "_intra_idx", None)
+    if intra_idx is None or len(intra_idx) == 0:
+        raise ValueError(
+            "Model has no intra columns to test.  Build the design with "
+            "flow_design_matrix(..., include_intra=True) before fitting."
+        )
+    intra_idx = np.asarray(intra_idx, dtype=int)
+
+    y = np.asarray(model._y_vec, dtype=np.float64)
+    X = np.asarray(model._X_design, dtype=np.float64)
+    Xi = X[:, intra_idx]  # (N, k_intra)
+    k_intra = Xi.shape[1]
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (n_draws, p)
+    sigma_draws = _get_posterior_draws(idata, "sigma").reshape(-1)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T
+    resid = y[None, :] - fitted  # (n_draws, N)
+    G = resid @ Xi  # (n_draws, k_intra)
+
+    V = (Xi.T @ Xi) / sigma2_mean
+    V_inv = _safe_inv(V, "V_intra (flow intra LM)")
+    LM = np.einsum("di,ij,dj->d", G, V_inv, G)
+
+    df = k_intra
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_lm_flow_intra",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_intra": k_intra},
+    )
+
+
+# ---------------------------------------------------------------------
+# Phase 6 — Panel analogues.  Operate on demeaned (_y, _X) panel stacks
+# of length N_flow * T from FlowPanelModel.  The information matrix
+# stays additive in T because Q[i,j] = (W_i y)^T (W_j y) is computed on
+# the full stacked panel lags (already cached as _Wd_y/_Wo_y/_Ww_y on
+# the demeaned panel).
+# ---------------------------------------------------------------------
+
+
+def _flow_panel_score_info(model, *, restrict_keys=("d", "o", "w")):
+    """Score / information for a fitted :class:`OLSFlowPanel` null."""
+    y = np.asarray(model._y, dtype=np.float64)  # demeaned panel stack
+    X = np.asarray(model._X, dtype=np.float64)
+    Wy_all = np.column_stack(
+        [
+            np.asarray(model._Wd_y, dtype=np.float64),
+            np.asarray(model._Wo_y, dtype=np.float64),
+            np.asarray(model._Ww_y, dtype=np.float64),
+        ]
+    )
+    idx = {"d": 0, "o": 1, "w": 2}
+    cols = np.array([idx[k] for k in restrict_keys], dtype=int)
+    Wy = Wy_all[:, cols]
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")
+    sigma_draws = _get_posterior_draws(idata, "sigma").reshape(-1)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T
+    resid = y[None, :] - fitted
+    G = resid @ Wy
+
+    # Per-period traces accumulated over T periods (independence across t
+    # under H_0 with the demeaning transform).
+    T = int(getattr(model, "_T", 1))
+    Q = Wy.T @ Wy
+    T_blk = model._T_flow_traces[np.ix_(cols, cols)]
+    J = T * T_blk * sigma2_mean + Q
+    return G, J
+
+
+def _flow_panel_marginal_lm(model, key: str, test_type: str) -> BayesianLMTestResult:
+    G, J = _flow_panel_score_info(model, restrict_keys=(key,))
+    s = G[:, 0]
+    v = float(J[0, 0])
+    LM = s**2 / (v + 1e-12)
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type=test_type,
+        df=df,
+        details={
+            "n_draws": LM.shape[0],
+            "direction": key,
+            "T": int(getattr(model, "_T", 1)),
+        },
+    )
+
+
+def bayesian_panel_lm_flow_dest_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_dest_test` operating on a
+    fitted :class:`~bayespecon.models.flow_panel.OLSFlowPanel`.
+
+    The score is summed over the demeaned panel stack
+    (length :math:`n^{2}\cdot T`); the information matrix scales the
+    Kronecker trace block by :math:`T` to reflect i.i.d. within-period
+    contributions under :math:`H_0`."""
+    return _flow_panel_marginal_lm(model, "d", "bayesian_panel_lm_flow_dest")
+
+
+def bayesian_panel_lm_flow_orig_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_orig_test`."""
+    return _flow_panel_marginal_lm(model, "o", "bayesian_panel_lm_flow_orig")
+
+
+def bayesian_panel_lm_flow_network_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_network_test`."""
+    return _flow_panel_marginal_lm(model, "w", "bayesian_panel_lm_flow_network")
+
+
+def bayesian_panel_lm_flow_joint_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_joint_test` on
+    :class:`OLSFlowPanel`."""
+    G, J = _flow_panel_score_info(model, restrict_keys=("d", "o", "w"))
+    J_inv = _safe_inv(J, "J (panel flow joint LM)")
+    LM = np.einsum("di,ij,dj->d", G, J_inv, G)
+    df = 3
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_flow_joint",
+        df=df,
+        details={"n_draws": LM.shape[0], "T": int(getattr(model, "_T", 1))},
+    )
+
+
+def bayesian_panel_lm_flow_intra_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_intra_test` on
+    :class:`OLSFlowPanel`.  Operates on the demeaned panel design."""
+    intra_idx = getattr(model, "_intra_idx", None)
+    if intra_idx is None or len(intra_idx) == 0:
+        raise ValueError(
+            "Panel model has no intra columns to test.  Build the design "
+            "with flow_design_matrix(..., include_intra=True)."
+        )
+    intra_idx = np.asarray(intra_idx, dtype=int)
+
+    y = np.asarray(model._y, dtype=np.float64)
+    X = np.asarray(model._X, dtype=np.float64)
+    Xi = X[:, intra_idx]
+    k_intra = Xi.shape[1]
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")
+    sigma_draws = _get_posterior_draws(idata, "sigma").reshape(-1)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T
+    resid = y[None, :] - fitted
+    G = resid @ Xi
+
+    V = (Xi.T @ Xi) / sigma2_mean
+    V_inv = _safe_inv(V, "V_intra (panel flow intra LM)")
+    LM = np.einsum("di,ij,dj->d", G, V_inv, G)
+
+    df = k_intra
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_flow_intra",
+        df=df,
+        details={
+            "n_draws": LM.shape[0],
+            "k_intra": k_intra,
+            "T": int(getattr(model, "_T", 1)),
+        },
+    )
+
+
+# =====================================================================
+# Bayesian LM diagnostics for spatial flow (origin-destination) models
+# =====================================================================
+#
+# These tests extend the Dogan et al. (2021) Bayesian LM framework to the
+# OD-flow filter A = I_N - rho_d W_d - rho_o W_o - rho_w W_w used by the
+# SARFlow family.  The score blocks come from the conditional Gaussian
+# log-likelihood of an OLSFlow null model; the information matrix uses the
+# cached Kronecker-trace block ``model._T_flow_traces`` (see
+# :func:`bayespecon.graph.flow_trace_blocks`).  Robust variants pull a
+# fitted SARFlow as the unrestricted alternative and apply the
+# Neyman-orthogonal score adjustment.
+#
+# Conventions:
+#   - Score for spatial-lag direction i evaluated at OLSFlow draws:
+#         g_i^{(g)} = (W_i y)^T e^{(g)} ,    e^{(g)} = y - X beta^{(g)}
+#   - Information matrix J = T_flow_traces * sigma2_bar + Q,
+#     with Q[i,j] = (W_i y)^T (W_j y).
+#   - chi^2 reference at the posterior-mean LM, df given per test.
+
+
+def _flow_score_info(model, *, restrict_keys=("d", "o", "w")):
+    """Return per-draw score matrix and the (3,3) information matrix.
+
+    Parameters
+    ----------
+    model : OLSFlow
+        Fitted flow model providing ``inference_data`` (with ``beta`` and
+        ``sigma`` posterior draws), the cached spatial lags
+        ``_Wd_y``/``_Wo_y``/``_Ww_y``, the cached trace matrix
+        ``_T_flow_traces``, and the design matrix ``_X_design``.
+    restrict_keys : tuple of {"d","o","w"}
+        Subset of the three spatial-lag directions to keep (in order).
+        Mainly for test readability — the joint test uses the full triple.
+
+    Returns
+    -------
+    G : np.ndarray, shape (n_draws, k)
+        Score draws, ``G[g, i] = (W_i y)^T e_g``.
+    J : np.ndarray, shape (k, k)
+        Information matrix
+        ``J = T_flow_traces[K, K] * sigma2_bar + Q[K, K]``
+        with ``Q[i, j] = (W_i y)^T (W_j y)``.
+    """
+    y = np.asarray(model._y_vec, dtype=np.float64)
+    X = np.asarray(model._X_design, dtype=np.float64)
+    Wy_all = np.column_stack(
+        [
+            np.asarray(model._Wd_y, dtype=np.float64),
+            np.asarray(model._Wo_y, dtype=np.float64),
+            np.asarray(model._Ww_y, dtype=np.float64),
+        ]
+    )  # (N, 3)
+    idx = {"d": 0, "o": 1, "w": 2}
+    cols = np.array([idx[k] for k in restrict_keys], dtype=int)
+    Wy = Wy_all[:, cols]  # (N, k)
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (n_draws, p)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (n_draws,)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T  # (n_draws, N)
+    resid = y[None, :] - fitted  # (n_draws, N)
+
+    G = resid @ Wy  # (n_draws, k)
+
+    Q = Wy.T @ Wy  # (k, k)
+    T_blk = model._T_flow_traces[np.ix_(cols, cols)]
+    J = T_blk * sigma2_mean + Q  # (k, k)
+
+    return G, J
+
+
+def _flow_marginal_lm(model, key: str, test_type: str) -> BayesianLMTestResult:
+    """Helper for the three marginal LM tests (dest / orig / network)."""
+    G, J = _flow_score_info(model, restrict_keys=(key,))
+    s = G[:, 0]
+    v = float(J[0, 0])
+    LM = s**2 / (v + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type=test_type,
+        df=df,
+        details={"n_draws": LM.shape[0], "direction": key},
+    )
+
+
+def bayesian_lm_flow_dest_test(model) -> BayesianLMTestResult:
+    r"""Bayesian LM test for an omitted destination-side spatial lag.
+
+    Tests :math:`H_0\colon \rho_d = 0` against the SARFlow alternative,
+    using a fitted :class:`~bayespecon.models.flow.OLSFlow` as the null
+    model.  For each posterior draw :math:`g` the residual is
+    :math:`e_g = y - X \beta_g`; the score is
+    :math:`s_g = (W_d y)^\top e_g` and the information-matrix denominator
+    is
+
+    .. math::
+
+        V = \operatorname{tr}(W_d^\top W_d + W_d^2)\,\bar\sigma^{2}
+            + \|W_d y\|^{2},
+
+    with :math:`\bar\sigma^{2}` the posterior mean of :math:`\sigma^{2}`.
+    The Bayesian p-value is :math:`1 - F_{\chi^{2}_{1}}(\overline{LM})`.
+    """
+    return _flow_marginal_lm(model, "d", "bayesian_lm_flow_dest")
+
+
+def bayesian_lm_flow_orig_test(model) -> BayesianLMTestResult:
+    r"""Bayesian LM test for an omitted origin-side spatial lag
+    (:math:`H_0\colon \rho_o = 0`).  See :func:`bayesian_lm_flow_dest_test`."""
+    return _flow_marginal_lm(model, "o", "bayesian_lm_flow_orig")
+
+
+def bayesian_lm_flow_network_test(model) -> BayesianLMTestResult:
+    r"""Bayesian LM test for an omitted network spatial lag
+    (:math:`H_0\colon \rho_w = 0`).  See :func:`bayesian_lm_flow_dest_test`."""
+    return _flow_marginal_lm(model, "w", "bayesian_lm_flow_network")
+
+
+def bayesian_lm_flow_joint_test(model) -> BayesianLMTestResult:
+    r"""Joint Bayesian LM test for the SARFlow filter
+    (:math:`H_0\colon \rho_d = \rho_o = \rho_w = 0`).
+
+    For each posterior draw :math:`g` of the :class:`OLSFlow` null,
+    builds the score vector
+    :math:`g_g = ((W_d y)^\top e_g, (W_o y)^\top e_g, (W_w y)^\top e_g)^\top`
+    and the information matrix
+
+    .. math::
+
+        J = T_{\text{flow}}\,\bar\sigma^{2} + Q, \qquad
+        Q_{ij} = (W_i y)^\top (W_j y),
+
+    where :math:`T_{\text{flow}}` is the cached :math:`3\times 3` Kronecker
+    trace matrix from :func:`bayespecon.graph.flow_trace_blocks`.  The
+    statistic is :math:`LM_g = g_g^\top J^{-1} g_g`, distributed
+    :math:`\chi^{2}_3` under :math:`H_0`.
+    """
+    G, J = _flow_score_info(model, restrict_keys=("d", "o", "w"))
+    J_inv = _safe_inv(J, "J (flow joint LM)")
+    LM = np.einsum("di,ij,dj->d", G, J_inv, G)
+
+    df = 3
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_lm_flow_joint",
+        df=df,
+        details={"n_draws": LM.shape[0]},
+    )
+
+
+# ---------------------------------------------------------------------
+# Robust (Neyman-orthogonal) variants — alternative model is a fitted
+# SARFlow.  For each posterior draw g of (rho_d, rho_o, rho_w, beta,
+# sigma) we build the spatially-filtered residual
+#     e_g = y - rho_d^g W_d y - rho_o^g W_o y - rho_w^g W_w y - X beta_g
+# and form the full 3-vector score g_g = (W_d y, W_o y, W_w y)^T e_g.
+# The information matrix uses the SARFlow posterior mean of sigma^2.
+# Marginal robust tests then apply the Neyman adjustment with respect to
+# the two nuisance directions.
+# ---------------------------------------------------------------------
+
+
+def _flow_robust_score_info(sarflow_model):
+    """Return per-draw 3-vector score and the (3,3) information matrix
+    for a fitted :class:`SARFlow`.
+
+    The score is evaluated at the SARFlow posterior draws of
+    ``(rho_d, rho_o, rho_w, beta)``; the information matrix uses the
+    SARFlow posterior mean of :math:`\\sigma^{2}`.
+    """
+    y = np.asarray(sarflow_model._y_vec, dtype=np.float64)
+    X = np.asarray(sarflow_model._X_design, dtype=np.float64)
+    Wd_y = np.asarray(sarflow_model._Wd_y, dtype=np.float64)
+    Wo_y = np.asarray(sarflow_model._Wo_y, dtype=np.float64)
+    Ww_y = np.asarray(sarflow_model._Ww_y, dtype=np.float64)
+    Wy = np.column_stack([Wd_y, Wo_y, Ww_y])  # (N, 3)
+
+    idata = sarflow_model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")
+    rho_d_draws = _get_posterior_draws(idata, "rho_d").reshape(-1)
+    rho_o_draws = _get_posterior_draws(idata, "rho_o").reshape(-1)
+    rho_w_draws = _get_posterior_draws(idata, "rho_w").reshape(-1)
+    sigma_draws = _get_posterior_draws(idata, "sigma").reshape(-1)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T  # (n_draws, N)
+    rho_stack = np.column_stack([rho_d_draws, rho_o_draws, rho_w_draws])  # (n,3)
+    spatial = rho_stack @ Wy.T  # (n_draws, N)
+    resid = y[None, :] - spatial - fitted
+
+    G = resid @ Wy  # (n_draws, 3)
+
+    Q = Wy.T @ Wy
+    J = sarflow_model._T_flow_traces * sigma2_mean + Q
+
+    return G, J
+
+
+def _flow_robust_marginal_lm(
+    sarflow_model, target: int, test_type: str
+) -> BayesianLMTestResult:
+    """Neyman-orthogonal LM for a single direction with two nuisances."""
+    G, J = _flow_robust_score_info(sarflow_model)
+    nuisance = [i for i in (0, 1, 2) if i != target]
+    g_t = G[:, target]
+    g_n = G[:, nuisance]  # (n_draws, 2)
+    J_tt = float(J[target, target])
+    J_tn = J[target, nuisance]  # (2,)
+    J_nn = J[np.ix_(nuisance, nuisance)]  # (2, 2)
+
+    J_nn_inv = _safe_inv(J_nn, f"J_nuisance (flow robust {test_type})")
+    # adjusted score: g_t* = g_t - J_{t,n} J_{n,n}^{-1} g_n
+    adj = g_n @ (J_nn_inv @ J_tn)
+    g_star = g_t - adj
+    V_star = J_tt - float(J_tn @ J_nn_inv @ J_tn)
+    LM = g_star**2 / (V_star + 1e-12)
+
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    direction = {0: "d", 1: "o", 2: "w"}[target]
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type=test_type,
+        df=df,
+        details={"n_draws": LM.shape[0], "direction": direction},
+    )
+
+
+def bayesian_robust_lm_flow_dest_test(sarflow_model) -> BayesianLMTestResult:
+    r"""Robust Bayesian LM test for :math:`\rho_d` adjusting for
+    :math:`(\rho_o, \rho_w)` nuisance via the Neyman-orthogonal score
+    (:cite:t:`dogan2021BayesianRobust`).  Requires a fitted
+    :class:`~bayespecon.models.flow.SARFlow`."""
+    return _flow_robust_marginal_lm(sarflow_model, 0, "bayesian_robust_lm_flow_dest")
+
+
+def bayesian_robust_lm_flow_orig_test(sarflow_model) -> BayesianLMTestResult:
+    r"""Robust Bayesian LM test for :math:`\rho_o` adjusting for
+    :math:`(\rho_d, \rho_w)` nuisance.  See :func:`bayesian_robust_lm_flow_dest_test`."""
+    return _flow_robust_marginal_lm(sarflow_model, 1, "bayesian_robust_lm_flow_orig")
+
+
+def bayesian_robust_lm_flow_network_test(sarflow_model) -> BayesianLMTestResult:
+    r"""Robust Bayesian LM test for :math:`\rho_w` adjusting for
+    :math:`(\rho_d, \rho_o)` nuisance.  See :func:`bayesian_robust_lm_flow_dest_test`."""
+    return _flow_robust_marginal_lm(sarflow_model, 2, "bayesian_robust_lm_flow_network")
+
+
+# ---------------------------------------------------------------------
+# Phase 5 — WX-style test for the intra-block in OLSFlow.
+# ---------------------------------------------------------------------
+
+
+def bayesian_lm_flow_intra_test(model) -> BayesianLMTestResult:
+    r"""Bayesian LM (WX-style) test for the intra block in an OLSFlow null.
+
+    Tests :math:`H_0\colon \beta_{\text{intra}} = 0` in the gravity model
+
+    .. math::
+
+        y = \alpha + g \gamma + X_d \beta_d + X_o \beta_o
+            + X_{\text{intra}} \beta_{\text{intra}} + \varepsilon,
+
+    using a fitted :class:`OLSFlow` whose design already contains the
+    intra block (the standard layout from
+    :func:`bayespecon.graph.flow_design_matrix`).  Per posterior draw the
+    intra-block score is :math:`g_g = X_{\text{intra}}^\top e_g` with
+    :math:`e_g = y - X \beta_g` (full-design residual) and the variance
+    is :math:`V = X_{\text{intra}}^\top X_{\text{intra}} / \bar\sigma^{2}`,
+    matching the SDM-style WX information block of
+    :cite:t:`dogan2021BayesianRobust`.  The statistic is
+    :math:`LM_g = g_g^\top V^{-1} g_g`, df :math:`= k_{\text{intra}}`.
+
+    Notes
+    -----
+    The test treats the intra block as the "WX" addition relative to a
+    null with the same dest/orig coefficients but no intra columns.  The
+    score is evaluated at the OLSFlow draws — this is asymptotically
+    equivalent to refitting an "OLSFlow without intra" null when the
+    intra block is orthogonal to ``X_dest``/``X_orig`` (typically the
+    case for the diagonal-mask layout used by ``flow_design_matrix``).
+    """
+    intra_idx = getattr(model, "_intra_idx", None)
+    if intra_idx is None or len(intra_idx) == 0:
+        raise ValueError(
+            "Model has no intra columns to test.  Build the design with "
+            "flow_design_matrix(..., include_intra=True) before fitting."
+        )
+    intra_idx = np.asarray(intra_idx, dtype=int)
+
+    y = np.asarray(model._y_vec, dtype=np.float64)
+    X = np.asarray(model._X_design, dtype=np.float64)
+    Xi = X[:, intra_idx]  # (N, k_intra)
+    k_intra = Xi.shape[1]
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (n_draws, p)
+    sigma_draws = _get_posterior_draws(idata, "sigma").reshape(-1)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T
+    resid = y[None, :] - fitted  # (n_draws, N)
+    G = resid @ Xi  # (n_draws, k_intra)
+
+    V = (Xi.T @ Xi) / sigma2_mean
+    V_inv = _safe_inv(V, "V_intra (flow intra LM)")
+    LM = np.einsum("di,ij,dj->d", G, V_inv, G)
+
+    df = k_intra
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_lm_flow_intra",
+        df=df,
+        details={"n_draws": LM.shape[0], "k_intra": k_intra},
+    )
+
+
+# ---------------------------------------------------------------------
+# Phase 6 — Panel analogues.  Operate on demeaned (_y, _X) panel stacks
+# of length N_flow * T from FlowPanelModel.  The information matrix
+# stays additive in T because Q[i,j] = (W_i y)^T (W_j y) is computed on
+# the full stacked panel lags (already cached as _Wd_y/_Wo_y/_Ww_y on
+# the demeaned panel).
+# ---------------------------------------------------------------------
+
+
+def _flow_panel_score_info(model, *, restrict_keys=("d", "o", "w")):
+    """Score / information for a fitted :class:`OLSFlowPanel` null."""
+    y = np.asarray(model._y, dtype=np.float64)  # demeaned panel stack
+    X = np.asarray(model._X, dtype=np.float64)
+    Wy_all = np.column_stack(
+        [
+            np.asarray(model._Wd_y, dtype=np.float64),
+            np.asarray(model._Wo_y, dtype=np.float64),
+            np.asarray(model._Ww_y, dtype=np.float64),
+        ]
+    )
+    idx = {"d": 0, "o": 1, "w": 2}
+    cols = np.array([idx[k] for k in restrict_keys], dtype=int)
+    Wy = Wy_all[:, cols]
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")
+    sigma_draws = _get_posterior_draws(idata, "sigma").reshape(-1)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T
+    resid = y[None, :] - fitted
+    G = resid @ Wy
+
+    # Per-period traces accumulated over T periods (independence across t
+    # under H_0 with the demeaning transform).
+    T = int(getattr(model, "_T", 1))
+    Q = Wy.T @ Wy
+    T_blk = model._T_flow_traces[np.ix_(cols, cols)]
+    J = T * T_blk * sigma2_mean + Q
+    return G, J
+
+
+def _flow_panel_marginal_lm(model, key: str, test_type: str) -> BayesianLMTestResult:
+    G, J = _flow_panel_score_info(model, restrict_keys=(key,))
+    s = G[:, 0]
+    v = float(J[0, 0])
+    LM = s**2 / (v + 1e-12)
+    df = 1
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type=test_type,
+        df=df,
+        details={
+            "n_draws": LM.shape[0],
+            "direction": key,
+            "T": int(getattr(model, "_T", 1)),
+        },
+    )
+
+
+def bayesian_panel_lm_flow_dest_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_dest_test` operating on a
+    fitted :class:`~bayespecon.models.flow_panel.OLSFlowPanel`.
+
+    The score is summed over the demeaned panel stack
+    (length :math:`n^{2}\cdot T`); the information matrix scales the
+    Kronecker trace block by :math:`T` to reflect i.i.d. within-period
+    contributions under :math:`H_0`."""
+    return _flow_panel_marginal_lm(model, "d", "bayesian_panel_lm_flow_dest")
+
+
+def bayesian_panel_lm_flow_orig_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_orig_test`."""
+    return _flow_panel_marginal_lm(model, "o", "bayesian_panel_lm_flow_orig")
+
+
+def bayesian_panel_lm_flow_network_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_network_test`."""
+    return _flow_panel_marginal_lm(model, "w", "bayesian_panel_lm_flow_network")
+
+
+def bayesian_panel_lm_flow_joint_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_joint_test` on
+    :class:`OLSFlowPanel`."""
+    G, J = _flow_panel_score_info(model, restrict_keys=("d", "o", "w"))
+    J_inv = _safe_inv(J, "J (panel flow joint LM)")
+    LM = np.einsum("di,ij,dj->d", G, J_inv, G)
+    df = 3
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_flow_joint",
+        df=df,
+        details={"n_draws": LM.shape[0], "T": int(getattr(model, "_T", 1))},
+    )
+
+
+def bayesian_panel_lm_flow_intra_test(model) -> BayesianLMTestResult:
+    r"""Panel analogue of :func:`bayesian_lm_flow_intra_test` on
+    :class:`OLSFlowPanel`.  Operates on the demeaned panel design."""
+    intra_idx = getattr(model, "_intra_idx", None)
+    if intra_idx is None or len(intra_idx) == 0:
+        raise ValueError(
+            "Panel model has no intra columns to test.  Build the design "
+            "with flow_design_matrix(..., include_intra=True)."
+        )
+    intra_idx = np.asarray(intra_idx, dtype=int)
+
+    y = np.asarray(model._y, dtype=np.float64)
+    X = np.asarray(model._X, dtype=np.float64)
+    Xi = X[:, intra_idx]
+    k_intra = Xi.shape[1]
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")
+    sigma_draws = _get_posterior_draws(idata, "sigma").reshape(-1)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+
+    fitted = beta_draws @ X.T
+    resid = y[None, :] - fitted
+    G = resid @ Xi
+
+    V = (Xi.T @ Xi) / sigma2_mean
+    V_inv = _safe_inv(V, "V_intra (panel flow intra LM)")
+    LM = np.einsum("di,ij,dj->d", G, V_inv, G)
+
+    df = k_intra
+    mean = float(np.mean(LM))
+    median = float(np.median(LM))
+    ci = (float(np.percentile(LM, 2.5)), float(np.percentile(LM, 97.5)))
+    bayes_pvalue = float(1 - sp_stats.chi2.cdf(mean, df))
+
+    return BayesianLMTestResult(
+        lm_samples=LM,
+        mean=mean,
+        median=median,
+        credible_interval=ci,
+        bayes_pvalue=bayes_pvalue,
+        test_type="bayesian_panel_lm_flow_intra",
+        df=df,
+        details={
+            "n_draws": LM.shape[0],
+            "k_intra": k_intra,
+            "T": int(getattr(model, "_T", 1)),
+        },
     )

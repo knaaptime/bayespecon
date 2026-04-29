@@ -15,11 +15,10 @@ from typing import Optional
 import arviz as az
 import numpy as np
 import pymc as pm
-import pytensor
 import pytensor.tensor as pt
+from pytensor import sparse as pts
 import xarray as xr
 
-from ..logdet import make_logdet_fn
 from .base import SpatialModel
 
 
@@ -62,10 +61,13 @@ class SDEM(SpatialModel):
     """
 
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_lag_test"],
-        ).bayesian_lm_lag_test(m), "LM-Lag"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_lag_test"],
+            ).bayesian_lm_lag_test(m),
+            "LM-Lag",
+        ),
     ]
 
     def fit(
@@ -135,9 +137,11 @@ class SDEM(SpatialModel):
             Z = np.hstack([self._X, self._WX])  # (n, 2k)
             W = self._W_dense
 
-            lam_draws = idata.posterior["lam"].values.reshape(-1)       # (n_draws,)
-            beta_draws = idata.posterior["beta"].values.reshape(-1, Z.shape[1])  # (n_draws, 2k)
-            sigma_draws = idata.posterior["sigma"].values.reshape(-1)   # (n_draws,)
+            lam_draws = idata.posterior["lam"].values.reshape(-1)  # (n_draws,)
+            beta_draws = idata.posterior["beta"].values.reshape(
+                -1, Z.shape[1]
+            )  # (n_draws, 2k)
+            sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
 
             # Residuals: resid = y - Z @ beta.T  => (n_draws, n)
             resid = self._y[None, :] - (beta_draws @ Z.T)  # (n_draws, n)
@@ -149,6 +153,7 @@ class SDEM(SpatialModel):
             if self.robust:
                 nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
                 from scipy.special import gammaln
+
                 ll_gauss = (
                     gammaln((nu_draws[:, None] + 1) / 2)
                     - gammaln(nu_draws[:, None] / 2)
@@ -164,9 +169,8 @@ class SDEM(SpatialModel):
                     - 0.5 * np.log(2 * np.pi)
                 )  # (n_draws, n)
 
-            # Jacobian contribution per draw: log|I - lam*W| / n (pure numpy)
-            eigs = self._W_eigs.real.astype(np.float64)
-            jacobian = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_draws])  # (n_draws,)
+            # Jacobian contribution per draw: log|I - lam*W| / n (respects logdet_method)
+            jacobian = self._logdet_numpy_vec_fn(lam_draws)  # (n_draws,)
             ll_jac = jacobian[:, None] / n  # (n_draws, 1) broadcast to (n_draws, n)
 
             ll_total = ll_gauss + ll_jac  # (n_draws, n)
@@ -178,7 +182,9 @@ class SDEM(SpatialModel):
 
             # Attach to idata — use explicit Dataset creation to ensure
             # "obs" is a data variable, not a coordinate.
-            ll_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
+            ll_da = xr.DataArray(
+                ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
+            )
             ll_ds = xr.Dataset({"obs": ll_da})
             idata["log_likelihood"] = ll_ds
 
@@ -195,6 +201,12 @@ class SDEM(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
+        if not self._wx_column_indices:
+            raise ValueError(
+                "SDEM requires at least one WX column. Pass `w_vars=[...]` to "
+                "choose which regressors receive a spatial lag, or fit a SEM "
+                "model instead."
+            )
         Z = np.hstack([self._X, self._WX])  # (n, 2k)
 
         lam_lower = self.priors.get("lam_lower", -1.0)
@@ -203,13 +215,8 @@ class SDEM(SpatialModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=lam_lower,
-            rho_max=lam_upper,
-        )
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        logdet_fn = self._logdet_pytensor_fn
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -217,7 +224,7 @@ class SDEM(SpatialModel):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             resid = self._y - pt.dot(Z, beta)
-            eps = resid - lam * pt.dot(W_pt, resid)
+            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
@@ -257,7 +264,9 @@ class SDEM(SpatialModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         For the SDEM model (no :math:`\\rho` on :math:`y`), the impact
@@ -279,25 +288,29 @@ class SDEM(SpatialModel):
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = beta_draws.shape[0]
+        beta_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
@@ -313,5 +326,3 @@ class SDEM(SpatialModel):
         beta = self._posterior_mean("beta")
         Z = np.hstack([self._X, self._WX])
         return Z @ beta
-
-

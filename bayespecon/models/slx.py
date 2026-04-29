@@ -53,22 +53,34 @@ class SLX(SpatialModel):
     """
 
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_lag_test"],
-        ).bayesian_lm_lag_test(m), "LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_error_test"],
-        ).bayesian_lm_error_test(m), "LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_robust_lm_lag_sdm_test"],
-        ).bayesian_robust_lm_lag_sdm_test(m), "Robust-LM-Lag-SDM"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_robust_lm_error_sdem_test"],
-        ).bayesian_robust_lm_error_sdem_test(m), "Robust-LM-Error-SDEM"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_lag_test"],
+            ).bayesian_lm_lag_test(m),
+            "LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_error_test"],
+            ).bayesian_lm_error_test(m),
+            "LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_lag_sdm_test"],
+            ).bayesian_robust_lm_lag_sdm_test(m),
+            "Robust-LM-Lag-SDM",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_error_sdem_test"],
+            ).bayesian_robust_lm_error_sdem_test(m),
+            "Robust-LM-Error-SDEM",
+        ),
     ]
 
     def _beta_names(self) -> list[str]:
@@ -82,6 +94,12 @@ class SLX(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
+        if not self._wx_column_indices:
+            raise ValueError(
+                "SLX requires at least one regressor to spatially lag, but no "
+                "WX columns were selected. Pass `w_vars=[...]` to choose which "
+                "regressors receive a spatial lag, or fit an OLS model instead."
+            )
         n, k = self._X.shape
         # Combine X and WX into one design matrix; beta covers both
         Z = np.hstack([self._X, self._WX])  # (n, 2k)
@@ -107,6 +125,25 @@ class SLX(SpatialModel):
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         """Compute SLX direct/indirect/total effects.
 
+        Notes
+        -----
+        Unlike SAR / SDM, the SLX model does **not** invert
+        :math:`(I - \\rho W)`: the partial-derivative matrix for
+        covariate :math:`k` is simply
+
+        .. math::
+
+            S_k \\;=\\; \\beta_{1k}\\, I \\;+\\; \\beta_{2k}\\, W,
+
+        a *linear* (W-direct) impact rather than the full Leontief
+        multiplier :math:`(I - \\rho W)^{-1}` that arises in SAR-style
+        models.  Consequently SLX impacts are exact functions of the
+        posterior :math:`(\\beta_1, \\beta_2)` draws and the row-sum /
+        diagonal summaries of :math:`W` — no global feedback loop is
+        implied.  This is the key conceptual difference from
+        SDM/SAR/SDEM impact reporting (LeSage & Pace 2009, ch. 2;
+        Halleck Vega & Elhorst 2015).
+
         Returns
         -------
         dict
@@ -115,8 +152,8 @@ class SLX(SpatialModel):
         k = self._X.shape[1]
         kw = self._WX.shape[1]
         beta = self._posterior_mean("beta")
-        beta1 = beta[:k]   # coefficients on X
-        beta2 = beta[k:k + kw]   # coefficients on WX (excluding intercept-like terms)
+        beta1 = beta[:k]  # coefficients on X
+        beta2 = beta[k : k + kw]  # coefficients on WX (excluding intercept-like terms)
 
         # For SLX: S_k = d y / d X_k = beta1_k * I + beta2_k * W
         # Direct   = mean(diag(S_k))
@@ -136,7 +173,9 @@ class SLX(SpatialModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         For the SLX model (no :math:`\\rho`), the impact measures for
@@ -163,25 +202,29 @@ class SLX(SpatialModel):
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = beta_draws.shape[0]
+        beta_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
@@ -200,5 +243,3 @@ class SLX(SpatialModel):
         if beta.shape[0] != 2 * k:
             raise ValueError("Unexpected beta dimension for SLX fitted mean.")
         return Z @ beta
-
-

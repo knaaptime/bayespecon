@@ -7,8 +7,33 @@ Implements left-censored (default at 0) panel spatial Tobit variants:
 
 Notes
 -----
-These classes force ``model=0`` (pooled transform) because within transforms
-are not compatible with censoring augmentation on the observed scale.
+The Tobit specification splits the observation vector into two pieces:
+
+* **Uncensored** observations enter the likelihood directly through the
+  Gaussian density evaluated at the observed value.
+* **Censored** observations have unknown latent values
+  :math:`y^*_i < c` (with :math:`c` the censoring threshold).  These are
+  augmented in the PyMC model via a half-Normal *gap* parameter
+  ``y_cens_gap`` such that
+  :math:`y^*_i = c - \\text{gap}_i` with :math:`\\text{gap}_i \\geq 0`,
+  which trades the analytic ``Φ((c-μ)/σ)`` factor of a marginal Tobit
+  likelihood for tractable posterior sampling on the joint
+  :math:`(\\theta, y^*_{\\text{cens}})` space (Albert & Chib, 1993;
+  Chib, 1992).
+
+These classes force ``model=0`` (pooled transform) because within
+transformations are not compatible with the censoring augmentation on
+the *observed* scale: subtracting unit means would mix censored and
+uncensored values inside the Gaussian likelihood.
+
+References
+----------
+Chib, S. (1992). Bayes inference in the Tobit censored regression
+model. *Journal of Econometrics*, 51(1–2), 79–99.
+
+Albert, J.H. & Chib, S. (1993). Bayesian analysis of binary and
+polychotomous response data. *Journal of the American Statistical
+Association*, 88(422), 669–679.
 """
 
 from __future__ import annotations
@@ -16,8 +41,8 @@ from __future__ import annotations
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
+from pytensor import sparse as pts
 
-from ..logdet import make_logdet_fn
 from .panel_base import SpatialPanelModel
 
 
@@ -44,8 +69,12 @@ class _PanelTobitBase(SpatialPanelModel):
     def _posterior_latent_y_mean(self) -> np.ndarray:
         y_lat = self._y.copy().astype(float)
         if self._censored_idx.size > 0 and "y_cens_gap" in self._idata.posterior:
-            gap_hat = self._idata.posterior["y_cens_gap"].mean(("chain", "draw")).to_numpy()
-            y_lat[self._censored_idx] = self.censoring - np.asarray(gap_hat, dtype=float)
+            gap_hat = (
+                self._idata.posterior["y_cens_gap"].mean(("chain", "draw")).to_numpy()
+            )
+            y_lat[self._censored_idx] = self.censoring - np.asarray(
+                gap_hat, dtype=float
+            )
         return y_lat
 
 
@@ -87,14 +116,8 @@ class SARPanelTobit(_PanelTobitBase):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=rho_lower,
-            rho_max=rho_upper,
-            T=self._T,
-        )
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        logdet_fn = self._logdet_pytensor_fn
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -102,11 +125,17 @@ class SARPanelTobit(_PanelTobitBase):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             y_lat = self._latent_y_tensor()
-            resid = y_lat - rho * pt.dot(W_pt, y_lat) - pt.dot(self._X, beta)
+            resid = (
+                y_lat
+                - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten()
+                - pt.dot(self._X, beta)
+            )
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_resid = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid).sum()
+                logp_resid = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid
+                ).sum()
             else:
                 logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
             pm.Potential("resid_loglik", logp_resid)
@@ -126,15 +155,7 @@ class SARPanelTobit(_PanelTobitBase):
         beta = self._posterior_mean("beta")
         eigs = self._W_eigs
         mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        if self._is_row_std:
-            mean_row_sum = 1.0 / (1.0 - rho)
-        else:
-            mean_row_sum = float(
-                np.linalg.solve(
-                    np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray(),
-                    np.ones(self._W_sparse.shape[0]),
-                ).mean()
-            )
+        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
         direct = mean_diag * beta[ni]
         total = mean_row_sum * beta[ni]
         indirect = total - direct
@@ -145,9 +166,12 @@ class SARPanelTobit(_PanelTobitBase):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
         ni = self._nonintercept_indices
 
@@ -157,17 +181,7 @@ class SARPanelTobit(_PanelTobitBase):
             eigs = self._W_eigs.real.astype(np.float64)
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
-            if self._is_row_std:
-                mean_row_sum = 1.0 / (1.0 - rho_draws)
-            else:
-                n = self._W_sparse.shape[0]
-                W_dense = self._W_sparse.toarray()
-                ones = np.ones(n)
-                G = rho_draws.shape[0]
-                mean_row_sum = np.empty(G)
-                for g in range(G):
-                    A = np.eye(n) - rho_draws[g] * W_dense
-                    mean_row_sum[g] = np.linalg.solve(A, ones).mean()
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
             direct_samples = mean_diag[:, None] * beta_draws
             total_samples = mean_row_sum[:, None] * beta_draws
             indirect_samples = total_samples - direct_samples
@@ -216,8 +230,6 @@ class SARPanelTobit(_PanelTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import pytensor
-        import pytensor.tensor as pt_ll
         import xarray as xr
         from scipy.stats import norm
 
@@ -248,6 +260,7 @@ class SARPanelTobit(_PanelTobitBase):
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
+
             ll[:, uncens] = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -273,9 +286,8 @@ class SARPanelTobit(_PanelTobitBase):
                 (censoring - mu[:, censored]) / sigma_f[:, None]
             )
 
-        # Eigenvalue-based Jacobian: log|I - rho*W| * T / n (pure numpy)
-        eigs = self._W_eigs.real.astype(np.float64)
-        jac = np.array([np.sum(np.log(np.abs(1.0 - rv * eigs))) for rv in rho_f]) * self._T  # (n_draws,)
+        # Jacobian (respects logdet_method)
+        jac = self._logdet_numpy_vec_fn(rho_f) * self._T  # (n_draws,)
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
@@ -320,14 +332,8 @@ class SEMPanelTobit(_PanelTobitBase):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=lam_lower,
-            rho_max=lam_upper,
-            T=self._T,
-        )
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        logdet_fn = self._logdet_pytensor_fn
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -336,11 +342,13 @@ class SEMPanelTobit(_PanelTobitBase):
 
             y_lat = self._latent_y_tensor()
             resid = y_lat - pt.dot(self._X, beta)
-            eps = resid - lam * pt.dot(W_pt, resid)
+            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
@@ -362,9 +370,12 @@ class SEMPanelTobit(_PanelTobitBase):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+
         idata = self.inference_data
         ni = self._nonintercept_indices
 
@@ -374,17 +385,7 @@ class SEMPanelTobit(_PanelTobitBase):
             eigs = self._W_eigs.real.astype(np.float64)
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
-            if self._is_row_std:
-                mean_row_sum = 1.0 / (1.0 - rho_draws)
-            else:
-                n = self._W_sparse.shape[0]
-                W_dense = self._W_sparse.toarray()
-                ones = np.ones(n)
-                G = rho_draws.shape[0]
-                mean_row_sum = np.empty(G)
-                for g in range(G):
-                    A = np.eye(n) - rho_draws[g] * W_dense
-                    mean_row_sum[g] = np.linalg.solve(A, ones).mean()
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
             direct_samples = mean_diag[:, None] * beta_draws
             total_samples = mean_row_sum[:, None] * beta_draws
             indirect_samples = total_samples - direct_samples
@@ -434,8 +435,6 @@ class SEMPanelTobit(_PanelTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import pytensor
-        import pytensor.tensor as pt_ll
         import xarray as xr
         from scipy.stats import norm
 
@@ -464,6 +463,7 @@ class SEMPanelTobit(_PanelTobitBase):
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
+
             ll[:, uncens] = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -489,9 +489,8 @@ class SEMPanelTobit(_PanelTobitBase):
                 (censoring - mu[:, censored]) / sigma_f[:, None]
             )
 
-        # Eigenvalue-based Jacobian: log|I - lam*W| * T / n (pure numpy)
-        eigs = self._W_eigs.real.astype(np.float64)
-        jac = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_f]) * self._T  # (n_draws,)
+        # Jacobian (respects logdet_method)
+        jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)

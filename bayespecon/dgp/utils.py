@@ -10,7 +10,9 @@ import scipy.sparse as sp
 from libpysal.graph import Graph
 
 
-def ensure_rng(rng: np.random.Generator | None = None, seed: int | None = None) -> np.random.Generator:
+def ensure_rng(
+    rng: np.random.Generator | None = None, seed: int | None = None
+) -> np.random.Generator:
     """Return a reproducible NumPy random generator.
 
     Parameters
@@ -33,6 +35,9 @@ def ensure_rng(rng: np.random.Generator | None = None, seed: int | None = None) 
 def row_standardize(W: np.ndarray) -> np.ndarray:
     """Row-standardize a dense weights matrix.
 
+    Each row of *W* is divided by its row sum so that
+    ``W[i, :].sum() == 1`` for every isolated-free unit *i*.
+
     Parameters
     ----------
     W : np.ndarray
@@ -42,6 +47,18 @@ def row_standardize(W: np.ndarray) -> np.ndarray:
     -------
     np.ndarray
         Row-standardized matrix, with zero-sum rows left unchanged.
+
+    Notes
+    -----
+    Rows whose sum is exactly ``0`` (typically *isolates* — units with
+    no neighbours) are returned untouched: dividing by zero would
+    introduce ``NaN`` entries that propagate through every subsequent
+    spatial product.  This means the returned matrix is row-stochastic
+    on the **non-isolated** rows only; the isolate rows remain rows of
+    zeros.  Downstream consumers that rely on every eigenvalue of the
+    row-standardised weight matrix being ``≤ 1`` (e.g. the SAR stability
+    domain ``ρ ∈ (-1, 1)``) should drop or reconnect isolates beforehand
+    rather than rely on this routine to do so.
     """
     W = np.asarray(W, dtype=float)
     rs = W.sum(axis=1, keepdims=True)
@@ -146,32 +163,33 @@ def weights_from_geodataframe(
     Graph
         Row-standardized graph built from geometry.
     """
-    try:
-        from libpysal.weights import DistanceBand, KNN, Queen, Rook
-    except Exception as exc:  # pragma: no cover
-        raise ImportError("libpysal weights builders are required for GeoDataFrame support.") from exc
-
     if gdf is None:
         raise ValueError("gdf must be provided when building weights from geometry.")
     if not hasattr(gdf, "geometry"):
-        raise TypeError("gdf must be a GeoDataFrame-like object with a geometry column.")
+        raise TypeError(
+            "gdf must be a GeoDataFrame-like object with a geometry column."
+        )
 
     mode = contiguity.lower()
     if mode == "queen":
-        w = Queen.from_dataframe(gdf, use_index=False)
+        g = Graph.build_contiguity(gdf, rook=False)
     elif mode == "rook":
-        w = Rook.from_dataframe(gdf, use_index=False)
+        g = Graph.build_contiguity(gdf, rook=True)
     elif mode == "knn":
-        w = KNN.from_dataframe(gdf, k=int(k), use_index=False)
+        g = Graph.build_knn(gdf, k=int(k))
     elif mode == "distance":
         if distance_threshold is None:
-            raise ValueError("distance_threshold must be supplied when contiguity='distance'.")
-        cent = np.column_stack([gdf.geometry.centroid.x.values, gdf.geometry.centroid.y.values])
-        w = DistanceBand(cent, threshold=float(distance_threshold), binary=True)
+            raise ValueError(
+                "distance_threshold must be supplied when contiguity='distance'."
+            )
+        g = Graph.build_distance_band(
+            gdf, threshold=float(distance_threshold), binary=True
+        )
     else:
-        raise ValueError("contiguity must be one of {'queen', 'rook', 'knn', 'distance'}." )
+        raise ValueError(
+            "contiguity must be one of {'queen', 'rook', 'knn', 'distance'}."
+        )
 
-    g = Graph.from_W(w)
     return g.transform("r")
 
 
@@ -215,20 +233,26 @@ def resolve_weights(
             g = W.transform("r")
             Wd = g.sparse.toarray().astype(float)
             if gdf_n is not None and Wd.shape[0] != gdf_n:
-                raise ValueError("W and gdf must describe the same number of spatial units.")
+                raise ValueError(
+                    "W and gdf must describe the same number of spatial units."
+                )
             if n_obs is not None and Wd.shape[0] != n_obs:
                 raise ValueError("n must match the size implied by W/gdf.")
             return Wd, g
         if sp.issparse(W):
             Wd = row_standardize(W.toarray().astype(float))
             if gdf_n is not None and Wd.shape[0] != gdf_n:
-                raise ValueError("W and gdf must describe the same number of spatial units.")
+                raise ValueError(
+                    "W and gdf must describe the same number of spatial units."
+                )
             if n_obs is not None and Wd.shape[0] != n_obs:
                 raise ValueError("n must match the size implied by W/gdf.")
             return Wd, dense_to_graph(Wd)
         Wd = row_standardize(np.asarray(W, dtype=float))
         if gdf_n is not None and Wd.shape[0] != gdf_n:
-            raise ValueError("W and gdf must describe the same number of spatial units.")
+            raise ValueError(
+                "W and gdf must describe the same number of spatial units."
+            )
         if n_obs is not None and Wd.shape[0] != n_obs:
             raise ValueError("n must match the size implied by W/gdf.")
         return Wd, dense_to_graph(Wd)
@@ -238,7 +262,9 @@ def resolve_weights(
             raise ValueError("Provide either W, gdf, or n.")
         return rook_grid_weights(int(n))
 
-    g = weights_from_geodataframe(gdf, contiguity=contiguity, k=k, distance_threshold=distance_threshold)
+    g = weights_from_geodataframe(
+        gdf, contiguity=contiguity, k=k, distance_threshold=distance_threshold
+    )
     if n is not None and g.sparse.shape[0] != int(n):
         raise ValueError("n must match the size implied by W/gdf.")
     return g.sparse.toarray().astype(float), g
@@ -265,10 +291,12 @@ def _hetero_scale(X: np.ndarray, sigma: float) -> np.ndarray:
         Array of shape ``(n,)`` with element-wise standard deviations
         ``sigma * sqrt(1 + ||x_i||^2)``.
     """
-    return sigma * np.sqrt(1.0 + np.sum(X ** 2, axis=1))
+    return sigma * np.sqrt(1.0 + np.sum(X**2, axis=1))
 
 
-def make_design_matrix(rng: np.random.Generator, n: int, k: int = 1, add_intercept: bool = True) -> np.ndarray:
+def make_design_matrix(
+    rng: np.random.Generator, n: int, k: int = 1, add_intercept: bool = True
+) -> np.ndarray:
     """Generate synthetic design matrix.
 
     Parameters
@@ -361,7 +389,9 @@ def make_output_geodataframe(
 
     if gdf is not None:
         if len(gdf) != n_obs:
-            raise ValueError("Provided gdf must have the same number of rows as y and X.")
+            raise ValueError(
+                "Provided gdf must have the same number of rows as y and X."
+            )
         out_gdf = gdf.copy()
         for col, values in out.items():
             out_gdf[col] = values
@@ -372,7 +402,7 @@ def make_output_geodataframe(
         raise ValueError("geometry_type must be one of {'point', 'polygon'}.")
 
     n_cols = int(np.ceil(np.sqrt(n_obs)))
-    n_rows = int(np.ceil(n_obs / n_cols))
+    int(np.ceil(n_obs / n_cols))
 
     geoms = []
     for idx in range(n_obs):
@@ -446,7 +476,7 @@ def make_panel_output_geodataframe(
     if y.ndim != 1:
         raise ValueError("y must be a 1D array.")
     if y.shape[0] != N * T:
-        raise ValueError(f"y length {y.shape[0]} does not match N*T={N*T}.")
+        raise ValueError(f"y length {y.shape[0]} does not match N*T={N * T}.")
 
     # Build N-row unit GeoDataFrame (geometry only).
     if gdf is not None:
@@ -488,3 +518,156 @@ def make_panel_output_geodataframe(
 
     combined = pd.concat([unit_gdf.reset_index(drop=True), wide_df], axis=1)
     return gpd.GeoDataFrame(combined, geometry=unit_gdf.geometry.name)
+
+
+def synth_point_geodataframe(n: int) -> Any:
+    """Synthesize a point GeoDataFrame on a √n × √n grid.
+
+    Used by flow DGPs when the user does not supply a ``gdf`` so that a
+    consistent set of centroid coordinates is available for distance
+    computation.
+
+    Parameters
+    ----------
+    n : int
+        Number of points (rows) to generate.
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        n-row GeoDataFrame whose ``geometry`` column contains
+        ``Point(c + 0.5, r + 0.5)`` cells laid out row-major on a
+        ``ceil(sqrt(n)) × ceil(sqrt(n))`` grid.
+    """
+    try:
+        import geopandas as gpd
+        from shapely.geometry import Point
+    except Exception as exc:  # pragma: no cover
+        raise ImportError(
+            "synth_point_geodataframe requires optional dependencies "
+            "geopandas and shapely."
+        ) from exc
+
+    n = int(n)
+    if n <= 0:
+        raise ValueError("n must be a positive integer.")
+
+    n_cols = int(np.ceil(np.sqrt(n)))
+    geoms = []
+    for idx in range(n):
+        r, c = divmod(idx, n_cols)
+        geoms.append(Point(c + 0.5, r + 0.5))
+
+    return gpd.GeoDataFrame({"unit_id": np.arange(n)}, geometry=geoms)
+
+
+def pairwise_distance_matrix(gdf: Any) -> np.ndarray:
+    """Compute the dense ``n × n`` pairwise Euclidean distance matrix from a
+    GeoDataFrame.
+
+    Polygons are downcast to centroids first; points are used directly.
+    The resulting matrix has zero diagonal by construction and is symmetric.
+
+    This is the dense-matrix complement to
+    :meth:`libpysal.graph.Graph.build_distance_band`, which returns a
+    thresholded sparse graph; flow regressions need the full pairwise
+    distances to populate an O-D design column.
+
+    Parameters
+    ----------
+    gdf : geopandas.GeoDataFrame
+        Geometry source.  Polygons are reduced to centroids automatically.
+
+    Returns
+    -------
+    np.ndarray
+        ``(n, n)`` Euclidean distance matrix in the same units / CRS as
+        ``gdf.geometry``.
+    """
+    from scipy.spatial.distance import cdist
+
+    if gdf is None or not hasattr(gdf, "geometry"):
+        raise TypeError("pairwise_distance_matrix requires a GeoDataFrame-like object.")
+
+    geom = gdf.geometry
+    # geopandas' .centroid is a no-op for points and yields polygon centroids
+    # otherwise; explicitly access .x / .y to obtain coordinates.
+    cents = geom.centroid
+    coords = np.column_stack([cents.x.to_numpy(), cents.y.to_numpy()])
+    return cdist(coords, coords)
+
+
+def _resolve_flow_geometry(
+    n: int | None = None,
+    G: Graph | None = None,
+    gdf: Any | None = None,
+    knn_k: int = 4,
+    default_n: int = 25,
+) -> tuple[int, Graph, Any]:
+    """Resolve ``(n, G, gdf)`` for flow DGPs from any combination of inputs.
+
+    The flow DGPs need a row-standardised spatial graph *G* (size ``n``)
+    and a point GeoDataFrame *gdf* (length ``n``) to derive a pairwise
+    distance matrix.  Either, both, or neither of *G* and *gdf* may be
+    supplied.  When *G* is missing it is constructed from *gdf* using
+    KNN contiguity (``k = knn_k``) and row-standardised.  When *gdf* is
+    missing a synthetic point grid is generated via
+    :func:`synth_point_geodataframe`.
+
+    Parameters
+    ----------
+    n : int, optional
+        Desired number of spatial units.  Ignored when *G* or *gdf* is
+        provided (the size is taken from those objects).  When neither
+        is supplied, falls back to *default_n*.
+    G : libpysal.graph.Graph, optional
+        Pre-built spatial graph.  If supplied it is row-standardised on
+        the way out (idempotent for already row-standard graphs).
+    gdf : geopandas.GeoDataFrame, optional
+        Point or polygon geometry.  Used both to build *G* (when
+        missing) and to compute distances downstream.
+    knn_k : int, default 4
+        Number of nearest neighbours used when building *G* from *gdf*.
+    default_n : int, default 25
+        Number of units used when neither *G* nor *gdf* is provided.
+
+    Returns
+    -------
+    n_actual : int
+        Resolved number of spatial units.
+    G : libpysal.graph.Graph
+        Row-standardised graph on *n_actual* units.
+    gdf : geopandas.GeoDataFrame
+        Geometry source on *n_actual* units (synthesized when not
+        supplied).
+
+    Raises
+    ------
+    ValueError
+        If both *G* and *gdf* are supplied but their sizes disagree, or
+        if *n* is supplied alongside *G* / *gdf* with an inconsistent
+        size.
+    """
+    if G is not None and gdf is not None:
+        if len(gdf) != G.n_nodes:
+            raise ValueError(f"gdf has {len(gdf)} rows but G has {G.n_nodes} nodes.")
+        n_actual = G.n_nodes
+    elif G is not None:
+        n_actual = G.n_nodes
+        gdf = synth_point_geodataframe(n_actual)
+    elif gdf is not None:
+        n_actual = len(gdf)
+        k_eff = max(1, min(int(knn_k), n_actual - 1))
+        G = Graph.build_knn(gdf, k=k_eff).transform("r")
+    else:
+        n_actual = int(n) if n is not None else int(default_n)
+        gdf = synth_point_geodataframe(n_actual)
+        k_eff = max(1, min(int(knn_k), n_actual - 1))
+        G = Graph.build_knn(gdf, k=k_eff).transform("r")
+
+    if n is not None and int(n) != n_actual:
+        raise ValueError(f"n={n} disagrees with resolved geometry size {n_actual}.")
+
+    # Ensure G is row-standardised
+    G = G.transform("r")
+    return n_actual, G, gdf

@@ -6,8 +6,9 @@ import arviz as az
 import numpy as np
 import pandas as pd
 
-from bayespecon import OLSPanelRE, SARPanelRE, SEMPanelRE, SARPanelTobit, SEMPanelTobit
-from .helpers  import W_to_graph, make_line_W
+from bayespecon import OLSPanelRE, SARPanelRE, SARPanelTobit, SEMPanelRE, SEMPanelTobit
+
+from .helpers import W_to_graph, make_line_W
 
 
 def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:
@@ -32,21 +33,30 @@ def test_panel_re_fitted_values_and_effects_run_with_mock_posteriors():
     beta = np.array([0.3, 1.0])
 
     ols = OLSPanelRE(y=y, X=X, W=W, N=N, T=T)
-    ols._idata = _idata({"beta": np.stack([beta, beta + 1e-3]), "alpha": np.stack([alpha, alpha + 1e-3])})
+    ols._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "alpha": np.stack([alpha, alpha + 1e-3]),
+        }
+    )
 
     sar = SARPanelRE(y=y, X=X, W=W, N=N, T=T)
-    sar._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "alpha": np.stack([alpha, alpha + 1e-3]),
-        "rho": np.array([0.2, 0.201]),
-    })
+    sar._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "alpha": np.stack([alpha, alpha + 1e-3]),
+            "rho": np.array([0.2, 0.201]),
+        }
+    )
 
     sem = SEMPanelRE(y=y, X=X, W=W, N=N, T=T)
-    sem._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "alpha": np.stack([alpha, alpha + 1e-3]),
-        "lam": np.array([0.1, 0.101]),
-    })
+    sem._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "alpha": np.stack([alpha, alpha + 1e-3]),
+            "lam": np.array([0.1, 0.101]),
+        }
+    )
 
     for m in [ols, sar, sem]:
         fitted = m.fitted_values()
@@ -71,25 +81,33 @@ def test_panel_tobit_fitted_values_and_effects_run_with_latent_gap_draws():
     sem_tobit = SEMPanelTobit(y=y, X=X, W=W, N=N, T=T)
 
     beta = np.array([0.2, 0.9])
-    yc_sar = np.vstack([
-        np.linspace(0.05, 0.15, sar_tobit._censored_idx.size),
-        np.linspace(0.06, 0.16, sar_tobit._censored_idx.size),
-    ])
-    yc_sem = np.vstack([
-        np.linspace(0.05, 0.15, sem_tobit._censored_idx.size),
-        np.linspace(0.06, 0.16, sem_tobit._censored_idx.size),
-    ])
+    yc_sar = np.vstack(
+        [
+            np.linspace(0.05, 0.15, sar_tobit._censored_idx.size),
+            np.linspace(0.06, 0.16, sar_tobit._censored_idx.size),
+        ]
+    )
+    yc_sem = np.vstack(
+        [
+            np.linspace(0.05, 0.15, sem_tobit._censored_idx.size),
+            np.linspace(0.06, 0.16, sem_tobit._censored_idx.size),
+        ]
+    )
 
-    sar_tobit._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "rho": np.array([0.15, 0.151]),
-        "y_cens_gap": yc_sar,
-    })
-    sem_tobit._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "lam": np.array([0.05, 0.051]),
-        "y_cens_gap": yc_sem,
-    })
+    sar_tobit._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "rho": np.array([0.15, 0.151]),
+            "y_cens_gap": yc_sar,
+        }
+    )
+    sem_tobit._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "lam": np.array([0.05, 0.051]),
+            "y_cens_gap": yc_sem,
+        }
+    )
 
     for m in [sar_tobit, sem_tobit]:
         fitted = m.fitted_values()

@@ -10,8 +10,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon import DLMPanelFE, SDMRPanelFE, SDMUPanelFE
-from .helpers  import (
+from bayespecon import OLSPanelDynamic, SDMRPanelDynamic, SDMUPanelDynamic
+
+from .helpers import (
     SAMPLE_KWARGS,
     W_to_graph,
     make_line_W,
@@ -47,12 +48,12 @@ def test_dlm_panel_fe_recovers_phi(rng):
         sigma=SIGMA_TRUE,
         sigma_alpha=0.0,
     )
-    model = DLMPanelFE(y=y, X=X, W=W_graph, N=N_DYNAMIC, T=T_DYNAMIC, model=0)
+    model = OLSPanelDynamic(y=y, X=X, W=W_graph, N=N_DYNAMIC, T=T_DYNAMIC, model=0)
     idata = model.fit(**SAMPLE_KWARGS)
     phi_hat = float(idata.posterior["phi"].mean())
 
     assert abs(phi_hat - PHI_TRUE) < ABS_TOL_DYNAMIC, (
-        f"DLMPanelFE phi: expected ≈{PHI_TRUE}, got {phi_hat:.3f}"
+        f"OLSPanelDynamic phi: expected ≈{PHI_TRUE}, got {phi_hat:.3f}"
     )
 
 
@@ -69,12 +70,12 @@ def test_dlm_panel_fe_recovers_beta(rng):
         sigma=SIGMA_TRUE,
         sigma_alpha=0.0,
     )
-    model = DLMPanelFE(y=y, X=X, W=W_graph, N=N_DYNAMIC, T=T_DYNAMIC, model=0)
+    model = OLSPanelDynamic(y=y, X=X, W=W_graph, N=N_DYNAMIC, T=T_DYNAMIC, model=0)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
 
     assert abs(beta_hat[1] - BETA_TRUE[1]) < ABS_TOL_BETA, (
-        f"DLMPanelFE beta[1]: expected ≈{BETA_TRUE[1]}, got {beta_hat[1]:.3f}"
+        f"OLSPanelDynamic beta[1]: expected ≈{BETA_TRUE[1]}, got {beta_hat[1]:.3f}"
     )
 
 
@@ -92,16 +93,16 @@ def test_sdmr_panel_fe_recovers_rho_phi(rng):
         sigma=SIGMA_TRUE,
         sigma_alpha=0.0,
     )
-    model = SDMRPanelFE(y=y, X=X, W=W_graph, N=N_DYNAMIC, T=T_DYNAMIC, model=0)
+    model = SDMRPanelDynamic(y=y, X=X, W=W_graph, N=N_DYNAMIC, T=T_DYNAMIC, model=0)
     idata = model.fit(**SAMPLE_KWARGS)
     rho_hat = float(idata.posterior["rho"].mean())
     phi_hat = float(idata.posterior["phi"].mean())
 
     assert abs(rho_hat - RHO_TRUE) < ABS_TOL_DYNAMIC, (
-        f"SDMRPanelFE rho: expected ≈{RHO_TRUE}, got {rho_hat:.3f}"
+        f"SDMRPanelDynamic rho: expected ≈{RHO_TRUE}, got {rho_hat:.3f}"
     )
     assert abs(phi_hat - PHI_TRUE) < ABS_TOL_DYNAMIC, (
-        f"SDMRPanelFE phi: expected ≈{PHI_TRUE}, got {phi_hat:.3f}"
+        f"SDMRPanelDynamic phi: expected ≈{PHI_TRUE}, got {phi_hat:.3f}"
     )
 
 
@@ -120,18 +121,18 @@ def test_sdmu_panel_fe_recovers_rho_phi_theta(rng):
         sigma=SIGMA_TRUE,
         sigma_alpha=0.0,
     )
-    model = SDMUPanelFE(y=y, X=X, W=W_graph, N=N_DYNAMIC, T=T_DYNAMIC, model=0)
+    model = SDMUPanelDynamic(y=y, X=X, W=W_graph, N=N_DYNAMIC, T=T_DYNAMIC, model=0)
     idata = model.fit(**SAMPLE_KWARGS)
     rho_hat = float(idata.posterior["rho"].mean())
     phi_hat = float(idata.posterior["phi"].mean())
     theta_hat = float(idata.posterior["theta"].mean())
 
     assert abs(rho_hat - RHO_TRUE) < ABS_TOL_DYNAMIC, (
-        f"SDMUPanelFE rho: expected ≈{RHO_TRUE}, got {rho_hat:.3f}"
+        f"SDMUPanelDynamic rho: expected ≈{RHO_TRUE}, got {rho_hat:.3f}"
     )
     assert abs(phi_hat - PHI_TRUE) < ABS_TOL_DYNAMIC, (
-        f"SDMUPanelFE phi: expected ≈{PHI_TRUE}, got {phi_hat:.3f}"
+        f"SDMUPanelDynamic phi: expected ≈{PHI_TRUE}, got {phi_hat:.3f}"
     )
     assert abs(theta_hat - THETA_TRUE) < ABS_TOL_DYNAMIC, (
-        f"SDMUPanelFE theta: expected ≈{THETA_TRUE}, got {theta_hat:.3f}"
+        f"SDMUPanelDynamic theta: expected ≈{THETA_TRUE}, got {theta_hat:.3f}"
     )

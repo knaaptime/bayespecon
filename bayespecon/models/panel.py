@@ -6,13 +6,26 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 import xarray as xr
+from pytensor import sparse as pts
 
-from ..logdet import make_logdet_fn
 from .panel_base import SpatialPanelModel
 
 
 class OLSPanelFE(SpatialPanelModel):
-    """Bayesian pooled/fixed-effects panel regression.
+    r"""Bayesian pooled and fixed-effects linear panel regression.
+
+    Implements the Gaussian panel model
+
+    .. math::
+
+        y_{it} = x_{it}'eta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),
+
+    where the included effects depend on ``model``: ``0`` pooled,
+    ``1`` unit effects, ``2`` time effects, ``3`` two-way effects. The
+    within transformation is handled by
+    :class:`~bayespecon.models.panel_base.SpatialPanelModel` before the
+    likelihood is evaluated.
 
     Parameters
     ----------
@@ -22,28 +35,9 @@ class OLSPanelFE(SpatialPanelModel):
 
     Notes
     -----
-    This class mirrors MATLAB ``ols_panel_FE_g`` behavior through the shared
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_sdm_joint_test"],
-        ).bayesian_panel_lm_sdm_joint_test(m), "Panel-LM-SDM-Joint"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_slx_error_joint_test"],
-        ).bayesian_panel_lm_slx_error_joint_test(m), "Panel-LM-SLX-Error-Joint"),
-    ]
-    :class:`~bayespecon.models.panel_base.SpatialPanelModel` transformation
-    pipeline.
+    This is the aspatial baseline for panel LM diagnostics and panel model
+    comparison. The spatial weights object ``W`` is accepted for API
+    consistency but does not enter the likelihood.
 
     **Robust regression**
 
@@ -56,7 +50,7 @@ class OLSPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -112,7 +106,9 @@ class OLSPanelFE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         OLS panel has no spatial structure: Direct = beta, Indirect = 0.
@@ -131,7 +127,17 @@ class OLSPanelFE(SpatialPanelModel):
 
 
 class SARPanelFE(SpatialPanelModel):
-    """Bayesian spatial lag panel regression.
+    r"""Bayesian spatial-lag panel regression.
+
+    Implements
+
+    .. math::
+
+        y_{it} = \\rho W y_{it} + x_{it}'\\beta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),
+
+    with the same pooled, unit-effect, time-effect, or two-way panel
+    transformation selected by ``model`` as in :class:`OLSPanelFE`.
 
     Parameters
     ----------
@@ -141,23 +147,8 @@ class SARPanelFE(SpatialPanelModel):
 
     Notes
     -----
-    This class mirrors MATLAB ``sar_panel_FE_g`` behavior under the common
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_wx_test"],
-        ).bayesian_panel_lm_wx_test(m), "Panel-LM-WX"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_robust_lm_wx_test"],
-        ).bayesian_panel_robust_lm_wx_test(m), "Panel-Robust-LM-WX"),
-    ]
-    panel transformation framework.
+    The likelihood combines the Gaussian observation density with the
+    spatial Jacobian term associated with :math:`I - \\rho W`.
 
     **Robust regression**
 
@@ -170,7 +161,7 @@ class SARPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -188,13 +179,7 @@ class SARPanelFE(SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=rho_lower,
-            rho_max=rho_upper,
-            T=self._T,
-        )
+        logdet_fn = self._logdet_pytensor_fn
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -266,15 +251,7 @@ class SARPanelFE(SpatialPanelModel):
         ni = self._nonintercept_indices
         eigs = self._W_eigs
         mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        if self._is_row_std:
-            mean_row_sum = 1.0 / (1.0 - rho)
-        else:
-            mean_row_sum = float(
-                np.linalg.solve(
-                    np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray(),
-                    np.ones(self._W_sparse.shape[0]),
-                ).mean()
-            )
+        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
         direct = mean_diag * beta[ni]
         total = mean_row_sum * beta[ni]
         indirect = total - direct
@@ -285,7 +262,9 @@ class SARPanelFE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SAR panel impacts use the same eigenvalue-based formulas as
@@ -296,22 +275,13 @@ class SARPanelFE(SpatialPanelModel):
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
-        G = rho_draws.shape[0]
+        rho_draws.shape[0]
 
         eigs = self._W_eigs.real.astype(np.float64)
         inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
         mean_diag = np.mean(inv_eigs, axis=1)  # (G,)
 
-        if self._is_row_std:
-            mean_row_sum = 1.0 / (1.0 - rho_draws)  # (G,)
-        else:
-            n = self._W_sparse.shape[0]
-            W_dense = self._W_sparse.toarray()
-            ones = np.ones(n)
-            mean_row_sum = np.empty(G)
-            for g in range(G):
-                A = np.eye(n) - rho_draws[g] * W_dense
-                mean_row_sum[g] = np.linalg.solve(A, ones).mean()
+        mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
 
         # Exclude intercept from effects (it has no meaningful spatial interpretation)
         ni = self._nonintercept_indices
@@ -323,7 +293,19 @@ class SARPanelFE(SpatialPanelModel):
 
 
 class SEMPanelFE(SpatialPanelModel):
-    """Bayesian spatial error panel regression.
+    r"""Bayesian spatial-error panel regression.
+
+    Implements
+
+    .. math::
+
+        y_{it} = x_{it}'\\beta + \\alpha_i + \\tau_t + u_{it},
+        \\qquad u_{it} = \\lambda W u_{it} + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    Spatial dependence enters through the disturbance, while the panel
+    transformation selected by ``model`` absorbs pooled, unit, time, or
+    two-way effects before likelihood evaluation.
 
     Parameters
     ----------
@@ -331,25 +313,9 @@ class SEMPanelFE(SpatialPanelModel):
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
 
-    Notes
-    -----
-    This class mirrors MATLAB ``sem_panel_FE_g`` behavior under the common
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_wx_sem_test"],
-        ).bayesian_panel_lm_wx_sem_test(m), "Panel-LM-WX"),
-    ]
-    panel transformation framework.
-
     **Robust regression**
 
-    When ``robust=True``, the spatially-filtered error distribution is
+    When ``robust=True``, the spatially filtered error distribution is
     changed from Normal to Student-t, yielding a model that is robust to
     heavy-tailed outliers:
 
@@ -359,7 +325,7 @@ class SEMPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -377,15 +343,9 @@ class SEMPanelFE(SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=lam_lower,
-            rho_max=lam_upper,
-            T=self._T,
-        )
+        logdet_fn = self._logdet_pytensor_fn
 
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -393,11 +353,13 @@ class SEMPanelFE(SpatialPanelModel):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             resid = self._y - pt.dot(self._X, beta)
-            eps = resid - lam * pt.dot(W_pt, resid)
+            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
@@ -455,6 +417,7 @@ class SEMPanelFE(SpatialPanelModel):
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
+
             ll = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -470,9 +433,8 @@ class SEMPanelFE(SpatialPanelModel):
                 + 2.0 * np.log(sigma_f[:, None])
             )
 
-        # Eigenvalue-based Jacobian: log|I - lam*W| * T / n
-        eigs = self._W_eigs.real.astype(np.float64)
-        jac = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_f]) * self._T  # (n_draws,)
+        # Jacobian (respects logdet_method)
+        jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
@@ -508,7 +470,9 @@ class SEMPanelFE(SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SEM panel has no spatial multiplier on X: Direct = beta, Indirect = 0.
@@ -527,25 +491,24 @@ class SEMPanelFE(SpatialPanelModel):
 
 
 class SDMPanelFE(SpatialPanelModel):
-    """Bayesian spatial Durbin panel regression.
+    r"""Bayesian spatial Durbin panel regression.
+
+    Implements
+
+    .. math::
+
+        y_{it} = \\rho W y_{it} + x_{it}'\\beta + W x_{it}'\\theta
+        + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    The coefficient vector sampled by the model stacks the local and
+    lagged-regressor blocks as :math:`[\\beta, \\theta]`.
 
     Parameters
     ----------
     formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
-
-    Notes
-    -----
-    This class mirrors MATLAB ``sdm_panel_FE_g`` behavior by augmenting the
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-    ]
-    design matrix with spatially lagged regressors ``W X``.
 
     **Robust regression**
 
@@ -558,7 +521,7 @@ class SDMPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -581,13 +544,7 @@ class SDMPanelFE(SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=rho_lower,
-            rho_max=rho_upper,
-            T=self._T,
-        )
+        logdet_fn = self._logdet_pytensor_fn
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -659,29 +616,27 @@ class SDMPanelFE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         k = self._X.shape[1]
         kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k:k + kw]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
 
         eigs = self._W_eigs
         inv_eigs = 1.0 / (1.0 - rho * eigs)
         mean_diag_M = float(np.mean(inv_eigs.real))
         mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
-        if self._is_row_std:
-            mean_row_sum_M = 1.0 / (1.0 - rho)
-            mean_row_sum_MW = mean_row_sum_M
-        else:
-            ones = np.ones(self._W_sparse.shape[0])
-            A = np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray()
-            M_ones = np.linalg.solve(A, ones)
-            mean_row_sum_M = float(M_ones.mean())
-            mean_row_sum_MW = float((self._W_sparse.toarray() @ M_ones).mean())
-        direct = np.array([
-            beta1[j] * mean_diag_M + b2 * mean_diag_MW
-            for j, b2 in zip(self._wx_column_indices, beta2)
-        ])
-        total = np.array([
-            beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-            for j, b2 in zip(self._wx_column_indices, beta2)
-        ])
+        rho_arr = np.array([rho])
+        mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
+        mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
+        direct = np.array(
+            [
+                beta1[j] * mean_diag_M + b2 * mean_diag_MW
+                for j, b2 in zip(self._wx_column_indices, beta2)
+            ]
+        )
+        total = np.array(
+            [
+                beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
+                for j, b2 in zip(self._wx_column_indices, beta2)
+            ]
+        )
         indirect = total - direct
 
         return {
@@ -691,7 +646,9 @@ class SDMPanelFE(SpatialPanelModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SDM panel impacts use the same eigenvalue-based formulas as
@@ -702,49 +659,53 @@ class SDMPanelFE(SpatialPanelModel):
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = rho_draws.shape[0]
+        rho_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         eigs = self._W_eigs.real.astype(np.float64)
         inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
         mean_diag_M = np.mean(inv_eigs, axis=1)  # (G,)
         mean_diag_MW = np.mean(eigs[None, :] * inv_eigs, axis=1)  # (G,)
 
-        if self._is_row_std:
-            mean_row_sum_M = 1.0 / (1.0 - rho_draws)  # (G,)
-            mean_row_sum_MW = mean_row_sum_M
-        else:
-            n = self._W_sparse.shape[0]
-            W_dense = self._W_sparse.toarray()
-            ones = np.ones(n)
-            mean_row_sum_M = np.empty(G)
-            mean_row_sum_MW = np.empty(G)
-            for g in range(G):
-                A = np.eye(n) - rho_draws[g] * W_dense
-                M_ones = np.linalg.solve(A, ones)
-                mean_row_sum_M[g] = M_ones.mean()
-                mean_row_sum_MW[g] = (W_dense @ M_ones).mean()
+        mean_row_sum_M = self._batch_mean_row_sum(rho_draws)  # (G,)
+        mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)  # (G,)
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] * mean_row_sum_M + beta2_draws[:, idx] * mean_row_sum_MW
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] * mean_row_sum_M
+                + beta2_draws[:, idx] * mean_row_sum_MW
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
 
 
 class SDEMPanelFE(SpatialPanelModel):
-    """Bayesian spatial Durbin error panel regression.
+    r"""Bayesian spatial Durbin error panel regression.
+
+    Implements
+
+    .. math::
+
+        y_{it} = x_{it}'\\beta + W x_{it}'\\theta + \\alpha_i + \\tau_t + u_{it},
+        \\qquad u_{it} = \\lambda W u_{it} + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    The sampled coefficient vector stacks the local and lagged-covariate
+    blocks as :math:`[\\beta, \\theta]`.
 
     Parameters
     ----------
@@ -752,21 +713,9 @@ class SDEMPanelFE(SpatialPanelModel):
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
 
-    Notes
-    -----
-    This class mirrors MATLAB ``sdem_panel_FE_g`` behavior using transformed
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-    ]
-    residual likelihood and Jacobian adjustment.
-
     **Robust regression**
 
-    When ``robust=True``, the spatially-filtered error distribution is
+    When ``robust=True``, the spatially filtered error distribution is
     changed from Normal to Student-t, yielding a model that is robust to
     heavy-tailed outliers:
 
@@ -776,7 +725,7 @@ class SDEMPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -799,15 +748,9 @@ class SDEMPanelFE(SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=lam_lower,
-            rho_max=lam_upper,
-            T=self._T,
-        )
+        logdet_fn = self._logdet_pytensor_fn
 
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -815,11 +758,13 @@ class SDEMPanelFE(SpatialPanelModel):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             resid = self._y - pt.dot(Z, beta)
-            eps = resid - lam * pt.dot(W_pt, resid)
+            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
             pm.Potential("eps_loglik", logp_eps)
@@ -877,6 +822,7 @@ class SDEMPanelFE(SpatialPanelModel):
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
+
             ll = (
                 gammaln((nu_f[:, None] + 1) / 2)
                 - gammaln(nu_f[:, None] / 2)
@@ -892,9 +838,8 @@ class SDEMPanelFE(SpatialPanelModel):
                 + 2.0 * np.log(sigma_f[:, None])
             )
 
-        # Eigenvalue-based Jacobian: log|I - lam*W| * T / n
-        eigs = self._W_eigs.real.astype(np.float64)
-        jac = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_f]) * self._T  # (n_draws,)
+        # Jacobian (respects logdet_method)
+        jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
@@ -925,7 +870,7 @@ class SDEMPanelFE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         k = self._X.shape[1]
         kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k:k + kw]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
         direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
@@ -937,7 +882,9 @@ class SDEMPanelFE(SpatialPanelModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SDEM panel impacts match SLX form (no rho multiplier).
@@ -946,76 +893,53 @@ class SDEMPanelFE(SpatialPanelModel):
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = beta_draws.shape[0]
+        beta_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
 
 
 class SLXPanelFE(SpatialPanelModel):
-    """Bayesian SLX (Spatial Lag X) panel model with fixed effects.
+    r"""Bayesian SLX panel regression.
+
+    Implements
 
     .. math::
-        y_{it} = X_{it}\\beta_1 + (WX)_{it}\\beta_2 + \\mu_i + \\varepsilon_{it}
 
-    where :math:`\\varepsilon_{it} \\sim N(0, \\sigma^2)`. No spatial lag
-    on y, so no Jacobian adjustment is needed and NUTS converges without
-    difficulty.
+        y_{it} = x_{it}'\\beta + W x_{it}'\\theta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
+
+    There is no contemporaneous spatial lag on :math:`y`, so no Jacobian
+    adjustment is required. The coefficient vector stacks the local and
+    lagged-covariate blocks as :math:`[\\beta, \\theta]`.
 
     Parameters
     ----------
-
-    _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_lag_test"],
-        ).bayesian_panel_lm_lag_test(m), "Panel-LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_lm_error_test"],
-        ).bayesian_panel_lm_error_test(m), "Panel-LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_robust_lm_lag_sdm_test"],
-        ).bayesian_panel_robust_lm_lag_sdm_test(m), "Panel-Robust-LM-Lag-SDM"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_panel_robust_lm_error_sdem_test"],
-        ).bayesian_panel_robust_lm_error_sdem_test(m), "Panel-Robust-LM-Error-SDEM"),
-    ]
     formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
     logdet_method
         See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
-
-    Notes
-    -----
-    The ``priors`` dict supports the following keys:
-
-    - ``beta_mu`` (float, default 0): Prior mean for all beta coefficients.
-    - ``beta_sigma`` (float, default 1e6): Prior std for all beta coefficients (diffuse Normal).
-    - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior on sigma.
-
-    The design matrix is augmented with spatially lagged regressors
-    ``WX``, so ``beta`` covers both ``[X, WX]`` columns. This is the
-    panel analogue of the cross-sectional :class:`SLX` model.
 
     **Robust regression**
 
@@ -1028,7 +952,7 @@ class SLXPanelFE(SpatialPanelModel):
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
+    favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
 
@@ -1086,7 +1010,7 @@ class SLXPanelFE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         k = self._X.shape[1]
         kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k:k + kw]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
@@ -1102,7 +1026,9 @@ class SLXPanelFE(SpatialPanelModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         SLX panel impacts are linear in beta (no rho multiplier).
@@ -1111,25 +1037,29 @@ class SLXPanelFE(SpatialPanelModel):
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
-        G = beta_draws.shape[0]
+        beta_draws.shape[0]
         k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
-        beta2_draws = beta_draws[:, k:k + kw]  # (G, kw)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
-        total_samples = np.column_stack([
-            beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-            for idx, j in enumerate(wx_idx)
-        ])  # (G, kw)
+        direct_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
+        total_samples = np.column_stack(
+            [
+                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
+                for idx, j in enumerate(wx_idx)
+            ]
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples

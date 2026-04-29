@@ -13,7 +13,6 @@ from typing import Optional
 import arviz as az
 import numpy as np
 import pymc as pm
-import pytensor
 import pytensor.tensor as pt
 
 from .base import SpatialModel
@@ -57,18 +56,27 @@ class SAR(SpatialModel):
     """
 
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_error_test"],
-        ).bayesian_lm_error_test(m), "LM-Error"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_wx_test"],
-        ).bayesian_lm_wx_test(m), "LM-WX"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_robust_lm_wx_test"],
-        ).bayesian_robust_lm_wx_test(m), "Robust-LM-WX"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_error_test"],
+            ).bayesian_lm_error_test(m),
+            "LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_wx_test"],
+            ).bayesian_lm_wx_test(m),
+            "LM-WX",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_wx_test"],
+            ).bayesian_robust_lm_wx_test(m),
+            "Robust-LM-WX",
+        ),
     ]
 
     def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
@@ -85,7 +93,7 @@ class SAR(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        k = self._X.shape[1]
+        self._X.shape[1]
 
         rho_lower = self.priors.get("rho_lower", -1.0)
         rho_upper = self.priors.get("rho_upper", 1.0)
@@ -107,12 +115,8 @@ class SAR(SpatialModel):
             else:
                 pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
 
-            # Jacobian: log|I - rho*W|
-            # Build the expression inline so pytensor can resolve rho as a graph input.
-            # eigs is a constant (no gradient w.r.t. it), so it does not cause
-            # MissingInputError — only rho does, and it's properly defined above.
-            eigs = self._W_eigs.real.astype(np.float64)
-            pm.Potential("jacobian", pt.sum(pt.log(pt.abs(1.0 - rho * pt.as_tensor_variable(eigs)))))
+            # Jacobian: log|I - rho*W|  (respects logdet_method via self._logdet_pytensor_fn)
+            pm.Potential("jacobian", self._logdet_pytensor_fn(rho))
 
         return model
 
@@ -165,7 +169,6 @@ class SAR(SpatialModel):
         :math:`\\sum_{i=1}^{n} \\ell_i` equals the total log-likelihood
         used for sampling.
         """
-        from ..logdet import make_logdet_fn
 
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
@@ -196,20 +199,25 @@ class SAR(SpatialModel):
             n = self._y.shape[0]
 
             # Posterior draws: shape (chains, draws, ...)
-            rho_draws = idata.posterior["rho"].values.reshape(-1)    # (n_draws,)
-            beta_draws = idata.posterior["beta"].values.reshape(-1, self._X.shape[1])  # (n_draws, k)
-            sigma_draws = idata.posterior["sigma"].values.reshape(-1)   # (n_draws,)
+            rho_draws = idata.posterior["rho"].values.reshape(-1)  # (n_draws,)
+            beta_draws = idata.posterior["beta"].values.reshape(
+                -1, self._X.shape[1]
+            )  # (n_draws, k)
+            sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
 
             # Residuals per draw: resid = y - rho*Wy - X@beta
             # Shapes: y (n,), Wy (n,), X (n, k)
             # mu = rho * Wy + X @ beta.T  => (n_draws, n)
-            mu = rho_draws[:, None] * self._Wy[None, :] + (beta_draws @ self._X.T)  # (n_draws, n)
+            mu = rho_draws[:, None] * self._Wy[None, :] + (
+                beta_draws @ self._X.T
+            )  # (n_draws, n)
             resid = self._y[None, :] - mu  # (n_draws, n)
 
             # Pointwise log-likelihood
             if self.robust:
                 nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
                 from scipy.special import gammaln
+
                 ll_gauss = (
                     gammaln((nu_draws[:, None] + 1) / 2)
                     - gammaln(nu_draws[:, None] / 2)
@@ -219,11 +227,14 @@ class SAR(SpatialModel):
                     * np.log1p((resid / sigma_draws[:, None]) ** 2 / nu_draws[:, None])
                 )  # (n_draws, n)
             else:
-                ll_gauss = -0.5 * (resid / sigma_draws[:, None]) ** 2 - np.log(sigma_draws[:, None]) - 0.5 * np.log(2 * np.pi)  # (n_draws, n)
+                ll_gauss = (
+                    -0.5 * (resid / sigma_draws[:, None]) ** 2
+                    - np.log(sigma_draws[:, None])
+                    - 0.5 * np.log(2 * np.pi)
+                )  # (n_draws, n)
 
-            # Jacobian contribution per draw: log|I - rho*W| / n (pure numpy)
-            eigs = self._W_eigs.real.astype(np.float64)
-            jacobian = np.array([np.sum(np.log(np.abs(1.0 - rv * eigs))) for rv in rho_draws])  # (n_draws,)
+            # Jacobian contribution per draw: log|I - rho*W| / n (respects logdet_method)
+            jacobian = self._logdet_numpy_vec_fn(rho_draws)  # (n_draws,)
             ll_jac = jacobian[:, None] / n  # (n_draws, 1) broadcast to (n_draws, n)
 
             ll_total = ll_gauss + ll_jac  # (n_draws, n)
@@ -240,7 +251,9 @@ class SAR(SpatialModel):
             # Assigning via idata["log_likelihood"] = xr.Dataset({"obs": da}) can silently
             # treat "obs" as a dimension coordinate if da.dims includes "obs" as a dim name,
             # causing data_vars to be empty and breaking az.loo() / az.waic().
-            ll_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
+            ll_da = xr.DataArray(
+                ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
+            )
             ll_ds = xr.Dataset({"obs": ll_da})
             idata["log_likelihood"] = ll_ds
 
@@ -262,15 +275,7 @@ class SAR(SpatialModel):
         beta = self._posterior_mean("beta")
         eigs = self._W_eigs
         mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        if self._is_row_std:
-            mean_row_sum = 1.0 / (1.0 - rho)
-        else:
-            mean_row_sum = float(
-                np.linalg.solve(
-                    np.eye(self._W_sparse.shape[0]) - rho * self._W_sparse.toarray(),
-                    np.ones(self._W_sparse.shape[0]),
-                ).mean()
-            )
+        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
         ni = self._nonintercept_indices
         direct = mean_diag * beta[ni]
         total = mean_row_sum * beta[ni]
@@ -283,7 +288,9 @@ class SAR(SpatialModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         For the SAR model, the impact measures for covariate :math:`k` are:
@@ -308,14 +315,21 @@ class SAR(SpatialModel):
             ``(direct_samples, indirect_samples, total_samples)``, each
             of shape ``(G, k)`` where *G* is the total number of posterior
             draws and *k* is the number of covariates.
+
+        References
+        ----------
+        LeSage, J.P. & Pace, R.K. (2009). *Introduction to Spatial
+        Econometrics*. Chapman & Hall/CRC.  Sections 2.7 and 5.6 derive
+        the impact decomposition above and motivate the trace-based
+        scalar summaries used here.
         """
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
-        G = rho_draws.shape[0]
-        k = beta_draws.shape[1]
+        rho_draws.shape[0]
+        beta_draws.shape[1]
 
         eigs = self._W_eigs.real.astype(np.float64)  # (n,)
 
@@ -323,22 +337,12 @@ class SAR(SpatialModel):
         # Using eigenvalues: diag(S) has entries 1/(1 - rho*omega_i)
         # mean_diag = (1/n) * sum_i 1/(1 - rho*omega_i)
         # mean_rowsum: if W is row-standardized, mean_rowsum = 1/(1-rho)
-        #              otherwise, solve (I - rho*W) @ ones = v, then mean_rowsum = mean(v)
+        #              otherwise, use eigenvalue decomposition (vectorised)
         # Vectorised over draws:
         inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
         mean_diag = np.mean(inv_eigs, axis=1)  # (G,)
 
-        if self._is_row_std:
-            mean_row_sum = 1.0 / (1.0 - rho_draws)  # (G,)
-        else:
-            # Fallback: solve (I - rho*W) @ ones for each draw
-            n = self._W_sparse.shape[0]
-            W_dense = self._W_dense
-            mean_row_sum = np.empty(G)
-            ones = np.ones(n)
-            for g in range(G):
-                A = np.eye(n) - rho_draws[g] * W_dense
-                mean_row_sum[g] = np.linalg.solve(A, ones).mean()
+        mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
 
         # Direct = mean_diag * beta_k, Total = mean_row_sum * beta_k
         # Exclude intercept from effects (it has no meaningful spatial interpretation)
@@ -360,5 +364,3 @@ class SAR(SpatialModel):
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
         return rho * self._Wy + self._X @ beta
-
-

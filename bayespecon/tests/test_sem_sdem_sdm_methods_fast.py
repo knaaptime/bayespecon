@@ -6,8 +6,9 @@ import arviz as az
 import numpy as np
 import pymc as pm
 
-from bayespecon import SEM, SDEM, SDM
-from .helpers  import W_to_graph, make_line_W
+from bayespecon import SDEM, SDM, SEM
+
+from .helpers import W_to_graph, make_line_W
 
 
 def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:
@@ -41,25 +42,31 @@ def test_sem_sdem_sdm_fitted_values_and_effects_with_mock_posteriors():
     y, X, W = _cs_data(seed=91)
 
     sem = SEM(y=y, X=X, W=W)
-    sem._idata = _idata({
-        "beta": np.stack([np.array([0.3, 0.8]), np.array([0.301, 0.801])]),
-        "lam": np.array([0.1, 0.101]),
-    })
+    sem._idata = _idata(
+        {
+            "beta": np.stack([np.array([0.3, 0.8]), np.array([0.301, 0.801])]),
+            "lam": np.array([0.1, 0.101]),
+        }
+    )
 
     # k=2, kw=1 -> beta length 3 for SDEM/SDM
     beta3 = np.array([0.3, 0.8, 0.15])
 
     sdem = SDEM(y=y, X=X, W=W)
-    sdem._idata = _idata({
-        "beta": np.stack([beta3, beta3 + 1e-3]),
-        "lam": np.array([0.1, 0.101]),
-    })
+    sdem._idata = _idata(
+        {
+            "beta": np.stack([beta3, beta3 + 1e-3]),
+            "lam": np.array([0.1, 0.101]),
+        }
+    )
 
     sdm = SDM(y=y, X=X, W=W)
-    sdm._idata = _idata({
-        "beta": np.stack([beta3, beta3 + 1e-3]),
-        "rho": np.array([0.2, 0.201]),
-    })
+    sdm._idata = _idata(
+        {
+            "beta": np.stack([beta3, beta3 + 1e-3]),
+            "rho": np.array([0.2, 0.201]),
+        }
+    )
 
     for model in [sem, sdem, sdm]:
         fitted = model.fitted_values()
@@ -67,9 +74,18 @@ def test_sem_sdem_sdm_fitted_values_and_effects_with_mock_posteriors():
         assert fitted.shape == y.shape
         assert np.all(np.isfinite(fitted))
         assert set(effects.columns) == {
-            "direct", "direct_ci_lower", "direct_ci_upper", "direct_pvalue",
-            "indirect", "indirect_ci_lower", "indirect_ci_upper", "indirect_pvalue",
-            "total", "total_ci_lower", "total_ci_upper", "total_pvalue",
+            "direct",
+            "direct_ci_lower",
+            "direct_ci_upper",
+            "direct_pvalue",
+            "indirect",
+            "indirect_ci_lower",
+            "indirect_ci_upper",
+            "indirect_pvalue",
+            "total",
+            "total_ci_lower",
+            "total_ci_upper",
+            "total_pvalue",
         }
         assert np.all(np.isfinite(effects["direct"].values))
 

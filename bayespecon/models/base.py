@@ -10,10 +10,22 @@ import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
-import pytensor.tensor as pt
 import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
+
+from ..logdet import (
+    _auto_logdet_method,
+    make_logdet_fn,
+    make_logdet_numpy_fn,
+    make_logdet_numpy_vec_fn,
+)
+
+
+def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
+    """Return True when each row sum is numerically close to one."""
+    row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
+    return bool(np.allclose(row_sums, 1.0, atol=1e-6))
 
 
 def _parse_W(
@@ -50,11 +62,10 @@ def _parse_W(
     if isinstance(W, Graph):
         W_csr = W.sparse.tocsr().astype(np.float64)
         transform = getattr(W, "transformation", None)
-        row_std = transform in ("r", "R")
+        row_std = transform in ("r", "R") or _is_row_standardized_csr(W_csr)
     elif sp.issparse(W):
         W_csr = W.tocsr().astype(np.float64)
-        row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
-        row_std = bool(np.allclose(row_sums, 1.0, atol=1e-6))
+        row_std = _is_row_standardized_csr(W_csr)
     elif hasattr(W, "sparse") and hasattr(W, "transform"):
         # Legacy libpysal.weights.W object — not accepted directly.
         raise TypeError(
@@ -69,9 +80,7 @@ def _parse_W(
         )
 
     if W_csr.ndim != 2 or W_csr.shape[0] != W_csr.shape[1]:
-        raise ValueError(
-            f"W must be a square matrix, got shape {W_csr.shape}."
-        )
+        raise ValueError(f"W must be a square matrix, got shape {W_csr.shape}.")
     if W_csr.shape[0] != n:
         raise ValueError(
             f"W has shape {W_csr.shape} but data has {n} observations. "
@@ -152,7 +161,7 @@ class SpatialModel(ABC):
         X: Optional[Union[np.ndarray, pd.DataFrame]] = None,
         W: Optional[Union[Graph, sp.spmatrix]] = None,
         priors: Optional[dict] = None,
-        logdet_method: str = "eigenvalue",
+        logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
     ):
@@ -170,9 +179,7 @@ class SpatialModel(ABC):
         elif y is not None and X is not None:
             self._y, self._X, self._feature_names = self._parse_matrices(y, X)
         else:
-            raise ValueError(
-                "Provide either (formula, data) or (y, X)."
-            )
+            raise ValueError("Provide either (formula, data) or (y, X).")
 
         if W is not None:
             # Validate W and store as CSR sparse matrix.
@@ -183,7 +190,9 @@ class SpatialModel(ABC):
             self._W_eigs: np.ndarray = np.linalg.eigvals(
                 self._W_sparse.toarray().astype(np.float64)
             )
-            self._wx_column_indices = self._spatial_lag_column_indices(self._X, self._feature_names)
+            self._wx_column_indices = self._spatial_lag_column_indices(
+                self._X, self._feature_names
+            )
             if w_vars is not None:
                 unknown = [v for v in w_vars if v not in self._feature_names]
                 if unknown:
@@ -192,14 +201,47 @@ class SpatialModel(ABC):
                         f"Available: {self._feature_names}"
                     )
                 self._wx_column_indices = [
-                    i for i in self._wx_column_indices if self._feature_names[i] in w_vars
+                    i
+                    for i in self._wx_column_indices
+                    if self._feature_names[i] in w_vars
                 ]
-            self._wx_feature_names = [self._feature_names[i] for i in self._wx_column_indices]
+            self._wx_feature_names = [
+                self._feature_names[i] for i in self._wx_column_indices
+            ]
             # Pre-compute spatial lags using sparse matmul (no dense materialisation).
-            self._Wy: np.ndarray = np.asarray(self._W_sparse @ self._y, dtype=np.float64)
+            # Store a numpy logdet callable for post-sampling LL Jacobians.
+            self._logdet_numpy_fn = make_logdet_numpy_fn(
+                self._W_sparse, self._W_eigs.real, method=self.logdet_method
+            )
+            # Vectorized version: evaluates logdet over an array of rho draws in one call.
+            self._logdet_numpy_vec_fn = make_logdet_numpy_vec_fn(
+                self._W_sparse, self._W_eigs.real, method=self.logdet_method
+            )
+            # Store the correct W argument for logdet calls.
+            # For eigenvalue method (explicit or auto-selected for n ≤ 2000),
+            # pass 1-D eigenvalues to avoid O(n²) dense materialisation.
+            # For other methods, pass the 2-D dense matrix.
+            _resolved_logdet = (
+                self.logdet_method
+                if self.logdet_method is not None
+                else _auto_logdet_method(self._W_sparse.shape[0])
+            )
+            self._W_for_logdet: np.ndarray = (
+                self._W_eigs.real.astype(np.float64)
+                if _resolved_logdet in ("eigenvalue", "chebyshev")
+                else self._W_sparse.toarray().astype(np.float64)
+            )
+            # Store a pytensor logdet callable for use in _build_pymc_model.
+            self._logdet_pytensor_fn = make_logdet_fn(
+                self._W_for_logdet, method=self.logdet_method
+            )
+            self._Wy: np.ndarray = np.asarray(
+                self._W_sparse @ self._y, dtype=np.float64
+            )
             if self._wx_column_indices:
                 self._WX = np.asarray(
-                    self._W_sparse @ self._X[:, self._wx_column_indices], dtype=np.float64
+                    self._W_sparse @ self._X[:, self._wx_column_indices],
+                    dtype=np.float64,
                 )
             else:
                 self._WX = np.empty((self._X.shape[0], 0), dtype=np.float64)
@@ -219,10 +261,119 @@ class SpatialModel(ABC):
     def _W_dense(self) -> np.ndarray:
         """Dense weight matrix, materialised lazily on first access."""
         if self._W_dense_cache is None:
-            self._W_dense_cache = np.asarray(
-                self._W_sparse.toarray(), dtype=np.float64
-            )
+            self._W_dense_cache = np.asarray(self._W_sparse.toarray(), dtype=np.float64)
         return self._W_dense_cache
+
+    @property
+    def _W_pt_sparse(self):
+        """PyTensor sparse variable wrapping :attr:`_W_sparse`.
+
+        Cached so repeated PyMC model builds reuse the same symbolic sparse
+        operator and avoid the ``O(n²)`` dense materialisation that
+        ``pt.as_tensor_variable(self._W_dense)`` performs each time.
+
+        Use with :func:`pytensor.sparse.structured_dot` (vector inputs must
+        first be reshaped to ``(n, 1)`` because the vector overload's
+        backward pass is broken in PyTensor).
+        """
+        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
+            import scipy.sparse as _sp
+            from pytensor import sparse as _pts
+
+            self._W_pt_sparse_cache = _pts.as_sparse_variable(
+                _sp.csc_matrix(self._W_sparse)
+            )
+        return self._W_pt_sparse_cache
+
+    @property
+    def _T_ww(self) -> float:
+        """Trace of W'W + W², cached on first access.
+
+        Computed as ``||W||_F² + sum(W * W')`` using sparse operations,
+        which is O(nnz) rather than O(n²).
+        """
+        if not hasattr(self, "_T_ww_cache"):
+            from ..graph import sparse_trace_WtW_plus_WW
+
+            self._T_ww_cache = sparse_trace_WtW_plus_WW(self._W_sparse)
+        return self._T_ww_cache
+
+    def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
+        """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
+
+        For row-standardised W this is the scalar ``1/(1 - rho)``.
+        For non-row-standardised W the eigenvalue decomposition is used:
+        ``mean_row_sum = (1/n) * ones' V diag(1/(1-rho*omega)) V^{-1} ones``,
+        where the vector ``c = V^{-1} ones`` is pre-computed once.
+
+        Parameters
+        ----------
+        rho_draws : np.ndarray, shape (G,)
+            Spatial autoregressive parameter draws.
+
+        Returns
+        -------
+        np.ndarray, shape (G,)
+            Mean row sum for each draw.
+        """
+        if self._is_row_std:
+            return 1.0 / (1.0 - rho_draws)
+
+        # Eigenvalue-based computation: precompute c = V^{-1} @ ones once.
+        if not hasattr(self, "_eig_inv_ones"):
+            W_dense = self._W_dense
+            eigs, V = np.linalg.eig(W_dense)
+            self._W_eigs_full = eigs.real.astype(np.float64)
+            self._V_full = V.real.astype(np.float64)
+            self._eig_inv_ones = np.linalg.solve(
+                self._V_full, np.ones(W_dense.shape[0])
+            )
+
+        c = self._eig_inv_ones
+        eigs = self._W_eigs_full
+        # mean_row_sum = (1/n) * sum_i c_i * V_ji / (1 - rho * omega_i)
+        # = (1/n) * ones' @ V @ diag(1/(1-rho*omega)) @ c
+        # = (1/n) * (V @ diag(1/(1-rho*omega)) @ c) summed over rows
+        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
+        # For each draw: mean_row_sum = (1/n) * sum_j sum_i V_ji * c_i / (1-rho*omega_i)
+        # = (1/n) * sum_i c_i / (1-rho*omega_i) * sum_j V_ji
+        # = (1/n) * (c * inv_eigs) @ V_col_sums
+        V_col_sums = self._V_full.sum(axis=0)  # (n,)
+        return (1.0 / len(c)) * (inv_eigs * c[None, :]) @ V_col_sums
+
+    def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
+        """Compute mean row sum of (I - rho*W)^{-1} W for each posterior draw.
+
+        For row-standardised W this equals ``1/(1 - rho)`` (same as
+        ``_batch_mean_row_sum``) because row sums of M@W = row sums of M
+        when W is row-standardised.
+
+        For non-row-standardised W the eigenvalue decomposition is used:
+        ``mean_row_sum_MW = (1/n) * ones' V diag(omega/(1-rho*omega)) V^{-1} ones``.
+
+        Parameters
+        ----------
+        rho_draws : np.ndarray, shape (G,)
+            Spatial autoregressive parameter draws.
+
+        Returns
+        -------
+        np.ndarray, shape (G,)
+            Mean row sum of M@W for each draw.
+        """
+        if self._is_row_std:
+            return 1.0 / (1.0 - rho_draws)
+
+        # Ensure eigenvalue decomposition is available
+        if not hasattr(self, "_eig_inv_ones"):
+            _ = self._batch_mean_row_sum(rho_draws[:1])
+
+        c = self._eig_inv_ones
+        eigs = self._W_eigs_full
+        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
+        eig_weighted = eigs[None, :] * inv_eigs  # omega / (1 - rho*omega)
+        V_col_sums = self._V_full.sum(axis=0)  # (n,)
+        return (1.0 / len(c)) * (eig_weighted * c[None, :]) @ V_col_sums
 
     @property
     def _nonintercept_indices(self) -> list[int]:
@@ -314,7 +465,9 @@ class SpatialModel(ABC):
         return y_arr, X_arr, feature_names
 
     @staticmethod
-    def _spatial_lag_column_indices(X: np.ndarray, feature_names: list[str]) -> list[int]:
+    def _spatial_lag_column_indices(
+        X: np.ndarray, feature_names: list[str]
+    ) -> list[int]:
         """Return indices of regressors that should receive spatial lags.
 
         Constant columns are treated as intercept-like and excluded, which
@@ -494,9 +647,8 @@ class SpatialModel(ABC):
         n = self._y.shape[0]
         param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
 
-        # Eigenvalue-based Jacobian: log|I - param*W| * T (pure numpy)
-        eigs = self._W_eigs.real.astype(np.float64)
-        jacobian = np.array([np.sum(np.log(np.abs(1.0 - v * eigs))) for v in param_draws]) * T  # (n_draws,)
+        # Jacobian: log|I - param*W| * T (pure numpy, respects logdet_method)
+        jacobian = self._logdet_numpy_vec_fn(param_draws) * T  # (n_draws,)
         ll_jac = jacobian[:, None] / n  # (n_draws, 1)
 
         # Add Jacobian to each variable in the log_likelihood group
@@ -511,7 +663,9 @@ class SpatialModel(ABC):
             # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
             new_vals = da.values + ll_jac_3d
             new_vars[var_name] = xr.DataArray(
-                new_vals, dims=da.dims, coords={k: v for k, v in da.coords.items() if k != da.dims[-1]}
+                new_vals,
+                dims=da.dims,
+                coords={k: v for k, v in da.coords.items() if k != da.dims[-1]},
             )
 
         idata["log_likelihood"] = xr.Dataset(new_vars)
@@ -885,16 +1039,24 @@ class SpatialModel(ABC):
         from ..diagnostics.spatial_effects import _build_effects_dataframe
 
         self._require_fit()
-        direct_samples, indirect_samples, total_samples = self._compute_spatial_effects_posterior()
+        direct_samples, indirect_samples, total_samples = (
+            self._compute_spatial_effects_posterior()
+        )
 
         # Determine feature names based on the shape of the posterior samples.
         # Models with WX terms (SDM, SLX, SDEM) report effects only for
         # lagged covariates (k_wx columns), while models without WX terms
         # (SAR, SEM) report effects for non-intercept covariates.
         k_effects = direct_samples.shape[1]
-        if hasattr(self, "_wx_feature_names") and len(self._wx_feature_names) == k_effects:
+        if (
+            hasattr(self, "_wx_feature_names")
+            and len(self._wx_feature_names) == k_effects
+        ):
             feature_names = list(self._wx_feature_names)
-        elif hasattr(self, "_nonintercept_feature_names") and len(self._nonintercept_feature_names) == k_effects:
+        elif (
+            hasattr(self, "_nonintercept_feature_names")
+            and len(self._nonintercept_feature_names) == k_effects
+        ):
             feature_names = list(self._nonintercept_feature_names)
         else:
             feature_names = list(self._feature_names[:k_effects])
@@ -930,7 +1092,9 @@ class SpatialModel(ABC):
         """
 
     @abstractmethod
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         Returns
@@ -995,4 +1159,6 @@ class SpatialModel(ABC):
 
     def __repr__(self) -> str:
         n, k = self._X.shape
-        return f"{self.__class__.__name__}(n={n}, k={k}, features={self._feature_names})"
+        return (
+            f"{self.__class__.__name__}(n={n}, k={k}, features={self._feature_names})"
+        )

@@ -1,10 +1,15 @@
 """Bayesian inference for spatial impact measures.
 
-Computes direct, indirect, and total effects for each posterior draw,
-then summarises the posterior distribution with means, credible intervals,
-and Bayesian p-values.  This is the fully Bayesian analog of the
-simulation-based approach in :cite:t:`lesage2009IntroductionSpatial` and
-the asymptotic variance formulas in :cite:t:`arbia2020TestingImpact`.
+This module provides **post-processing helpers** that convert posterior
+draws of model parameters into posterior distributions of direct,
+indirect, and total impacts.  The actual *computation* of the impact
+matrices :math:`(I-\\rho W)^{-1}(\\beta_{1k} I + \\beta_{2k} W)` lives
+in the model classes (e.g. ``SAR._compute_spatial_effects_posterior``,
+``SDM._compute_spatial_effects_posterior``); this module summarises
+those draws with means, credible intervals, and Bayesian p-values.
+This is the fully Bayesian analog of the simulation-based approach in
+:cite:t:`lesage2009IntroductionSpatial` and the asymptotic variance
+formulas in :cite:t:`arbia2020TestingImpact`.
 
 The key idea is that for each MCMC draw :math:`g = 1, \\dots, G`, we
 compute the impact measures from the parameter values
@@ -49,12 +54,9 @@ def _compute_bayesian_pvalue(samples: np.ndarray) -> np.ndarray:
         frac_above = np.mean(samples > 0)
         frac_below = np.mean(samples < 0)
         return np.array([2.0 * min(frac_above, frac_below)])
-    pvals = np.zeros(samples.shape[1])
-    for j in range(samples.shape[1]):
-        frac_above = np.mean(samples[:, j] > 0)
-        frac_below = np.mean(samples[:, j] < 0)
-        pvals[j] = 2.0 * min(frac_above, frac_below)
-    return pvals
+    frac_above = np.mean(samples > 0, axis=0)
+    frac_below = np.mean(samples < 0, axis=0)
+    return 2.0 * np.minimum(frac_above, frac_below)
 
 
 def _compute_ci(samples: np.ndarray) -> List[Tuple[float, float]]:
@@ -71,11 +73,12 @@ def _compute_ci(samples: np.ndarray) -> List[Tuple[float, float]]:
         One ``(2.5%, 97.5%)`` interval per column.
     """
     if samples.ndim == 1:
-        return [(float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5)))]
-    return [
-        (float(np.percentile(samples[:, j], 2.5)), float(np.percentile(samples[:, j], 97.5)))
-        for j in range(samples.shape[1])
-    ]
+        return [
+            (float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5)))
+        ]
+    lo = np.percentile(samples, 2.5, axis=0)
+    hi = np.percentile(samples, 97.5, axis=0)
+    return [(float(lo[j]), float(hi[j])) for j in range(samples.shape[1])]
 
 
 def _build_effects_dataframe(

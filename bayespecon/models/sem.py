@@ -13,11 +13,10 @@ from typing import Optional
 import arviz as az
 import numpy as np
 import pymc as pm
-import pytensor
 import pytensor.tensor as pt
+from pytensor import sparse as pts
 import xarray as xr
 
-from ..logdet import make_logdet_fn
 from .base import SpatialModel
 
 
@@ -60,14 +59,25 @@ class SEM(SpatialModel):
     """
 
     _spatial_diagnostics_tests = [
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_lag_test"],
-        ).bayesian_lm_lag_test(m), "LM-Lag"),
-        (lambda m: __import__(
-            "bayespecon.diagnostics.bayesian_lmtests",
-            fromlist=["bayesian_lm_wx_sem_test"],
-        ).bayesian_lm_wx_sem_test(m), "LM-WX"),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_lag_test"],
+            ).bayesian_lm_lag_test(m),
+            "LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_wx_sem_test"],
+            ).bayesian_lm_wx_sem_test(m),
+            # Note: this label is "LM-WX" for backwards compatibility, but
+            # the underlying score is the SEM-null variant
+            # (``bayesian_lm_wx_sem_test``) — i.e. it tests H₀: γ = 0
+            # *given* SEM residuals, not the OLS/SAR-null LM-WX with the
+            # same display name reported by SAR.diagnostics().
+            "LM-WX",
+        ),
     ]
 
     def fit(
@@ -131,15 +141,15 @@ class SEM(SpatialModel):
         # SEM uses pm.Potential for both Gaussian and Jacobian terms,
         # so nothing is auto-captured. We recompute from posterior draws.
         if compute_log_likelihood:
-            import pytensor
-
             idata = self._idata
             n = self._y.shape[0]
             W = self._W_dense
 
-            lam_draws = idata.posterior["lam"].values.reshape(-1)       # (n_draws,)
-            beta_draws = idata.posterior["beta"].values.reshape(-1, self._X.shape[1])  # (n_draws, k)
-            sigma_draws = idata.posterior["sigma"].values.reshape(-1)   # (n_draws,)
+            lam_draws = idata.posterior["lam"].values.reshape(-1)  # (n_draws,)
+            beta_draws = idata.posterior["beta"].values.reshape(
+                -1, self._X.shape[1]
+            )  # (n_draws, k)
+            sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
 
             # Residuals: resid = y - X @ beta.T  => (n_draws, n)
             resid = self._y[None, :] - (beta_draws @ self._X.T)  # (n_draws, n)
@@ -151,6 +161,7 @@ class SEM(SpatialModel):
             if self.robust:
                 nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
                 from scipy.special import gammaln
+
                 ll_gauss = (
                     gammaln((nu_draws[:, None] + 1) / 2)
                     - gammaln(nu_draws[:, None] / 2)
@@ -166,9 +177,8 @@ class SEM(SpatialModel):
                     - 0.5 * np.log(2 * np.pi)
                 )  # (n_draws, n)
 
-            # Jacobian contribution per draw: log|I - lam*W| / n (pure numpy)
-            eigs = self._W_eigs.real.astype(np.float64)
-            jacobian = np.array([np.sum(np.log(np.abs(1.0 - lv * eigs))) for lv in lam_draws])  # (n_draws,)
+            # Jacobian contribution per draw: log|I - lam*W| / n (respects logdet_method)
+            jacobian = self._logdet_numpy_vec_fn(lam_draws)  # (n_draws,)
             ll_jac = jacobian[:, None] / n  # (n_draws, 1) broadcast to (n_draws, n)
 
             ll_total = ll_gauss + ll_jac  # (n_draws, n)
@@ -180,7 +190,9 @@ class SEM(SpatialModel):
 
             # Attach to idata — use explicit Dataset creation to ensure
             # "obs" is a data variable, not a coordinate.
-            ll_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
+            ll_da = xr.DataArray(
+                ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
+            )
             ll_ds = xr.Dataset({"obs": ll_da})
             idata["log_likelihood"] = ll_ds
 
@@ -200,13 +212,8 @@ class SEM(SpatialModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_eigs.real,
-            method=self.logdet_method,
-            rho_min=lam_lower,
-            rho_max=lam_upper,
-        )
-        W_pt = pt.as_tensor_variable(self._W_dense)
+        logdet_fn = self._logdet_pytensor_fn
+        W_pt = self._W_pt_sparse
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -214,7 +221,7 @@ class SEM(SpatialModel):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             resid = self._y - pt.dot(self._X, beta)
-            eps = resid - lam * pt.dot(W_pt, resid)
+            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
@@ -245,7 +252,9 @@ class SEM(SpatialModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
         For the SEM model, the spatial multiplier does not apply to :math:`X`
@@ -284,5 +293,3 @@ class SEM(SpatialModel):
         """
         beta = self._posterior_mean("beta")
         return self._X @ beta
-
-

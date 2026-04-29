@@ -10,7 +10,8 @@ import pytest
 import scipy.sparse as sp
 
 from bayespecon import SpatialProbit
-from .helpers  import W_to_graph, make_line_W
+
+from .helpers import W_to_graph, make_line_W
 
 
 class _LegacyW:
@@ -25,7 +26,9 @@ def _idata_for_model(m: SpatialProbit) -> az.InferenceData:
     n = m._X.shape[0]
     r = m._m
     posterior = {
-        "beta": np.array([[[0.2] * m._X.shape[1], [0.21] * m._X.shape[1]]], dtype=float),
+        "beta": np.array(
+            [[[0.2] * m._X.shape[1], [0.21] * m._X.shape[1]]], dtype=float
+        ),
         "a": np.array([[[0.1] * r, [0.11] * r]], dtype=float),
         "p": np.array([[[0.6] * n, [0.61] * n]], dtype=float),
         "rho": np.array([[0.1, 0.11]], dtype=float),
@@ -85,11 +88,13 @@ def test_spatial_probit_constructor_validation_errors():
 
 
 def test_formula_mode_validation_and_parsing():
-    df = pd.DataFrame({
-        "y": [0, 1, 0, 1],
-        "x": [1.0, 2.0, 3.0, 4.0],
-        "region": ["a", "a", "b", "b"],
-    })
+    df = pd.DataFrame(
+        {
+            "y": [0, 1, 0, 1],
+            "x": [1.0, 2.0, 3.0, 4.0],
+            "region": ["a", "a", "b", "b"],
+        }
+    )
     W = W_to_graph(make_line_W(2))
 
     with pytest.raises(ValueError, match="data is required"):
