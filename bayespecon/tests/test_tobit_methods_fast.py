@@ -152,21 +152,27 @@ def test_tobit_fitted_mean_respects_censoring_floor():
         ]
     )
 
-    sar._idata = _idata({
-        "beta": np.stack([beta_sar, beta_sar + 1e-3]),
-        "rho": np.array([0.2, 0.201]),
-        "y_cens_gap": yc_sar,
-    })
-    sdm._idata = _idata({
-        "beta": np.stack([beta_sdm, beta_sdm + 1e-3]),
-        "rho": np.array([0.18, 0.181]),
-        "y_cens_gap": yc_sdm,
-    })
-    sem._idata = _idata({
-        "beta": np.stack([beta_sar, beta_sar + 1e-3]),
-        "lam": np.array([0.1, 0.101]),
-        "y_cens_gap": yc_sem,
-    })
+    sar._idata = _idata(
+        {
+            "beta": np.stack([beta_sar, beta_sar + 1e-3]),
+            "rho": np.array([0.2, 0.201]),
+            "y_cens_gap": yc_sar,
+        }
+    )
+    sdm._idata = _idata(
+        {
+            "beta": np.stack([beta_sdm, beta_sdm + 1e-3]),
+            "rho": np.array([0.18, 0.181]),
+            "y_cens_gap": yc_sdm,
+        }
+    )
+    sem._idata = _idata(
+        {
+            "beta": np.stack([beta_sar, beta_sar + 1e-3]),
+            "lam": np.array([0.1, 0.101]),
+            "y_cens_gap": yc_sem,
+        }
+    )
 
     for m in (sar, sdm, sem):
         fitted = m.fitted_values()
@@ -185,22 +191,28 @@ def test_tobit_fitted_mean_does_not_depend_on_y_cens_gap():
 
     beta = np.array([0.3, 0.9])
     rho = np.array([0.2, 0.201])
-    yc_a = np.vstack([
-        np.full(sar._censored_idx.size, 0.05),
-        np.full(sar._censored_idx.size, 0.06),
-    ])
+    yc_a = np.vstack(
+        [
+            np.full(sar._censored_idx.size, 0.05),
+            np.full(sar._censored_idx.size, 0.06),
+        ]
+    )
     yc_b = yc_a + 100.0  # wildly different gap posterior
 
-    sar._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "rho": rho,
-        "y_cens_gap": yc_a,
-    })
+    sar._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "rho": rho,
+            "y_cens_gap": yc_a,
+        }
+    )
     fitted_a = sar.fitted_values().copy()
-    sar._idata = _idata({
-        "beta": np.stack([beta, beta + 1e-3]),
-        "rho": rho,
-        "y_cens_gap": yc_b,
-    })
+    sar._idata = _idata(
+        {
+            "beta": np.stack([beta, beta + 1e-3]),
+            "rho": rho,
+            "y_cens_gap": yc_b,
+        }
+    )
     fitted_b = sar.fitted_values().copy()
     np.testing.assert_allclose(fitted_a, fitted_b)

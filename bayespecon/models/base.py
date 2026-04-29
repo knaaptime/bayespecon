@@ -276,10 +276,7 @@ class SpatialModel(ABC):
         first be reshaped to ``(n, 1)`` because the vector overload's
         backward pass is broken in PyTensor).
         """
-        if (
-            not hasattr(self, "_W_pt_sparse_cache")
-            or self._W_pt_sparse_cache is None
-        ):
+        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
             import scipy.sparse as _sp
             from pytensor import sparse as _pts
 

@@ -671,11 +671,7 @@ def make_panel_sdem_fe_data(
     return y, X, df
 
 
-
-
-def set_posterior_means(
-    model, beta: np.ndarray, rho: float | None = None
-) -> None:
+def set_posterior_means(model, beta: np.ndarray, rho: float | None = None) -> None:
     """Inject posterior means into a model for testing without MCMC."""
     posterior: dict[str, np.ndarray] = {
         "beta": np.array([[beta]], dtype=float),

@@ -197,8 +197,14 @@ class TestDGPAsymmetric:
 
         n = 5
         data = generate_flow_data(
-            n=n, rho_d=0.15, rho_o=0.1, rho_w=0.05,
-            beta_d=[1.0, -0.5], beta_o=[0.5], sigma=1.0, seed=42,
+            n=n,
+            rho_d=0.15,
+            rho_o=0.1,
+            rho_w=0.05,
+            beta_d=[1.0, -0.5],
+            beta_o=[0.5],
+            sigma=1.0,
+            seed=42,
         )
         assert data["design"].k_d == 2
         assert data["design"].k_o == 1
@@ -217,8 +223,14 @@ class TestDGPAsymmetric:
         beta_d = [1.0, -0.5]
         beta_o = [0.5]
         data = generate_flow_data(
-            n=n, rho_d=0.15, rho_o=0.1, rho_w=0.05,
-            beta_d=beta_d, beta_o=beta_o, sigma=1.0, seed=42,
+            n=n,
+            rho_d=0.15,
+            rho_o=0.1,
+            rho_w=0.05,
+            beta_d=beta_d,
+            beta_o=beta_o,
+            sigma=1.0,
+            seed=42,
         )
         # Feature names should reflect k_d=2, k_o=1
         names = data["col_names"]
@@ -231,8 +243,12 @@ class TestDGPAsymmetric:
         from bayespecon.dgp.flows import generate_poisson_flow_data
 
         data = generate_poisson_flow_data(
-            n=5, k_d=2, k_o=1,
-            beta_d=[1.0, -0.5], beta_o=[0.5], seed=42,
+            n=5,
+            k_d=2,
+            k_o=1,
+            beta_d=[1.0, -0.5],
+            beta_o=[0.5],
+            seed=42,
         )
         assert data["Xd"].shape[1] == 2
         assert data["Xo"].shape[1] == 1
@@ -244,9 +260,12 @@ class TestDGPAsymmetric:
         from bayespecon.dgp.flows import generate_panel_flow_data
 
         data = generate_panel_flow_data(
-            n=5, T=3,
-            beta_d=[1.0, -0.5], beta_o=[0.5],
-            sigma=1.0, seed=42,
+            n=5,
+            T=3,
+            beta_d=[1.0, -0.5],
+            beta_o=[0.5],
+            sigma=1.0,
+            seed=42,
         )
         assert data["beta_d"].shape == (2,)
         assert data["beta_o"].shape == (1,)
@@ -256,8 +275,14 @@ class TestDGPAsymmetric:
         from bayespecon.dgp.flows import generate_flow_data
 
         data = generate_flow_data(
-            n=5, rho_d=0.15, rho_o=0.1, rho_w=0.05,
-            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=42,
+            n=5,
+            rho_d=0.15,
+            rho_o=0.1,
+            rho_w=0.05,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=1.0,
+            seed=42,
         )
         assert data["design"].k_d == 1
         assert data["design"].k_o == 1
@@ -278,12 +303,22 @@ class TestModelAsymmetric:
         from bayespecon.models.flow import SARFlow
 
         data = generate_flow_data(
-            n=5, rho_d=0.15, rho_o=0.1, rho_w=0.05,
-            beta_d=[1.0, -0.5], beta_o=[0.5], sigma=1.0, seed=42,
+            n=5,
+            rho_d=0.15,
+            rho_o=0.1,
+            rho_w=0.05,
+            beta_d=[1.0, -0.5],
+            beta_o=[0.5],
+            sigma=1.0,
+            seed=42,
         )
         model = SARFlow(
-            data["y_vec"], data["G"], data["X"],
-            col_names=data["col_names"], miter=5, trace_seed=0,
+            data["y_vec"],
+            data["G"],
+            data["X"],
+            col_names=data["col_names"],
+            miter=5,
+            trace_seed=0,
         )
         assert model._k_d == 2
         assert model._k_o == 1
@@ -295,11 +330,19 @@ class TestModelAsymmetric:
         from bayespecon.models.flow import OLSFlow
 
         data = generate_flow_data(
-            n=5, rho_d=0.0, rho_o=0.0, rho_w=0.0,
-            beta_d=[1.0, -0.5], beta_o=[0.5], sigma=0.1, seed=42,
+            n=5,
+            rho_d=0.0,
+            rho_o=0.0,
+            rho_w=0.0,
+            beta_d=[1.0, -0.5],
+            beta_o=[0.5],
+            sigma=0.1,
+            seed=42,
         )
         model = OLSFlow(
-            np.log(data["y_vec"]), data["G"], data["X"],
+            np.log(data["y_vec"]),
+            data["G"],
+            data["X"],
             col_names=data["col_names"],
         )
         model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
@@ -316,11 +359,19 @@ class TestModelAsymmetric:
         from bayespecon.models.flow import OLSFlow
 
         data = generate_flow_data(
-            n=5, rho_d=0.0, rho_o=0.0, rho_w=0.0,
-            beta_d=[1.0], beta_o=[0.5], sigma=0.1, seed=42,
+            n=5,
+            rho_d=0.0,
+            rho_o=0.0,
+            rho_w=0.0,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=0.1,
+            seed=42,
         )
         model = OLSFlow(
-            np.log(data["y_vec"]), data["G"], data["X"],
+            np.log(data["y_vec"]),
+            data["G"],
+            data["X"],
             col_names=data["col_names"],
         )
         model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)

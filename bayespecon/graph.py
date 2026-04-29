@@ -672,7 +672,8 @@ def flow_design_matrix_with_orig(
     else:
         # Asymmetric case: k_d != k_o
         return flow_design_matrix_asymmetric(
-            Xd_arr, Xo_arr,
+            Xd_arr,
+            Xo_arr,
             col_names_d=col_names,
             col_names_o=None,
             dist=dist,

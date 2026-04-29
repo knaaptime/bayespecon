@@ -125,7 +125,11 @@ class SARPanelTobit(_PanelTobitBase):
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
             y_lat = self._latent_y_tensor()
-            resid = y_lat - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten() - pt.dot(self._X, beta)
+            resid = (
+                y_lat
+                - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten()
+                - pt.dot(self._X, beta)
+            )
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]

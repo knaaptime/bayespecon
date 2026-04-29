@@ -25,7 +25,9 @@ class _FakeModel:
         self.inference_data = idata
 
 
-def _ar1_chain(n_chain: int, n_draw: int, phi: float, mean: float, scale: float, seed: int):
+def _ar1_chain(
+    n_chain: int, n_draw: int, phi: float, mean: float, scale: float, seed: int
+):
     """Generate AR(1) draws so we can dial autocorrelation."""
     rng = np.random.default_rng(seed)
     out = np.empty((n_chain, n_draw))
@@ -68,9 +70,7 @@ class TestSpatialMCMCDiagnostic:
         idata = _make_idata({"rho": draws})
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            report = spatial_mcmc_diagnostic(
-                _FakeModel(idata), emit_warnings=False
-            )
+            report = spatial_mcmc_diagnostic(_FakeModel(idata), emit_warnings=False)
         assert not report.adequate
         assert len(report.warnings_triggered) >= 1
 
@@ -102,9 +102,7 @@ class TestSpatialMCMCDiagnostic:
             :, :, None
         ]  # shape (chain, draw, 1)
         # Pad to (4, 1500, 1) by tiling
-        bad_beta_full = np.tile(bad_beta, (2, int(np.ceil(1500 / 200)), 1))[
-            :, :1500, :
-        ]
+        bad_beta_full = np.tile(bad_beta, (2, int(np.ceil(1500 / 200)), 1))[:, :1500, :]
         idata = az.from_dict({"rho": good_rho, "beta": bad_beta_full})
         report = spatial_mcmc_diagnostic(
             _FakeModel(idata), extra_params=["beta"], emit_warnings=False

@@ -35,19 +35,30 @@ def all_dgp_outputs():
         "flow": generate_flow_data(N, G, 0.2, 0.2, 0.05, BETA_D, BETA_O, seed=0),
         "poisson": generate_poisson_flow_data(n=N, k=2, seed=0),
         "panel": generate_panel_flow_data(
-            n=N, T=2, G=G, rho_d=0.2, rho_o=0.1, rho_w=0.05,
-            beta_d=BETA_D, beta_o=BETA_O, seed=0,
+            n=N,
+            T=2,
+            G=G,
+            rho_d=0.2,
+            rho_o=0.1,
+            rho_w=0.05,
+            beta_d=BETA_D,
+            beta_o=BETA_O,
+            seed=0,
         ),
-        "panel_poisson": generate_panel_poisson_flow_data(
-            n=N, T=2, G=G, seed=0
-        ),
+        "panel_poisson": generate_panel_poisson_flow_data(n=N, T=2, G=G, seed=0),
         "flow_sep": generate_flow_data_separable(
             N, G, 0.3, 0.2, BETA_D, BETA_O, seed=0
         ),
         "poisson_sep": generate_poisson_flow_data_separable(n=N, k=2, seed=0),
         "panel_sep": generate_panel_flow_data_separable(
-            n=N, T=2, G=G, rho_d=0.3, rho_o=0.2,
-            beta_d=BETA_D, beta_o=BETA_O, seed=0,
+            n=N,
+            T=2,
+            G=G,
+            rho_d=0.3,
+            rho_o=0.2,
+            beta_d=BETA_D,
+            beta_o=BETA_O,
+            seed=0,
         ),
         "panel_poisson_sep": generate_panel_poisson_flow_data_separable(
             n=N, T=2, G=G, seed=0
@@ -74,8 +85,14 @@ class TestDistanceColumnPresent:
     @pytest.mark.parametrize(
         "key",
         [
-            "flow", "poisson", "panel", "panel_poisson",
-            "flow_sep", "poisson_sep", "panel_sep", "panel_poisson_sep",
+            "flow",
+            "poisson",
+            "panel",
+            "panel_poisson",
+            "flow_sep",
+            "poisson_sep",
+            "panel_sep",
+            "panel_poisson_sep",
         ],
     )
     def test_log_distance_column(self, all_dgp_outputs, key):
@@ -86,8 +103,14 @@ class TestDistanceColumnPresent:
     @pytest.mark.parametrize(
         "key",
         [
-            "flow", "poisson", "panel", "panel_poisson",
-            "flow_sep", "poisson_sep", "panel_sep", "panel_poisson_sep",
+            "flow",
+            "poisson",
+            "panel",
+            "panel_poisson",
+            "flow_sep",
+            "poisson_sep",
+            "panel_sep",
+            "panel_poisson_sep",
         ],
     )
     def test_dist_and_gdf_returned(self, all_dgp_outputs, key):
@@ -118,9 +141,7 @@ class TestDistanceFromUserGdf:
             {"id": np.arange(N)},
             geometry=[Point(x, y) for x, y in coords],
         )
-        out = generate_flow_data(
-            N, G, 0.1, 0.1, 0.05, BETA_D, BETA_O, gdf=gdf, seed=0
-        )
+        out = generate_flow_data(N, G, 0.1, 0.1, 0.05, BETA_D, BETA_O, gdf=gdf, seed=0)
         np.testing.assert_allclose(out["dist"], cdist(coords, coords), atol=1e-12)
 
     def test_polygon_gdf_uses_centroids(self):
@@ -132,12 +153,8 @@ class TestDistanceFromUserGdf:
         # 5 unit squares stacked in a row → centroids at (i+0.5, 0.5)
         polys = [box(i, 0, i + 1, 1) for i in range(N)]
         gdf = gpd.GeoDataFrame({"id": np.arange(N)}, geometry=polys)
-        cents = np.column_stack(
-            [gdf.geometry.centroid.x, gdf.geometry.centroid.y]
-        )
-        out = generate_flow_data(
-            N, G, 0.1, 0.1, 0.05, BETA_D, BETA_O, gdf=gdf, seed=0
-        )
+        cents = np.column_stack([gdf.geometry.centroid.x, gdf.geometry.centroid.y])
+        out = generate_flow_data(N, G, 0.1, 0.1, 0.05, BETA_D, BETA_O, gdf=gdf, seed=0)
         np.testing.assert_allclose(out["dist"], cdist(cents, cents), atol=1e-12)
 
 
@@ -181,9 +198,7 @@ class TestAutoBuildG:
     def test_user_gdf_drives_G(self):
         # gdf supplied without G → KNN graph derived from gdf.
         gdf = synth_point_geodataframe(9)
-        out = generate_flow_data(
-            gdf=gdf, beta_d=BETA_D, beta_o=BETA_O, seed=0, knn_k=3
-        )
+        out = generate_flow_data(gdf=gdf, beta_d=BETA_D, beta_o=BETA_O, seed=0, knn_k=3)
         assert out["G"].n_nodes == 9
         # The returned gdf is the same object the user passed in.
         assert out["gdf"] is gdf
@@ -194,9 +209,7 @@ class TestAutoBuildG:
 
     def test_explicit_G_synthesizes_gdf_for_distance(self):
         # G supplied without gdf → synthetic gdf used to populate distance.
-        out = generate_flow_data(
-            G=G, beta_d=BETA_D, beta_o=BETA_O, seed=0
-        )
+        out = generate_flow_data(G=G, beta_d=BETA_D, beta_o=BETA_O, seed=0)
         assert out["G"].n_nodes == G.n_nodes
         assert out["gdf"] is not None
         assert len(out["gdf"]) == G.n_nodes
@@ -213,6 +226,4 @@ class TestAutoBuildG:
     def test_gdf_size_mismatch_raises(self):
         gdf = synth_point_geodataframe(7)
         with pytest.raises(ValueError, match="rows"):
-            generate_flow_data(
-                G=G, gdf=gdf, beta_d=BETA_D, beta_o=BETA_O, seed=0
-            )
+            generate_flow_data(G=G, gdf=gdf, beta_d=BETA_D, beta_o=BETA_O, seed=0)

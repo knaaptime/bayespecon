@@ -22,8 +22,14 @@ class TestGenerateSemFlowData:
 
         n = 5
         out = generate_sem_flow_data(
-            n=n, lam_d=0.2, lam_o=0.1, lam_w=0.05,
-            beta_d=[1.0], beta_o=[0.5], sigma=0.5, seed=0,
+            n=n,
+            lam_d=0.2,
+            lam_o=0.1,
+            lam_w=0.05,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=0.5,
+            seed=0,
             distribution="normal",
         )
         N = n * n
@@ -42,8 +48,14 @@ class TestGenerateSemFlowData:
         )
 
         kwargs = dict(
-            n=5, lam_d=0.3, lam_o=0.2, beta_d=[1.0], beta_o=[0.5],
-            sigma=0.5, seed=1, distribution="normal",
+            n=5,
+            lam_d=0.3,
+            lam_o=0.2,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=0.5,
+            seed=1,
+            distribution="normal",
         )
         sep = generate_sem_flow_data_separable(**kwargs)
         full = generate_sem_flow_data(lam_w=-0.3 * 0.2, **kwargs)
@@ -55,8 +67,14 @@ class TestGenerateSemFlowData:
 
         with pytest.warns(UserWarning, match="stability"):
             generate_sem_flow_data(
-                n=5, lam_d=0.6, lam_o=0.5, lam_w=0.0,
-                beta_d=[1.0], beta_o=[0.5], sigma=0.5, seed=0,
+                n=5,
+                lam_d=0.6,
+                lam_o=0.5,
+                lam_w=0.0,
+                beta_d=[1.0],
+                beta_o=[0.5],
+                sigma=0.5,
+                seed=0,
                 distribution="normal",
             )
 
@@ -73,8 +91,14 @@ class TestSemFlowConstruction:
         self.n = 5
         self.N = self.n * self.n
         out = generate_sem_flow_data(
-            n=self.n, lam_d=0.0, lam_o=0.0, lam_w=0.0,
-            beta_d=[1.0], beta_o=[0.5], sigma=1.0, seed=10,
+            n=self.n,
+            lam_d=0.0,
+            lam_o=0.0,
+            lam_w=0.0,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=1.0,
+            seed=10,
             distribution="normal",
         )
         self.G = out["G"]
@@ -86,8 +110,13 @@ class TestSemFlowConstruction:
         from bayespecon.models.flow import SEMFlow
 
         model = SEMFlow(
-            self.y_vec, self.G, self.X,
-            col_names=self.col_names, miter=5, titer=50, trace_seed=0,
+            self.y_vec,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         assert model._n == self.n
         assert model._N == self.N
@@ -100,8 +129,11 @@ class TestSemFlowConstruction:
         from bayespecon.models.flow import SEMFlowSeparable
 
         model = SEMFlowSeparable(
-            self.y_vec, self.G, self.X,
-            col_names=self.col_names, trace_seed=0,
+            self.y_vec,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            trace_seed=0,
         )
         assert model._n == self.n
 
@@ -109,8 +141,13 @@ class TestSemFlowConstruction:
         from bayespecon.models.flow import SEMFlow
 
         model = SEMFlow(
-            self.y_vec, self.G, self.X,
-            col_names=self.col_names, miter=5, titer=50, trace_seed=0,
+            self.y_vec,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         pm_model = model._build_pymc_model()
         assert pm_model is not None
@@ -119,8 +156,11 @@ class TestSemFlowConstruction:
         from bayespecon.models.flow import SEMFlowSeparable
 
         model = SEMFlowSeparable(
-            self.y_vec, self.G, self.X,
-            col_names=self.col_names, trace_seed=0,
+            self.y_vec,
+            self.G,
+            self.X,
+            col_names=self.col_names,
+            trace_seed=0,
         )
         pm_model = model._build_pymc_model()
         assert pm_model is not None
@@ -142,25 +182,43 @@ class TestSemFlowRecovery:
         sigma_true = 0.6
 
         data = generate_sem_flow_data(
-            n=20, lam_d=rho_d_true, lam_o=rho_o_true, lam_w=rho_w_true,
-            beta_d=beta_d_true, beta_o=beta_o_true,
-            sigma=sigma_true, gamma_dist=-0.4, seed=11,
+            n=20,
+            lam_d=rho_d_true,
+            lam_o=rho_o_true,
+            lam_w=rho_w_true,
+            beta_d=beta_d_true,
+            beta_o=beta_o_true,
+            sigma=sigma_true,
+            gamma_dist=-0.4,
+            seed=11,
             distribution="normal",
         )
 
         model = SEMFlow(
-            data["y_vec"], data["G"], data["X"],
-            col_names=data["col_names"], miter=20, trace_riter=30, trace_seed=0,
+            data["y_vec"],
+            data["G"],
+            data["X"],
+            col_names=data["col_names"],
+            miter=20,
+            trace_riter=30,
+            trace_seed=0,
         )
         idata = model.fit(
-            draws=400, tune=400, chains=2, target_accept=0.9,
-            random_seed=7, progressbar=False,
+            draws=400,
+            tune=400,
+            chains=2,
+            target_accept=0.9,
+            random_seed=7,
+            progressbar=False,
         )
         post = idata.posterior
 
         # rho parameters within ~3*sd of truth (Monte Carlo + finite n tolerance)
-        for name, true in [("lam_d", rho_d_true), ("lam_o", rho_o_true),
-                           ("lam_w", rho_w_true)]:
+        for name, true in [
+            ("lam_d", rho_d_true),
+            ("lam_o", rho_o_true),
+            ("lam_w", rho_w_true),
+        ]:
             samples = post[name].values.ravel()
             mean = samples.mean()
             sd = samples.std()
@@ -183,16 +241,30 @@ class TestSemFlowRecovery:
         from bayespecon.models.flow import SEMFlowSeparable
 
         data = generate_sem_flow_data_separable(
-            n=10, lam_d=0.2, lam_o=0.15, beta_d=[1.0], beta_o=[0.5],
-            sigma=0.5, seed=3, distribution="normal",
+            n=10,
+            lam_d=0.2,
+            lam_o=0.15,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=0.5,
+            seed=3,
+            distribution="normal",
         )
         model = SEMFlowSeparable(
-            data["y_vec"], data["G"], data["X"],
-            col_names=data["col_names"], miter=10, trace_seed=0,
+            data["y_vec"],
+            data["G"],
+            data["X"],
+            col_names=data["col_names"],
+            miter=10,
+            trace_seed=0,
         )
         idata = model.fit(
-            draws=200, tune=200, chains=1, target_accept=0.9,
-            random_seed=0, progressbar=False,
+            draws=200,
+            tune=200,
+            chains=1,
+            target_accept=0.9,
+            random_seed=0,
+            progressbar=False,
         )
         post = idata.posterior
         rd = post["lam_d"].values.ravel()

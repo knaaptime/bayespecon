@@ -995,9 +995,7 @@ def _flow_ring_graph():
 
     n = 6
     focal = np.concatenate([np.arange(n), np.arange(n)])
-    neighbor = np.concatenate(
-        [np.roll(np.arange(n), 1), np.roll(np.arange(n), -1)]
-    )
+    neighbor = np.concatenate([np.roll(np.arange(n), 1), np.roll(np.arange(n), -1)])
     G = Graph.from_arrays(focal, neighbor, np.ones(2 * n)).transform("r")
     return n, G
 
@@ -1009,8 +1007,15 @@ def fitted_olsflow(_flow_ring_graph):
 
     n, G = _flow_ring_graph
     data = generate_flow_data(
-        n=n, G=G, rho_d=0.0, rho_o=0.0, rho_w=0.0,
-        beta_d=[1.0], beta_o=[0.5], sigma=0.3, seed=0,
+        n=n,
+        G=G,
+        rho_d=0.0,
+        rho_o=0.0,
+        rho_w=0.0,
+        beta_d=[1.0],
+        beta_o=[0.5],
+        sigma=0.3,
+        seed=0,
     )
     ols = OLSFlow(data["y_vec"], data["G"], data["X"], col_names=data["col_names"])
     ols.fit(draws=150, tune=150, chains=2, progressbar=False, random_seed=0)
@@ -1024,12 +1029,23 @@ def fitted_sarflow(_flow_ring_graph):
 
     n, G = _flow_ring_graph
     data = generate_flow_data(
-        n=n, G=G, rho_d=0.3, rho_o=0.1, rho_w=0.0,
-        beta_d=[1.0], beta_o=[0.5], sigma=0.3, seed=0,
+        n=n,
+        G=G,
+        rho_d=0.3,
+        rho_o=0.1,
+        rho_w=0.0,
+        beta_d=[1.0],
+        beta_o=[0.5],
+        sigma=0.3,
+        seed=0,
     )
     sar = SARFlow(
-        data["y_vec"], data["G"], data["X"], col_names=data["col_names"],
-        logdet_method="traces", restrict_positive=False,
+        data["y_vec"],
+        data["G"],
+        data["X"],
+        col_names=data["col_names"],
+        logdet_method="traces",
+        restrict_positive=False,
     )
     sar.fit(draws=150, tune=150, chains=2, progressbar=False, random_seed=0)
     return sar
@@ -1117,8 +1133,15 @@ def fitted_olsflow_panel(_flow_ring_graph):
     col_names = None
     for t in range(T_periods):
         d = generate_flow_data(
-            n=n, G=G, rho_d=0.0, rho_o=0.0, rho_w=0.0,
-            beta_d=[1.0], beta_o=[0.5], sigma=0.3, seed=10 + t,
+            n=n,
+            G=G,
+            rho_d=0.0,
+            rho_o=0.0,
+            rho_w=0.0,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=0.3,
+            seed=10 + t,
         )
         y_stack.append(d["y_vec"])
         X_stack.append(d["X"])
@@ -1128,7 +1151,12 @@ def fitted_olsflow_panel(_flow_ring_graph):
     X_panel = np.vstack(X_stack)
 
     model = OLSFlowPanel(
-        y_panel, G, X_panel, T=T_periods, col_names=col_names, model=0,
+        y_panel,
+        G,
+        X_panel,
+        T=T_periods,
+        col_names=col_names,
+        model=0,
     )
     model.fit(draws=150, tune=150, chains=2, progressbar=False, random_seed=0)
     return model

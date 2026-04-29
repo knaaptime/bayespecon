@@ -587,9 +587,7 @@ def pairwise_distance_matrix(gdf: Any) -> np.ndarray:
     from scipy.spatial.distance import cdist
 
     if gdf is None or not hasattr(gdf, "geometry"):
-        raise TypeError(
-            "pairwise_distance_matrix requires a GeoDataFrame-like object."
-        )
+        raise TypeError("pairwise_distance_matrix requires a GeoDataFrame-like object.")
 
     geom = gdf.geometry
     # geopandas' .centroid is a no-op for points and yields polygon centroids
@@ -652,9 +650,7 @@ def _resolve_flow_geometry(
     """
     if G is not None and gdf is not None:
         if len(gdf) != G.n_nodes:
-            raise ValueError(
-                f"gdf has {len(gdf)} rows but G has {G.n_nodes} nodes."
-            )
+            raise ValueError(f"gdf has {len(gdf)} rows but G has {G.n_nodes} nodes.")
         n_actual = G.n_nodes
     elif G is not None:
         n_actual = G.n_nodes
@@ -670,9 +666,7 @@ def _resolve_flow_geometry(
         G = Graph.build_knn(gdf, k=k_eff).transform("r")
 
     if n is not None and int(n) != n_actual:
-        raise ValueError(
-            f"n={n} disagrees with resolved geometry size {n_actual}."
-        )
+        raise ValueError(f"n={n} disagrees with resolved geometry size {n_actual}.")
 
     # Ensure G is row-standardised
     G = G.transform("r")

@@ -10,7 +10,11 @@ import numpy as np
 
 from bayespecon import SAR, SDEM, SDM, SLX
 
-from .helpers import W_to_graph, make_line_W, set_posterior_means as _set_posterior_means
+from .helpers import (
+    W_to_graph,
+    make_line_W,
+    set_posterior_means as _set_posterior_means,
+)
 
 
 def _build_inputs(n: int = 5) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

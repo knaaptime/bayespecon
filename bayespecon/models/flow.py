@@ -389,12 +389,21 @@ class FlowModel(ABC):
         # Thomas-Agnan & LeSage (2014, §83.5.2) shortcut of summing dest and
         # orig effects is not appropriate, and `spatial_effects(mode="auto")`
         # falls back to reporting both sides separately.
-        if symmetric_xo_xd is None and self._k_d > 0 and self._k_d == self._k_o and X_arr.shape[1] >= 2 + self._k_d + self._k_o:
+        if (
+            symmetric_xo_xd is None
+            and self._k_d > 0
+            and self._k_d == self._k_o
+            and X_arr.shape[1] >= 2 + self._k_d + self._k_o
+        ):
             dest_block = X_arr[:, 2 : 2 + self._k_d]
             orig_block = X_arr[:, 2 + self._k_d : 2 + self._k_d + self._k_o]
             self._symmetric_xo_xd: bool = bool(np.array_equal(dest_block, orig_block))
         else:
-            self._symmetric_xo_xd = bool(symmetric_xo_xd) if symmetric_xo_xd is not None else (self._k_d == self._k_o)
+            self._symmetric_xo_xd = (
+                bool(symmetric_xo_xd)
+                if symmetric_xo_xd is not None
+                else (self._k_d == self._k_o)
+            )
 
         # Pre-compute logdet data for separable constraint: log|Lo⊗Ld| = n*f(ρ_d) + n*f(ρ_o).
         # Also keep _W_eigs for backward compatibility.
@@ -726,9 +735,7 @@ class FlowModel(ABC):
         ll_array = ll_array + jacobian_draws[:, None] / n_obs
         ll_array = ll_array.reshape(n_chains, n_draws_per_chain, n_obs)
 
-        new_da = xr.DataArray(
-            ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
-        )
+        new_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
         idata["log_likelihood"] = xr.Dataset({"obs": new_da})
 
     # ------------------------------------------------------------------
@@ -811,9 +818,7 @@ class FlowModel(ABC):
         if effective_mode == "combined":
             display = [("combined", eff) for eff in _EFFECT_KEYS]
         else:
-            display = [
-                (side, eff) for side in ("dest", "orig") for eff in _EFFECT_KEYS
-            ]
+            display = [(side, eff) for side in ("dest", "orig") for eff in _EFFECT_KEYS]
 
         # Predictor names: prefer dest_* and orig_* labels stripped of the prefix.
         dest_feature_names = [
@@ -1127,8 +1132,7 @@ class SARFlow(FlowModel):
         orig_start = 2 + k_d
         intra_start = 2 + k_d + k_o
         has_intra = (
-            self._intra_idx is not None
-            and beta_draws.shape[1] >= intra_start + k_d
+            self._intra_idx is not None and beta_draws.shape[1] >= intra_start + k_d
         )
 
         n_draws_total = len(rho_d_draws)
@@ -1143,7 +1147,9 @@ class SARFlow(FlowModel):
         for side in ("dest", "orig"):
             k_side = k_d if side == "dest" else k_o
             for eff in _EFFECT_KEYS:
-                out[f"{side}_{eff}"] = np.zeros((n_draws_total, k_side), dtype=np.float64)
+                out[f"{side}_{eff}"] = np.zeros(
+                    (n_draws_total, k_side), dtype=np.float64
+                )
         k_combined = k_d + k_o if k_d != k_o else k_d
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
@@ -1334,8 +1340,7 @@ class SARFlowSeparable(FlowModel):
         orig_start = 2 + k_d
         intra_start = 2 + k_d + k_o
         has_intra = (
-            self._intra_idx is not None
-            and beta_draws.shape[1] >= intra_start + k_d
+            self._intra_idx is not None and beta_draws.shape[1] >= intra_start + k_d
         )
 
         n_draws_total = len(rho_d_draws)
@@ -1349,7 +1354,9 @@ class SARFlowSeparable(FlowModel):
         for side in ("dest", "orig"):
             k_side = k_d if side == "dest" else k_o
             for eff in _EFFECT_KEYS:
-                out[f"{side}_{eff}"] = np.zeros((n_draws_total, k_side), dtype=np.float64)
+                out[f"{side}_{eff}"] = np.zeros(
+                    (n_draws_total, k_side), dtype=np.float64
+                )
         k_combined = k_d + k_o if k_d != k_o else k_d
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
@@ -1761,8 +1768,7 @@ class OLSFlow(FlowModel):
         orig_start = 2 + k_d
         intra_start = 2 + k_d + k_o
         has_intra = (
-            self._intra_idx is not None
-            and beta_draws.shape[1] >= intra_start + k_d
+            self._intra_idx is not None and beta_draws.shape[1] >= intra_start + k_d
         )
 
         n_draws_total = beta_draws.shape[0]
@@ -1803,7 +1809,9 @@ class OLSFlow(FlowModel):
         else:
             # Asymmetric case: concatenate dest and orig effects (different variables)
             for eff in _EFFECT_KEYS:
-                out[eff] = np.concatenate([out[f"dest_{eff}"], out[f"orig_{eff}"]], axis=1)
+                out[eff] = np.concatenate(
+                    [out[f"dest_{eff}"], out[f"orig_{eff}"]], axis=1
+                )
 
         return out
 
@@ -1865,9 +1873,7 @@ class PoissonFlow(OLSFlow):
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
-            raise ValueError(
-                "PoissonFlow requires non-negative integer observations."
-            )
+            raise ValueError("PoissonFlow requires non-negative integer observations.")
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
 
@@ -1878,9 +1884,7 @@ class PoissonFlow(OLSFlow):
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
-            beta = pm.Normal(
-                "beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient"
-            )
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             eta = pt.dot(X_t, beta)
             lam = pm.Deterministic("lambda", pt.exp(eta))
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
@@ -2112,8 +2116,7 @@ class SEMFlow(FlowModel):
         orig_start = 2 + k_d
         intra_start = 2 + k_d + k_o
         has_intra = (
-            self._intra_idx is not None
-            and beta_draws.shape[1] >= intra_start + k_d
+            self._intra_idx is not None and beta_draws.shape[1] >= intra_start + k_d
         )
 
         n_draws_total = beta_draws.shape[0]

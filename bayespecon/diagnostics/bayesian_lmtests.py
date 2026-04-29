@@ -1089,7 +1089,9 @@ def bayesian_robust_lm_lag_sdm_test(
 
     # Neyman adjustment: g_rho* = g_rho - J_{ργ·σ} J_{γγ·σ}^{-1} g_gamma
     if k_wx > 0:
-        J_gamma_gamma_inv = _safe_inv(J_gamma_gamma, "J_gamma_gamma (robust LM-lag-SDM)")
+        J_gamma_gamma_inv = _safe_inv(
+            J_gamma_gamma, "J_gamma_gamma (robust LM-lag-SDM)"
+        )
         neyman_coef = J_rho_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_rho_star = g_rho - adjustment
@@ -1241,7 +1243,9 @@ def bayesian_robust_lm_wx_test(
 
     # Adjusted weight matrix: C*_{γγ} = P_{γγ} J_{γ·ρ}
     # P_{γγ} = I - J_{γρ·σ} J_{ρρ·σ}^{-1} J_{ργ·σ} J_{γ·ρ}^{-1}
-    J_gamma_given_rho_inv = _safe_inv(J_gamma_given_rho, "J_gamma_given_rho (robust LM-WX)")
+    J_gamma_given_rho_inv = _safe_inv(
+        J_gamma_given_rho, "J_gamma_given_rho (robust LM-WX)"
+    )
     P_gamma = (
         np.eye(k_wx)
         - np.outer(J_rho_gamma, J_rho_gamma)
@@ -1367,7 +1371,9 @@ def bayesian_robust_lm_error_sdem_test(
 
     # Neyman adjustment: g_lambda* = g_lambda - J_{λγ·σ} J_{γγ·σ}^{-1} g_gamma
     if k_wx > 0:
-        J_gamma_gamma_inv = _safe_inv(J_gamma_gamma, "J_gamma_gamma (robust LM-error-SDEM)")
+        J_gamma_gamma_inv = _safe_inv(
+            J_gamma_gamma, "J_gamma_gamma (robust LM-error-SDEM)"
+        )
         neyman_coef = J_lam_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_lambda_star = g_lambda - adjustment
@@ -2398,7 +2404,9 @@ def bayesian_panel_robust_lm_lag_sdm_test(
 
     # Neyman adjustment
     if k_wx > 0:
-        J_gamma_gamma_inv = _safe_inv(J_gamma_gamma, "J_gamma_gamma (panel robust LM-lag-SDM)")
+        J_gamma_gamma_inv = _safe_inv(
+            J_gamma_gamma, "J_gamma_gamma (panel robust LM-lag-SDM)"
+        )
         neyman_coef = J_rho_gamma @ J_gamma_gamma_inv  # (k_wx,)
         adjustment = g_gamma @ neyman_coef  # (draws,)
         g_rho_star = g_rho - adjustment
@@ -2528,7 +2536,9 @@ def bayesian_panel_robust_lm_wx_test(
     g_gamma_star = g_gamma - np.outer(g_rho, neyman_coef)  # (draws, k_wx)
 
     # Adjusted weight matrix: C*_{γγ} = P_{γγ} J_{γ·ρ}
-    J_gamma_given_rho_inv = _safe_inv(J_gamma_given_rho, "J_gamma_given_rho (panel robust LM-WX)")
+    J_gamma_given_rho_inv = _safe_inv(
+        J_gamma_given_rho, "J_gamma_given_rho (panel robust LM-WX)"
+    )
     P_gamma = (
         np.eye(k_wx)
         - (np.outer(J_rho_gamma, J_rho_gamma) / (J_rho_rho + 1e-12))
@@ -2631,7 +2641,9 @@ def bayesian_panel_robust_lm_error_sdem_test(
 
     # Neyman adjustment (no-op since J_lam_gamma = 0)
     if k_wx > 0:
-        J_gamma_gamma_inv = _safe_inv(J_gamma_gamma, "J_gamma_gamma (panel robust LM-error-SDEM)")
+        J_gamma_gamma_inv = _safe_inv(
+            J_gamma_gamma, "J_gamma_gamma (panel robust LM-error-SDEM)"
+        )
         neyman_coef = J_lam_gamma @ J_gamma_gamma_inv  # zeros
         adjustment = g_gamma @ neyman_coef  # zeros
         g_lambda_star = g_lambda - adjustment
@@ -2937,9 +2949,7 @@ def bayesian_robust_lm_flow_orig_test(sarflow_model) -> BayesianLMTestResult:
 def bayesian_robust_lm_flow_network_test(sarflow_model) -> BayesianLMTestResult:
     r"""Robust Bayesian LM test for :math:`\rho_w` adjusting for
     :math:`(\rho_d, \rho_o)` nuisance.  See :func:`bayesian_robust_lm_flow_dest_test`."""
-    return _flow_robust_marginal_lm(
-        sarflow_model, 2, "bayesian_robust_lm_flow_network"
-    )
+    return _flow_robust_marginal_lm(sarflow_model, 2, "bayesian_robust_lm_flow_network")
 
 
 # ---------------------------------------------------------------------
@@ -3062,9 +3072,7 @@ def _flow_panel_score_info(model, *, restrict_keys=("d", "o", "w")):
     return G, J
 
 
-def _flow_panel_marginal_lm(
-    model, key: str, test_type: str
-) -> BayesianLMTestResult:
+def _flow_panel_marginal_lm(model, key: str, test_type: str) -> BayesianLMTestResult:
     G, J = _flow_panel_score_info(model, restrict_keys=(key,))
     s = G[:, 0]
     v = float(J[0, 0])
@@ -3461,9 +3469,7 @@ def bayesian_robust_lm_flow_orig_test(sarflow_model) -> BayesianLMTestResult:
 def bayesian_robust_lm_flow_network_test(sarflow_model) -> BayesianLMTestResult:
     r"""Robust Bayesian LM test for :math:`\rho_w` adjusting for
     :math:`(\rho_d, \rho_o)` nuisance.  See :func:`bayesian_robust_lm_flow_dest_test`."""
-    return _flow_robust_marginal_lm(
-        sarflow_model, 2, "bayesian_robust_lm_flow_network"
-    )
+    return _flow_robust_marginal_lm(sarflow_model, 2, "bayesian_robust_lm_flow_network")
 
 
 # ---------------------------------------------------------------------
@@ -3586,9 +3592,7 @@ def _flow_panel_score_info(model, *, restrict_keys=("d", "o", "w")):
     return G, J
 
 
-def _flow_panel_marginal_lm(
-    model, key: str, test_type: str
-) -> BayesianLMTestResult:
+def _flow_panel_marginal_lm(model, key: str, test_type: str) -> BayesianLMTestResult:
     G, J = _flow_panel_score_info(model, restrict_keys=(key,))
     s = G[:, 0]
     v = float(J[0, 0])

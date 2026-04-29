@@ -127,10 +127,7 @@ class _DynamicPanelMixin:
     @property
     def _W_sparse_dyn(self):
         """Sparse (N*(T-1))×(N*(T-1)) Kronecker block weight ``I_{T-1} ⊗ W_n``."""
-        if (
-            not hasattr(self, "_W_sparse_dyn_cache")
-            or self._W_sparse_dyn_cache is None
-        ):
+        if not hasattr(self, "_W_sparse_dyn_cache") or self._W_sparse_dyn_cache is None:
             import scipy.sparse as sp
 
             W = self._W_sparse

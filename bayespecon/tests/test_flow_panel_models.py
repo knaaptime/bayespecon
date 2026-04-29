@@ -35,10 +35,16 @@ def _panel_flow_stack(n: int, T: int, k: int, seed: int = 0):
     from bayespecon.dgp.flows import generate_panel_flow_data
 
     out = generate_panel_flow_data(
-        n=n, T=T, k=k,
-        rho_d=0.0, rho_o=0.0, rho_w=0.0,
-        beta_d=np.zeros(k), beta_o=np.zeros(k),
-        sigma=1.0, sigma_alpha=0.0,
+        n=n,
+        T=T,
+        k=k,
+        rho_d=0.0,
+        rho_o=0.0,
+        rho_w=0.0,
+        beta_d=np.zeros(k),
+        beta_o=np.zeros(k),
+        sigma=1.0,
+        sigma_alpha=0.0,
         seed=seed,
     )
     return out["y"], out["X"], out["col_names"]
@@ -49,9 +55,14 @@ def _panel_count_vector(n: int, T: int, seed: int = 0):
     from bayespecon.dgp.flows import generate_panel_poisson_flow_data
 
     out = generate_panel_poisson_flow_data(
-        n=n, T=T, k=1,
-        rho_d=0.0, rho_o=0.0, rho_w=0.0,
-        beta_d=np.zeros(1), beta_o=np.zeros(1),
+        n=n,
+        T=T,
+        k=1,
+        rho_d=0.0,
+        rho_o=0.0,
+        rho_w=0.0,
+        beta_d=np.zeros(1),
+        beta_o=np.zeros(1),
         seed=seed,
     )
     return out["y"]
@@ -411,9 +422,7 @@ class TestPoissonPanelModelBuild:
         )
 
         assert model.approximation is not None
-        assert {"beta", "rho_d", "rho_o", "rho_w"} <= set(
-            idata.posterior.data_vars
-        )
+        assert {"beta", "rho_d", "rho_o", "rho_w"} <= set(idata.posterior.data_vars)
         assert "lambda" not in idata.posterior.data_vars
 
 
@@ -567,9 +576,7 @@ class TestSARFlowPanelRecovery:
         # DGP design layout is [alpha, intra, beta_d (k cols), beta_o (k cols),
         # ..., gamma_dist]; recover the beta_d / beta_o blocks only.
         k = len(PF_BETA_D_TRUE)
-        beta_hat = (
-            fitted_panel.posterior["beta"].mean(dim=("chain", "draw")).values
-        )
+        beta_hat = fitted_panel.posterior["beta"].mean(dim=("chain", "draw")).values
         beta_d_hat = beta_hat[2 : 2 + k]
         beta_o_hat = beta_hat[2 + k : 2 + 2 * k]
         assert np.allclose(beta_d_hat, PF_BETA_D_TRUE, atol=ABS_TOL_BETA), (
@@ -631,9 +638,7 @@ class TestSARFlowSeparablePanelRecovery:
         # beta_o (k), ..., gamma_dist].
         k = len(PF_BETA_D_TRUE)
         beta_hat = (
-            fitted_separable_panel.posterior["beta"]
-            .mean(dim=("chain", "draw"))
-            .values
+            fitted_separable_panel.posterior["beta"].mean(dim=("chain", "draw")).values
         )
         beta_d_hat = beta_hat[2 : 2 + k]
         beta_o_hat = beta_hat[2 + k : 2 + 2 * k]
@@ -720,9 +725,7 @@ class TestPoissonFlowPanelRecovery:
         k = 2
         beta_true = np.ones(k)
         beta_hat = (
-            fitted_poisson_panel.posterior["beta"]
-            .mean(dim=("chain", "draw"))
-            .values
+            fitted_poisson_panel.posterior["beta"].mean(dim=("chain", "draw")).values
         )
         beta_d_hat = beta_hat[2 : 2 + k]
         beta_o_hat = beta_hat[2 + k : 2 + 2 * k]
@@ -823,9 +826,16 @@ def _ols_panel_flow_data(n: int, T: int, beta_d, beta_o, sigma, seed=0):
     from bayespecon.dgp.flows import generate_panel_flow_data
 
     out = generate_panel_flow_data(
-        n=n, T=T, k=len(beta_d),
-        rho_d=0.0, rho_o=0.0, rho_w=0.0,
-        beta_d=beta_d, beta_o=beta_o, sigma=sigma, sigma_alpha=0.0,
+        n=n,
+        T=T,
+        k=len(beta_d),
+        rho_d=0.0,
+        rho_o=0.0,
+        rho_w=0.0,
+        beta_d=beta_d,
+        beta_o=beta_o,
+        sigma=sigma,
+        sigma_alpha=0.0,
         seed=seed,
     )
     return out["G"], out["y"], out["X"], out["col_names"]
@@ -841,7 +851,12 @@ class TestOLSFlowPanelEffects:
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=20)
 
         model = OLSFlowPanel(
-            y=y, G=G, X=X, T=T, col_names=col_names, model=0,
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
         )
         # Trace / separable precomputation must be skipped.
         assert model._traces is None
@@ -849,15 +864,24 @@ class TestOLSFlowPanelEffects:
         assert model._n == n
         assert model._T == T
 
-
     def test_olsflow_panel_posterior_predictive_shape(self):
         n = 4
         T = 2
         G, y, X, col_names = _ols_panel_flow_data(
-            n=n, T=T, beta_d=[1.0], beta_o=[0.5], sigma=0.5, seed=1,
+            n=n,
+            T=T,
+            beta_d=[1.0],
+            beta_o=[0.5],
+            sigma=0.5,
+            seed=1,
         )
         model = OLSFlowPanel(
-            y=y, G=G, X=X, T=T, col_names=col_names, model=0,
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         y_rep = model.posterior_predictive(n_draws=5, random_seed=3)
@@ -870,10 +894,20 @@ class TestOLSFlowPanelEffects:
         n = 4
         T = 3
         G, y, X, col_names = _ols_panel_flow_data(
-            n=n, T=T, beta_d=[0.5], beta_o=[0.3], sigma=0.2, seed=fe_mode,
+            n=n,
+            T=T,
+            beta_d=[0.5],
+            beta_o=[0.3],
+            sigma=0.2,
+            seed=fe_mode,
         )
         model = OLSFlowPanel(
-            y=y, G=G, X=X, T=T, col_names=col_names, model=fe_mode,
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=fe_mode,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         post = model._idata.posterior
@@ -891,17 +925,28 @@ class TestPoissonGravityFlowPanel:
 
         G = _flow_test_graph(n)
         data = generate_panel_poisson_flow_data(
-            n=n, T=T, G=G,
-            rho_d=0.0, rho_o=0.0, rho_w=0.0,
-            beta_d=[0.3], beta_o=[0.2], k=1, seed=seed,
+            n=n,
+            T=T,
+            G=G,
+            rho_d=0.0,
+            rho_o=0.0,
+            rho_w=0.0,
+            beta_d=[0.3],
+            beta_o=[0.2],
+            k=1,
+            seed=seed,
         )
         return G, data
 
     def test_constructs_and_skips_logdet_precompute(self):
         G, data = self._make_panel_count_data(n=4, T=2)
         model = PoissonFlowPanel(
-            y=data["y"], G=G, X=data["X"], T=2,
-            col_names=data["col_names"], model=0,
+            y=data["y"],
+            G=G,
+            X=data["X"],
+            T=2,
+            col_names=data["col_names"],
+            model=0,
         )
         assert model._traces is None
         assert model._separable_logdet_fn is None
@@ -911,8 +956,12 @@ class TestPoissonGravityFlowPanel:
         G, data = self._make_panel_count_data(n=4, T=2)
         with pytest.raises(ValueError, match="model=0 only"):
             PoissonFlowPanel(
-                y=data["y"], G=G, X=data["X"], T=2,
-                col_names=data["col_names"], model=1,
+                y=data["y"],
+                G=G,
+                X=data["X"],
+                T=2,
+                col_names=data["col_names"],
+                model=1,
             )
 
     def test_rejects_negative_and_non_integer(self):
@@ -920,22 +969,34 @@ class TestPoissonGravityFlowPanel:
         y_bad = data["y"].astype(np.float64) + 0.5
         with pytest.raises(ValueError, match="integer-valued"):
             PoissonFlowPanel(
-                y=y_bad, G=G, X=data["X"], T=2,
-                col_names=data["col_names"], model=0,
+                y=y_bad,
+                G=G,
+                X=data["X"],
+                T=2,
+                col_names=data["col_names"],
+                model=0,
             )
         y_neg = data["y"].copy()
         y_neg[0] = -1
         with pytest.raises(ValueError, match="non-negative"):
             PoissonFlowPanel(
-                y=y_neg, G=G, X=data["X"], T=2,
-                col_names=data["col_names"], model=0,
+                y=y_neg,
+                G=G,
+                X=data["X"],
+                T=2,
+                col_names=data["col_names"],
+                model=0,
             )
 
     def test_pymc_model_has_no_spatial_or_sigma(self):
         G, data = self._make_panel_count_data(n=4, T=2)
         model = PoissonFlowPanel(
-            y=data["y"], G=G, X=data["X"], T=2,
-            col_names=data["col_names"], model=0,
+            y=data["y"],
+            G=G,
+            X=data["X"],
+            T=2,
+            col_names=data["col_names"],
+            model=0,
         )
         pm_model = model._build_pymc_model()
         names = {v.name for v in pm_model.unobserved_RVs}
@@ -946,8 +1007,12 @@ class TestPoissonGravityFlowPanel:
     def test_posterior_predictive_shape_and_integer(self):
         G, data = self._make_panel_count_data(n=4, T=2, seed=1)
         model = PoissonFlowPanel(
-            y=data["y"], G=G, X=data["X"], T=2,
-            col_names=data["col_names"], model=0,
+            y=data["y"],
+            G=G,
+            X=data["X"],
+            T=2,
+            col_names=data["col_names"],
+            model=0,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         y_rep = model.posterior_predictive(n_draws=5, random_seed=3)
@@ -958,8 +1023,12 @@ class TestPoissonGravityFlowPanel:
     def test_spatial_effects_network_zero(self):
         G, data = self._make_panel_count_data(n=5, T=2, seed=2)
         model = PoissonFlowPanel(
-            y=data["y"], G=G, X=data["X"], T=2,
-            col_names=data["col_names"], model=0,
+            y=data["y"],
+            G=G,
+            X=data["X"],
+            T=2,
+            col_names=data["col_names"],
+            model=0,
         )
         model.fit(draws=40, tune=40, chains=1, progressbar=False, random_seed=0)
         df = model.spatial_effects(mode="combined")
@@ -978,15 +1047,31 @@ class TestPoissonGravityFlowPanelRecovery:
         beta_d = np.array([0.5, -0.3])
         beta_o = np.array([0.4, 0.2])
         data = generate_panel_poisson_flow_data(
-            n=n, T=T, G=G, rho_d=0.0, rho_o=0.0, rho_w=0.0,
-            beta_d=beta_d, beta_o=beta_o, k=2, seed=42,
+            n=n,
+            T=T,
+            G=G,
+            rho_d=0.0,
+            rho_o=0.0,
+            rho_w=0.0,
+            beta_d=beta_d,
+            beta_o=beta_o,
+            k=2,
+            seed=42,
         )
         model = PoissonFlowPanel(
-            y=data["y"], G=G, X=data["X"], T=T,
-            col_names=data["col_names"], model=0,
+            y=data["y"],
+            G=G,
+            X=data["X"],
+            T=T,
+            col_names=data["col_names"],
+            model=0,
         )
         idata = model.fit(
-            tune=400, draws=600, chains=2, random_seed=42, progressbar=False,
+            tune=400,
+            draws=600,
+            chains=2,
+            random_seed=42,
+            progressbar=False,
         )
         beta_hat = idata.posterior["beta"].mean(dim=("chain", "draw")).values
         bd_hat = beta_hat[2 : 2 + len(beta_d)]
@@ -997,7 +1082,6 @@ class TestPoissonGravityFlowPanelRecovery:
         assert np.allclose(bo_hat, beta_o, atol=0.40), (
             f"βo: expected {beta_o}, got {bo_hat}"
         )
-
 
 
 # ---------------------------------------------------------------------------
@@ -1025,8 +1109,15 @@ class TestFlowPanelLogLikelihood:
         G = _flow_test_graph(n)
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=0)
         m = SARFlowPanel(
-            y=y, G=G, X=X, T=T, col_names=col_names, model=0,
-            miter=5, titer=50, trace_seed=0,
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata, n_obs=n * n * T)
@@ -1036,7 +1127,13 @@ class TestFlowPanelLogLikelihood:
         G = _flow_test_graph(n)
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=0)
         m = SARFlowSeparablePanel(
-            y=y, G=G, X=X, T=T, col_names=col_names, model=0, trace_seed=0,
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
+            trace_seed=0,
         )
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata, n_obs=n * n * T)
@@ -1055,7 +1152,12 @@ class TestFlowPanelLogLikelihood:
         _, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=0)
         y_int = _panel_count_vector(n=n, T=T, seed=1)
         m = PoissonFlowPanel(
-            y=y_int, G=G, X=X, T=T, col_names=col_names, model=0,
+            y=y_int,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
         )
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata, n_obs=n * n * T)
@@ -1068,18 +1170,29 @@ class TestFlowPanelLogLikelihood:
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=0)
         kw = dict(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
         m_sar = SARFlowPanel(
-            y=y, G=G, X=X, T=T, col_names=col_names, model=0,
-            miter=5, titer=50, trace_seed=0,
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         m_sep = SARFlowSeparablePanel(
-            y=y, G=G, X=X, T=T, col_names=col_names, model=0, trace_seed=0,
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
+            trace_seed=0,
         )
         m_ols = OLSFlowPanel(y=y, G=G, X=X, T=T, col_names=col_names, model=0)
         idata_sar = m_sar.fit(**kw)
         idata_sep = m_sep.fit(**kw)
         idata_ols = m_ols.fit(**kw)
-        comp = az.compare(
-            {"sar": idata_sar, "sep": idata_sep, "ols": idata_ols}
-        )
+        comp = az.compare({"sar": idata_sar, "sep": idata_sep, "ols": idata_ols})
         assert "rank" in comp.columns
         assert len(comp) == 3

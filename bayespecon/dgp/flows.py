@@ -223,7 +223,8 @@ def generate_flow_data(
         )
     else:
         design = flow_design_matrix_asymmetric(
-            X_d_arr, X_o_arr,
+            X_d_arr,
+            X_o_arr,
             col_names_d=col_names,
             col_names_o=None,
             dist=dist,
@@ -1254,7 +1255,8 @@ def generate_sem_flow_data(
         )
     else:
         design = flow_design_matrix_asymmetric(
-            X_d_arr, X_o_arr,
+            X_d_arr,
+            X_o_arr,
             col_names_d=col_names,
             col_names_o=None,
             dist=dist,

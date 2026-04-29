@@ -209,12 +209,12 @@ class FlowPanelModel(ABC):
         ):
             dest_block = X_arr[:, 2 : 2 + self._k_d]
             orig_block = X_arr[:, 2 + self._k_d : 2 + self._k_d + self._k_o]
-            self._symmetric_xo_xd: bool = bool(
-                np.array_equal(dest_block, orig_block)
-            )
+            self._symmetric_xo_xd: bool = bool(np.array_equal(dest_block, orig_block))
         else:
             self._symmetric_xo_xd = (
-                bool(symmetric_xo_xd) if symmetric_xo_xd is not None else (self._k_d == self._k_o)
+                bool(symmetric_xo_xd)
+                if symmetric_xo_xd is not None
+                else (self._k_d == self._k_o)
             )
 
         # Demean panel data using N_flow panel units (OD pairs)
@@ -482,9 +482,7 @@ class FlowPanelModel(ABC):
         ll_array = ll_array + jacobian_draws[:, None] / n_obs
         ll_array = ll_array.reshape(n_chains, n_draws_per_chain, n_obs)
 
-        new_da = xr.DataArray(
-            ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
-        )
+        new_da = xr.DataArray(ll_array, dims=("chain", "draw", "obs_dim"), name="obs")
         idata["log_likelihood"] = xr.Dataset({"obs": new_da})
 
     def _add_nu_prior(self):
@@ -547,9 +545,7 @@ class FlowPanelModel(ABC):
         if effective_mode == "combined":
             display = [("combined", eff) for eff in _EFFECT_KEYS]
         else:
-            display = [
-                (side, eff) for side in ("dest", "orig") for eff in _EFFECT_KEYS
-            ]
+            display = [(side, eff) for side in ("dest", "orig") for eff in _EFFECT_KEYS]
 
         feature_names = [
             name[len("dest_") :] if name.startswith("dest_") else name
@@ -722,8 +718,7 @@ class FlowPanelModel(ABC):
         orig_start = 2 + k_d
         intra_start = 2 + k_d + k_o
         has_intra = (
-            self._intra_idx is not None
-            and beta_draws.shape[1] >= intra_start + k_d
+            self._intra_idx is not None and beta_draws.shape[1] >= intra_start + k_d
         )
 
         n_draws_total = len(rho_d_draws)
@@ -740,7 +735,9 @@ class FlowPanelModel(ABC):
         for side in ("dest", "orig"):
             k_side = k_d if side == "dest" else k_o
             for eff in _EFFECT_KEYS:
-                out[f"{side}_{eff}"] = np.zeros((n_draws_total, k_side), dtype=np.float64)
+                out[f"{side}_{eff}"] = np.zeros(
+                    (n_draws_total, k_side), dtype=np.float64
+                )
         k_combined = k_d + k_o if k_d != k_o else k_d
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
@@ -802,8 +799,7 @@ class FlowPanelModel(ABC):
         orig_start = 2 + k_d
         intra_start = 2 + k_d + k_o
         has_intra = (
-            self._intra_idx is not None
-            and beta_draws.shape[1] >= intra_start + k_d
+            self._intra_idx is not None and beta_draws.shape[1] >= intra_start + k_d
         )
 
         n_draws_total = len(rho_d_draws)
@@ -819,7 +815,9 @@ class FlowPanelModel(ABC):
         for side in ("dest", "orig"):
             k_side = k_d if side == "dest" else k_o
             for eff in _EFFECT_KEYS:
-                out[f"{side}_{eff}"] = np.zeros((n_draws_total, k_side), dtype=np.float64)
+                out[f"{side}_{eff}"] = np.zeros(
+                    (n_draws_total, k_side), dtype=np.float64
+                )
         k_combined = k_d + k_o if k_d != k_o else k_d
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
@@ -1440,9 +1438,7 @@ class OLSFlowPanel(FlowPanelModel):
         y_t = pt.as_tensor_variable(self._y.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
-            beta = pm.Normal(
-                "beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient"
-            )
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             mu = pt.dot(X_t, beta)
             if self.robust:
@@ -1485,9 +1481,7 @@ class OLSFlowPanel(FlowPanelModel):
         post = self._idata.posterior
         beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
         sigma_draws = (
-            post["sigma"].values.reshape(-1)
-            if "sigma" in post.data_vars
-            else None
+            post["sigma"].values.reshape(-1) if "sigma" in post.data_vars else None
         )
 
         total = beta_draws.shape[0]
@@ -1537,8 +1531,7 @@ class OLSFlowPanel(FlowPanelModel):
         orig_start = 2 + k
         intra_start = 2 + 2 * k
         has_intra = (
-            self._intra_idx is not None
-            and beta_draws.shape[1] >= intra_start + k
+            self._intra_idx is not None and beta_draws.shape[1] >= intra_start + k
         )
 
         n_draws_total = beta_draws.shape[0]
@@ -1638,9 +1631,7 @@ class PoissonFlowPanel(OLSFlowPanel):
         X_t = pt.as_tensor_variable(self._X.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
-            beta = pm.Normal(
-                "beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient"
-            )
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             eta = pt.dot(X_t, beta)
             lam = pm.Deterministic("lambda", pt.exp(eta))
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
@@ -2083,8 +2074,6 @@ def _ols_panel_effects(
             out[eff] = out[f"dest_{eff}"] + out[f"orig_{eff}"]
     else:
         for eff in _EFFECT_KEYS:
-            out[eff] = np.concatenate(
-                [out[f"dest_{eff}"], out[f"orig_{eff}"]], axis=1
-            )
+            out[eff] = np.concatenate([out[f"dest_{eff}"], out[f"orig_{eff}"]], axis=1)
 
     return out
