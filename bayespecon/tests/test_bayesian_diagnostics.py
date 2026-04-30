@@ -406,7 +406,9 @@ class TestBayesianRobustLMErrorSDEMTest:
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_sdm_model(y, X, WX, W_sparse, draws=200, beta_noise=0.05, rho_noise=0.05):
+def _make_mock_sdm_model(
+    y, X, WX, W_sparse, draws=200, beta_noise=0.05, rho_noise=0.05
+):
     """Build a mock SDM model: beta covers [X, WX] and rho is in posterior."""
     Z = np.hstack([X, WX])
     beta_mean = np.linalg.lstsq(Z, y, rcond=None)[0]
@@ -437,7 +439,9 @@ def _make_mock_sdm_model(y, X, WX, W_sparse, draws=200, beta_noise=0.05, rho_noi
     return model
 
 
-def _make_mock_sdem_model(y, X, WX, W_sparse, draws=200, beta_noise=0.05, lam_noise=0.05):
+def _make_mock_sdem_model(
+    y, X, WX, W_sparse, draws=200, beta_noise=0.05, lam_noise=0.05
+):
     """Build a mock SDEM model: beta covers [X, WX] and lam is in posterior."""
     Z = np.hstack([X, WX])
     beta_mean = np.linalg.lstsq(Z, y, rcond=None)[0]
@@ -535,7 +539,9 @@ class TestBayesianLMLagSDEMTest:
 
         # Recompute the score using the same residual logic to back out V
         idata = model.inference_data
-        beta_draws = np.asarray(idata.posterior["beta"]).reshape(-1, X.shape[1] + WX.shape[1])
+        beta_draws = np.asarray(idata.posterior["beta"]).reshape(
+            -1, X.shape[1] + WX.shape[1]
+        )
         lam_draws = np.asarray(idata.posterior["lam"]).reshape(-1)
         Z = np.hstack([X, WX])
         u = y[None, :] - beta_draws @ Z.T

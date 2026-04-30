@@ -790,7 +790,11 @@ class TestJaxLogLikelihoodCapture:
         y, X, W, _, n = _cross_section_data()
         model = SEM(y=y, X=X, W=W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=20, tune=20, chains=1, random_seed=0, progressbar=False,
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )
@@ -801,7 +805,11 @@ class TestJaxLogLikelihoodCapture:
         y, X, W, _, n = _cross_section_data()
         model = SDEM(y=y, X=X, W=W, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=20, tune=20, chains=1, random_seed=0, progressbar=False,
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )
@@ -811,10 +819,20 @@ class TestJaxLogLikelihoodCapture:
         pytest.importorskip("numpyro")
         y, X, W, _, N, T, n = _panel_data()
         model = SEMPanelFE(
-            y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue",
+            y=y,
+            X=X,
+            W=W,
+            N=N,
+            T=T,
+            model=1,
+            logdet_method="eigenvalue",
         )
         idata = model.fit(
-            draws=20, tune=20, chains=1, random_seed=0, progressbar=False,
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )
@@ -824,10 +842,20 @@ class TestJaxLogLikelihoodCapture:
         pytest.importorskip("numpyro")
         y, X, W, _, N, T, n = _panel_data()
         model = SDEMPanelFE(
-            y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue",
+            y=y,
+            X=X,
+            W=W,
+            N=N,
+            T=T,
+            model=1,
+            logdet_method="eigenvalue",
         )
         idata = model.fit(
-            draws=20, tune=20, chains=1, random_seed=0, progressbar=False,
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )
@@ -838,7 +866,11 @@ class TestJaxLogLikelihoodCapture:
         y, X, W, _, N, T, n = _panel_data()
         model = SEMPanelRE(y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue")
         idata = model.fit(
-            draws=20, tune=20, chains=1, random_seed=0, progressbar=False,
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )
@@ -850,10 +882,20 @@ class TestJaxLogLikelihoodCapture:
         # introduce some censoring at zero
         y = np.where(y > 0.0, y, 0.0)
         model = SEMPanelTobit(
-            y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue",
+            y=y,
+            X=X,
+            W=W,
+            N=N,
+            T=T,
+            model=1,
+            logdet_method="eigenvalue",
         )
         idata = model.fit(
-            draws=20, tune=20, chains=1, random_seed=0, progressbar=False,
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )

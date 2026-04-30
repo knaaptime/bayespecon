@@ -648,9 +648,7 @@ class SEMPanelFE(SpatialPanelModel):
                         y_star = value - lam_ * Wy_const
                         X_star = X_const - lam_ * WX_const
                         eps = y_star - pt.dot(X_star, beta_)
-                        log_dens = pm.logp(
-                            pm.Normal.dist(mu=0.0, sigma=sigma_), eps
-                        )
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
                         return log_dens + logdet_fn(lam_) * inv_n
 
                     pm.CustomDist(
@@ -1241,9 +1239,7 @@ class SDEMPanelFE(SpatialPanelModel):
                         y_star = value - lam_ * Wy_const
                         Z_star = Z_const - lam_ * WZ_const
                         eps = y_star - pt.dot(Z_star, beta_)
-                        log_dens = pm.logp(
-                            pm.Normal.dist(mu=0.0, sigma=sigma_), eps
-                        )
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
                         return log_dens + logdet_fn(lam_) * inv_n
 
                     pm.CustomDist(

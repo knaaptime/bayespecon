@@ -665,9 +665,10 @@ class SEMPanelRE(SpatialPanelModel):
 
                 def _eps(lam_, beta_, alpha_):
                     resid = y_const - pt.dot(X_const, beta_) - alpha_[unit_idx_const]
-                    return resid - lam_ * pts.structured_dot(
-                        W_pt, resid[:, None]
-                    ).flatten()
+                    return (
+                        resid
+                        - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    )
 
                 if self.robust:
                     nu = model["nu"]
@@ -693,9 +694,7 @@ class SEMPanelRE(SpatialPanelModel):
 
                     def sempanel_re_logp(value, lam_, beta_, sigma_, alpha_):
                         eps = _eps(lam_, beta_, alpha_)
-                        log_dens = pm.logp(
-                            pm.Normal.dist(mu=0.0, sigma=sigma_), eps
-                        )
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
                         return log_dens + logdet_fn(lam_) * inv_n
 
                     pm.CustomDist(
@@ -1017,9 +1016,10 @@ class SDEMPanelRE(SpatialPanelModel):
 
                 def _eps(lam_, beta_, alpha_):
                     resid = y_const - pt.dot(Z_const, beta_) - alpha_[unit_idx_const]
-                    return resid - lam_ * pts.structured_dot(
-                        W_pt, resid[:, None]
-                    ).flatten()
+                    return (
+                        resid
+                        - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    )
 
                 if self.robust:
                     nu = model["nu"]
@@ -1045,9 +1045,7 @@ class SDEMPanelRE(SpatialPanelModel):
 
                     def sdempanel_re_logp(value, lam_, beta_, sigma_, alpha_):
                         eps = _eps(lam_, beta_, alpha_)
-                        log_dens = pm.logp(
-                            pm.Normal.dist(mu=0.0, sigma=sigma_), eps
-                        )
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
                         return log_dens + logdet_fn(lam_) * inv_n
 
                     pm.CustomDist(

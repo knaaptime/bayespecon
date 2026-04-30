@@ -311,9 +311,7 @@ class TestCrossSectionalDiagnosticsDecision:
             index=["Robust-LM-Lag-SDM", "Robust-LM-Error-SDEM"],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
-        assert (
-            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
-        )
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
 
     def test_slx_robust_both_error_wins(self, W_graph, monkeypatch):
         from bayespecon.models.slx import SLX
@@ -325,9 +323,7 @@ class TestCrossSectionalDiagnosticsDecision:
             index=["Robust-LM-Lag-SDM", "Robust-LM-Error-SDEM"],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
-        assert (
-            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
-        )
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
 
     def test_slx_neither_robust(self, W_graph, monkeypatch):
         from bayespecon.models.slx import SLX
