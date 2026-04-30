@@ -31,6 +31,54 @@ import numpy as np
 import pandas as pd
 
 
+def _chunked_eig_means(
+    rho_draws: np.ndarray,
+    eigs: np.ndarray,
+    weights: np.ndarray | None = None,
+    chunk: int = 1024,
+) -> np.ndarray:
+    """Compute ``mean_j(weights_j / (1 - rho_g * eigs_j))`` per draw, chunked.
+
+    The naive vectorised form ``1 / (1 - rho[:, None] * eigs[None, :])`` is
+    correct but allocates a ``(G, n)`` intermediate, which dominates memory
+    for large panels (e.g., ``G=8000``, ``n=14000`` ≈ 900 MB).  Chunking
+    over draws keeps peak memory at ``O(chunk * n)`` while preserving the
+    same vectorised inner kernel.
+
+    Parameters
+    ----------
+    rho_draws : np.ndarray, shape (G,)
+        Posterior draws of the spatial autoregressive parameter.
+    eigs : np.ndarray, shape (n,)
+        Real eigenvalues of the spatial weights matrix ``W``.
+    weights : np.ndarray, shape (n,), optional
+        Per-eigenvalue weights.  Pass ``eigs`` to compute
+        ``mean(eigs / (1 - rho*eigs))`` (the diagonal of ``S @ W``); pass
+        ``None`` for uniform weights (the diagonal of ``S``).
+    chunk : int, default 1024
+        Number of draws processed per inner iteration.  Tune for memory.
+
+    Returns
+    -------
+    np.ndarray, shape (G,)
+        The per-draw scalar mean.
+    """
+    G = rho_draws.shape[0]
+    n = eigs.shape[0]
+    out = np.empty(G, dtype=np.float64)
+    if weights is None:
+        for i in range(0, G, chunk):
+            block = 1.0 / (1.0 - rho_draws[i : i + chunk, None] * eigs[None, :])
+            out[i : i + chunk] = block.mean(axis=1)
+    else:
+        for i in range(0, G, chunk):
+            block = weights[None, :] / (
+                1.0 - rho_draws[i : i + chunk, None] * eigs[None, :]
+            )
+            out[i : i + chunk] = block.sum(axis=1) / n
+    return out
+
+
 def _compute_bayesian_pvalue(samples: np.ndarray) -> np.ndarray:
     """Compute two-sided Bayesian p-value for each column of *samples*.
 

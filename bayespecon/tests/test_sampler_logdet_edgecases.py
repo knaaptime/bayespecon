@@ -1,8 +1,8 @@
 """Fast unit tests for bayespecon.models._sampler and bayespecon.logdet edge cases.
 
-Tests resolve_sampler fallback paths, prepare_compile_kwargs,
-prepare_idata_kwargs, logdet_exact, _build_logdet_grid large-matrix
-path, and _stable_rho_grid edge cases.
+Tests enforce_c_backend, prepare_compile_kwargs, prepare_idata_kwargs,
+logdet_exact, _build_logdet_grid large-matrix path, and _stable_rho_grid
+edge cases.
 """
 
 from __future__ import annotations
@@ -16,58 +16,48 @@ from bayespecon.logdet import (
     logdet_exact,
 )
 from bayespecon.models._sampler import (
+    enforce_c_backend,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
-    resolve_sampler,
 )
 
 # ---------------------------------------------------------------------------
-# resolve_sampler
+# enforce_c_backend
 # ---------------------------------------------------------------------------
 
 
-class TestResolveSampler:
-    """Tests for resolve_sampler fallback logic."""
+class TestEnforceCBackend:
+    """Tests for enforce_c_backend downgrade logic."""
+
+    def test_no_c_backend_required_passthrough(self):
+        assert (
+            enforce_c_backend("blackjax", requires_c_backend=False, model_name="X")
+            == "blackjax"
+        )
 
     def test_pymc_passthrough(self):
-        assert resolve_sampler("pymc") == "pymc"
-
-    def test_none_uses_default(self):
-        result = resolve_sampler(None)
-        assert result in ("pymc", "blackjax", "numpyro", "nutpie")
-
-    def test_default_uses_default(self):
-        result = resolve_sampler("default")
-        assert result in ("pymc", "blackjax", "numpyro", "nutpie")
-
-    def test_unknown_name_passthrough(self):
-        """Unknown sampler names pass through for pm.sample to reject."""
-        assert resolve_sampler("nonexistent_sampler") == "nonexistent_sampler"
+        assert (
+            enforce_c_backend("pymc", requires_c_backend=True, model_name="X") == "pymc"
+        )
 
     def test_requires_c_backend_with_no_jax(self, monkeypatch):
         """When requires_c_backend=True and JAX dispatch unavailable, fall back to pymc."""
         from bayespecon.models import _sampler
 
         monkeypatch.setattr(_sampler, "_jax_dispatches_available", lambda: False)
-        result = resolve_sampler(
+        result = enforce_c_backend(
             "blackjax", requires_c_backend=True, model_name="TestModel"
         )
         assert result == "pymc"
 
-    def test_optional_sampler_missing_falls_back(self, monkeypatch):
-        """When requested optional sampler is not installed, fall back to pymc."""
+    def test_requires_c_backend_with_jax_available(self, monkeypatch):
+        """When JAX dispatch is available, the requested sampler is preserved."""
         from bayespecon.models import _sampler
 
-        monkeypatch.setattr(_sampler, "_has_module", lambda name: False)
-        result = resolve_sampler("blackjax")
-        assert result == "pymc"
-
-    def test_optional_sampler_available(self, monkeypatch):
-        """When requested optional sampler is installed, return it."""
-        from bayespecon.models import _sampler
-
-        monkeypatch.setattr(_sampler, "_has_module", lambda name: name == "blackjax")
-        result = resolve_sampler("blackjax")
+        monkeypatch.setattr(_sampler, "_jax_dispatches_available", lambda: True)
+        result = enforce_c_backend(
+            "blackjax", requires_c_backend=True, model_name="TestModel"
+        )
         assert result == "blackjax"
 
 

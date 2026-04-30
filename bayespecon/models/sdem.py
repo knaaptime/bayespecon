@@ -17,7 +17,6 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 import xarray as xr
-from pytensor import sparse as pts
 
 from .base import SpatialModel
 
@@ -25,39 +24,85 @@ from .base import SpatialModel
 class SDEM(SpatialModel):
     """Bayesian Spatial Durbin Error Model.
 
+    Combines spatial lags of the regressors :math:`X` with a spatial
+    autoregressive disturbance:
+
     .. math::
-        y = X\\beta_1 + WX\\beta_2 + u, \\quad u = \\lambda Wu + \\varepsilon, \\quad \\varepsilon \\sim N(0, \\sigma^2 I)
+        y = X\\beta + WX\\theta + u,
+        \\quad u = \\lambda Wu + \\varepsilon,
+        \\quad \\varepsilon \\sim N(0, \\sigma^2 I).
+
+    The sampled coefficient vector stacks the local and lagged-regressor
+    blocks as :math:`[\\beta, \\theta]`. The likelihood includes the
+    spatial Jacobian :math:`\\log|I - \\lambda W|`.
 
     Parameters
     ----------
-    formula, data, y, X, W, priors, logdet_method
-        See :class:`~bayespecon.models.base.SpatialModel`.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``. Intercept is included by default.
+    data : pandas.DataFrame or geopandas.GeoDataFrame, optional
+        Data source for formula mode.
+    y : array-like, optional
+        Dependent variable of shape ``(n,)``. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Design matrix. Required in matrix mode. DataFrame columns are
+        preserved as feature names.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(n, n)``. Accepts a
+        :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
+        matrix. The legacy :class:`libpysal.weights.W` object is **not**
+        accepted; pass ``w.sparse`` or ``libpysal.graph.Graph.from_W(w)``.
+        Should be row-standardised; a :class:`UserWarning` is raised
+        otherwise.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``lam_lower`` (float, default -1.0): Lower bound of the
+          Uniform prior on :math:`\\lambda`.
+        - ``lam_upper`` (float, default 1.0): Upper bound of the
+          Uniform prior on :math:`\\lambda`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`[\\beta, \\theta]`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`[\\beta, \\theta]`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\lambda W|`. ``None`` (default)
+        auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
+        ``"chebyshev"``. Other options: ``"exact"``, ``"dense_grid"``,
+        ``"sparse_grid"``, ``"spline"``, ``"mc"``, ``"ilu"``.
+    robust : bool, default False
+        If True, replace the Normal disturbance with Student-t. See
+        *Robust regression* below.
+    w_vars : list of str, optional
+        Names of X columns to spatially lag. By default all
+        non-constant columns are lagged. Pass a subset to restrict
+        which variables receive a spatial lag, e.g.
+        ``w_vars=["income", "density"]``.
 
     Notes
     -----
-    The ``priors`` dict supports the following keys:
-
-    - ``lam_lower, lam_upper`` (float, default -1, 1): Bounds for the Uniform prior on lambda.
-    - ``beta_mu`` (float, default 0): Prior mean for beta.
-    - ``beta_sigma`` (float, default 1e6): Prior std for beta.
-    - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior on sigma.
-    - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
-      :math:`\\nu` (only used when ``robust=True``).
+    Because the spatial autoregression enters only through the
+    disturbance, direct effects equal :math:`\\beta` and indirect
+    effects equal :math:`\\theta` (no global spillover multiplier).
 
     **Robust regression**
 
-    When ``robust=True``, the spatially-filtered error distribution is
-    changed from Normal to Student-t, yielding a model that is robust to
-    heavy-tailed outliers:
+    When ``robust=True``, the spatially-filtered innovation is
+    Student-t:
 
     .. math::
 
-        \\varepsilon = (I - \\lambda W)(y - X\\beta_1 - WX\\beta_2) \\sim t_\\nu(0, \\sigma^2 I)
+        \\varepsilon = (I - \\lambda W)(y - X\\beta - WX\\theta)
+        \\sim t_\\nu(0, \\sigma^2 I)
 
-    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
-    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
-    variance exists.
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`
+    with rate ``nu_lam`` (default 1/30, mean ≈ 30).
     """
 
     _spatial_diagnostics_tests = [
@@ -78,7 +123,6 @@ class SDEM(SpatialModel):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         idata_kwargs: Optional[dict] = None,
-        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> "az.InferenceData":
         """Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
@@ -116,12 +160,11 @@ class SDEM(SpatialModel):
         from ._sampler import (
             prepare_compile_kwargs,
             prepare_idata_kwargs,
-            resolve_sampler,
         )
 
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
         model = self._build_pymc_model()
         self._pymc_model = model
@@ -227,15 +270,22 @@ class SDEM(SpatialModel):
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
         logdet_fn = self._logdet_pytensor_fn
-        W_pt = self._W_pt_sparse
+
+        # Precompute W @ Z so the spatial filter can be expressed as
+        #   eps = (y - lam*Wy) - (Z - lam*WZ)@beta
+        # avoiding any sparse matvec inside the NUTS gradient loop.
+        if not hasattr(self, "_WZ_sdem_cache") or self._WZ_sdem_cache is None:
+            self._WZ_sdem_cache = np.asarray(self._W_sparse @ Z, dtype=np.float64)
+        WZ = self._WZ_sdem_cache
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            resid = self._y - pt.dot(Z, beta)
-            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
+            y_star = self._y - lam * self._Wy
+            Z_star = Z - lam * WZ
+            eps = y_star - pt.dot(Z_star, beta)
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
@@ -310,18 +360,8 @@ class SDEM(SpatialModel):
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack(
-            [
-                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-                for idx, j in enumerate(wx_idx)
-            ]
-        )  # (G, kw)
-        total_samples = np.column_stack(
-            [
-                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-                for idx, j in enumerate(wx_idx)
-            ]
-        )  # (G, kw)
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples

@@ -252,7 +252,8 @@ class FlowModel(ABC):
         How to compute :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`.
         ``"traces"`` uses Barry-Pace stochastic traces with the multinomial
         Kronecker identity (the default and recommended method).
-        ``"separable"`` (SARFlowSeparable only) uses eigenvalues of W.
+        ``"eigenvalue"``, ``"chebyshev"``, ``"mc_poly"`` (separable
+        flow models only) use the Kronecker eigenvalue factorisation.
     restrict_positive : bool, default True
         If True, use a ``pm.Dirichlet`` prior that restricts :math:`\\rho_d,
         \\rho_o, \\rho_w \\geq 0` with :math:`\\rho_d + \\rho_o + \\rho_w \\leq 1`.
@@ -409,20 +410,17 @@ class FlowModel(ABC):
         # Also keep _W_eigs for backward compatibility.
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
-        _SEPARABLE_METHODS = {"separable", "eigenvalue", "chebyshev", "mc_poly"}
+        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
         if logdet_method in _SEPARABLE_METHODS:
-            _method_key = (
-                "eigenvalue" if logdet_method == "separable" else logdet_method
-            )
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
                 self._n,
-                method=_method_key,
+                method=logdet_method,
                 miter=miter,
                 riter=trace_riter,
                 random_state=trace_seed,
             )
-            if logdet_method in ("separable", "eigenvalue"):
+            if logdet_method == "eigenvalue":
                 self._W_eigs = np.linalg.eigvals(
                     self._W_sparse.toarray().astype(np.float64)
                 ).real
@@ -506,7 +504,6 @@ class FlowModel(ABC):
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
-        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
@@ -542,21 +539,19 @@ class FlowModel(ABC):
         arviz.InferenceData
         """
         from ._sampler import (
+            enforce_c_backend,
             prepare_compile_kwargs,
             prepare_idata_kwargs,
-            resolve_sampler,
         )
 
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop(
-            "nuts_sampler",
-            resolve_sampler(
-                sampler,
-                requires_c_backend=getattr(self, "_requires_c_backend", False),
-                model_name=type(self).__name__,
-            ),
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = enforce_c_backend(
+            nuts_sampler,
+            requires_c_backend=getattr(self, "_requires_c_backend", False),
+            model_name=type(self).__name__,
         )
 
         model = self._build_pymc_model()
@@ -1021,31 +1016,54 @@ class SARFlow(FlowModel):
 
     Parameters
     ----------
-    y, G, X, col_names, k, priors, logdet_method, miter, titer,
-    trace_riter, trace_seed
-        See :class:`FlowModel` for descriptions.
+    y : array-like, shape (n, n) or (N,)
+        Observed origin-destination flow matrix or its vec-form. Must be
+        a square matrix or a flat vector of length :math:`N = n^2`.
+    G : libpysal.graph.Graph
+        Row-standardised spatial graph on *n* units.
+    X : np.ndarray or pandas.DataFrame, shape (N, p)
+        Full origin-destination design matrix with :math:`N = n^2` rows.
+        Typically produced by :func:`~bayespecon.graph.flow_design_matrix`
+        or :func:`~bayespecon.graph.flow_design_matrix_with_orig`.
+        DataFrame columns are preserved as feature names.
+    col_names : list of str, optional
+        Column labels for ``X``. Inferred from a DataFrame if omitted;
+        otherwise defaults to ``["x0", "x1", ...]``.
+    k : int, optional
+        Number of regional attribute columns (destination/origin variable
+        pairs). Inferred from ``dest_*``/``orig_*`` column names when the
+        standard LeSage layout is used.
+    logdet_method : str, default "traces"
+        Log-determinant method. Only ``"traces"`` (Barry-Pace stochastic
+        traces with the Kronecker identity) is supported for this model.
     restrict_positive : bool, default True
-        If True (default), use ``pm.Dirichlet("rho_simplex", a=ones(4))``
-        to enforce :math:`\\rho_d, \\rho_o, \\rho_w \\geq 0` and
-        :math:`\\rho_d + \\rho_o + \\rho_w \\leq 1`.  This is NUTS-safe via
-        the stick-breaking bijection and is appropriate when competitive
-        (negative) spatial spillovers are not expected.
+        If True, use ``pm.Dirichlet("rho_simplex", a=ones(4))`` to enforce
+        :math:`\\rho_d, \\rho_o, \\rho_w \\geq 0` and
+        :math:`\\rho_d + \\rho_o + \\rho_w \\leq 1`. NUTS-safe via the
+        stick-breaking bijection and appropriate when competitive
+        (negative) spillovers are not expected. If False, three
+        independent ``pm.Uniform(rho_lower, rho_upper)`` priors are used
+        together with a differentiable quadratic-wall stability potential.
+    miter : int, default 30
+        Trace polynomial order for the log-determinant.
+    titer : int, default 800
+        Geometric tail cutoff for the log-determinant series.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes for trace estimation.
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected. Set explicitly to override
+        the heuristic.
+    priors : dict, optional
+        Override default priors. Supported keys:
 
-        If False, three independent ``pm.Uniform(-1, 1)`` priors are used
-        together with a differentiable quadratic-wall potential to enforce
-        the stability constraint.
-
-    Notes
-    -----
-    The ``priors`` dict supports:
-
-    - ``beta_mu`` (float, default 0): Prior mean for ``beta``.
-    - ``beta_sigma`` (float, default 1e6): Prior std for ``beta``.
-    - ``sigma_sigma`` (float, default 10): Scale for ``HalfNormal`` prior
-      on ``sigma``.
-    - ``rho_lower, rho_upper`` (float, default -1, 1): Bounds for
-      ``pm.Uniform`` priors on each ρ (only used when
-      ``restrict_positive=False``).
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+        - ``rho_lower`` : float, default -1.0 — Lower bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
+        - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
     """
 
     _spatial_diagnostics_tests = [
@@ -1277,30 +1295,59 @@ class SARFlowSeparable(FlowModel):
 
     Parameters
     ----------
-    y, G, X, col_names, k, priors, miter, titer,
-    trace_riter, trace_seed
-        See :class:`FlowModel` for descriptions.  The ``logdet_method``
-        and ``restrict_positive`` parameters are not relevant for this model
-        and are ignored.
+    y : array-like, shape (n, n) or (N,)
+        Observed origin-destination flow matrix or its vec-form. Must be
+        a square matrix or a flat vector of length :math:`N = n^2`.
+    G : libpysal.graph.Graph
+        Row-standardised spatial graph on *n* units.
+    X : np.ndarray or pandas.DataFrame, shape (N, p)
+        Full origin-destination design matrix with :math:`N = n^2` rows.
+        Typically produced by :func:`~bayespecon.graph.flow_design_matrix`
+        or :func:`~bayespecon.graph.flow_design_matrix_with_orig`.
+        DataFrame columns are preserved as feature names.
+    col_names : list of str, optional
+        Column labels for ``X``. Inferred from a DataFrame if omitted;
+        otherwise defaults to ``["x0", "x1", ...]``.
+    k : int, optional
+        Number of regional attribute columns (destination/origin variable
+        pairs). Inferred from ``dest_*``/``orig_*`` column names when the
+        standard LeSage layout is used.
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+        Method for the Kronecker-factored log-determinant
+        :math:`\\log|I_n - \\rho_d W| + \\log|I_n - \\rho_o W|`.
+        ``"eigenvalue"`` is exact; ``"chebyshev"`` and ``"mc_poly"`` are
+        polynomial approximations for large *n*.
+    miter : int, default 30
+        Polynomial / approximation order (used by ``"chebyshev"`` /
+        ``"mc_poly"`` methods).
+    titer : int, default 800
+        Geometric tail cutoff for series-based log-determinant variants.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected. Set explicitly to override
+        the heuristic.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+        - ``rho_lower`` : float, default -0.999 — Lower bound of Uniform prior on ``rho_d`` and ``rho_o``.
+        - ``rho_upper`` : float, default 0.999 — Upper bound of Uniform prior on ``rho_d`` and ``rho_o``.
 
     Notes
     -----
-    The ``priors`` dict supports:
-
-    - ``beta_mu`` (float, default 0): Prior mean for ``beta``.
-    - ``beta_sigma`` (float, default 1e6): Prior std for ``beta``.
-    - ``sigma_sigma`` (float, default 10): Scale for ``HalfNormal`` prior
-      on ``sigma``.
-    - ``rho_lower, rho_upper`` (float, default -0.999, 0.999): Bounds for
-      ``pm.Uniform`` priors on ``rho_d`` and ``rho_o``.
+    The ``restrict_positive`` argument inherited from :class:`FlowModel`
+    has no effect on this class — separable variants always use Uniform
+    priors on the individual :math:`\rho` components.
     """
 
     def __init__(self, y, G, X, **kwargs):
-        # Normalize logdet_method: 'separable' is an alias for 'eigenvalue'.
-        # Users may also pass 'chebyshev' or 'mc_poly' for O(m) per-step cost.
         method = kwargs.pop("logdet_method", "eigenvalue")
-        if method == "separable":
-            method = "eigenvalue"
         _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
@@ -1467,39 +1514,72 @@ class SARFlowSeparable(FlowModel):
 
 
 class PoissonSARFlow(SARFlow):
-    r"""Bayesian SAR flow model with a Poisson observation distribution.
+    """Bayesian SAR flow model with a Poisson observation distribution.
 
-    Models origin-destination flow **counts** :math:`y_{ij} \in \mathbb{N}_0`
-    as:
+    Models origin-destination flow **counts**
+    :math:`y_{ij} \\in \\mathbb{N}_0` as:
 
     .. math::
 
-        y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \qquad
-        \log \boldsymbol{\lambda} = A(\boldsymbol{\rho})^{-1} X\beta
+        y_{ij} \\sim \\operatorname{Poisson}(\\lambda_{ij}), \\qquad
+        \\log \\boldsymbol{\\lambda} = A(\\boldsymbol{\\rho})^{-1} X\\beta
 
-    where the system matrix :math:`A(\rho_d, \rho_o, \rho_w) =
-    I_N - \rho_d W_d - \rho_o W_o - \rho_w W_w`.
+    where the system matrix :math:`A(\\rho_d, \\rho_o, \\rho_w) =
+    I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w`.
 
-    The spatial filter is on the **log-mean** scale.  The implicit solve
-    :math:`\eta = A^{-1} X\beta` is embedded in the PyMC graph via
-    :class:`~bayespecon.ops.SparseFlowSolveOp`, which provides NUTS gradients
-    via the adjoint method.
+    The spatial filter is on the **log-mean** scale. The implicit solve
+    :math:`\\eta = A^{-1} X\\beta` is embedded in the PyMC graph via
+    :class:`~bayespecon.ops.SparseFlowSolveOp`, which provides NUTS
+    gradients via the adjoint method.
 
     Parameters
     ----------
-    y : array-like, shape (n, n) or (N,)
-        Observed non-negative integer flow counts.  Float arrays whose values
-        are close to integers are silently rounded.
+    y : array-like of int, shape (n, n) or (N,)
+        Observed non-negative integer flow counts. Float arrays whose
+        values round exactly to integers are silently coerced.
     G : libpysal.graph.Graph
         Row-standardised spatial graph on *n* units.
     X : np.ndarray or pandas.DataFrame, shape (N, p)
-        Full origin-destination design matrix.
-    **kwargs
-        Passed to :class:`FlowModel`.  ``beta_sigma`` defaults to **10**.
+        Full origin-destination design matrix with :math:`N = n^2` rows.
+        DataFrame columns are preserved as feature names.
+    col_names : list of str, optional
+        Column labels for ``X``. Inferred from a DataFrame if omitted;
+        otherwise defaults to ``["x0", "x1", ...]``.
+    k : int, optional
+        Number of regional attribute columns (destination/origin variable
+        pairs). Inferred from ``dest_*``/``orig_*`` column names when the
+        standard LeSage layout is used.
+    logdet_method : str, default "traces"
+        Log-determinant method. Only ``"traces"`` is supported here.
+    restrict_positive : bool, default True
+        If True, use ``pm.Dirichlet("rho_simplex", a=ones(4))`` to enforce
+        :math:`\\rho_d, \\rho_o, \\rho_w \\geq 0` and
+        :math:`\\rho_d + \\rho_o + \\rho_w \\leq 1`. If False, three
+        independent ``pm.Uniform(rho_lower, rho_upper)`` priors are used
+        with a differentiable quadratic-wall stability potential.
+    miter : int, default 30
+        Trace polynomial order for the log-determinant.
+    titer : int, default 800
+        Geometric tail cutoff for the log-determinant series.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes for trace estimation.
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 10.0 — Normal prior std for ``beta``.
+        - ``rho_lower`` : float, default -1.0 — Lower bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
+        - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
 
     Notes
     -----
     There is no ``sigma`` parameter; the Poisson variance equals the mean.
+    Robust (Student-t) likelihoods are not supported for Poisson counts.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -1603,26 +1683,59 @@ class PoissonSARFlow(SARFlow):
 
 
 class PoissonSARFlowSeparable(SARFlowSeparable):
-    r"""Bayesian separable SAR flow model with a Poisson observation distribution.
+    """Bayesian separable SAR flow model with a Poisson observation distribution.
 
-    Combines the Poisson observation model of :class:`PoissonSARFlow` with the
-    separability constraint :math:`\rho_w = -\rho_d \rho_o`, enabling the
-    exact eigenvalue-based log-determinant:
+    Combines the Poisson observation model of :class:`PoissonSARFlow` with
+    the separability constraint :math:`\\rho_w = -\\rho_d \\rho_o`,
+    enabling the exact eigenvalue-based log-determinant:
 
     .. math::
 
-        \log|A| = n\,\log|I_n - \rho_d W| + n\,\log|I_n - \rho_o W|
+        \\log|A| = n\\,\\log|I_n - \\rho_d W| + n\\,\\log|I_n - \\rho_o W|
 
     Parameters
     ----------
-    y : array-like, shape (n, n) or (N,)
-        Observed non-negative integer flow counts.
+    y : array-like of int, shape (n, n) or (N,)
+        Observed non-negative integer flow counts. Float arrays whose
+        values round exactly to integers are silently coerced.
     G : libpysal.graph.Graph
         Row-standardised spatial graph on *n* units.
     X : np.ndarray or pandas.DataFrame, shape (N, p)
-        Full origin-destination design matrix.
-    **kwargs
-        Passed to :class:`FlowModel`.  ``beta_sigma`` defaults to **10**.
+        Full origin-destination design matrix with :math:`N = n^2` rows.
+        DataFrame columns are preserved as feature names.
+    col_names : list of str, optional
+        Column labels for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of regional attribute columns. Inferred from
+        ``dest_*``/``orig_*`` column names when the standard LeSage
+        layout is used.
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+        Method for the Kronecker-factored log-determinant.
+    miter : int, default 30
+        Polynomial / approximation order (used by ``"chebyshev"`` /
+        ``"mc_poly"``).
+    titer : int, default 800
+        Geometric tail cutoff for series-based variants.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 10.0 — Normal prior std for ``beta``.
+        - ``rho_lower`` : float, default -0.999 — Lower bound of Uniform prior on ``rho_d`` and ``rho_o``.
+        - ``rho_upper`` : float, default 0.999 — Upper bound of Uniform prior on ``rho_d`` and ``rho_o``.
+
+    Notes
+    -----
+    There is no ``sigma`` parameter; the Poisson variance equals the mean.
+    Robust (Student-t) likelihoods are not supported for Poisson counts.
+    The ``restrict_positive`` argument has no effect on this class.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -1714,7 +1827,7 @@ class OLSFlow(FlowModel):
     r"""Non-spatial Bayesian OD-flow gravity model (independence baseline).
 
     Implements the conventional log-linear gravity model from
-    :cite:t:`thomasAgnan2014SpatialEconometric` (eq. 83.2):
+    :cite:t:`thomas-agnan2014SpatialEconometric` (eq. 83.2):
 
     .. math::
 
@@ -1727,14 +1840,37 @@ class OLSFlow(FlowModel):
 
     Parameters
     ----------
-    y, G, X, col_names, k, priors, symmetric_xo_xd
-        See :class:`FlowModel`.  *G* is required for API symmetry but the
-        graph weights are not used in estimation.
+    y : array-like, shape (n, n) or (N,)
+        Observed O-D flow matrix (or its vec-form). Must be a square
+        matrix or a flat vector of length :math:`N = n^2`.
+    G : libpysal.graph.Graph
+        Row-standardised spatial graph on *n* units. Required for API
+        symmetry with the spatial flow models, but the graph weights
+        are not used in estimation.
+    X : np.ndarray or pandas.DataFrame, shape (N, p)
+        Full origin-destination design matrix.
+    col_names : list[str], optional
+        Column labels for *X*. Defaults to ``["x0", "x1", ...]`` when
+        not provided and *X* is not a DataFrame.
+    k : int, optional
+        Number of regional attribute columns. Inferred from column names
+        when they follow the ``dest_*``/``orig_*`` convention.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+
+        Spatial keys (``rho_*``) are ignored.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin/destination design symmetry is
+        auto-detected. Set explicitly to override.
 
     Notes
     -----
-    The ``priors`` dict supports ``beta_mu``, ``beta_sigma``, ``sigma_sigma``;
-    spatial keys (``rho_*``) are ignored.
+    No spatial-lag term enters the likelihood, so no log-determinant
+    is required and ``logdet_method`` is ignored if passed.
     """
 
     _spatial_diagnostics_tests = [
@@ -1954,17 +2090,28 @@ class PoissonFlow(OLSFlow):
         weights are not used in estimation.
     X : np.ndarray or pandas.DataFrame, shape (N, p)
         Full origin-destination design matrix.
-    **kwargs
-        Passed to :class:`FlowModel`.  ``beta_sigma`` defaults to **10**.
+    col_names : list[str], optional
+        Column labels for *X*. Defaults to ``["x0", "x1", ...]`` when
+        not provided and *X* is not a DataFrame.
+    k : int, optional
+        Number of regional attribute columns. Inferred from column names
+        when they follow the ``dest_*``/``orig_*`` convention.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 10.0 — Normal prior std for ``beta``.
+
+        Spatial keys (``rho_*``) and ``sigma_sigma`` are ignored.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin/destination design symmetry is
+        auto-detected. Set explicitly to override.
 
     Notes
     -----
-    The ``priors`` dict supports ``beta_mu`` and ``beta_sigma``; spatial
-    keys (``rho_*``) and ``sigma_sigma`` are ignored.  The closed-form
+    No spatial filter is applied (``A = I_N``); the closed-form
     Thomas-Agnan & LeSage (2014, Table 83.1) effects from :class:`OLSFlow`
-    are reused unchanged: with :math:`A = I_N` the response to any shock
-    equals the shock itself, so the decomposition holds on the (log-mean)
-    linear-predictor scale.
+    are reused unchanged on the (log-mean) linear-predictor scale.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -2063,21 +2210,57 @@ class SEMFlow(FlowModel):
 
     Parameters
     ----------
-    y, G, X, col_names, k, priors, logdet_method, miter, titer,
-    trace_riter, trace_seed
-        See :class:`FlowModel`.
+    y : array-like, shape (n, n) or (N,)
+        Observed origin-destination flow matrix or its vec-form.
+    G : libpysal.graph.Graph
+        Row-standardised spatial graph on *n* units.
+    X : np.ndarray or pandas.DataFrame, shape (N, p)
+        Full origin-destination design matrix with :math:`N = n^2` rows.
+        DataFrame columns are preserved as feature names.
+    col_names : list of str, optional
+        Column labels for ``X``. Inferred from a DataFrame if omitted;
+        otherwise defaults to ``["x0", "x1", ...]``.
+    k : int, optional
+        Number of regional attribute columns (destination/origin variable
+        pairs). Inferred from ``dest_*``/``orig_*`` column names when the
+        standard LeSage layout is used.
+    logdet_method : str, default "traces"
+        Log-determinant method. Only ``"traces"`` is supported here.
     restrict_positive : bool, default True
-        Same Dirichlet vs. quadratic-wall stability prior on
-        :math:`(\lambda_d, \lambda_o, \lambda_w)` as :class:`SARFlow`.
+        If True, use ``pm.Dirichlet("lam_simplex", a=ones(4))`` to enforce
+        :math:`\\lambda_d, \\lambda_o, \\lambda_w \\geq 0` and
+        :math:`\\lambda_d + \\lambda_o + \\lambda_w \\leq 1`. If False,
+        three independent ``pm.Uniform(lam_lower, lam_upper)`` priors are
+        used with a differentiable quadratic-wall stability potential.
+    miter : int, default 30
+        Trace polynomial order for the log-determinant.
+    titer : int, default 800
+        Geometric tail cutoff for the log-determinant series.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes for trace estimation.
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+        - ``lam_lower`` : float, default -1.0 — Lower bound of Uniform prior on each λ (only when ``restrict_positive=False``).
+        - ``lam_upper`` : float, default 1.0 — Upper bound of Uniform prior on each λ (only when ``restrict_positive=False``).
 
     Notes
     -----
-    Implementation: PyMC body uses precomputed lags of both ``y`` and ``X``
-    (``self._Wd``, ``self._Wo``, ``self._Ww`` applied to ``self._X_design``)
-    so that the residual :math:`B u = B y - B X \beta` is expressible as a
-    linear combination of fixed quantities — no symbolic sparse mat-vec is
-    required.  The Jacobian :math:`\log|B|` reuses the same trace-based
-    polynomial as :class:`SARFlow`.
+    Implementation: PyMC body uses precomputed lags of both ``y`` and
+    ``X`` (``self._Wd``, ``self._Wo``, ``self._Ww`` applied to
+    ``self._X_design``) so that the residual
+    :math:`B u = B y - B X \\beta` is expressible as a linear combination
+    of fixed quantities — no symbolic sparse mat-vec is required. The
+    Jacobian :math:`\\log|B|` reuses the same trace-based polynomial as
+    :class:`SARFlow`.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -2286,17 +2469,51 @@ class SEMFlowSeparable(SEMFlow):
 
     Parameters
     ----------
-    y, G, X, col_names, k, priors, miter, titer, trace_riter, trace_seed
-        See :class:`FlowModel`.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly", "separable"}, default "eigenvalue"
-        Same options as :class:`SARFlowSeparable`.  ``"separable"`` is an
-        alias for ``"eigenvalue"``.
+    y : array-like, shape (n, n) or (N,)
+        Observed origin-destination flow matrix or its vec-form.
+    G : libpysal.graph.Graph
+        Row-standardised spatial graph on *n* units.
+    X : np.ndarray or pandas.DataFrame, shape (N, p)
+        Full origin-destination design matrix with :math:`N = n^2` rows.
+        DataFrame columns are preserved as feature names.
+    col_names : list of str, optional
+        Column labels for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of regional attribute columns. Inferred from
+        ``dest_*``/``orig_*`` column names when the standard LeSage
+        layout is used.
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+        Method for the Kronecker-factored log-determinant.
+    miter : int, default 30
+        Polynomial / approximation order (used by ``"chebyshev"`` /
+        ``"mc_poly"``).
+    titer : int, default 800
+        Geometric tail cutoff for series-based variants.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+        - ``lam_lower`` : float, default -0.999 — Lower bound of Uniform prior on ``lam_d`` and ``lam_o``.
+        - ``lam_upper`` : float, default 0.999 — Upper bound of Uniform prior on ``lam_d`` and ``lam_o``.
+
+    Notes
+    -----
+    The ``restrict_positive`` argument inherited from :class:`FlowModel`
+    has no effect on this class — separable variants always use Uniform
+    priors on the individual :math:`\\lambda` components.
     """
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        if method == "separable":
-            method = "eigenvalue"
         _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(

@@ -6,19 +6,18 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 import xarray as xr
-from pytensor import sparse as pts
 
 from .panel_base import SpatialPanelModel
 
 
 class OLSPanelFE(SpatialPanelModel):
-    r"""Bayesian pooled and fixed-effects linear panel regression.
+    """Bayesian pooled and fixed-effects linear panel regression.
 
     Implements the Gaussian panel model
 
     .. math::
 
-        y_{it} = x_{it}'eta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        y_{it} = x_{it}'\\beta + \\alpha_i + \\tau_t + \\varepsilon_{it},
         \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),
 
     where the included effects depend on ``model``: ``0`` pooled,
@@ -29,9 +28,56 @@ class OLSPanelFE(SpatialPanelModel):
 
     Parameters
     ----------
-    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
-    logdet_method
-        See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``, ``unit_col``, and ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode.
+    y : array-like, optional
+        Stacked response of shape ``(N*T,)`` in unit-major order.
+        Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix of shape ``(N*T, k)``. Required in
+        matrix mode. DataFrame columns are preserved as feature names.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)`` (preferred) or
+        ``(N*T, N*T)`` block-diagonal. Accepted for API consistency
+        with the other panel models but does not enter the OLS
+        likelihood; required if downstream Bayesian LM diagnostics
+        will be run.
+    unit_col : str, optional
+        Column in ``data`` identifying the cross-sectional unit.
+        Required in formula mode.
+    time_col : str, optional
+        Column in ``data`` identifying the time period. Required in
+        formula mode.
+    N : int, optional
+        Number of cross-sectional units. Required in matrix mode if
+        not inferable.
+    T : int, optional
+        Number of time periods. Required in matrix mode if not
+        inferable.
+    model : int, default 0
+        Fixed-effects specification: ``0`` pooled, ``1`` unit FE,
+        ``2`` time FE, ``3`` two-way FE.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        Accepted for API consistency; unused in OLSPanelFE (no
+        spatial Jacobian).
+    robust : bool, default False
+        If True, replace the Normal error with Student-t. See
+        *Robust regression* below.
 
     Notes
     -----
@@ -172,13 +218,13 @@ class OLSPanelFE(SpatialPanelModel):
 
 
 class SARPanelFE(SpatialPanelModel):
-    r"""Bayesian spatial-lag panel regression.
+    """Bayesian spatial-lag panel regression.
 
     Implements
 
     .. math::
 
-        y_{it} = \\rho W y_{it} + x_{it}'\\beta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        y_{it} = \\rho \\sum_j w_{ij} y_{jt} + x_{it}'\\beta + \\alpha_i + \\tau_t + \\varepsilon_{it},
         \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),
 
     with the same pooled, unit-effect, time-effect, or two-way panel
@@ -186,9 +232,58 @@ class SARPanelFE(SpatialPanelModel):
 
     Parameters
     ----------
-    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
-    logdet_method
-        See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``, ``unit_col``, and ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode.
+    y : array-like, optional
+        Stacked response of shape ``(N*T,)``. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)`` (preferred) or
+        ``(N*T, N*T)``. Accepts a :class:`libpysal.graph.Graph` or any
+        :class:`scipy.sparse` matrix; legacy ``libpysal.weights.W`` is
+        not accepted (use ``w.sparse``). Should be row-standardised.
+    unit_col : str, optional
+        Column in ``data`` identifying the cross-sectional unit.
+        Required in formula mode.
+    time_col : str, optional
+        Column in ``data`` identifying the time period. Required in
+        formula mode.
+    N : int, optional
+        Number of cross-sectional units. Required in matrix mode if
+        not inferable.
+    T : int, optional
+        Number of time periods. Required in matrix mode if not
+        inferable.
+    model : int, default 0
+        Fixed-effects specification: ``0`` pooled, ``1`` unit FE,
+        ``2`` time FE, ``3`` two-way FE.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``rho_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\rho`.
+        - ``rho_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\rho`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
+        auto-selects ``"eigenvalue"`` for ``N <= 2000`` else
+        ``"chebyshev"``.
+    robust : bool, default False
+        If True, replace the Normal error with Student-t. See
+        *Robust regression* below.
 
     Notes
     -----
@@ -340,6 +435,7 @@ class SARPanelFE(SpatialPanelModel):
         cross-sectional SAR, applied per draw.
         """
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
@@ -347,8 +443,7 @@ class SARPanelFE(SpatialPanelModel):
         rho_draws.shape[0]
 
         eigs = self._W_eigs.real.astype(np.float64)
-        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
-        mean_diag = np.mean(inv_eigs, axis=1)  # (G,)
+        mean_diag = _chunked_eig_means(rho_draws, eigs)  # (G,)
 
         mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
 
@@ -362,14 +457,14 @@ class SARPanelFE(SpatialPanelModel):
 
 
 class SEMPanelFE(SpatialPanelModel):
-    r"""Bayesian spatial-error panel regression.
+    """Bayesian spatial-error panel regression.
 
     Implements
 
     .. math::
 
         y_{it} = x_{it}'\\beta + \\alpha_i + \\tau_t + u_{it},
-        \\qquad u_{it} = \\lambda W u_{it} + \\varepsilon_{it},
+        \\qquad u_{it} = \\lambda \\sum_j w_{ij} u_{jt} + \\varepsilon_{it},
         \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
 
     Spatial dependence enters through the disturbance, while the panel
@@ -378,9 +473,61 @@ class SEMPanelFE(SpatialPanelModel):
 
     Parameters
     ----------
-    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
-    logdet_method
-        See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``, ``unit_col``, and ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode.
+    y : array-like, optional
+        Stacked response of shape ``(N*T,)``. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)`` or ``(N*T, N*T)``. Should
+        be row-standardised.
+    unit_col : str, optional
+        Column in ``data`` identifying the cross-sectional unit.
+        Required in formula mode.
+    time_col : str, optional
+        Column in ``data`` identifying the time period. Required in
+        formula mode.
+    N : int, optional
+        Number of cross-sectional units. Required in matrix mode if
+        not inferable.
+    T : int, optional
+        Number of time periods. Required in matrix mode if not
+        inferable.
+    model : int, default 0
+        Fixed-effects specification: ``0`` pooled, ``1`` unit FE,
+        ``2`` time FE, ``3`` two-way FE.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``lam_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\lambda`.
+        - ``lam_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\lambda`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\lambda W|`. ``None`` (default)
+        auto-selects ``"eigenvalue"`` for ``N <= 2000`` else
+        ``"chebyshev"``.
+    robust : bool, default False
+        If True, replace the Normal innovation with Student-t. See
+        *Robust regression* below.
+
+    Notes
+    -----
+    Direct effects equal :math:`\\beta`; indirect effects are zero
+    because spatial dependence enters only through the disturbance.
 
     **Robust regression**
 
@@ -390,7 +537,7 @@ class SEMPanelFE(SpatialPanelModel):
 
     .. math::
 
-        \\varepsilon_{it} = (I - \\lambda W)(y - X\\beta - \\mu_i) \\sim t_\\nu(0, \\sigma^2)
+        \\varepsilon_t = (I - \\lambda W)\\bigl(y_t - X_t \\beta - \\alpha\\bigr) \\sim t_\\nu(0, \\sigma^2)
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
@@ -431,15 +578,24 @@ class SEMPanelFE(SpatialPanelModel):
 
         logdet_fn = self._logdet_pytensor_fn
 
-        W_pt = self._W_pt_sparse
+        # Precompute (I_T ⊗ W) @ X once so the spatial filter
+        #   eps = (y - lam*Wy) - (X - lam*WX_all)@beta
+        # avoids any sparse matvec inside the NUTS gradient loop. ``_Wy`` is
+        # already cached on the panel base; ``WX_all`` is materialised here
+        # for the full design matrix (vs. ``self._WX`` which only covers
+        # ``w_vars`` columns).
+        if not hasattr(self, "_WX_all_cache") or self._WX_all_cache is None:
+            self._WX_all_cache = self._sparse_panel_lag(self._X)
+        WX_all = self._WX_all_cache
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            resid = self._y - pt.dot(self._X, beta)
-            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
+            y_star = self._y - lam * self._Wy
+            X_star = self._X - lam * WX_all
+            eps = y_star - pt.dot(X_star, beta)
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
@@ -577,13 +733,14 @@ class SEMPanelFE(SpatialPanelModel):
 
 
 class SDMPanelFE(SpatialPanelModel):
-    r"""Bayesian spatial Durbin panel regression.
+    """Bayesian spatial Durbin panel regression.
 
     Implements
 
     .. math::
 
-        y_{it} = \\rho W y_{it} + x_{it}'\\beta + W x_{it}'\\theta
+        y_{it} = \\rho \\sum_j w_{ij} y_{jt} + x_{it}'\\beta
+        + \\Bigl(\\sum_j w_{ij} x_{jt}\\Bigr)'\\theta
         + \\alpha_i + \\tau_t + \\varepsilon_{it},
         \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
 
@@ -592,10 +749,62 @@ class SDMPanelFE(SpatialPanelModel):
 
     Parameters
     ----------
-    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
-    logdet_method
-        See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``, ``unit_col``, and ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode.
+    y : array-like, optional
+        Stacked response of shape ``(N*T,)``. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)`` or ``(N*T, N*T)``. Should
+        be row-standardised.
+    unit_col : str, optional
+        Column in ``data`` identifying the cross-sectional unit.
+        Required in formula mode.
+    time_col : str, optional
+        Column in ``data`` identifying the time period. Required in
+        formula mode.
+    N : int, optional
+        Number of cross-sectional units. Required in matrix mode if
+        not inferable.
+    T : int, optional
+        Number of time periods. Required in matrix mode if not
+        inferable.
+    model : int, default 0
+        Fixed-effects specification: ``0`` pooled, ``1`` unit FE,
+        ``2`` time FE, ``3`` two-way FE.
+    priors : dict, optional
+        Override default priors. Supported keys:
 
+        - ``rho_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\rho`.
+        - ``rho_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\rho`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`[\\beta, \\theta]`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`[\\beta, \\theta]`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\rho W|`; auto-selected when
+        ``None`` (default).
+    robust : bool, default False
+        If True, replace the Normal error with Student-t. See
+        *Robust regression* below.
+    w_vars : list of str, optional
+        Names of X columns to spatially lag. By default all
+        non-constant columns are lagged. Pass a subset to restrict
+        which variables receive a spatial lag.
+
+    Notes
+    -----
     **Robust regression**
 
     When ``robust=True``, the error distribution is changed from Normal
@@ -751,6 +960,7 @@ class SDMPanelFE(SpatialPanelModel):
         cross-sectional SDM, applied per draw.
         """
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
@@ -763,26 +973,20 @@ class SDMPanelFE(SpatialPanelModel):
         beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
         eigs = self._W_eigs.real.astype(np.float64)
-        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
-        mean_diag_M = np.mean(inv_eigs, axis=1)  # (G,)
-        mean_diag_MW = np.mean(eigs[None, :] * inv_eigs, axis=1)  # (G,)
+        mean_diag_M = _chunked_eig_means(rho_draws, eigs)  # (G,)
+        mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)  # (G,)
 
         mean_row_sum_M = self._batch_mean_row_sum(rho_draws)  # (G,)
         mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)  # (G,)
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack(
-            [
-                beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-                for idx, j in enumerate(wx_idx)
-            ]
+        direct_samples = (
+            mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+            + mean_diag_MW[:, None] * beta2_draws
         )  # (G, kw)
-        total_samples = np.column_stack(
-            [
-                beta1_draws[:, j] * mean_row_sum_M
-                + beta2_draws[:, idx] * mean_row_sum_MW
-                for idx, j in enumerate(wx_idx)
-            ]
+        total_samples = (
+            mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+            + mean_row_sum_MW[:, None] * beta2_draws
         )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
@@ -790,14 +994,15 @@ class SDMPanelFE(SpatialPanelModel):
 
 
 class SDEMPanelFE(SpatialPanelModel):
-    r"""Bayesian spatial Durbin error panel regression.
+    """Bayesian spatial Durbin error panel regression.
 
     Implements
 
     .. math::
 
-        y_{it} = x_{it}'\\beta + W x_{it}'\\theta + \\alpha_i + \\tau_t + u_{it},
-        \\qquad u_{it} = \\lambda W u_{it} + \\varepsilon_{it},
+        y_{it} = x_{it}'\\beta + \\Bigl(\\sum_j w_{ij} x_{jt}\\Bigr)'\\theta
+        + \\alpha_i + \\tau_t + u_{it},
+        \\qquad u_{it} = \\lambda \\sum_j w_{ij} u_{jt} + \\varepsilon_{it},
         \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
 
     The sampled coefficient vector stacks the local and lagged-covariate
@@ -805,10 +1010,61 @@ class SDEMPanelFE(SpatialPanelModel):
 
     Parameters
     ----------
-    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
-    logdet_method
-        See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``, ``unit_col``, and ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode.
+    y : array-like, optional
+        Stacked response of shape ``(N*T,)``. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)`` or ``(N*T, N*T)``. Should
+        be row-standardised.
+    unit_col : str, optional
+        Column in ``data`` identifying the cross-sectional unit.
+        Required in formula mode.
+    time_col : str, optional
+        Column in ``data`` identifying the time period. Required in
+        formula mode.
+    N : int, optional
+        Number of cross-sectional units. Required in matrix mode if
+        not inferable.
+    T : int, optional
+        Number of time periods. Required in matrix mode if not
+        inferable.
+    model : int, default 0
+        Fixed-effects specification: ``0`` pooled, ``1`` unit FE,
+        ``2`` time FE, ``3`` two-way FE.
+    priors : dict, optional
+        Override default priors. Supported keys:
 
+        - ``lam_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\lambda`.
+        - ``lam_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\lambda`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`[\\beta, \\theta]`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`[\\beta, \\theta]`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\lambda W|`; auto-selected
+        when ``None`` (default).
+    robust : bool, default False
+        If True, replace the Normal innovation with Student-t. See
+        *Robust regression* below.
+    w_vars : list of str, optional
+        Names of X columns to spatially lag. By default all
+        non-constant columns are lagged.
+
+    Notes
+    -----
     **Robust regression**
 
     When ``robust=True``, the spatially filtered error distribution is
@@ -817,7 +1073,7 @@ class SDEMPanelFE(SpatialPanelModel):
 
     .. math::
 
-        \\varepsilon_{it} = (I - \\lambda W)(y - X\\beta_1 - WX\\beta_2 - \\mu_i) \\sim t_\\nu(0, \\sigma^2)
+        \\varepsilon_t = (I - \\lambda W)\\bigl(y_t - X_t \\beta - (W X_t)\\theta - \\alpha\\bigr) \\sim t_\\nu(0, \\sigma^2)
 
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
@@ -856,15 +1112,21 @@ class SDEMPanelFE(SpatialPanelModel):
 
         logdet_fn = self._logdet_pytensor_fn
 
-        W_pt = self._W_pt_sparse
+        # Precompute (I_T ⊗ W) @ Z so the spatial filter can be expressed as
+        #   eps = (y - lam*Wy) - (Z - lam*WZ)@beta
+        # avoiding any sparse matvec inside the NUTS gradient loop.
+        if not hasattr(self, "_WZ_sdem_cache") or self._WZ_sdem_cache is None:
+            self._WZ_sdem_cache = self._sparse_panel_lag(Z)
+        WZ = self._WZ_sdem_cache
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            resid = self._y - pt.dot(Z, beta)
-            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
+            y_star = self._y - lam * self._Wy
+            Z_star = Z - lam * WZ
+            eps = y_star - pt.dot(Z_star, beta)
             if self.robust:
                 self._add_nu_prior(model)
                 nu = model["nu"]
@@ -1010,31 +1272,22 @@ class SDEMPanelFE(SpatialPanelModel):
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack(
-            [
-                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-                for idx, j in enumerate(wx_idx)
-            ]
-        )  # (G, kw)
-        total_samples = np.column_stack(
-            [
-                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-                for idx, j in enumerate(wx_idx)
-            ]
-        )  # (G, kw)
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
 
 
 class SLXPanelFE(SpatialPanelModel):
-    r"""Bayesian SLX panel regression.
+    """Bayesian SLX panel regression.
 
     Implements
 
     .. math::
 
-        y_{it} = x_{it}'\\beta + W x_{it}'\\theta + \\alpha_i + \\tau_t + \\varepsilon_{it},
+        y_{it} = x_{it}'\\beta + \\Bigl(\\sum_j w_{ij} x_{jt}\\Bigr)'\\theta
+        + \\alpha_i + \\tau_t + \\varepsilon_{it},
         \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2).
 
     There is no contemporaneous spatial lag on :math:`y`, so no Jacobian
@@ -1043,10 +1296,57 @@ class SLXPanelFE(SpatialPanelModel):
 
     Parameters
     ----------
-    formula, data, y, X, W, unit_col, time_col, N, T, model, priors,
-    logdet_method
-        See :class:`~bayespecon.models.panel_base.SpatialPanelModel`.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``, ``unit_col``, and ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode.
+    y : array-like, optional
+        Stacked response of shape ``(N*T,)``. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)`` or ``(N*T, N*T)``. Used
+        to construct the ``WX`` block. Should be row-standardised.
+    unit_col : str, optional
+        Column in ``data`` identifying the cross-sectional unit.
+        Required in formula mode.
+    time_col : str, optional
+        Column in ``data`` identifying the time period. Required in
+        formula mode.
+    N : int, optional
+        Number of cross-sectional units. Required in matrix mode if
+        not inferable.
+    T : int, optional
+        Number of time periods. Required in matrix mode if not
+        inferable.
+    model : int, default 0
+        Fixed-effects specification: ``0`` pooled, ``1`` unit FE,
+        ``2`` time FE, ``3`` two-way FE.
+    priors : dict, optional
+        Override default priors. Supported keys:
 
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`[\\beta, \\theta]`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`[\\beta, \\theta]`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        Accepted for API consistency; unused (SLX has no spatial
+        Jacobian).
+    robust : bool, default False
+        If True, replace the Normal error with Student-t. See
+        *Robust regression* below.
+    w_vars : list of str, optional
+        Names of X columns to spatially lag. By default all
+        non-constant columns are lagged.
+
+    Notes
+    -----
     **Robust regression**
 
     When ``robust=True``, the error distribution is changed from Normal
@@ -1185,18 +1485,8 @@ class SLXPanelFE(SpatialPanelModel):
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack(
-            [
-                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-                for idx, j in enumerate(wx_idx)
-            ]
-        )  # (G, kw)
-        total_samples = np.column_stack(
-            [
-                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-                for idx, j in enumerate(wx_idx)
-            ]
-        )  # (G, kw)
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples

@@ -3140,7 +3140,7 @@ def bayesian_lm_error_sdm_test(
     ``y``:
 
     .. math::
-        \mathbf{e} = \mathbf{y} - \rho W\mathbf{y} - X\beta_1 - WX\beta_2
+        \mathbf{e} = \mathbf{y} - \rho W\mathbf{y} - X\beta - WX\theta
 
     so that the LM-Error score and variance are evaluated at posterior
     draws from the *correct* fitted model. The score and variance follow
@@ -3191,7 +3191,7 @@ def bayesian_lm_lag_sdem_test(
 
     .. math::
         \boldsymbol{\varepsilon} = (I - \lambda W)
-            \bigl(\mathbf{y} - X\beta_1 - WX\beta_2\bigr)
+            \bigl(\mathbf{y} - X\beta - WX\theta\bigr)
 
     The score and variance follow the standard LM-Lag formulation
     (:cite:t:`anselin1996SimpleDiagnostic`):

@@ -21,38 +21,83 @@ from .base import SpatialModel
 class SAR(SpatialModel):
     """Bayesian Spatial Autoregressive (Spatial Lag) model.
 
+    Models a contemporaneous spatial dependence in the dependent
+    variable via the autoregressive parameter :math:`\\rho`:
+
     .. math::
-        y = \\rho Wy + X\\beta + \\varepsilon, \\quad \\varepsilon \\sim N(0, \\sigma^2 I)
+        y = \\rho Wy + X\\beta + \\varepsilon, \\quad \\varepsilon \\sim N(0, \\sigma^2 I).
+
+    The likelihood includes the spatial Jacobian :math:`\\log|I - \\rho W|`
+    so that posterior inference on :math:`\\rho` is exact.
 
     Parameters
     ----------
-    formula, data, y, X, W, priors, logdet_method, w_vars
-        See :class:`~bayespecon.models.base.SpatialModel` for descriptions.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``. An intercept is included by default; suppress with
+        ``"y ~ x - 1"``.
+    data : pandas.DataFrame or geopandas.GeoDataFrame, optional
+        Data source for formula mode.
+    y : array-like, optional
+        Dependent variable of shape ``(n,)``. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Design matrix. Required in matrix mode. DataFrame columns are
+        preserved as feature names.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(n, n)``. Accepts a
+        :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
+        matrix. The legacy :class:`libpysal.weights.W` object is **not**
+        accepted; pass ``w.sparse`` or ``libpysal.graph.Graph.from_W(w)``.
+        Should be row-standardised; a :class:`UserWarning` is raised
+        otherwise.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``rho_lower`` (float, default -1.0): Lower bound of the
+          Uniform prior on :math:`\\rho`.
+        - ``rho_upper`` (float, default 1.0): Upper bound of the
+          Uniform prior on :math:`\\rho`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
+        auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
+        ``"chebyshev"``. Other options: ``"exact"`` (symbolic det,
+        slow for ``n > 500``), ``"dense_grid"``, ``"sparse_grid"``,
+        ``"spline"``, ``"mc"``, ``"ilu"``.
+    robust : bool, default False
+        If True, replace the Normal error with Student-t for robustness
+        to heavy-tailed outliers. See *Robust regression* below.
+    w_vars : list of str, optional
+        Accepted for API consistency with SLX/SDM/SDEM but unused
+        (SAR has no ``WX`` term). If supplied without effect on this
+        model.
 
     Notes
     -----
-    The ``priors`` dict supports the following keys:
-
-    - ``rho_lower, rho_upper`` (float, default -1, 1): Bounds for the Uniform prior on rho.
-    - ``beta_mu`` (float, default 0): Prior mean for beta.
-    - ``beta_sigma`` (float, default 1e6): Prior std for beta.
-    - ``sigma_sigma`` (float, default 10): Prior std for sigma.
-    - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
-      :math:`\\nu` (only used when ``robust=True``).
+    Direct, indirect and total effects of :math:`X` on :math:`y` are
+    derived from the spatial multiplier :math:`(I - \\rho W)^{-1}` and
+    are reported by :meth:`spatial_effects`.
 
     **Robust regression**
 
     When ``robust=True``, the error distribution is changed from Normal
-    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+    to Student-t:
 
     .. math::
 
         \\varepsilon \\sim t_\\nu(0, \\sigma^2 I)
 
-    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
-    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
-    variance exists.
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`
+    with rate ``nu_lam`` (default 1/30, mean ≈ 30, favouring near-Normal
+    tails). The lower bound of 2 ensures the variance exists.
     """
 
     _spatial_diagnostics_tests = [
@@ -128,7 +173,6 @@ class SAR(SpatialModel):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         idata_kwargs: Optional[dict] = None,
-        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> "az.InferenceData":
         """
@@ -174,12 +218,11 @@ class SAR(SpatialModel):
         from ._sampler import (
             prepare_compile_kwargs,
             prepare_idata_kwargs,
-            resolve_sampler,
         )
 
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
         # Build model with log_likelihood computation if requested
         model = self._build_pymc_model(compute_log_likelihood=compute_log_likelihood)
@@ -335,6 +378,7 @@ class SAR(SpatialModel):
         scalar summaries used here.
         """
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
@@ -349,9 +393,9 @@ class SAR(SpatialModel):
         # mean_diag = (1/n) * sum_i 1/(1 - rho*omega_i)
         # mean_rowsum: if W is row-standardized, mean_rowsum = 1/(1-rho)
         #              otherwise, use eigenvalue decomposition (vectorised)
-        # Vectorised over draws:
-        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
-        mean_diag = np.mean(inv_eigs, axis=1)  # (G,)
+        # Computed in chunks over draws to bound memory at O(chunk*n) rather
+        # than O(G*n).
+        mean_diag = _chunked_eig_means(rho_draws, eigs)  # (G,)
 
         mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
 

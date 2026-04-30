@@ -18,38 +18,79 @@ from .base import SpatialModel
 class SLX(SpatialModel):
     """Bayesian SLX (Spatial Lag X) model.
 
+    Adds spatial lags of the regressors :math:`X` to a standard linear
+    model, without any spatial dependence in :math:`y`:
+
     .. math::
-        y = X\\beta_1 + WX\\beta_2 + \\varepsilon, \\quad \\varepsilon \\sim N(0, \\sigma^2 I)
+        y = X\\beta + WX\\theta + \\varepsilon,
+        \\quad \\varepsilon \\sim N(0, \\sigma^2 I).
+
+    The sampled coefficient vector stacks the local and lagged-regressor
+    blocks as :math:`[\\beta, \\theta]`. There is no Jacobian term
+    because there is no spatial lag of :math:`y`.
 
     Parameters
     ----------
-    formula, data, y, X, W, priors, logdet_method, w_vars
-        See :class:`~bayespecon.models.base.SpatialModel`. Use ``w_vars`` to restrict which X columns
-        are spatially lagged.
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``. Intercept is included by default; suppress with
+        ``"y ~ x - 1"``.
+    data : pandas.DataFrame or geopandas.GeoDataFrame, optional
+        Data source for formula mode.
+    y : array-like, optional
+        Dependent variable of shape ``(n,)``. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Design matrix. Required in matrix mode. DataFrame columns are
+        preserved as feature names.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(n, n)``. Used to construct the
+        ``WX`` block. Accepts a :class:`libpysal.graph.Graph` or any
+        :class:`scipy.sparse` matrix; legacy ``libpysal.weights.W`` is
+        not accepted (use ``w.sparse`` or
+        ``libpysal.graph.Graph.from_W(w)``). Should be row-standardised.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for all
+          coefficients :math:`[\\beta, \\theta]`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for all
+          coefficients (diffuse).
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        Accepted for API consistency with the spatial-lag/error models
+        but unused (SLX has no spatial Jacobian).
+    robust : bool, default False
+        If True, replace the Normal error with Student-t. See *Robust
+        regression* below.
+    w_vars : list of str, optional
+        Names of X columns to spatially lag. By default all
+        non-constant columns are lagged. Pass a subset to restrict
+        which variables receive a spatial lag, e.g.
+        ``w_vars=["income", "density"]``. SLX requires at least one
+        WX column; if filtering eliminates all of them a ValueError is
+        raised.
 
     Notes
     -----
-    The ``priors`` dict supports the following keys:
-
-    - ``beta_mu`` (float, default 0): Prior mean for all beta coefficients.
-    - ``beta_sigma`` (float, default 1e6): Prior std for all beta coefficients (diffuse Normal).
-    - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior on sigma.
-    - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
-      :math:`\\nu` (only used when ``robust=True``).
+    Direct effects equal :math:`\\beta` and indirect effects equal
+    :math:`\\theta`. There is no global spillover multiplier because
+    :math:`y` has no spatial autoregression.
 
     **Robust regression**
 
     When ``robust=True``, the error distribution is changed from Normal
-    to Student-t, yielding a model that is robust to heavy-tailed outliers:
+    to Student-t:
 
     .. math::
 
         \\varepsilon \\sim t_\\nu(0, \\sigma^2 I)
 
-    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
-    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,
-    favouring near-Normal tails.  The lower bound of 2 ensures the
-    variance exists.
+    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`
+    with rate ``nu_lam`` (default 1/30, mean ≈ 30).
     """
 
     _spatial_diagnostics_tests = [
@@ -138,7 +179,7 @@ class SLX(SpatialModel):
         a *linear* (W-direct) impact rather than the full Leontief
         multiplier :math:`(I - \\rho W)^{-1}` that arises in SAR-style
         models.  Consequently SLX impacts are exact functions of the
-        posterior :math:`(\\beta_1, \\beta_2)` draws and the row-sum /
+        posterior :math:`(\\beta, \\theta)` draws and the row-sum /
         diagonal summaries of :math:`W` — no global feedback loop is
         implied.  This is the key conceptual difference from
         SDM/SAR/SDEM impact reporting (LeSage & Pace 2009, ch. 2;
@@ -213,18 +254,8 @@ class SLX(SpatialModel):
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = np.column_stack(
-            [
-                beta1_draws[:, j] + beta2_draws[:, idx] * mean_diag_w
-                for idx, j in enumerate(wx_idx)
-            ]
-        )  # (G, kw)
-        total_samples = np.column_stack(
-            [
-                beta1_draws[:, j] + beta2_draws[:, idx] * mean_row_sum_w
-                for idx, j in enumerate(wx_idx)
-            ]
-        )  # (G, kw)
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples

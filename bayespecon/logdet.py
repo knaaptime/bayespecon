@@ -1293,26 +1293,32 @@ def make_logdet_fn(
     W : np.ndarray
         Either a 2-D dense ``(n, n)`` spatial weights matrix **or** a 1-D
         array of pre-computed real eigenvalues.  Passing eigenvalues skips the
-        O(n³) decomposition inside this function; the ``'grid'`` and
+        O(n³) decomposition inside this function; the ``'dense_grid'`` and
         ``'exact'`` methods are not available in that case and fall back to
         ``'eigenvalue'``.
     method : str
+        Auto-selected when ``None`` (``"eigenvalue"`` for ``n <= 2000`` else
+        ``"chebyshev"``). Supported values:
+
         ``"eigenvalue"`` — pre-compute W's eigenvalues once (O(n³)); every
-        subsequent evaluation costs O(n) and is exact (default).
+        subsequent evaluation costs O(n) and is exact.
         ``"exact"`` — exact O(n³) symbolic det via pytensor (slow for n > 500).
-        ``"grid"``  — spline interpolation over pre-computed grid (approximate).
-        ``"full"``  — exact sparse-LU grid (MATLAB ``lndetfull`` style),
-        then spline interpolation.
-        ``"int"``   — sparse-LU + cubic-spline interpolation (MATLAB
-        ``lndetint`` style).
-        ``"mc"``    — Monte Carlo trace approximation (:cite:p:`barry1999MonteCarlo`),
-        then spline interpolation.
-        ``"ichol"`` — ILU-based approximation (MATLAB ``lndetichol`` analog),
-        then spline interpolation.
+        ``"dense_grid"`` — dense eigenvalue grid + cubic-spline interpolation
+        (MATLAB ``lndetfull`` analog).
+        ``"sparse_grid"`` — sparse-LU grid + cubic-spline interpolation
+        (MATLAB ``lndetfull`` style for large sparse W).
+        ``"spline"`` — sparse-LU + cubic-spline interpolation on
+        ``[max(rho_min, 0), rho_max]`` (MATLAB ``lndetint`` style).
+        ``"mc"`` — Monte Carlo trace approximation
+        (:cite:p:`barry1999MonteCarlo`) + spline interpolation.
+        ``"ilu"`` — ILU-based approximation (MATLAB ``lndetichol`` analog)
+        + spline interpolation.
         ``"chebyshev"`` — Chebyshev polynomial approximation
         (:cite:p:`pace2004ChebyshevApproximation`); near-minimax
-        polynomial approximation evaluated via Clenshaw's algorithm.
+        polynomial evaluated via Clenshaw's algorithm.
         O(m) per evaluation after O(n³) or O(R·n·m) pre-computation.
+        ``"mc_poly"`` — Hutchinson stochastic trace estimator with a
+        truncated polynomial expansion (used by the flow models).
     rho_min : float, default=-1.0
         Lower bound for the grid method.
     rho_max : float, default=1.0
@@ -1335,12 +1341,12 @@ def make_logdet_fn(
     * ``"eigenvalue"`` and ``"exact"`` — accept the full numerical
       stability domain ``rho ∈ (1/min(eigs), 1/max(eigs))``; for
       row-standardised W this reduces to ``rho ∈ (-1, 1)``.
-    * ``"dense_grid"`` (``"grid"``) and ``"sparse_grid"`` (``"full"``)
-      — accept any ``rho ∈ (rho_min + 1e-6, rho_max - 1e-6)``; outside
-      this interval the cubic spline extrapolates with rapidly degrading
-      accuracy and **must not** be trusted.  Set ``rho_min`` / ``rho_max``
-      to match your prior bounds.
-    * ``"spline"`` (``"int"``) — restricted to ``rho ≥ 0`` because the
+    * ``"dense_grid"`` and ``"sparse_grid"`` — accept any
+      ``rho ∈ (rho_min + 1e-6, rho_max - 1e-6)``; outside this interval
+      the cubic spline extrapolates with rapidly degrading accuracy and
+      **must not** be trusted.  Set ``rho_min`` / ``rho_max`` to match
+      your prior bounds.
+    * ``"spline"`` — restricted to ``rho ≥ 0`` because the
       MATLAB ``lndetint`` routine builds its grid on
       ``[max(rho_min, 0), rho_max]``; passing negative ``rho`` is
       silently extrapolated, which is rarely intended.
@@ -1348,13 +1354,15 @@ def make_logdet_fn(
       (``mc`` builds the grid on ``[max(rho_min, 1e-5), rho_max]``);
       negative ρ is supported only via separate calls with reversed
       sign on a row-standardised W.
-    * ``"ilu"`` (``"ichol"``) — accepts any ``rho`` inside the supplied
-      grid bounds, but the ILU factorisation degrades with ``|rho|``
-      approaching the spectral boundary and should be paired with a
-      tight prior.
+    * ``"ilu"`` — accepts any ``rho`` inside the supplied grid bounds,
+      but the ILU factorisation degrades with ``|rho|`` approaching the
+      spectral boundary and should be paired with a tight prior.
     * ``"chebyshev"`` — exact within ``[rmin, rmax] = [rho_min, rho_max]``
       up to the polynomial order (default 20); evaluation outside the
       Chebyshev interval diverges rapidly and should never be attempted.
+    * ``"mc_poly"`` — accuracy controlled by the polynomial order and
+      number of Hutchinson probes; intended for very large sparse W
+      where eigendecomposition is infeasible.
     """
     T = int(T)
     W = np.asarray(W, dtype=np.float64)

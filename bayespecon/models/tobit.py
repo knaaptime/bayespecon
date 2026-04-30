@@ -68,12 +68,62 @@ class SARTobit(_SpatialTobitBase):
     .. math::
         y = \\max(c, y^*)
 
-    where ``c`` is the left-censoring point (default: ``0``).
+    where ``c`` is the left-censoring point (default ``0``). Censored
+    observations contribute their CDF to the likelihood; uncensored
+    observations contribute the density of :math:`y^*` evaluated at
+    :math:`y`.
 
+    Parameters
+    ----------
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``.
+    data : pandas.DataFrame or geopandas.GeoDataFrame, optional
+        Data source for formula mode.
+    y : array-like, optional
+        Observed (censored) response of shape ``(n,)``. Required in
+        matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(n, n)``; see :class:`SAR` for
+        accepted formats.
+    censoring : float, default 0.0
+        Left-censoring threshold ``c``. Observations with
+        ``y <= censoring`` are treated as censored and the latent
+        :math:`y^*` is sampled.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``rho_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\rho`.
+        - ``rho_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\rho`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``censor_sigma`` (float, default 10.0): HalfNormal scale for
+          the latent ``y_cens_gap`` shifting censored draws below ``c``.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
+        auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
+        ``"chebyshev"``.
+    robust : bool, default False
+        If True, replace the Normal innovation with Student-t. See
+        *Robust regression* below.
+
+    Notes
+    -----
     **Robust regression**
 
     When ``robust=True``, the error distribution is changed from Normal
-    to Student-t.  For uncensored observations the density becomes:
+    to Student-t. For uncensored observations the density becomes:
 
     .. math::
 
@@ -207,18 +257,13 @@ class SARTobit(_SpatialTobitBase):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = np.column_stack(
-                [
-                    beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-                    for idx, j in enumerate(wx_idx)
-                ]
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
             )
-            total_samples = np.column_stack(
-                [
-                    beta1_draws[:, j] * mean_row_sum_M
-                    + beta2_draws[:, idx] * mean_row_sum_MW
-                    for idx, j in enumerate(wx_idx)
-                ]
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
             )
             indirect_samples = total_samples - direct_samples
 
@@ -358,8 +403,51 @@ class SEMTobit(_SpatialTobitBase):
         y^* = X\\beta + u,\\quad u = \\lambda W u + \\varepsilon,
         \\quad \\varepsilon \\sim N(0,\\sigma^2 I)
 
-    with observed outcome ``y = max(c, y*)``.
+    with observed outcome ``y = max(c, y*)``. Censored observations
+    contribute their CDF; uncensored observations contribute the
+    spatially-filtered density of :math:`y^*`.
 
+    Parameters
+    ----------
+    formula : str, optional
+        Wilkinson-style formula. Requires ``data``.
+    data : pandas.DataFrame or geopandas.GeoDataFrame, optional
+        Data source for formula mode.
+    y : array-like, optional
+        Observed (censored) response. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(n, n)``; see :class:`SAR` for
+        accepted formats.
+    censoring : float, default 0.0
+        Left-censoring threshold ``c``.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``lam_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\lambda`.
+        - ``lam_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\lambda`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``censor_sigma`` (float, default 10.0): HalfNormal scale for
+          the latent ``y_cens_gap``.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\lambda W|`; auto-selected when
+        ``None`` (default).
+    robust : bool, default False
+        If True, replace the Normal innovation with Student-t.
+
+    Notes
+    -----
     **Robust regression**
 
     When ``robust=True``, the spatially-filtered error distribution is
@@ -479,18 +567,13 @@ class SEMTobit(_SpatialTobitBase):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = np.column_stack(
-                [
-                    beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-                    for idx, j in enumerate(wx_idx)
-                ]
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
             )
-            total_samples = np.column_stack(
-                [
-                    beta1_draws[:, j] * mean_row_sum_M
-                    + beta2_draws[:, idx] * mean_row_sum_MW
-                    for idx, j in enumerate(wx_idx)
-                ]
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
             )
             indirect_samples = total_samples - direct_samples
 
@@ -612,11 +695,56 @@ class SDMTobit(_SpatialTobitBase):
     """Bayesian spatial Durbin Tobit model.
 
     .. math::
-        y^* = \\rho Wy^* + X\\beta_1 + WX\\beta_2 + \\varepsilon,
+        y^* = \\rho Wy^* + X\\beta + WX\\theta + \\varepsilon,
         \\quad \\varepsilon \\sim N(0,\\sigma^2 I)
 
-    with observed outcome ``y = max(c, y*)``.
+    with observed outcome ``y = max(c, y*)``. The sampled coefficient
+    vector stacks the local and lagged-regressor blocks as
+    :math:`[\\beta, \\theta]`.
 
+    Parameters
+    ----------
+    formula : str, optional
+        Wilkinson-style formula. Requires ``data``.
+    data : pandas.DataFrame or geopandas.GeoDataFrame, optional
+        Data source for formula mode.
+    y : array-like, optional
+        Observed (censored) response. Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(n, n)``.
+    censoring : float, default 0.0
+        Left-censoring threshold ``c``.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``rho_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\rho`.
+        - ``rho_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\rho`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`[\\beta, \\theta]`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`[\\beta, \\theta]`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``censor_sigma`` (float, default 10.0): HalfNormal scale for
+          the latent ``y_cens_gap``.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\rho W|`; auto-selected when
+        ``None`` (default).
+    robust : bool, default False
+        If True, replace the Normal innovation with Student-t.
+    w_vars : list of str, optional
+        Names of X columns to spatially lag. By default all
+        non-constant columns are lagged.
+
+    Notes
+    -----
     **Robust regression**
 
     When ``robust=True``, the error distribution is changed from Normal
@@ -762,18 +890,13 @@ class SDMTobit(_SpatialTobitBase):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = np.column_stack(
-                [
-                    beta1_draws[:, j] * mean_diag_M + beta2_draws[:, idx] * mean_diag_MW
-                    for idx, j in enumerate(wx_idx)
-                ]
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
             )
-            total_samples = np.column_stack(
-                [
-                    beta1_draws[:, j] * mean_row_sum_M
-                    + beta2_draws[:, idx] * mean_row_sum_MW
-                    for idx, j in enumerate(wx_idx)
-                ]
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
             )
             indirect_samples = total_samples - direct_samples
 
@@ -783,7 +906,7 @@ class SDMTobit(_SpatialTobitBase):
         """Reported fitted mean: ``max(c, E[y* | X, params])``.
 
         The structural latent mean for SDM-Tobit is
-        :math:`E[y^* \\mid X] = (I - \\rho W)^{-1} (X\\beta_1 + WX\\beta_2)`,
+        :math:`E[y^* \\mid X] = (I - \\rho W)^{-1} (X\\beta + WX\\theta)`,
         evaluated at posterior means; censored entries are reported at
         the censoring point.
         """

@@ -29,6 +29,27 @@ from libpysal.graph import Graph
 class SpatialProbit:
     """Bayesian spatial probit with regional random effects.
 
+    A binary-response model in which the latent utility includes a
+    spatially autoregressive regional random effect. Each observation
+    :math:`i` belongs to one of :math:`m` regions; region-level effects
+    :math:`a` follow a SAR process on the region-level weights matrix
+    :math:`W`, and observation-level disturbances are standard Normal
+    (probit link).
+
+    .. math::
+
+        y_i = \\mathbb{1}[z_i > 0],\\quad
+        z_i = x_i'\\beta + a_{r(i)} + \\varepsilon_i,\\quad
+        \\varepsilon_i \\sim \\mathcal{N}(0, 1),
+
+    .. math::
+
+        a = \\rho W a + u,\\quad u \\sim \\mathcal{N}(0, \\sigma_a^2 I_m),
+
+    so that :math:`a \\sim \\mathcal{N}(0, \\sigma_a^2 (I_m - \\rho W)^{-1}
+    (I_m - \\rho W)^{-T})`. The marginal choice probability is
+    :math:`P(y_i = 1 \\mid \\beta, a) = \\Phi(x_i'\\beta + a_{r(i)})`.
+
     Parameters
     ----------
     formula : str, optional
@@ -55,7 +76,22 @@ class SpatialProbit:
         Region observation counts ``(m,)`` in sorted region order
         (matrix mode alternative to ``region_ids``).
     priors : dict, optional
-        Prior overrides.
+        Override default priors. Supported keys:
+
+        - ``rho_lower`` (float, default -0.95): Lower bound of the
+          Uniform prior on :math:`\\rho`.
+        - ``rho_upper`` (float, default 0.95): Upper bound of the
+          Uniform prior on :math:`\\rho`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_a_sigma`` (float, default 10.0): HalfNormal scale
+          for the regional random-effect std :math:`\\sigma_a`.
+
+    robust : bool, default False
+        Not supported. The probit link uses a Normal CDF; a Student-t
+        analogue is not implemented. Setting ``robust=True`` raises.
 
     Notes
     -----
@@ -63,12 +99,6 @@ class SpatialProbit:
     spatially dependent regional effects). It uses a standard probit link with
     unit observation-level variance and does not currently sample the ``v_i``/
     ``r`` heteroskedastic hierarchy from MATLAB ``semip_g``.
-
-    Priors (``priors`` keys):
-
-    - ``rho_lower``, ``rho_upper``: bounds for ``rho`` (default ``-0.95, 0.95``)
-    - ``beta_mu``, ``beta_sigma``: Normal prior for ``beta``
-    - ``sigma_a_sigma``: HalfNormal scale for ``sigma_a``
 
     **Robust regression**
 
@@ -276,17 +306,15 @@ class SpatialProbit:
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
-        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
         from ._sampler import (
             prepare_compile_kwargs,
             prepare_idata_kwargs,
-            resolve_sampler,
         )
 
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
         model = self._build_pymc_model()
         self._pymc_model = model
         if "idata_kwargs" in sample_kwargs:

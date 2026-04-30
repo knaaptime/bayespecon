@@ -3,7 +3,7 @@
 These tests are skipped when JAX is not installed.  They verify that each Op
 (forward and VJP) produces numerically identical outputs under the default
 PyTensor C backend and the JAX backend, and that the dispatched models can
-be sampled with ``sampler="blackjax"`` without falling back to PyMC.
+be sampled with ``nuts_sampler="blackjax"`` without falling back to PyMC.
 """
 
 from __future__ import annotations
@@ -175,10 +175,10 @@ def test_sparse_flow_matrix_vjp_parity(kron_matrices):
 
 def test_sampler_resolution_with_jax_present():
     """When JAX is importable, requires_c_backend should not force a downgrade."""
-    from bayespecon.models._sampler import _jax_dispatches_available, resolve_sampler
+    from bayespecon.models._sampler import _jax_dispatches_available, enforce_c_backend
 
     assert _jax_dispatches_available() is True
     assert (
-        resolve_sampler("blackjax", requires_c_backend=True, model_name="ToyFlow")
+        enforce_c_backend("blackjax", requires_c_backend=True, model_name="ToyFlow")
         == "blackjax"
     )

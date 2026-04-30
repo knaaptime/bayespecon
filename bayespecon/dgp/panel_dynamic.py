@@ -21,7 +21,7 @@ algebra (the two functions share the underlying DGP today).
 
 Note: the existing implementations of ``simulate_panel_slx_dynamic_fe``
 and ``simulate_panel_sdem_dynamic_fe`` do not add an explicit ``W X_t
-beta_2`` term to the data equation; this preserves their pre-refactor
+theta`` term to the data equation; this preserves their pre-refactor
 behaviour. See the module-level discussion in the bayespecon docs for
 the exact form.
 """

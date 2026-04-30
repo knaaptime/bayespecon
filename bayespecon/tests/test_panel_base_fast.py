@@ -320,10 +320,53 @@ class TestSpatialPanelModelInit:
         assert model._T == 3
         assert model._panel_index is not None
 
+    def test_w_vars_subsets_lagged_columns(self, W_graph):
+        from bayespecon.models.panel import SDMPanelFE
 
-# ---------------------------------------------------------------------------
-# spatial_diagnostics_decision for panel models (monkeypatched)
-# ---------------------------------------------------------------------------
+        rng = np.random.default_rng(2)
+        df = pd.DataFrame(
+            {
+                "y": rng.standard_normal(12),
+                "x1": rng.standard_normal(12),
+                "x2": rng.standard_normal(12),
+                "unit": np.repeat(range(4), 3),
+                "time": np.tile(range(3), 4),
+            }
+        )
+        full = SDMPanelFE(
+            formula="y ~ x1 + x2",
+            data=df,
+            W=W_graph,
+            unit_col="unit",
+            time_col="time",
+        )
+        # By default both x1 and x2 are lagged (intercept excluded).
+        assert full._wx_feature_names == ["x1", "x2"]
+
+        subset = SDMPanelFE(
+            formula="y ~ x1 + x2",
+            data=df,
+            W=W_graph,
+            unit_col="unit",
+            time_col="time",
+            w_vars=["x1"],
+        )
+        assert subset._wx_feature_names == ["x1"]
+        assert subset._WX.shape == (12, 1)
+
+    def test_w_vars_unknown_raises(self, W_graph):
+        from bayespecon.models.panel import SDMPanelFE
+
+        rng = np.random.default_rng(3)
+        with pytest.raises(ValueError, match="w_vars contains names not found"):
+            SDMPanelFE(
+                y=rng.standard_normal(12),
+                X=rng.standard_normal((12, 2)),
+                W=W_graph,
+                N=4,
+                T=3,
+                w_vars=["nonexistent"],
+            )
 
 
 class TestPanelDiagnosticsDecision:

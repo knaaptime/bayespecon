@@ -1,37 +1,29 @@
-"""Helpers for selecting the NUTS backend used by ``pm.sample``.
+"""Helpers for tweaking ``pm.sample`` keyword arguments per backend.
 
 PyMC supports several NUTS samplers via the ``nuts_sampler`` keyword:
 
-* ``"pymc"``    — built-in C/PyTensor implementation (always available).
-* ``"blackjax"`` — JAX-backed sampler (typically the fastest on CPU for the
-  models in this package).
+* ``"pymc"``    — built-in C/PyTensor implementation (always available; default).
+* ``"blackjax"`` — JAX-backed sampler.
 * ``"numpyro"`` — also JAX-backed; uses NumPyro's NUTS.
 * ``"nutpie"``  — Rust-backed.
 
-``bayespecon`` defaults to ``"blackjax"``.  If the requested optional
-backend is not importable, we fall back to PyMC's default with a one-time
-``UserWarning`` so notebooks and scripts keep working in environments
-where the optional dependency is missing.
+This module provides three small helpers used by ``fit()`` methods:
 
-When the resolved sampler is ``"pymc"``, this module also injects
-``compile_kwargs={"mode": "NUMBA"}`` into ``pm.sample`` automatically
-(see :func:`prepare_compile_kwargs`) so the C/PyTensor path benefits from
-numba's JIT.  Falls back silently to PyTensor's default mode with a
-one-time warning when ``numba`` is not installed.  An explicit
-``compile_kwargs`` supplied by the caller always wins.
+* :func:`enforce_c_backend` — for models whose custom :class:`pytensor.graph.op.Op`
+  has no JAX dispatch (e.g. Poisson sparse-flow models that wrap
+  :class:`scipy.sparse.linalg.splu`), downgrade a JAX-backed request to
+  ``"pymc"`` with a one-time ``UserWarning``.
+* :func:`prepare_idata_kwargs` — strip ``log_likelihood=True`` for JAX backends
+  on potential-only models where PyMC's JAX path would crash.
+* :func:`prepare_compile_kwargs` — auto-inject ``compile_kwargs={"mode": "NUMBA"}``
+  when the resolved sampler is ``"pymc"`` and ``numba`` is importable.
 """
 
 from __future__ import annotations
 
 import importlib.util
-import os
 import warnings
 from functools import lru_cache
-
-_DEFAULT_SAMPLER = "blackjax"
-_ENV_OVERRIDE = "BAYESPECON_SAMPLER"
-
-_KNOWN_OPTIONAL_SAMPLERS = ("blackjax", "numpyro", "nutpie")
 
 
 @lru_cache(maxsize=None)
@@ -54,67 +46,40 @@ def _jax_dispatches_available() -> bool:
     return _has_module("jax") and _has_module("pytensor.link.jax.dispatch")
 
 
-def _default_sampler() -> str:
-    """Return the package-wide default sampler.
-
-    Honors the ``BAYESPECON_SAMPLER`` environment variable so the test
-    suite (and downstream users) can pin a deterministic backend without
-    editing every ``fit()`` call.
-    """
-    return os.environ.get(_ENV_OVERRIDE, _DEFAULT_SAMPLER)
-
-
-def resolve_sampler(
-    sampler: str | None,
+def enforce_c_backend(
+    nuts_sampler: str,
     *,
-    requires_c_backend: bool = False,
-    model_name: str | None = None,
+    requires_c_backend: bool,
+    model_name: str,
 ) -> str:
-    """Resolve a user-facing sampler name to a value for ``pm.sample(nuts_sampler=...)``.
+    """Downgrade a JAX-backed NUTS request to ``"pymc"`` when JAX dispatch is missing.
 
     Parameters
     ----------
-    sampler :
-        One of ``"pymc"``, ``"blackjax"``, ``"numpyro"``, ``"nutpie"``,
-        ``"default"``, or ``None``.  ``None`` and ``"default"`` mean
-        "use the package-wide default" (typically ``"blackjax"``; can be
-        overridden via the ``BAYESPECON_SAMPLER`` environment variable).
+    nuts_sampler :
+        The user-requested ``nuts_sampler`` value (already resolved from
+        ``sample_kwargs``).
     requires_c_backend :
         If ``True``, the calling model relies on a custom :class:`pytensor.graph.op.Op`
-        that has no JAX dispatch (e.g. the Poisson sparse-flow models that
-        wrap :class:`scipy.sparse.linalg.splu`).  Any non-``"pymc"`` request
-        is downgraded to ``"pymc"`` with a one-time ``UserWarning``.
+        that has no JAX dispatch.  Any non-``"pymc"`` request is downgraded to
+        ``"pymc"`` with a one-time ``UserWarning``.
     model_name :
-        Class name used in the C-backend warning message; ignored when
-        ``requires_c_backend`` is ``False``.
+        Class name used in the warning message.
 
     Returns
     -------
     str
-        A string suitable for ``pm.sample(nuts_sampler=...)``.  When the
-        requested optional backend is not installed, this returns
-        ``"pymc"`` and emits a ``UserWarning`` once per backend per process.
-
-    Notes
-    -----
-    Availability is probed via :func:`importlib.util.find_spec` so the
-    optional package is never actually imported just to check.  Results
-    are cached.
+        Either the original ``nuts_sampler`` value or ``"pymc"`` if a downgrade
+        was forced.
     """
-    if sampler is None or sampler == "default":
-        sampler = _default_sampler()
-    if sampler == "pymc":
-        return "pymc"
-    if requires_c_backend and not _jax_dispatches_available():
-        _warn_c_backend_once(sampler, model_name or "this model")
-        return "pymc"
-    if sampler in _KNOWN_OPTIONAL_SAMPLERS:
-        if _has_module(sampler):
-            return sampler
-        _warn_missing_once(sampler)
-        return "pymc"
-    # Unknown name — pass through and let pm.sample raise a clear error.
-    return sampler
+    if not requires_c_backend:
+        return nuts_sampler
+    if nuts_sampler == "pymc":
+        return nuts_sampler
+    if _jax_dispatches_available():
+        return nuts_sampler
+    _warn_c_backend_once(nuts_sampler, model_name)
+    return "pymc"
 
 
 def prepare_idata_kwargs(
@@ -170,7 +135,7 @@ def prepare_compile_kwargs(
         The keyword-argument dict eventually splatted into ``pm.sample``.
         ``None`` is treated as an empty dict.
     nuts_sampler :
-        The resolved sampler name (output of :func:`resolve_sampler`).
+        The resolved sampler name.
 
     Returns
     -------
@@ -202,20 +167,9 @@ def _warn_numba_missing_once() -> None:
 
 
 @lru_cache(maxsize=None)
-def _warn_missing_once(sampler: str) -> None:
-    warnings.warn(
-        f"sampler={sampler!r} was requested but the {sampler!r} package is "
-        "not importable; falling back to PyMC's default NUTS sampler. "
-        f"Install {sampler!r} to enable this backend.",
-        UserWarning,
-        stacklevel=3,
-    )
-
-
-@lru_cache(maxsize=None)
 def _warn_c_backend_once(sampler: str, model_name: str) -> None:
     warnings.warn(
-        f"sampler={sampler!r} requested but {model_name} uses a custom "
+        f"nuts_sampler={sampler!r} requested but {model_name} uses a custom "
         "PyTensor Op without a JAX dispatch; falling back to "
         "PyMC's default NUTS sampler.",
         UserWarning,

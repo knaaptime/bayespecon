@@ -253,22 +253,17 @@ class FlowPanelModel(ABC):
         # Also keep _W_eigs for backward compatibility.
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
-        _SEPARABLE_METHODS = {"separable", "eigenvalue", "chebyshev", "mc_poly"}
+        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
         if self.logdet_method in _SEPARABLE_METHODS:
-            _method_key = (
-                "eigenvalue"
-                if self.logdet_method == "separable"
-                else self.logdet_method
-            )
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
                 self._n,
-                method=_method_key,
+                method=self.logdet_method,
                 miter=miter,
                 riter=trace_riter,
                 random_state=trace_seed,
             )
-            if self.logdet_method in ("separable", "eigenvalue"):
+            if self.logdet_method == "eigenvalue":
                 self._W_eigs = np.linalg.eigvals(
                     self._W_sparse.toarray().astype(np.float64)
                 ).real
@@ -328,26 +323,23 @@ class FlowPanelModel(ABC):
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
-        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
         from ._sampler import (
+            enforce_c_backend,
             prepare_compile_kwargs,
             prepare_idata_kwargs,
-            resolve_sampler,
         )
 
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop(
-            "nuts_sampler",
-            resolve_sampler(
-                sampler,
-                requires_c_backend=getattr(self, "_requires_c_backend", False),
-                model_name=type(self).__name__,
-            ),
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = enforce_c_backend(
+            nuts_sampler,
+            requires_c_backend=getattr(self, "_requires_c_backend", False),
+            model_name=type(self).__name__,
         )
 
         model = self._build_pymc_model()
@@ -896,20 +888,73 @@ class FlowPanelModel(ABC):
 
 
 class SARFlowPanel(FlowPanelModel):
-    r"""Panel spatial-lag origin-destination flow model with unrestricted dependence.
+    """Panel spatial-lag origin-destination flow model with unrestricted dependence.
 
     For each period :math:`t`, the vectorized flow matrix
-    :math:`y_t \in \mathbb{R}^{N}` with :math:`N = n^2` satisfies
+    :math:`y_t \\in \\mathbb{R}^{N}` with :math:`N = n^2` satisfies
 
     .. math::
 
-        y_t = \rho_d W_d y_t + \rho_o W_o y_t + \rho_w W_w y_t + X_t \beta + \varepsilon_t,
-        \qquad \varepsilon_t \sim \mathcal{N}(0, \sigma^2 I_N).
+        y_t = \\rho_d W_d y_t + \\rho_o W_o y_t + \\rho_w W_w y_t + X_t \\beta + \\varepsilon_t,
+        \\qquad \\varepsilon_t \\sim \\mathcal{N}(0, \\sigma^2 I_N).
 
     The panel stack is time-first across :math:`T` periods. The ``model``
     argument controls pooled, pair fixed-effects, time fixed-effects, or
     two-way demeaning before the likelihood is evaluated. The Jacobian
-    contribution scales as :math:`T \log |A(\rho_d, \rho_o, \rho_w)|`.
+    contribution scales as :math:`T \\log |A(\\rho_d, \\rho_o, \\rho_w)|`.
+
+    Parameters
+    ----------
+    y : array-like
+        Stacked panel response in shape ``(T, n, n)``, ``(T, n^2)``, or
+        ``(n^2 * T,)``.
+    G : libpysal.graph.Graph
+        Row-standardised graph on ``n`` units.
+    X : np.ndarray or pandas.DataFrame, shape ``(n^2 * T, p)``
+        Stacked panel design matrix in time-first order.
+    T : int
+        Number of panel periods (must be a positive integer).
+    col_names : list of str, optional
+        Feature names for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of destination/origin covariate pairs used by flow effects;
+        inferred from columns prefixed ``dest_`` if omitted.
+    model : int, default 0
+        Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
+        FE, ``3`` two-way FE.
+    logdet_method : str, default "traces"
+        Log-determinant method. Only ``"traces"`` is supported here.
+    restrict_positive : bool, default True
+        If True, use ``pm.Dirichlet("rho_simplex", a=ones(4))`` to enforce
+        :math:`\\rho_d, \\rho_o, \\rho_w \\geq 0` and
+        :math:`\\rho_d + \\rho_o + \\rho_w \\leq 1`. If False, three
+        independent ``pm.Uniform(rho_lower, rho_upper)`` priors are used
+        with a differentiable quadratic-wall stability potential.
+    robust : bool, default False
+        If True, replace the Normal error with Student-t for robustness
+        to heavy-tailed outliers. Adds a ``nu`` parameter with prior
+        :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`,
+        rate ``nu_lam`` (default 1/30, mean ≈ 30).
+    miter : int, default 30
+        Trace polynomial order for the log-determinant.
+    titer : int, default 800
+        Geometric tail cutoff for the log-determinant series.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes for trace estimation.
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+        - ``rho_lower`` : float, default -1.0 — Lower bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
+        - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
+        - ``nu_lam`` : float, default 1/30 — Rate of TruncExp prior on ``nu`` (only when ``robust=True``).
     """
 
     def _build_pymc_model(self) -> pm.Model:
@@ -1021,26 +1066,77 @@ class SARFlowPanel(FlowPanelModel):
 
 
 class SARFlowSeparablePanel(FlowPanelModel):
-    r"""Panel separable spatial-lag flow model with :math:`\rho_w = -\rho_d \rho_o`.
+    """Panel separable spatial-lag flow model with :math:`\\rho_w = -\\rho_d \\rho_o`.
 
     For each period :math:`t`,
 
     .. math::
 
-        y_t = \rho_d W_d y_t + \rho_o W_o y_t - \rho_d \rho_o W_w y_t + X_t \beta + \varepsilon_t,
-        \qquad \varepsilon_t \sim \mathcal{N}(0, \sigma^2 I_N).
+        y_t = \\rho_d W_d y_t + \\rho_o W_o y_t - \\rho_d \\rho_o W_w y_t + X_t \\beta + \\varepsilon_t,
+        \\qquad \\varepsilon_t \\sim \\mathcal{N}(0, \\sigma^2 I_N).
 
     Under the separability restriction,
-    :math:`A = I_N - \rho_d W_d - \rho_o W_o + \rho_d \rho_o W_w`
+    :math:`A = I_N - \\rho_d W_d - \\rho_o W_o + \\rho_d \\rho_o W_w`
     factorizes into Kronecker blocks, which enables the exact or
     approximated eigenvalue-based log-determinant used by this class.
+
+    Parameters
+    ----------
+    y : array-like
+        Stacked panel response in shape ``(T, n, n)``, ``(T, n^2)``, or
+        ``(n^2 * T,)``.
+    G : libpysal.graph.Graph
+        Row-standardised graph on ``n`` units.
+    X : np.ndarray or pandas.DataFrame, shape ``(n^2 * T, p)``
+        Stacked panel design matrix in time-first order.
+    T : int
+        Number of panel periods (must be a positive integer).
+    col_names : list of str, optional
+        Feature names for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of destination/origin covariate pairs used by flow effects;
+        inferred from columns prefixed ``dest_`` if omitted.
+    model : int, default 0
+        Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
+        FE, ``3`` two-way FE.
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+        Method for the Kronecker-factored log-determinant.
+    robust : bool, default False
+        If True, replace the Normal error with Student-t for robustness
+        to heavy-tailed outliers. Adds a ``nu`` parameter with prior
+        :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`,
+        rate ``nu_lam`` (default 1/30, mean ≈ 30).
+    miter : int, default 30
+        Polynomial / approximation order (used by ``"chebyshev"`` /
+        ``"mc_poly"``).
+    titer : int, default 800
+        Geometric tail cutoff for series-based variants.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+        - ``rho_lower`` : float, default -0.999 — Lower bound of Uniform prior on ``rho_d`` and ``rho_o``.
+        - ``rho_upper`` : float, default 0.999 — Upper bound of Uniform prior on ``rho_d`` and ``rho_o``.
+        - ``nu_lam`` : float, default 1/30 — Rate of TruncExp prior on ``nu`` (only when ``robust=True``).
+
+    Notes
+    -----
+    The ``restrict_positive`` argument inherited from :class:`FlowPanelModel`
+    has no effect on this class — separable variants always use Uniform
+    priors on the individual :math:`\\rho` components.
     """
 
     def __init__(self, y, G, X, **kwargs):
-        # Normalize logdet_method: 'separable' is an alias for 'eigenvalue'.
         method = kwargs.pop("logdet_method", "eigenvalue")
-        if method == "separable":
-            method = "eigenvalue"
         _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
@@ -1126,26 +1222,74 @@ class SARFlowSeparablePanel(FlowPanelModel):
 
 
 class PoissonSARFlowPanel(FlowPanelModel):
-    r"""Panel Poisson spatial-lag flow model with unrestricted dependence.
+    """Panel Poisson spatial-lag flow model with unrestricted dependence.
 
     The stacked panel counts satisfy
 
     .. math::
 
-        y_{ij,t} \sim \operatorname{Poisson}(\lambda_{ij,t}),
-        \qquad \log \boldsymbol{\lambda}_t = A(\rho_d, \rho_o, \rho_w)^{-1} X_t \beta,
+        y_{ij,t} \\sim \\operatorname{Poisson}(\\lambda_{ij,t}),
+        \\qquad \\log \\boldsymbol{\\lambda}_t = A(\\rho_d, \\rho_o, \\rho_w)^{-1} X_t \\beta,
 
     where
 
     .. math::
 
-        A(\rho_d, \rho_o, \rho_w) = I_N - \rho_d W_d - \rho_o W_o - \rho_w W_w.
+        A(\\rho_d, \\rho_o, \\rho_w) = I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w.
+
+    Parameters
+    ----------
+    y : array-like of int
+        Stacked panel flow counts in shape ``(T, n, n)``, ``(T, n^2)``,
+        or ``(n^2 * T,)``. Non-integer values raise an error if they
+        do not round exactly.
+    G : libpysal.graph.Graph
+        Row-standardised graph on ``n`` units.
+    X : np.ndarray or pandas.DataFrame, shape ``(n^2 * T, p)``
+        Stacked panel design matrix in time-first order.
+    T : int
+        Number of panel periods (must be a positive integer).
+    col_names : list of str, optional
+        Feature names for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of destination/origin covariate pairs used by flow effects;
+        inferred from columns prefixed ``dest_`` if omitted.
+    model : int, default 0
+        Fixed-effects transform. **Only** ``0`` (pooled) is supported —
+        within transforms break the non-negative integer support.
+    logdet_method : str, default "traces"
+        Log-determinant method. Only ``"traces"`` is supported here.
+    restrict_positive : bool, default True
+        If True, use ``pm.Dirichlet("rho_simplex", a=ones(4))`` to enforce
+        :math:`\\rho_d, \\rho_o, \\rho_w \\geq 0` and
+        :math:`\\rho_d + \\rho_o + \\rho_w \\leq 1`. If False, three
+        independent ``pm.Uniform(rho_lower, rho_upper)`` priors are used
+        with a differentiable quadratic-wall stability potential.
+    miter : int, default 30
+        Trace polynomial order for the log-determinant.
+    titer : int, default 800
+        Geometric tail cutoff for the log-determinant series.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes for trace estimation.
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 10.0 — Normal prior std for ``beta``.
+        - ``rho_lower`` : float, default -1.0 — Lower bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
+        - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
 
     Notes
     -----
     This class currently supports pooled panels only (``model=0``).
     Within transforms are not valid for Poisson counts because they break
-    the non-negative integer support.
+    the non-negative integer support. There is no ``sigma`` parameter and
+    robust (Student-t) likelihoods are not supported.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -1286,26 +1430,70 @@ class PoissonSARFlowPanel(FlowPanelModel):
 
 
 class PoissonSARFlowSeparablePanel(FlowPanelModel):
-    r"""Panel separable Poisson spatial-lag flow model.
+    """Panel separable Poisson spatial-lag flow model.
 
     The panel counts satisfy
 
     .. math::
 
-        y_{ij,t} \sim \operatorname{Poisson}(\lambda_{ij,t}),
-        \qquad \log \boldsymbol{\lambda}_t = A(\rho_d, \rho_o)^{-1} X_t \beta,
+        y_{ij,t} \\sim \\operatorname{Poisson}(\\lambda_{ij,t}),
+        \\qquad \\log \\boldsymbol{\\lambda}_t = A(\\rho_d, \\rho_o)^{-1} X_t \\beta,
 
-    with the separability restriction :math:`\rho_w = -\rho_d \rho_o` and
+    with the separability restriction
+    :math:`\\rho_w = -\\rho_d \\rho_o` and
 
     .. math::
 
-        A(\rho_d, \rho_o) = I_N - \rho_d W_d - \rho_o W_o + \rho_d \rho_o W_w.
+        A(\\rho_d, \\rho_o) = I_N - \\rho_d W_d - \\rho_o W_o + \\rho_d \\rho_o W_w.
+
+    Parameters
+    ----------
+    y : array-like of int
+        Stacked panel flow counts in shape ``(T, n, n)``, ``(T, n^2)``,
+        or ``(n^2 * T,)``. Non-integer values raise an error if they
+        do not round exactly.
+    G : libpysal.graph.Graph
+        Row-standardised graph on ``n`` units.
+    X : np.ndarray or pandas.DataFrame, shape ``(n^2 * T, p)``
+        Stacked panel design matrix in time-first order.
+    T : int
+        Number of panel periods (must be a positive integer).
+    col_names : list of str, optional
+        Feature names for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of destination/origin covariate pairs used by flow effects;
+        inferred from columns prefixed ``dest_`` if omitted.
+    model : int, default 0
+        Fixed-effects transform. **Only** ``0`` (pooled) is supported.
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+        Method for the Kronecker-factored log-determinant.
+    miter : int, default 30
+        Polynomial / approximation order (used by ``"chebyshev"`` /
+        ``"mc_poly"``).
+    titer : int, default 800
+        Geometric tail cutoff for series-based variants.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 10.0 — Normal prior std for ``beta``.
+        - ``rho_lower`` : float, default -0.999 — Lower bound of Uniform prior on ``rho_d`` and ``rho_o``.
+        - ``rho_upper`` : float, default 0.999 — Upper bound of Uniform prior on ``rho_d`` and ``rho_o``.
 
     Notes
     -----
     This class currently supports pooled panels only (``model=0``).
     The separability restriction enables the Kronecker-factorized
-    log-determinant used in estimation.
+    log-determinant used in estimation. There is no ``sigma`` parameter
+    and robust (Student-t) likelihoods are not supported. The
+    ``restrict_positive`` argument has no effect on this class.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -1331,8 +1519,6 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
             )
 
         method = kwargs.pop("logdet_method", "eigenvalue")
-        if method == "separable":
-            method = "eigenvalue"
         _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
@@ -1436,7 +1622,7 @@ class OLSFlowPanel(FlowPanelModel):
 
     Panel analogue of :class:`~bayespecon.models.flow.OLSFlow`: implements
     the conventional log-linear gravity specification of
-    :cite:t:`thomasAgnan2014SpatialEconometric` (eq. 83.2) with no spatial
+    :cite:t:`thomas-agnan2014SpatialEconometric` (eq. 83.2) with no spatial
     lag terms,
 
     .. math::
@@ -1451,15 +1637,46 @@ class OLSFlowPanel(FlowPanelModel):
 
     Parameters
     ----------
-    y, G, X, T, col_names, k, model, priors, robust, symmetric_xo_xd
-        See :class:`FlowPanelModel`.  *G* is required for API symmetry but
-        the spatial weights are not used in estimation.
+    y : array-like
+        Stacked panel response in shape ``(T, n, n)``, ``(T, n^2)``, or
+        ``(n^2 * T,)``.
+    G : libpysal.graph.Graph
+        Row-standardised graph on ``n`` units. Required for API
+        symmetry but not used in estimation.
+    X : np.ndarray or pandas.DataFrame, shape ``(n^2 * T, p)``
+        Stacked panel design matrix in time-first order.
+    T : int
+        Number of panel periods.
+    col_names : list of str, optional
+        Feature names for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of destination/origin covariate pairs used by flow
+        effects; inferred from columns prefixed ``dest_`` if omitted.
+    model : int, default 0
+        Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2``
+        time FE, ``3`` two-way FE.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\sigma`.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\nu` (only used when ``robust=True``).
+
+        Spatial keys (``rho_*``) are ignored in this aspatial baseline.
+    robust : bool, default False
+        If True, replace the Normal error with Student-t.
+    symmetric_xo_xd : bool, optional
+        Whether to constrain origin and destination covariate effects
+        to be equal. Forwarded to :class:`FlowPanelModel`.
 
     Notes
     -----
-    The ``priors`` dict supports ``beta_mu``, ``beta_sigma``,
-    ``sigma_sigma``; spatial keys (``rho_*``) are ignored.  All
-    log-determinant precomputation is skipped (``A = I_N`` with
+    All log-determinant precomputation is skipped (``A = I_N`` with
     :math:`|A| = 1`).
     """
 
@@ -1662,9 +1879,35 @@ class PoissonFlowPanel(OLSFlowPanel):
 
     Parameters
     ----------
-    y, G, X, T, col_names, k, priors, symmetric_xo_xd
-        See :class:`FlowPanelModel`.  *G* is required for API symmetry but
-        the spatial weights are not used in estimation.
+    y : array-like of int
+        Stacked panel flow counts in shape ``(T, n, n)``, ``(T, n^2)``,
+        or ``(n^2 * T,)``. Non-integer values raise an error if they
+        do not round exactly.
+    G : libpysal.graph.Graph
+        Row-standardised graph on ``n`` units. Required for API
+        symmetry but not used in estimation.
+    X : np.ndarray or pandas.DataFrame, shape ``(n^2 * T, p)``
+        Stacked panel design matrix in time-first order.
+    T : int
+        Number of panel periods.
+    col_names : list of str, optional
+        Feature names for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of destination/origin covariate pairs used by flow
+        effects; inferred from columns prefixed ``dest_`` if omitted.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\beta`.
+        - ``beta_sigma`` (float, default 10.0): Normal prior std for
+          :math:`\beta`.
+
+        Spatial keys (``rho_*``), ``sigma_sigma``, and the ``robust``
+        flag are ignored (Poisson has no scale parameter to robustify).
+    symmetric_xo_xd : bool, optional
+        Whether to constrain origin and destination covariate effects
+        to be equal. Forwarded to :class:`FlowPanelModel`.
 
     Notes
     -----
@@ -1672,10 +1915,6 @@ class PoissonFlowPanel(OLSFlowPanel):
     fixed-effects panels are not valid for Poisson counts (they break the
     non-negative integer support), matching the restriction enforced by
     :class:`PoissonSARFlowPanel`.
-
-    The ``priors`` dict supports ``beta_mu`` and ``beta_sigma``; spatial
-    keys (``rho_*``), ``sigma_sigma``, and the ``robust`` flag are ignored
-    (Poisson has no scale parameter to robustify).
     """
 
     def __init__(self, y, G, X, T, **kwargs):
@@ -1808,7 +2047,7 @@ class _SEMFlowPanelMixin:
 
 
 class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
-    r"""Panel spatial-error flow model with three free spatial parameters.
+    """Panel spatial-error flow model with three free spatial parameters.
 
     Panel analogue of :class:`~bayespecon.models.flow.SEMFlow`: applies the
     Kronecker spatial filter (:math:`W_d`, :math:`W_o`, :math:`W_w`) to the
@@ -1816,13 +2055,66 @@ class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
 
     .. math::
 
-        y_t = X_t \beta + u_t, \qquad B u_t = \varepsilon_t,
-        \quad \varepsilon_t \sim \mathcal{N}(0, \sigma^2 I_N).
+        y_t = X_t \\beta + u_t, \\qquad B u_t = \\varepsilon_t,
+        \\quad \\varepsilon_t \\sim \\mathcal{N}(0, \\sigma^2 I_N).
 
-    The Jacobian contribution scales as :math:`T \cdot \log|B|` — identical
-    in form to :class:`SARFlowPanel`.  Marginal mean is :math:`X_t \beta`,
+    The Jacobian contribution scales as :math:`T \\cdot \\log|B|` — identical
+    in form to :class:`SARFlowPanel`. Marginal mean is :math:`X_t \\beta`,
     so there are no :math:`X`-mediated spillovers; effects collapse to the
     closed-form expressions used by :class:`OLSFlowPanel`.
+
+    Parameters
+    ----------
+    y : array-like
+        Stacked panel response in shape ``(T, n, n)``, ``(T, n^2)``, or
+        ``(n^2 * T,)``.
+    G : libpysal.graph.Graph
+        Row-standardised graph on ``n`` units.
+    X : np.ndarray or pandas.DataFrame, shape ``(n^2 * T, p)``
+        Stacked panel design matrix in time-first order.
+    T : int
+        Number of panel periods (must be a positive integer).
+    col_names : list of str, optional
+        Feature names for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of destination/origin covariate pairs used by flow effects;
+        inferred from columns prefixed ``dest_`` if omitted.
+    model : int, default 0
+        Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
+        FE, ``3`` two-way FE.
+    logdet_method : str, default "traces"
+        Log-determinant method. Only ``"traces"`` is supported here.
+    restrict_positive : bool, default True
+        If True, use ``pm.Dirichlet("lam_simplex", a=ones(4))`` to enforce
+        :math:`\\lambda_d, \\lambda_o, \\lambda_w \\geq 0` and
+        :math:`\\lambda_d + \\lambda_o + \\lambda_w \\leq 1`. If False,
+        three independent ``pm.Uniform(lam_lower, lam_upper)`` priors are
+        used with a differentiable quadratic-wall stability potential.
+    robust : bool, default False
+        If True, replace the Normal error with Student-t for robustness
+        to heavy-tailed outliers. Adds a ``nu`` parameter with prior
+        :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`,
+        rate ``nu_lam`` (default 1/30, mean ≈ 30).
+    miter : int, default 30
+        Trace polynomial order for the log-determinant.
+    titer : int, default 800
+        Geometric tail cutoff for the log-determinant series.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes for trace estimation.
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+        - ``lam_lower`` : float, default -1.0 — Lower bound of Uniform prior on each λ (only when ``restrict_positive=False``).
+        - ``lam_upper`` : float, default 1.0 — Upper bound of Uniform prior on each λ (only when ``restrict_positive=False``).
+        - ``nu_lam`` : float, default 1/30 — Rate of TruncExp prior on ``nu`` (only when ``robust=True``).
     """
 
     def __init__(self, y, G, X, T, **kwargs):
@@ -1967,18 +2259,70 @@ class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
 
 
 class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
-    r"""Panel separable spatial-error flow model with :math:`\lambda_w = -\lambda_d \lambda_o`.
+    """Panel separable spatial-error flow model with :math:`\\lambda_w = -\\lambda_d \\lambda_o`.
 
     Panel analogue of :class:`~bayespecon.models.flow.SEMFlowSeparable` and
-    spatial-error counterpart of :class:`SARFlowSeparablePanel`.  Uses the
-    eigenvalue / Chebyshev factorisation of :math:`\log|B|` with the panel
-    Jacobian scaling :math:`T \cdot \log|B|`.
+    spatial-error counterpart of :class:`SARFlowSeparablePanel`. Uses the
+    eigenvalue / Chebyshev factorisation of :math:`\\log|B|` with the panel
+    Jacobian scaling :math:`T \\cdot \\log|B|`.
+
+    Parameters
+    ----------
+    y : array-like
+        Stacked panel response in shape ``(T, n, n)``, ``(T, n^2)``, or
+        ``(n^2 * T,)``.
+    G : libpysal.graph.Graph
+        Row-standardised graph on ``n`` units.
+    X : np.ndarray or pandas.DataFrame, shape ``(n^2 * T, p)``
+        Stacked panel design matrix in time-first order.
+    T : int
+        Number of panel periods (must be a positive integer).
+    col_names : list of str, optional
+        Feature names for ``X``. Inferred from a DataFrame if omitted.
+    k : int, optional
+        Number of destination/origin covariate pairs used by flow effects;
+        inferred from columns prefixed ``dest_`` if omitted.
+    model : int, default 0
+        Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
+        FE, ``3`` two-way FE.
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+        Method for the Kronecker-factored log-determinant.
+    robust : bool, default False
+        If True, replace the Normal error with Student-t for robustness
+        to heavy-tailed outliers. Adds a ``nu`` parameter with prior
+        :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`,
+        rate ``nu_lam`` (default 1/30, mean ≈ 30).
+    miter : int, default 30
+        Polynomial / approximation order (used by ``"chebyshev"`` /
+        ``"mc_poly"``).
+    titer : int, default 800
+        Geometric tail cutoff for series-based variants.
+    trace_riter : int, default 50
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
+    trace_seed : int, optional
+        Random seed for trace estimation reproducibility.
+    symmetric_xo_xd : bool, optional
+        If ``None`` (default), origin and destination design blocks are
+        compared and symmetry is auto-detected.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
+        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
+        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
+        - ``lam_lower`` : float, default -0.999 — Lower bound of Uniform prior on ``lam_d`` and ``lam_o``.
+        - ``lam_upper`` : float, default 0.999 — Upper bound of Uniform prior on ``lam_d`` and ``lam_o``.
+        - ``nu_lam`` : float, default 1/30 — Rate of TruncExp prior on ``nu`` (only when ``robust=True``).
+
+    Notes
+    -----
+    The ``restrict_positive`` argument inherited from :class:`FlowPanelModel`
+    has no effect on this class — separable variants always use Uniform
+    priors on the individual :math:`\\lambda` components.
     """
 
     def __init__(self, y, G, X, T, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        if method == "separable":
-            method = "eigenvalue"
         _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(

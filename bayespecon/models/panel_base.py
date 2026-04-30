@@ -20,7 +20,7 @@ from ..logdet import (
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 from .base import _is_row_standardized_csr
 
 
@@ -212,40 +212,66 @@ def _parse_panel_W(
 class SpatialPanelModel(ABC):
     """Base class for static spatial panel models with FE transforms.
 
+    Holds the within-transformation, panel-aware sorting, and weights
+    handling shared by all static fixed-effects panel model subclasses.
+    Not instantiated directly.
+
     Parameters
     ----------
-    formula, data, y, X
-        Either formula mode (formula + data) or matrix mode (y + X).
+    formula : str, optional
+        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires
+        ``data``, ``unit_col``, and ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode. Must contain
+        the response, regressors, ``unit_col``, and ``time_col``.
+    y : array-like, optional
+        Stacked response of shape ``(N*T,)`` in unit-major order.
+        Required in matrix mode.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix of shape ``(N*T, k)``. Required in matrix
+        mode. DataFrame columns are preserved as feature names.
     W : libpysal.graph.Graph or scipy.sparse matrix
-        Spatial weights of shape ``(N, N)`` (preferred) or the full
-        ``(N*T, N*T)`` block-diagonal panel matrix. Accepts a
-        :class:`libpysal.graph.Graph` (the modern libpysal graph API) or any
-        :class:`scipy.sparse` matrix.  The legacy :class:`libpysal.weights.W`
-        object is **not** accepted directly; pass ``w.sparse`` to use the
-        underlying sparse matrix, or convert with
-        ``libpysal.graph.Graph.from_W(w)``.
-        W should be row-standardised; a :class:`UserWarning` is raised if not.
-    unit_col, time_col
-        Required in formula mode for robust panel sorting and N/T inference.
-    N, T
-        Required in matrix mode if not inferable.
-    model
-        0 pooled, 1 unit FE, 2 time FE, 3 two-way FE.
+        Spatial weights of shape ``(N, N)`` (preferred — broadcast over
+        time periods) or the full ``(N*T, N*T)`` block-diagonal panel
+        matrix. Accepts a :class:`libpysal.graph.Graph` or any
+        :class:`scipy.sparse` matrix. The legacy
+        :class:`libpysal.weights.W` object is **not** accepted; pass
+        ``w.sparse`` or ``libpysal.graph.Graph.from_W(w)``. Should be
+        row-standardised; a :class:`UserWarning` is raised otherwise.
+    unit_col : str, optional
+        Column in ``data`` identifying the cross-sectional unit.
+        Required in formula mode for panel sorting and N/T inference.
+    time_col : str, optional
+        Column in ``data`` identifying the time period. Required in
+        formula mode.
+    N : int, optional
+        Number of cross-sectional units. Required in matrix mode if
+        not inferable from ``W`` or the data shape.
+    T : int, optional
+        Number of time periods. Required in matrix mode if not
+        inferable.
+    model : int, default 0
+        Fixed-effects specification: ``0`` pooled, ``1`` unit FE,
+        ``2`` time FE, ``3`` two-way FE. The within transformation is
+        applied to ``y`` and ``X`` before likelihood evaluation.
     priors : dict, optional
-        Override default priors. Keys depend on the model subclass; see
-        each model's docstring for supported keys.
+        Override default priors. Supported keys depend on the subclass;
+        each subclass docstring lists its keys with defaults.
     logdet_method : str, optional
-        How to compute ``log|I - rho*W|``. When ``None``, the method is
-        auto-selected from the cross-sectional ``N x N`` weights size via
-        :func:`bayespecon.logdet._auto_logdet_method`: ``"eigenvalue"`` for
-        ``N <= 2000`` and ``"chebyshev"`` otherwise.
+        How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
+        auto-selects from the cross-sectional ``N x N`` weights size:
+        ``"eigenvalue"`` for ``N <= 2000`` else ``"chebyshev"``.
     robust : bool, default False
-        If True, use a Student-t error distribution instead of Normal,
-        yielding a model that is robust to heavy-tailed outliers. When
-        ``robust=True``, a ``nu`` (degrees of freedom) parameter is added
-        to the model with an ``Exponential(lam=nu_lam)`` prior (default
-        ``nu_lam = 1/30``, mean ≈ 30). The ``nu`` prior can be controlled
-        via the ``priors`` dict with key ``nu_lam``.
+        If True, replace the Normal error with Student-t for robustness
+        to heavy-tailed outliers. Adds a ``nu`` parameter with a
+        ``TruncExp(lower=2)`` prior of rate ``nu_lam`` (default 1/30,
+        mean ≈ 30). Override via ``priors={"nu_lam": value}``.
+    w_vars : list of str, optional
+        Names of X columns to spatially lag. Only relevant for
+        subclasses that include ``WX`` terms (``SLXPanelFE``,
+        ``SDMPanelFE``, ``SDEMPanelFE`` and their RE/dynamic
+        analogues). By default all non-constant columns are lagged.
+        Pass a subset, e.g. ``w_vars=["income", "density"]``.
     """
 
     def __init__(
@@ -263,6 +289,7 @@ class SpatialPanelModel(ABC):
         priors: Optional[dict] = None,
         logdet_method: str | None = None,
         robust: bool = False,
+        w_vars: Optional[list] = None,
     ):
         if W is None:
             raise ValueError("W is required.")
@@ -327,6 +354,16 @@ class SpatialPanelModel(ABC):
         self._wx_column_indices = self._spatial_lag_column_indices(
             self._X_raw, self._feature_names
         )
+        if w_vars is not None:
+            unknown = [v for v in w_vars if v not in self._feature_names]
+            if unknown:
+                raise ValueError(
+                    f"w_vars contains names not found in X columns: {unknown}. "
+                    f"Available: {self._feature_names}"
+                )
+            self._wx_column_indices = [
+                i for i in self._wx_column_indices if self._feature_names[i] in w_vars
+            ]
         self._wx_feature_names = [
             self._feature_names[i] for i in self._wx_column_indices
         ]
@@ -500,9 +537,10 @@ class SpatialPanelModel(ABC):
 
         c = self._eig_inv_ones
         eigs = self._W_eigs_full
-        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
         V_col_sums = self._V_full.sum(axis=0)  # (n,)
-        return (1.0 / len(c)) * (inv_eigs * c[None, :]) @ V_col_sums
+        from ..diagnostics.spatial_effects import _chunked_eig_means
+
+        return _chunked_eig_means(rho_draws, eigs, weights=V_col_sums * c)
 
     def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} W for each posterior draw.
@@ -533,10 +571,10 @@ class SpatialPanelModel(ABC):
 
         c = self._eig_inv_ones
         eigs = self._W_eigs_full
-        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
-        eig_weighted = eigs[None, :] * inv_eigs  # omega / (1 - rho*omega)
         V_col_sums = self._V_full.sum(axis=0)  # (n,)
-        return (1.0 / len(c)) * (eig_weighted * c[None, :]) @ V_col_sums
+        from ..diagnostics.spatial_effects import _chunked_eig_means
+
+        return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
 
     @property
     def _nonintercept_indices(self) -> list[int]:
@@ -698,7 +736,6 @@ class SpatialPanelModel(ABC):
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
-        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Sample the posterior for the panel model.
@@ -715,19 +752,18 @@ class SpatialPanelModel(ABC):
             NUTS target acceptance probability.
         random_seed : int, optional
             Random seed used by PyMC.
-        sampler : str, optional
-            NUTS backend (``"pymc"``, ``"blackjax"``, ``"numpyro"``,
-            ``"nutpie"``, or ``None`` for the package default).  See
-            :meth:`bayespecon.models.base.BaseSpatialModel.fit`.
         **sample_kwargs
-            Extra keyword arguments forwarded to :func:`pymc.sample`.
+            Extra keyword arguments forwarded to :func:`pymc.sample`.  Pass
+            ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
+            select an alternative NUTS backend; defaults to PyMC's built-in
+            sampler.
 
         Returns
         -------
         arviz.InferenceData
             Posterior samples and diagnostics.
         """
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
         model = self._build_pymc_model()
         self._pymc_model = model
         if "idata_kwargs" in sample_kwargs:

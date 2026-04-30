@@ -89,6 +89,61 @@ class SARPanelTobit(_PanelTobitBase):
     .. math::
         y = \\max(c, y^*)
 
+    Parameters
+    ----------
+    formula : str, optional
+        Wilkinson-style formula. Requires ``data``, ``unit_col``,
+        ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode.
+    y : array-like, optional
+        Stacked observed outcome of shape ``(N*T,)``. Required in
+        matrix mode. Values at or below ``censoring`` are treated as
+        left-censored.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)``. Should be
+        row-standardised.
+    unit_col, time_col : str, optional
+        Column names identifying the unit and time period in ``data``.
+        Required in formula mode.
+    N, T : int, optional
+        Cross-sectional and time dimensions. Required in matrix mode.
+    censoring : float, default 0.0
+        Left-censoring threshold ``c``. Observations with
+        ``y <= censoring`` are treated as censored and the latent
+        ``y*`` is sampled from a HalfNormal gap below ``c``.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``rho_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\rho`.
+        - ``rho_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\rho`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``censor_sigma`` (float, default 10.0): HalfNormal prior
+          std for the latent gap below the censoring threshold.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\rho W|`; auto-selected when
+        ``None`` (default).
+    robust : bool, default False
+        If True, replace the Normal error with Student-t. See
+        *Robust regression* below.
+
+    Notes
+    -----
+    The base-class ``model`` argument is not exposed; pooled mean
+    structure (``model=0``) is used.
+
     **Robust regression**
 
     When ``robust=True``, the error distribution is changed from Normal
@@ -304,6 +359,59 @@ class SEMPanelTobit(_PanelTobitBase):
         \\quad \\varepsilon \\sim N(0,\\sigma^2 I)
 
     with observed outcome ``y = max(c, y*)``.
+
+    Parameters
+    ----------
+    formula : str, optional
+        Wilkinson-style formula. Requires ``data``, ``unit_col``,
+        ``time_col``.
+    data : pandas.DataFrame, optional
+        Long-format panel data when using formula mode.
+    y : array-like, optional
+        Stacked observed outcome of shape ``(N*T,)``. Required in
+        matrix mode. Values at or below ``censoring`` are treated as
+        left-censored.
+    X : array-like or pandas.DataFrame, optional
+        Stacked design matrix. Required in matrix mode.
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights of shape ``(N, N)``. Should be
+        row-standardised.
+    unit_col, time_col : str, optional
+        Column names identifying the unit and time period in ``data``.
+        Required in formula mode.
+    N, T : int, optional
+        Cross-sectional and time dimensions. Required in matrix mode.
+    censoring : float, default 0.0
+        Left-censoring threshold ``c``.
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``lam_lower`` (float, default -1.0): Lower bound of Uniform
+          prior on :math:`\\lambda`.
+        - ``lam_upper`` (float, default 1.0): Upper bound of Uniform
+          prior on :math:`\\lambda`.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for
+          :math:`\\beta`.
+        - ``beta_sigma`` (float, default 1e6): Normal prior std for
+          :math:`\\beta`.
+        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+          for :math:`\\sigma`.
+        - ``censor_sigma`` (float, default 10.0): HalfNormal prior
+          std for the latent gap below the censoring threshold.
+        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
+          prior on :math:`\\nu` (only used when ``robust=True``).
+
+    logdet_method : str, optional
+        How to compute :math:`\\log|I - \\lambda W|`; auto-selected
+        when ``None`` (default).
+    robust : bool, default False
+        If True, replace the Normal innovation with Student-t. See
+        *Robust regression* below.
+
+    Notes
+    -----
+    The base-class ``model`` argument is not exposed; pooled mean
+    structure (``model=0``) is used.
 
     **Robust regression**
 

@@ -20,7 +20,7 @@ from ..logdet import (
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, resolve_sampler
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 
 
 def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
@@ -131,14 +131,19 @@ class SpatialModel(ABC):
         Override default priors. Keys depend on the model subclass; see
         each model's docstring for supported keys.
     logdet_method : str
-        How to compute ``log|I - rho*W|``. ``"eigenvalue"`` (default)
-        pre-computes W's eigenvalues once and evaluates O(n) per step;
-        ``"exact"`` uses symbolic pytensor det (slow for n > 500);
-        ``"grid"`` uses spline interpolation (approximate);
-        ``"full"`` uses sparse-LU grid (MATLAB-style ``lndetfull``);
-        ``"int"`` uses sparse-LU + spline interpolation (``lndetint``);
-        ``"mc"`` uses Monte Carlo trace approximation (``lndetmc``);
-        ``"ichol"`` uses ILU-based approximation (``lndetichol`` analog).
+        How to compute ``log|I - rho*W|``. ``"eigenvalue"`` (default for
+        ``n <= 2000``) pre-computes W's eigenvalues once and evaluates
+        O(n) per step; ``"exact"`` uses symbolic pytensor det (slow for
+        ``n > 500``); ``"dense_grid"`` uses dense eigenvalue grid +
+        cubic-spline interpolation (MATLAB-style ``lndetfull`` for dense
+        W); ``"sparse_grid"`` uses sparse-LU grid + cubic-spline
+        interpolation (``lndetfull`` style for large sparse W);
+        ``"spline"`` uses sparse-LU + spline on ``[max(rho_min, 0),
+        rho_max]`` (``lndetint`` style); ``"mc"`` uses Monte Carlo
+        trace approximation (``lndetmc``); ``"ilu"`` uses ILU-based
+        approximation (``lndetichol`` analog); ``"chebyshev"`` (default
+        for ``n > 2000``) uses a Chebyshev polynomial approximation
+        evaluated via Clenshaw's algorithm.
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal,
         yielding a model that is robust to heavy-tailed outliers. When
@@ -332,15 +337,13 @@ class SpatialModel(ABC):
 
         c = self._eig_inv_ones
         eigs = self._W_eigs_full
-        # mean_row_sum = (1/n) * sum_i c_i * V_ji / (1 - rho * omega_i)
-        # = (1/n) * ones' @ V @ diag(1/(1-rho*omega)) @ c
-        # = (1/n) * (V @ diag(1/(1-rho*omega)) @ c) summed over rows
-        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
-        # For each draw: mean_row_sum = (1/n) * sum_j sum_i V_ji * c_i / (1-rho*omega_i)
-        # = (1/n) * sum_i c_i / (1-rho*omega_i) * sum_j V_ji
-        # = (1/n) * (c * inv_eigs) @ V_col_sums
+        # Closed form per draw:
+        # mean_row_sum(rho) = (1/n) * sum_i (V_col_sums_i * c_i) / (1 - rho*omega_i)
+        # Compute in chunks over draws to bound memory at O(chunk*n).
         V_col_sums = self._V_full.sum(axis=0)  # (n,)
-        return (1.0 / len(c)) * (inv_eigs * c[None, :]) @ V_col_sums
+        from ..diagnostics.spatial_effects import _chunked_eig_means
+
+        return _chunked_eig_means(rho_draws, eigs, weights=V_col_sums * c)
 
     def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} W for each posterior draw.
@@ -371,10 +374,10 @@ class SpatialModel(ABC):
 
         c = self._eig_inv_ones
         eigs = self._W_eigs_full
-        inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])  # (G, n)
-        eig_weighted = eigs[None, :] * inv_eigs  # omega / (1 - rho*omega)
         V_col_sums = self._V_full.sum(axis=0)  # (n,)
-        return (1.0 / len(c)) * (eig_weighted * c[None, :]) @ V_col_sums
+        from ..diagnostics.spatial_effects import _chunked_eig_means
+
+        return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
 
     @property
     def _nonintercept_indices(self) -> list[int]:
@@ -580,7 +583,6 @@ class SpatialModel(ABC):
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
-        sampler: Optional[str] = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
@@ -597,22 +599,17 @@ class SpatialModel(ABC):
             Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
-        sampler : str, optional
-            Which NUTS backend to use.  One of ``"pymc"``, ``"blackjax"``,
-            ``"numpyro"``, ``"nutpie"``, or ``None`` (use the package
-            default — typically ``"blackjax"``; can be overridden via the
-            ``BAYESPECON_SAMPLER`` environment variable).  If the requested
-            optional backend is not installed, falls back to ``"pymc"``
-            with a ``UserWarning``.  An explicit ``nuts_sampler=...`` in
-            ``sample_kwargs`` always takes precedence.
         **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``.
+            Additional keyword arguments forwarded to ``pm.sample``.  Pass
+            ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
+            select an alternative NUTS backend; defaults to PyMC's built-in
+            sampler.
 
         Returns
         -------
         arviz.InferenceData
         """
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", resolve_sampler(sampler))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
         model = self._build_pymc_model()
         self._pymc_model = model
         if "idata_kwargs" in sample_kwargs:
