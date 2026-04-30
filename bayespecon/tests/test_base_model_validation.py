@@ -299,18 +299,34 @@ class TestCrossSectionalDiagnosticsDecision:
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
 
-    def test_slx_robust_both(self, W_graph, monkeypatch):
+    def test_slx_robust_both_lag_wins(self, W_graph, monkeypatch):
+        # When both robust tests fire, the smaller-p (= larger statistic) side
+        # wins.  Lag-SDM has the smaller p-value here, so SDM is preferred.
         from bayespecon.models.slx import SLX
 
         rng = np.random.default_rng(0)
         model = SLX(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
         df = pd.DataFrame(
-            {"p_value": [0.001, 0.001]},
+            {"p_value": [0.0001, 0.01]},
             index=["Robust-LM-Lag-SDM", "Robust-LM-Error-SDEM"],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
-            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
+            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
+        )
+
+    def test_slx_robust_both_error_wins(self, W_graph, monkeypatch):
+        from bayespecon.models.slx import SLX
+
+        rng = np.random.default_rng(0)
+        model = SLX(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
+        df = pd.DataFrame(
+            {"p_value": [0.01, 0.0001]},
+            index=["Robust-LM-Lag-SDM", "Robust-LM-Error-SDEM"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
         )
 
     def test_slx_neither_robust(self, W_graph, monkeypatch):

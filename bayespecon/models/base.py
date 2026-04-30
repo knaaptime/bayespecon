@@ -936,11 +936,24 @@ class SpatialModel(ABC):
         def _lag_le_error() -> bool:
             return diag.loc["LM-Lag", "p_value"] <= diag.loc["LM-Error", "p_value"]
 
+        def _lag_sdm_le_error_sdem() -> bool:
+            # Used by the SLX decision tree to break ties when both
+            # ``Robust-LM-Lag-SDM`` and ``Robust-LM-Error-SDEM`` are
+            # significant: the omitted channel with the smaller p-value
+            # (i.e. the larger statistic) wins.
+            return (
+                diag.loc["Robust-LM-Lag-SDM", "p_value"]
+                <= diag.loc["Robust-LM-Error-SDEM", "p_value"]
+            )
+
         spec = _dt.get_spec(model_type)
         decision, path = _dt.evaluate(
             spec,
             sig_lookup=_sig,
-            predicate_lookup={"lag_pval_le_error_pval": _lag_le_error},
+            predicate_lookup={
+                "lag_pval_le_error_pval": _lag_le_error,
+                "lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
+            },
         )
 
         # Build p-value lookup for renderers (only test rows present).

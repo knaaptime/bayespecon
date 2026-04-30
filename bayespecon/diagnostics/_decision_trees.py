@@ -394,10 +394,20 @@ def _ols_spec() -> TreeNode:
 
 
 def _sar_spec() -> TreeNode:
+    # If LM-Error fires from a SAR fit it can mean either (i) a true error
+    # process on top of the lag (→ SARAR) or (ii) omitted WX whose signal
+    # leaks into the residual autocorrelation (→ SDM).  ``Robust-LM-WX``
+    # disambiguates: when WX is genuinely missing it stays significant after
+    # adjusting for ρ, so SDM is preferred even though LM-Error fired.
     return TreeNode(
         kind="test",
         name="LM-Error",
-        if_true="SARAR",
+        if_true=TreeNode(
+            kind="test",
+            name="Robust-LM-WX",
+            if_true="SDM",
+            if_false="SARAR",
+        ),
         if_false=TreeNode(
             kind="test",
             name="Robust-LM-WX",
@@ -413,10 +423,19 @@ def _sar_spec() -> TreeNode:
 
 
 def _sem_spec() -> TreeNode:
+    # If LM-Lag fires from a SEM fit it can mean either (i) a true lag on top
+    # of the error process (→ SARAR) or (ii) omitted WX masquerading as ρ
+    # (→ SDEM).  ``LM-WX`` (here the SEM-null variant exposed under that
+    # label, see SEM._spatial_diagnostics_tests) settles the ambiguity.
     return TreeNode(
         kind="test",
         name="LM-Lag",
-        if_true="SARAR",
+        if_true=TreeNode(
+            kind="test",
+            name="LM-WX",
+            if_true="SDEM",
+            if_false="SARAR",
+        ),
         if_false=TreeNode(
             kind="test",
             name="LM-WX",
@@ -427,13 +446,24 @@ def _sem_spec() -> TreeNode:
 
 
 def _slx_spec() -> TreeNode:
+    # When both robust tests fire from an SLX fit the omitted channel is
+    # whichever side carries the stronger signal: smaller p on Lag-SDM ⇒
+    # SDM, smaller p on Error-SDEM ⇒ SDEM.  ``MANSAR`` is intentionally
+    # not a terminal here; users wanting MANSAR should fit it explicitly
+    # and compare via :func:`bayes_factor_compare_models`.
     return TreeNode(
         kind="test",
         name="Robust-LM-Lag-SDM",
         if_true=TreeNode(
             kind="test",
             name="Robust-LM-Error-SDEM",
-            if_true="MANSAR",
+            if_true=TreeNode(
+                kind="predicate",
+                name="Robust-LM-Lag-SDM p <= Robust-LM-Error-SDEM p",
+                if_true="SDM",
+                if_false="SDEM",
+                predicate_id="lag_sdm_pval_le_error_sdem_pval",
+            ),
             if_false="SDM",
         ),
         if_false=TreeNode(
@@ -581,10 +611,16 @@ def _panel_ols_spec(suffix: str) -> TreeNode:
 
 
 def _panel_sar_spec(suffix: str) -> TreeNode:
+    # Panel mirror of ``_sar_spec`` — see that docstring.
     return TreeNode(
         kind="test",
         name="Panel-LM-Error",
-        if_true=f"SARARPanel{suffix}",
+        if_true=TreeNode(
+            kind="test",
+            name="Panel-Robust-LM-WX",
+            if_true=f"SDMPanel{suffix}",
+            if_false=f"SARARPanel{suffix}",
+        ),
         if_false=TreeNode(
             kind="test",
             name="Panel-Robust-LM-WX",
@@ -600,10 +636,16 @@ def _panel_sar_spec(suffix: str) -> TreeNode:
 
 
 def _panel_sem_spec(suffix: str) -> TreeNode:
+    # Panel mirror of ``_sem_spec`` — see that docstring.
     return TreeNode(
         kind="test",
         name="Panel-LM-Lag",
-        if_true=f"SARARPanel{suffix}",
+        if_true=TreeNode(
+            kind="test",
+            name="Panel-LM-WX",
+            if_true=f"SDEMPanel{suffix}",
+            if_false=f"SARARPanel{suffix}",
+        ),
         if_false=TreeNode(
             kind="test",
             name="Panel-LM-WX",
@@ -614,13 +656,20 @@ def _panel_sem_spec(suffix: str) -> TreeNode:
 
 
 def _panel_slx_spec(suffix: str) -> TreeNode:
+    # Panel mirror of ``_slx_spec`` — see that docstring.
     return TreeNode(
         kind="test",
         name="Panel-Robust-LM-Lag-SDM",
         if_true=TreeNode(
             kind="test",
             name="Panel-Robust-LM-Error-SDEM",
-            if_true=f"MANSARPanel{suffix}",
+            if_true=TreeNode(
+                kind="predicate",
+                name="Panel-Robust-LM-Lag-SDM p <= Panel-Robust-LM-Error-SDEM p",
+                if_true=f"SDMPanel{suffix}",
+                if_false=f"SDEMPanel{suffix}",
+                predicate_id="panel_lag_sdm_pval_le_error_sdem_pval",
+            ),
             if_false=f"SDMPanel{suffix}",
         ),
         if_false=TreeNode(

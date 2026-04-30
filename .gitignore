@@ -107,4 +107,5 @@ docs/source/user-guide/cache
 
 .pytest_cache/
 
-reference/
+reference
+scratch/

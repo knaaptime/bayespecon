@@ -7,12 +7,16 @@ import pytest
 
 from bayespecon.diagnostics.bayesian_lmtests import (
     BayesianLMTestResult,
+    bayesian_lm_error_sdm_test,
     bayesian_lm_error_test,
+    bayesian_lm_lag_sdem_test,
     bayesian_lm_lag_test,
     bayesian_lm_sdm_joint_test,
     bayesian_lm_slx_error_joint_test,
     bayesian_lm_wx_test,
+    bayesian_panel_lm_error_sdm_test,
     bayesian_panel_lm_error_test,
+    bayesian_panel_lm_lag_sdem_test,
     # Panel LM tests
     bayesian_panel_lm_lag_test,
     bayesian_panel_lm_sdm_joint_test,
@@ -395,6 +399,158 @@ class TestBayesianRobustLMErrorSDEMTest:
 
         assert result.df == 1
         assert result.lm_samples.shape[0] == 50
+
+
+# ---------------------------------------------------------------------------
+# SDM/SDEM-aware MANSAR-direction tests
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_sdm_model(y, X, WX, W_sparse, draws=200, beta_noise=0.05, rho_noise=0.05):
+    """Build a mock SDM model: beta covers [X, WX] and rho is in posterior."""
+    Z = np.hstack([X, WX])
+    beta_mean = np.linalg.lstsq(Z, y, rcond=None)[0]
+    rng = np.random.default_rng(42)
+    beta_samples = np.tile(beta_mean, (draws, 1)) + rng.normal(
+        scale=beta_noise, size=(draws, Z.shape[1])
+    )
+    rho_samples = rng.normal(scale=rho_noise, size=draws)
+
+    Wy = np.asarray(W_sparse @ y, dtype=np.float64)
+    idata = az.from_dict(
+        posterior={
+            "beta": beta_samples[:, None, :],
+            "rho": rho_samples[:, None],
+            "sigma": np.ones(draws)[:, None],
+        },
+        observed_data={"y": y},
+    )
+
+    model = MagicMock()
+    model._y = y
+    model._X = X
+    model._WX = WX
+    model._Wy = Wy
+    model._W_sparse = W_sparse
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
+    model.inference_data = idata
+    return model
+
+
+def _make_mock_sdem_model(y, X, WX, W_sparse, draws=200, beta_noise=0.05, lam_noise=0.05):
+    """Build a mock SDEM model: beta covers [X, WX] and lam is in posterior."""
+    Z = np.hstack([X, WX])
+    beta_mean = np.linalg.lstsq(Z, y, rcond=None)[0]
+    rng = np.random.default_rng(42)
+    beta_samples = np.tile(beta_mean, (draws, 1)) + rng.normal(
+        scale=beta_noise, size=(draws, Z.shape[1])
+    )
+    lam_samples = rng.normal(scale=lam_noise, size=draws)
+
+    Wy = np.asarray(W_sparse @ y, dtype=np.float64)
+    idata = az.from_dict(
+        posterior={
+            "beta": beta_samples[:, None, :],
+            "lam": lam_samples[:, None],
+            "sigma": np.ones(draws)[:, None],
+        },
+        observed_data={"y": y},
+    )
+
+    model = MagicMock()
+    model._y = y
+    model._X = X
+    model._WX = WX
+    model._Wy = Wy
+    model._W_sparse = W_sparse
+    model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
+    model.inference_data = idata
+    return model
+
+
+class TestBayesianLMErrorSDMTest:
+    def test_basic_output(self):
+        y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
+        model = _make_mock_sdm_model(y, X, WX, W_sparse, draws=200)
+        result = bayesian_lm_error_sdm_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.test_type == "bayesian_lm_error_sdm"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+    def test_sigma_scaling_matches_standard_lm_error(self):
+        """At rho=0, k_wx=0 the SDM-error test should reduce to LM-Error.
+
+        Regression test for the sigma^2 vs sigma^4 scaling bug: previously
+        V was sigma^2 * T_ww (wrong); now it must be sigma^4 * T_ww.
+        """
+        y, X, W_dense, W_sparse = make_sar_sem_data(n=20)
+        WX = np.empty((X.shape[0], 0), dtype=float)
+        model = _make_mock_sdm_model(
+            y, X, WX, W_sparse, draws=300, beta_noise=0.0, rho_noise=0.0
+        )
+        result_sdm = bayesian_lm_error_sdm_test(model)
+
+        # Compare with standard LM-Error using the same OLS-style residuals
+        ols_model = _make_mock_model(y, X, W_sparse, beta_noise=0.0, draws=300)
+        result_ols = bayesian_lm_error_test(ols_model)
+
+        # With rho=0 and no WX, the two tests should agree to numerical precision
+        assert np.isclose(result_sdm.mean, result_ols.mean, rtol=1e-6)
+
+
+class TestBayesianLMLagSDEMTest:
+    def test_basic_output(self):
+        y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
+        model = _make_mock_sdem_model(y, X, WX, W_sparse, draws=200)
+        result = bayesian_lm_lag_sdem_test(model)
+
+        assert isinstance(result, BayesianLMTestResult)
+        assert result.lm_samples.shape[0] == 200
+        assert result.test_type == "bayesian_lm_lag_sdem"
+        assert 0.0 <= result.bayes_pvalue <= 1.0
+        assert np.all(result.lm_samples >= 0)
+
+    def test_variance_uses_sigma4_term(self):
+        """Regression test: V must include sigma^4 * T_ww (not sigma^2 * T_ww).
+
+        Construct a model with sigma=2 (so sigma^2=4, sigma^4=16). Verify
+        that the LM denominator is sigma^4 * T_ww + sigma^2 * ||Wy||^2,
+        not the previously-buggy sigma^2 * T_ww + ||Wy||^2.
+        """
+        y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=16, k_wx=1)
+        model = _make_mock_sdem_model(
+            y, X, WX, W_sparse, draws=200, beta_noise=0.0, lam_noise=0.0
+        )
+        # Override sigma to be a fixed value of 2.0
+        sigma_val = 2.0
+        model.inference_data.posterior["sigma"][:] = sigma_val
+        T_ww = model._T_ww
+        Wy = model._Wy
+        expected_V = sigma_val**4 * T_ww + sigma_val**2 * float(np.dot(Wy, Wy))
+
+        result = bayesian_lm_lag_sdem_test(model)
+
+        # Recompute the score using the same residual logic to back out V
+        idata = model.inference_data
+        beta_draws = np.asarray(idata.posterior["beta"]).reshape(-1, X.shape[1] + WX.shape[1])
+        lam_draws = np.asarray(idata.posterior["lam"]).reshape(-1)
+        Z = np.hstack([X, WX])
+        u = y[None, :] - beta_draws @ Z.T
+        Wu = (W_sparse @ u.T).T
+        eps = u - lam_draws[:, None] * Wu
+        S = np.dot(eps, Wy)
+        V_implied = float(np.mean(S**2 / (result.lm_samples + 1e-15)))
+
+        # The implied V should match the expected sigma^4 formula, not the
+        # old buggy sigma^2 formula
+        old_buggy_V = sigma_val**2 * T_ww + float(np.dot(Wy, Wy))
+        assert np.isclose(V_implied, expected_V, rtol=1e-3), (
+            f"Implied V={V_implied:.3f} should match new sigma^4 formula "
+            f"{expected_V:.3f} (old buggy was {old_buggy_V:.3f})"
+        )
 
 
 # ---------------------------------------------------------------------------
