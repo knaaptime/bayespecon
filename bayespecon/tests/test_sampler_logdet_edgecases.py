@@ -31,16 +31,13 @@ class TestEnforceCBackend:
 
     def test_no_c_backend_required_passthrough(self):
         assert (
-            enforce_c_backend(
-                "blackjax", requires_c_backend=False, model_name="X"
-            )
+            enforce_c_backend("blackjax", requires_c_backend=False, model_name="X")
             == "blackjax"
         )
 
     def test_pymc_passthrough(self):
         assert (
-            enforce_c_backend("pymc", requires_c_backend=True, model_name="X")
-            == "pymc"
+            enforce_c_backend("pymc", requires_c_backend=True, model_name="X") == "pymc"
         )
 
     def test_requires_c_backend_with_no_jax(self, monkeypatch):

@@ -257,8 +257,14 @@ class SARTobit(_SpatialTobitBase):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
@@ -561,8 +567,14 @@ class SEMTobit(_SpatialTobitBase):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
@@ -878,8 +890,14 @@ class SDMTobit(_SpatialTobitBase):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples

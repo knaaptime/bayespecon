@@ -346,8 +346,14 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         else:
@@ -368,8 +374,8 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
                 mean_diag_w = float(self._W_sparse.diagonal().mean())
                 mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
                 wx_idx = self._wx_column_indices
-                direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)
-                total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)
+                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
                 indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
@@ -575,8 +581,14 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         else:
@@ -597,8 +609,8 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
                 mean_diag_w = float(self._W_sparse.diagonal().mean())
                 mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
                 wx_idx = self._wx_column_indices
-                direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)
-                total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)
+                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
                 indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
@@ -866,8 +878,14 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         else:
@@ -888,8 +906,8 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
                 mean_diag_w = float(self._W_sparse.diagonal().mean())
                 mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
                 wx_idx = self._wx_column_indices
-                direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)
-                total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)
+                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
                 indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
@@ -1108,8 +1126,14 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         else:
@@ -1130,8 +1154,8 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
                 mean_diag_w = float(self._W_sparse.diagonal().mean())
                 mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
                 wx_idx = self._wx_column_indices
-                direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)
-                total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)
+                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
                 indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
@@ -1396,8 +1420,14 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         else:
@@ -1418,8 +1448,8 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
                 mean_diag_w = float(self._W_sparse.diagonal().mean())
                 mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
                 wx_idx = self._wx_column_indices
-                direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)
-                total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)
+                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
                 indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
@@ -1714,8 +1744,8 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             mean_diag_w = float(self._W_sparse.diagonal().mean())
             mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
             wx_idx = self._wx_column_indices
-            direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)
-            total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)
+            direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+            total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
             indirect_samples = total_samples - direct_samples
 
         elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
@@ -1730,8 +1760,14 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         else:
@@ -1752,8 +1788,8 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
                 mean_diag_w = float(self._W_sparse.diagonal().mean())
                 mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
                 wx_idx = self._wx_column_indices
-                direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)
-                total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)
+                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
                 indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
@@ -1938,8 +1974,14 @@ class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices
-            direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)
-            total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
             indirect_samples = total_samples - direct_samples
 
         else:
@@ -1960,8 +2002,8 @@ class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
                 mean_diag_w = float(self._W_sparse.diagonal().mean())
                 mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
                 wx_idx = self._wx_column_indices
-                direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)
-                total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)
+                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
                 indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples

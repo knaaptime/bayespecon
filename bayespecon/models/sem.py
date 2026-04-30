@@ -269,9 +269,7 @@ class SEM(SpatialModel):
         # here for the full design matrix (vs. ``self._WX`` which only covers
         # ``w_vars`` columns).
         if not hasattr(self, "_WX_all_cache") or self._WX_all_cache is None:
-            self._WX_all_cache = np.asarray(
-                self._W_sparse @ self._X, dtype=np.float64
-            )
+            self._WX_all_cache = np.asarray(self._W_sparse @ self._X, dtype=np.float64)
         WX_all = self._WX_all_cache
 
         with pm.Model(coords=self._model_coords()) as model:

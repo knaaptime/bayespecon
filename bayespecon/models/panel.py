@@ -980,8 +980,14 @@ class SDMPanelFE(SpatialPanelModel):
         mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)  # (G,)
 
         wx_idx = self._wx_column_indices
-        direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)  # (G, kw)
-        total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)  # (G, kw)
+        direct_samples = (
+            mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+            + mean_diag_MW[:, None] * beta2_draws
+        )  # (G, kw)
+        total_samples = (
+            mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+            + mean_row_sum_MW[:, None] * beta2_draws
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
@@ -1266,8 +1272,8 @@ class SDEMPanelFE(SpatialPanelModel):
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)  # (G, kw)
-        total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)  # (G, kw)
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
@@ -1479,8 +1485,8 @@ class SLXPanelFE(SpatialPanelModel):
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)  # (G, kw)
-        total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)  # (G, kw)
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples

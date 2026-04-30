@@ -412,8 +412,14 @@ class SDM(SpatialModel):
         # Direct_k = beta1_j * mean_diag_M + beta2_k * mean_diag_MW
         # Total_k  = beta1_j * mean_row_sum_M + beta2_k * mean_row_sum_MW
         wx_idx = self._wx_column_indices
-        direct_samples = (mean_diag_M[:, None] * beta1_draws[:, wx_idx] + mean_diag_MW[:, None] * beta2_draws)  # (G, kw)
-        total_samples = (mean_row_sum_M[:, None] * beta1_draws[:, wx_idx] + mean_row_sum_MW[:, None] * beta2_draws)  # (G, kw)
+        direct_samples = (
+            mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+            + mean_diag_MW[:, None] * beta2_draws
+        )  # (G, kw)
+        total_samples = (
+            mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+            + mean_row_sum_MW[:, None] * beta2_draws
+        )  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples

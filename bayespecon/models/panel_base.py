@@ -362,9 +362,7 @@ class SpatialPanelModel(ABC):
                     f"Available: {self._feature_names}"
                 )
             self._wx_column_indices = [
-                i
-                for i in self._wx_column_indices
-                if self._feature_names[i] in w_vars
+                i for i in self._wx_column_indices if self._feature_names[i] in w_vars
             ]
         self._wx_feature_names = [
             self._feature_names[i] for i in self._wx_column_indices
@@ -576,9 +574,7 @@ class SpatialPanelModel(ABC):
         V_col_sums = self._V_full.sum(axis=0)  # (n,)
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
-        return _chunked_eig_means(
-            rho_draws, eigs, weights=eigs * V_col_sums * c
-        )
+        return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
 
     @property
     def _nonintercept_indices(self) -> list[int]:

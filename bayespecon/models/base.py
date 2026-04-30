@@ -377,9 +377,7 @@ class SpatialModel(ABC):
         V_col_sums = self._V_full.sum(axis=0)  # (n,)
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
-        return _chunked_eig_means(
-            rho_draws, eigs, weights=eigs * V_col_sums * c
-        )
+        return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
 
     @property
     def _nonintercept_indices(self) -> list[int]:

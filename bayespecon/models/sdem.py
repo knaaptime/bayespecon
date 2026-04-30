@@ -275,9 +275,7 @@ class SDEM(SpatialModel):
         #   eps = (y - lam*Wy) - (Z - lam*WZ)@beta
         # avoiding any sparse matvec inside the NUTS gradient loop.
         if not hasattr(self, "_WZ_sdem_cache") or self._WZ_sdem_cache is None:
-            self._WZ_sdem_cache = np.asarray(
-                self._W_sparse @ Z, dtype=np.float64
-            )
+            self._WZ_sdem_cache = np.asarray(self._W_sparse @ Z, dtype=np.float64)
         WZ = self._WZ_sdem_cache
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -362,8 +360,8 @@ class SDEM(SpatialModel):
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)  # (G, kw)
-        total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)  # (G, kw)
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples

@@ -254,8 +254,8 @@ class SLX(SpatialModel):
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
         wx_idx = self._wx_column_indices
-        direct_samples = (beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws)  # (G, kw)
-        total_samples = (beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws)  # (G, kw)
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
 
         return direct_samples, indirect_samples, total_samples
