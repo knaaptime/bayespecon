@@ -1648,13 +1648,11 @@ def bayesian_panel_lm_lag_test(
     T_ww = model._T_ww
     J_val = WbMWb + T * T_ww * sigma2_mean
 
-    # LM = S² / (sigma2 * J_val) for each draw
-    # But sigma2 varies across draws. Use posterior mean sigma2 for J,
-    # and per-draw sigma2 for the score variance.
-    # Following the existing cross-sectional pattern: use information matrix
-    # evaluated at posterior mean, compute LM per draw.
-    sigma2_draws = sigma_draws**2  # (draws,)
-    LM = S**2 / (sigma2_draws * J_val + 1e-12)
+    # Variance evaluated at posterior mean theta* (Dogan et al. 2021,
+    # eq. 3.6); only the score varies across draws, consistent with the
+    # cross-sectional bayesian_lm_lag_test.
+    V = sigma2_mean * J_val
+    LM = S**2 / (V + 1e-12)
 
     return _finalize_lm(
         LM,
@@ -1725,8 +1723,10 @@ def bayesian_panel_lm_error_test(
 
     # Variance: V = sigma^4 * T * tr(W'W + W²)
     T_ww = model._T_ww
-    sigma2_draws = sigma_draws**2  # (draws,)
-    V = sigma2_draws**2 * T * T_ww  # (draws,)
+    # Variance evaluated at posterior mean theta* (Dogan et al. 2021,
+    # eq. 3.6); consistent with the cross-sectional bayesian_lm_error_test.
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    V = sigma2_mean**2 * T * T_ww  # scalar
 
     # LM = S² / V
     LM = S**2 / (V + 1e-12)
@@ -3145,11 +3145,12 @@ def bayesian_lm_error_sdm_test(
     so that the LM-Error score and variance are evaluated at posterior
     draws from the *correct* fitted model. The score and variance follow
     the standard LM-Error formulation
-    (:cite:t:`anselin1996SimpleDiagnostic`):
+    (:cite:t:`anselin1996SimpleDiagnostic`), kept on the raw-score scale
+    consistent with :func:`bayesian_lm_error_test`:
 
     .. math::
         S = \mathbf{e}^\top W\mathbf{e}, \qquad
-        V = T_{WW}\,\bar\sigma^2
+        V = \bar\sigma^4\,T_{WW}
 
     Returns ``LM = S^2 / V`` per draw, distributed as :math:`\chi^2_1`
     under H₀.
@@ -3174,7 +3175,8 @@ def bayesian_lm_error_sdm_test(
     We = (W_sp @ resid.T).T  # (draws, n)
     S = np.sum(resid * We, axis=1)  # (draws,)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    V = T_ww * sigma2_mean
+    # Raw-score variance: Var(e'We) = sigma^4 * T_ww (cf. bayesian_lm_error_test).
+    V = sigma2_mean**2 * T_ww
     LM = S**2 / (V + 1e-12)
 
     return _finalize_lm(LM, test_type="bayesian_lm_error_sdm", df=1)
@@ -3194,11 +3196,22 @@ def bayesian_lm_lag_sdem_test(
             \bigl(\mathbf{y} - X\beta - WX\theta\bigr)
 
     The score and variance follow the standard LM-Lag formulation
-    (:cite:t:`anselin1996SimpleDiagnostic`):
+    (:cite:t:`anselin1996SimpleDiagnostic`), kept on the raw-score scale
+    consistent with :func:`bayesian_lm_lag_test`:
 
     .. math::
         S = \boldsymbol{\varepsilon}^\top W\mathbf{y}, \qquad
-        V = T_{WW}\,\bar\sigma^2 + \|W\mathbf{y}\|^2
+        V = \bar\sigma^4\,T_{WW} + \bar\sigma^2\,\|W\mathbf{y}\|^2
+
+    .. note::
+       The :math:`\|W\mathbf{y}\|^2` term uses the raw squared norm of
+       :math:`W\mathbf{y}` rather than the :math:`M_X`-projected
+       fitted-value norm :math:`\|M_X W X\bar\beta\|^2` used by
+       :func:`bayesian_lm_lag_test`. Under the SDEM null the WX columns
+       are already in the mean structure, so the projection-based
+       concentration argument differs from the OLS-null case. The
+       structural form follows the MANSAR analogue of the SDM-direction
+       derivation in :cite:t:`koley2024UseNot`.
 
     Returns ``LM = S^2 / V`` per draw, distributed as :math:`\chi^2_1`
     under H₀.
@@ -3223,7 +3236,10 @@ def bayesian_lm_lag_sdem_test(
 
     S = np.dot(eps, Wy)  # (draws,)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    V = T_ww * sigma2_mean + float(np.dot(Wy, Wy))
+    # Raw-score variance: sigma^4 * T_ww + sigma^2 * ||Wy||^2
+    # (cf. bayesian_lm_lag_test; both terms must carry the appropriate
+    # sigma^2 power on the raw-score scale).
+    V = sigma2_mean**2 * T_ww + sigma2_mean * float(np.dot(Wy, Wy))
     LM = S**2 / (V + 1e-12)
 
     return _finalize_lm(LM, test_type="bayesian_lm_lag_sdem", df=1)
@@ -3249,11 +3265,12 @@ def bayesian_panel_lm_error_sdm_test(
                      - X\beta - WX\gamma - (\iota_T \otimes \alpha).
 
     The score and variance follow the panel LM-Error construction
-    (cf. :func:`bayesian_panel_lm_error_test`):
+    (cf. :func:`bayesian_panel_lm_error_test`), kept on the raw-score
+    scale:
 
     .. math::
         S = \mathbf{e}^\top (I_T \otimes W)\mathbf{e},
-        \qquad V = T \cdot T_{WW}\,\bar{\sigma}^2,
+        \qquad V = \bar{\sigma}^4 \cdot T \cdot T_{WW},
 
     with :math:`T_{WW} = \mathrm{tr}(W^\top W + W^2)`. The LM statistic is
     :math:`\chi^2_1` under H₀. Tests whether an SDM panel should be
@@ -3287,8 +3304,9 @@ def bayesian_panel_lm_error_sdm_test(
 
     T_ww = model._T_ww
     sigma2_mean = float(np.mean(sigma_draws**2))
-    # Panel LM-Error denominator scales with T (cf. bayesian_panel_lm_error_test)
-    V = T * T_ww * sigma2_mean
+    # Panel LM-Error raw-score variance: sigma^4 * T * T_ww
+    # (cf. bayesian_panel_lm_error_test).
+    V = sigma2_mean**2 * T * T_ww
     LM = S**2 / (V + 1e-12)
 
     return _finalize_lm(
@@ -3313,11 +3331,20 @@ def bayesian_panel_lm_lag_sdem_test(
         \qquad \boldsymbol{\varepsilon} = \mathbf{u} - \lambda\,(I_T\otimes W)\mathbf{u}.
 
     The score and variance follow the panel LM-Lag construction
-    (cf. :func:`bayesian_panel_lm_lag_test`):
+    (cf. :func:`bayesian_panel_lm_lag_test`), kept on the raw-score
+    scale:
 
     .. math::
         S = \boldsymbol{\varepsilon}^\top (I_T\otimes W)\mathbf{y},
-        \qquad V = T_{WW}\,\bar{\sigma}^2 + \|(I_T\otimes W)\mathbf{y}\|^2.
+        \qquad V = \bar{\sigma}^4\,T\,T_{WW}
+                   + \bar{\sigma}^2\,\|(I_T\otimes W)\mathbf{y}\|^2.
+
+    .. note::
+       As in :func:`bayesian_lm_lag_sdem_test`, the
+       :math:`\|(I_T\otimes W)\mathbf{y}\|^2` term uses the raw squared
+       norm rather than an :math:`M_X`-projected fitted-value norm,
+       reflecting that the SDEM mean structure already includes
+       :math:`WX`.
 
     The LM statistic is :math:`\chi^2_1` under H₀. Tests whether an SDEM
     panel should be extended to a SDARAR panel (SDEM with a spatial lag);
@@ -3350,7 +3377,8 @@ def bayesian_panel_lm_lag_sdem_test(
 
     T_ww = model._T_ww
     sigma2_mean = float(np.mean(sigma_draws**2))
-    V = T * T_ww * sigma2_mean + float(np.dot(Wy, Wy))
+    # Raw-score variance: sigma^4 * T * T_ww + sigma^2 * ||W_NT y||^2.
+    V = sigma2_mean**2 * T * T_ww + sigma2_mean * float(np.dot(Wy, Wy))
     LM = S**2 / (V + 1e-12)
 
     return _finalize_lm(

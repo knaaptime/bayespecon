@@ -764,7 +764,12 @@ class SpatialPanelModel(ABC):
             Posterior samples and diagnostics.
         """
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        model = self._build_pymc_model()
+        try:
+            model = self._build_pymc_model(nuts_sampler=nuts_sampler)
+        except TypeError:
+            # Subclasses that don't accept ``nuts_sampler`` build the same
+            # model on every backend.
+            model = self._build_pymc_model()
         self._pymc_model = model
         if "idata_kwargs" in sample_kwargs:
             sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
@@ -1032,11 +1037,20 @@ class SpatialPanelModel(ABC):
                 <= diag.loc["Panel-LM-Error", "p_value"]
             )
 
+        def _lag_sdm_le_error_sdem() -> bool:
+            return (
+                diag.loc["Panel-Robust-LM-Lag-SDM", "p_value"]
+                <= diag.loc["Panel-Robust-LM-Error-SDEM", "p_value"]
+            )
+
         spec = _dt.get_panel_spec(model_type)
         decision, path = _dt.evaluate(
             spec,
             sig_lookup=_sig,
-            predicate_lookup={"panel_lag_pval_le_error_pval": _lag_le_error},
+            predicate_lookup={
+                "panel_lag_pval_le_error_pval": _lag_le_error,
+                "panel_lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
+            },
         )
 
         p_values: dict[str, float] = {}

@@ -38,6 +38,7 @@ addopts = "-m 'not slow'"   # run fast tests by default; use -m slow or -m '' to
 markers = [
     "slow: marks tests as slow (MCMC parameter recovery — deselected by default)",
     "recovery: marks parameter recovery tests (fit model, assert posterior ≈ true params)",
+    "requires_jax: marks tests that activate a JAX-backed NUTS sampler (numpyro/blackjax) — auto-skipped on Windows",
 ]
 
 [tool.coverage.run]

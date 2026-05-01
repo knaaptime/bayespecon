@@ -12,6 +12,8 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
+pytestmark = pytest.mark.requires_jax
+
 pytest.importorskip("jax")
 
 import pytensor

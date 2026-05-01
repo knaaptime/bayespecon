@@ -767,3 +767,136 @@ class TestArviZCompatibility:
         assert len(comparison) == 3, (
             f"Expected 3 models in comparison, got {len(comparison)}"
         )
+
+
+# ===========================================================================
+# JAX backend parity tests (Phase D)
+# ===========================================================================
+
+
+class TestJaxLogLikelihoodCapture:
+    """Verify that PyMC's JAX path captures `log_likelihood["obs"]` natively
+    for every spatial-error model migrated to ``pm.CustomDist``.
+
+    Each test fits the model on numpyro and asserts the log_likelihood group
+    has shape ``(chain, draw, n_obs)`` and finite values — matching what the
+    PyMC backend produces via its manual fallback path.
+    """
+
+    pytestmark = pytest.mark.requires_jax
+
+    def test_sem_jax(self):
+        pytest.importorskip("numpyro")
+        y, X, W, _, n = _cross_section_data()
+        model = SEM(y=y, X=X, W=W, logdet_method="eigenvalue")
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
+            nuts_sampler="numpyro",
+            idata_kwargs={"log_likelihood": True},
+        )
+        _assert_valid_log_likelihood(idata, n, "SEM[numpyro]")
+
+    def test_sdem_jax(self):
+        pytest.importorskip("numpyro")
+        y, X, W, _, n = _cross_section_data()
+        model = SDEM(y=y, X=X, W=W, logdet_method="eigenvalue")
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
+            nuts_sampler="numpyro",
+            idata_kwargs={"log_likelihood": True},
+        )
+        _assert_valid_log_likelihood(idata, n, "SDEM[numpyro]")
+
+    def test_sem_panel_fe_jax(self):
+        pytest.importorskip("numpyro")
+        y, X, W, _, N, T, n = _panel_data()
+        model = SEMPanelFE(
+            y=y,
+            X=X,
+            W=W,
+            N=N,
+            T=T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
+            nuts_sampler="numpyro",
+            idata_kwargs={"log_likelihood": True},
+        )
+        _assert_valid_log_likelihood(idata, n, "SEMPanelFE[numpyro]")
+
+    def test_sdem_panel_fe_jax(self):
+        pytest.importorskip("numpyro")
+        y, X, W, _, N, T, n = _panel_data()
+        model = SDEMPanelFE(
+            y=y,
+            X=X,
+            W=W,
+            N=N,
+            T=T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
+            nuts_sampler="numpyro",
+            idata_kwargs={"log_likelihood": True},
+        )
+        _assert_valid_log_likelihood(idata, n, "SDEMPanelFE[numpyro]")
+
+    def test_sem_panel_re_jax(self):
+        pytest.importorskip("numpyro")
+        y, X, W, _, N, T, n = _panel_data()
+        model = SEMPanelRE(y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue")
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
+            nuts_sampler="numpyro",
+            idata_kwargs={"log_likelihood": True},
+        )
+        _assert_valid_log_likelihood(idata, n, "SEMPanelRE[numpyro]")
+
+    def test_sem_panel_tobit_jax(self):
+        pytest.importorskip("numpyro")
+        y, X, W, _, N, T, n = _panel_data()
+        # introduce some censoring at zero
+        y = np.where(y > 0.0, y, 0.0)
+        model = SEMPanelTobit(
+            y=y,
+            X=X,
+            W=W,
+            N=N,
+            T=T,
+            model=1,
+            logdet_method="eigenvalue",
+        )
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=1,
+            random_seed=0,
+            progressbar=False,
+            nuts_sampler="numpyro",
+            idata_kwargs={"log_likelihood": True},
+        )
+        _assert_valid_log_likelihood(idata, n, "SEMPanelTobit[numpyro]")

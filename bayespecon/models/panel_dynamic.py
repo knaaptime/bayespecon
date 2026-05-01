@@ -1247,7 +1247,9 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         """Return coefficient names without WX terms (SEM has no Durbin component)."""
         return self._feature_names
 
-    def _build_pymc_model(self) -> pm.Model:
+    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
+        from ._sampler import use_jax_likelihood
+
         self._prepare_dynamic_design()
 
         lam_lower = self.priors.get("lam_lower", -0.95)
@@ -1267,6 +1269,11 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         )
 
         W_pt = self._W_pt_sparse_dyn
+        n_obs = int(self._y_dyn.shape[0])
+        # ``logdet_fn`` already includes the T_eff multiplier; distribute the
+        # full panel Jacobian uniformly across the n_obs entries.
+        inv_n = 1.0 / n_obs
+        jax_logp = use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -1274,18 +1281,68 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            resid = self._y_dyn - phi * self._y_lag - pt.dot(self._X_dyn, beta)
-            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model["nu"]
-                logp_eps = pm.logp(
-                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
-                ).sum()
+
+            if jax_logp:
+                ylag_const = pt.as_tensor_variable(self._y_lag)
+                X_const = pt.as_tensor_variable(self._X_dyn)
+
+                def _eps(value, lam_, phi_, beta_):
+                    resid = value - phi_ * ylag_const - pt.dot(X_const, beta_)
+                    return (
+                        resid
+                        - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    )
+
+                if self.robust:
+                    nu = model["nu"]
+
+                    def sempanel_dyn_logp(value, lam_, phi_, beta_, sigma_, nu_):
+                        eps = _eps(value, lam_, phi_, beta_)
+                        log_dens = pm.logp(
+                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                        )
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        phi,
+                        beta,
+                        sigma,
+                        nu,
+                        logp=sempanel_dyn_logp,
+                        observed=self._y_dyn,
+                    )
+                else:
+
+                    def sempanel_dyn_logp(value, lam_, phi_, beta_, sigma_):
+                        eps = _eps(value, lam_, phi_, beta_)
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        phi,
+                        beta,
+                        sigma,
+                        logp=sempanel_dyn_logp,
+                        observed=self._y_dyn,
+                    )
             else:
-                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-            pm.Potential("eps_loglik", logp_eps)
-            pm.Potential("jacobian", logdet_fn(lam))
+                resid = self._y_dyn - phi * self._y_lag - pt.dot(self._X_dyn, beta)
+                eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                if self.robust:
+                    nu = model["nu"]
+                    logp_eps = pm.logp(
+                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                    ).sum()
+                else:
+                    logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+                pm.Potential("eps_loglik", logp_eps)
+                pm.Potential("jacobian", logdet_fn(lam))
 
         return model
 
@@ -1548,7 +1605,9 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             ]
         return self._feature_names
 
-    def _build_pymc_model(self) -> pm.Model:
+    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
+        from ._sampler import use_jax_likelihood
+
         self._prepare_dynamic_design()
 
         Z = np.hstack([self._X_dyn, self._WX_dyn])
@@ -1570,6 +1629,9 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         )
 
         W_pt = self._W_pt_sparse_dyn
+        n_obs = int(self._y_dyn.shape[0])
+        inv_n = 1.0 / n_obs
+        jax_logp = use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -1577,18 +1639,68 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            resid = self._y_dyn - phi * self._y_lag - pt.dot(Z, beta)
-            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model["nu"]
-                logp_eps = pm.logp(
-                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
-                ).sum()
+
+            if jax_logp:
+                ylag_const = pt.as_tensor_variable(self._y_lag)
+                Z_const = pt.as_tensor_variable(Z)
+
+                def _eps(value, lam_, phi_, beta_):
+                    resid = value - phi_ * ylag_const - pt.dot(Z_const, beta_)
+                    return (
+                        resid
+                        - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    )
+
+                if self.robust:
+                    nu = model["nu"]
+
+                    def sdempanel_dyn_logp(value, lam_, phi_, beta_, sigma_, nu_):
+                        eps = _eps(value, lam_, phi_, beta_)
+                        log_dens = pm.logp(
+                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                        )
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        phi,
+                        beta,
+                        sigma,
+                        nu,
+                        logp=sdempanel_dyn_logp,
+                        observed=self._y_dyn,
+                    )
+                else:
+
+                    def sdempanel_dyn_logp(value, lam_, phi_, beta_, sigma_):
+                        eps = _eps(value, lam_, phi_, beta_)
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        phi,
+                        beta,
+                        sigma,
+                        logp=sdempanel_dyn_logp,
+                        observed=self._y_dyn,
+                    )
             else:
-                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-            pm.Potential("eps_loglik", logp_eps)
-            pm.Potential("jacobian", logdet_fn(lam))
+                resid = self._y_dyn - phi * self._y_lag - pt.dot(Z, beta)
+                eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                if self.robust:
+                    nu = model["nu"]
+                    logp_eps = pm.logp(
+                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                    ).sum()
+                else:
+                    logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+                pm.Potential("eps_loglik", logp_eps)
+                pm.Potential("jacobian", logdet_fn(lam))
 
         return model
 

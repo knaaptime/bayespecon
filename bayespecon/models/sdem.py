@@ -148,25 +148,31 @@ class SDEM(SpatialModel):
         :math:`Z = [X, WX]`.
 
         Because the SDEM model uses ``pm.Potential`` for both the Gaussian
-        error log-likelihood and the Jacobian, neither term is auto-captured
-        in the ``log_likelihood`` group by PyMC.  We compute the complete
-        pointwise log-likelihood manually after sampling:
+        error log-likelihood and the Jacobian on the default (C / Numba)
+        backend, neither term is auto-captured in the ``log_likelihood``
+        group by PyMC.  We compute the complete pointwise log-likelihood
+        manually after sampling:
 
         .. math::
             \\ell_i = -\\frac{1}{2}\\left(\\frac{\\varepsilon_i}{\\sigma}\\right)^2
             - \\log(\\sigma) - \\frac{1}{2}\\log(2\\pi)
             + \\frac{1}{n} \\log |I - \\lambda W |
+
+        On JAX backends (``nuts_sampler="numpyro"`` or ``"blackjax"``) the
+        same per-observation density is registered via :class:`pymc.CustomDist`
+        so PyMC populates ``log_likelihood`` natively.
         """
         from ._sampler import (
             prepare_compile_kwargs,
             prepare_idata_kwargs,
+            use_jax_likelihood,
         )
 
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
-        model = self._build_pymc_model()
+        model = self._build_pymc_model(nuts_sampler=nuts_sampler)
         self._pymc_model = model
         idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
         sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
@@ -183,9 +189,14 @@ class SDEM(SpatialModel):
             )
 
         # --- Compute complete pointwise log-likelihood ---
-        # SDEM uses pm.Potential for both Gaussian and Jacobian terms,
-        # so nothing is auto-captured. We recompute from posterior draws.
-        if compute_log_likelihood:
+        # On the default (pymc/numba) backend SDEM uses pm.Potential for both
+        # Gaussian and Jacobian terms, so nothing is auto-captured.  On JAX
+        # backends the model is built via pm.CustomDist with an observed RV,
+        # so PyMC has already populated ``log_likelihood`` natively.
+        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
+            nuts_sampler
+        )
+        if needs_manual_loglik:
             idata = self._idata
             n = self._y.shape[0]
             Z = np.hstack([self._X, self._WX])  # (n, 2k)
@@ -247,14 +258,26 @@ class SDEM(SpatialModel):
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
-    def _build_pymc_model(self) -> pm.Model:
+    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
         """Construct the PyMC model for SDEM regression.
+
+        Parameters
+        ----------
+        nuts_sampler :
+            Resolved sampler name (``"pymc"``, ``"blackjax"``, ``"numpyro"``,
+            ``"nutpie"``).  When the sampler is JAX-backed (``"blackjax"`` /
+            ``"numpyro"``), the likelihood is registered via
+            :class:`pymc.CustomDist` with an observed RV so PyMC's JAX path
+            can capture ``log_likelihood`` natively.  Otherwise the
+            (benchmarked) :func:`pymc.Potential` formulation is used.
 
         Returns
         -------
         pymc.Model
             Compiled probabilistic model object.
         """
+        from ._sampler import use_jax_likelihood
+
         if not self._wx_column_indices:
             raise ValueError(
                 "SDEM requires at least one WX column. Pass `w_vars=[...]` to "
@@ -278,22 +301,85 @@ class SDEM(SpatialModel):
             self._WZ_sdem_cache = np.asarray(self._W_sparse @ Z, dtype=np.float64)
         WZ = self._WZ_sdem_cache
 
+        n_obs = int(self._y.shape[0])
+        jax_logp = use_jax_likelihood(nuts_sampler)
+
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            y_star = self._y - lam * self._Wy
-            Z_star = Z - lam * WZ
-            eps = y_star - pt.dot(Z_star, beta)
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model["nu"]
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps)
+
+            if jax_logp:
+                # JAX path: register an observed RV via pm.CustomDist so PyMC
+                # can capture ``log_likelihood`` natively.  The Jacobian
+                # ``log|I - lam*W|`` is a scalar in lam; we distribute it
+                # evenly as ``logdet/n`` per observation so the *sum* of the
+                # per-point log-likelihood reproduces the joint log-density
+                # (matches the manual NumPy fallback's convention so
+                # loo/waic numbers are unchanged across backends).
+                Wy_const = pt.as_tensor_variable(self._Wy)
+                Z_const = pt.as_tensor_variable(Z)
+                WZ_const = pt.as_tensor_variable(WZ)
+                inv_n = 1.0 / n_obs
+
+                if self.robust:
+                    nu = model["nu"]
+
+                    def sdem_logp(value, lam_, beta_, sigma_, nu_):
+                        y_star = value - lam_ * Wy_const
+                        Z_star = Z_const - lam_ * WZ_const
+                        eps = y_star - pt.dot(Z_star, beta_)
+                        log_dens = pm.logp(
+                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                        )
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        beta,
+                        sigma,
+                        nu,
+                        logp=sdem_logp,
+                        observed=self._y,
+                    )
+                else:
+
+                    def sdem_logp(value, lam_, beta_, sigma_):
+                        y_star = value - lam_ * Wy_const
+                        Z_star = Z_const - lam_ * WZ_const
+                        eps = y_star - pt.dot(Z_star, beta_)
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        beta,
+                        sigma,
+                        logp=sdem_logp,
+                        observed=self._y,
+                    )
             else:
-                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps)
-            pm.Potential("eps_loglik", logp_eps.sum())
-            pm.Potential("jacobian", logdet_fn(lam))
+                # Default (C / Numba) path: benchmarked pm.Potential
+                # formulation.  Log-likelihood is recomputed manually after
+                # sampling because pm.Potential terms are not captured by
+                # ``compute_log_likelihood``.
+                y_star = self._y - lam * self._Wy
+                Z_star = Z - lam * WZ
+                eps = y_star - pt.dot(Z_star, beta)
+                if self.robust:
+                    nu = model["nu"]
+                    logp_eps = pm.logp(
+                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                    )
+                else:
+                    logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps)
+                pm.Potential("eps_loglik", logp_eps.sum())
+                pm.Potential("jacobian", logdet_fn(lam))
 
         return model
 

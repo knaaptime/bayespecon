@@ -46,6 +46,18 @@ def _jax_dispatches_available() -> bool:
     return _has_module("jax") and _has_module("pytensor.link.jax.dispatch")
 
 
+def use_jax_likelihood(nuts_sampler: str) -> bool:
+    """Return ``True`` when the resolved sampler is JAX-backed.
+
+    Models that define their likelihood via :func:`pymc.Potential` cannot be
+    captured by PyMC's JAX log-likelihood path (it iterates ``observed_RVs``
+    only).  When this helper returns ``True``, ``_build_pymc_model`` should
+    use a :class:`pymc.CustomDist` with an observed RV instead, so PyMC can
+    capture ``log_likelihood`` natively.
+    """
+    return nuts_sampler in ("blackjax", "numpyro")
+
+
 def enforce_c_backend(
     nuts_sampler: str,
     *,
@@ -90,11 +102,25 @@ def prepare_idata_kwargs(
     """Strip ``log_likelihood=True`` for JAX backends on potential-only models.
 
     PyMC's JAX sampling path (``pm.sampling.jax._get_log_likelihood``) iterates
-    ``model.observed_RVs``; when a model defines its likelihood with
-    ``pm.Potential`` (e.g. SEM, SDEM, Tobit, panel SEM), that list is empty
-    and the helper raises ``TypeError: 'NoneType' object is not iterable``.
-    These models recompute the log-likelihood manually after sampling, so it
-    is safe to drop the request before calling ``pm.sample``.
+    ``model.observed_RVs``; when a model defines its likelihood purely with
+    ``pm.Potential`` and no observed RV, that list is empty and the helper
+    raises ``TypeError: 'NoneType' object is not iterable``.
+
+    Most spatial-error models (SEM, SDEM, all panel SEM/SDEM variants,
+    SEMPanelTobit) now expose a dual-path ``_build_pymc_model``: when the
+    selected sampler is ``"blackjax"`` or ``"numpyro"`` they register the
+    likelihood via ``pm.CustomDist("obs", ..., observed=y)`` so PyMC captures
+    ``log_likelihood["obs"]`` natively. Flow models (SEMFlow, SEMFlowPanel,
+    SEMFlowSeparablePanel) achieve the same result via the mean-form
+    ``pm.Normal/StudentT("obs", mu=..., observed=y)`` pattern combined with a
+    Jacobian ``pm.Potential`` that is folded back into ``log_likelihood["obs"]``
+    after sampling.
+
+    For these migrated models ``observed_RVs`` is non-empty under the JAX
+    backend, so this helper is a no-op. The strip remains as a defensive
+    fallback for any not-yet-migrated potential-only model that would
+    otherwise crash the JAX sampler (those models recompute the log-likelihood
+    manually in their own ``fit`` override).
     """
     idata_kwargs = dict(idata_kwargs or {})
     if not idata_kwargs.get("log_likelihood"):

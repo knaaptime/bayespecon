@@ -433,7 +433,9 @@ class SEMPanelTobit(_PanelTobitBase):
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
 
-    def _build_pymc_model(self) -> pm.Model:
+    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
+        from ._sampler import use_jax_likelihood
+
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -443,24 +445,137 @@ class SEMPanelTobit(_PanelTobitBase):
         logdet_fn = self._logdet_pytensor_fn
         W_pt = self._W_pt_sparse
 
+        n_obs = int(self._y.shape[0])
+        # ``_logdet_pytensor_fn`` already includes the T multiplier.
+        inv_n = 1.0 / n_obs
+        jax_logp = use_jax_likelihood(nuts_sampler)
+        n_cens = int(self._censored_idx.size)
+
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            y_lat = self._latent_y_tensor()
-            resid = y_lat - pt.dot(self._X, beta)
-            eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model["nu"]
-                logp_eps = pm.logp(
-                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
-                ).sum()
+
+            if jax_logp:
+                # Materialise censored data-augmentation RV up front so the
+                # closure can reconstruct the latent y from ``value``.
+                if n_cens > 0:
+                    censor_sigma = float(self.priors.get("censor_sigma", 10.0))
+                    y_cens_gap = pm.HalfNormal(
+                        "y_cens_gap", sigma=censor_sigma, shape=n_cens
+                    )
+                else:
+                    y_cens_gap = None
+
+                X_const = pt.as_tensor_variable(self._X)
+                cens_idx_const = (
+                    pt.as_tensor_variable(self._censored_idx) if n_cens > 0 else None
+                )
+                censoring_const = self.censoring
+
+                def _eps(value, lam_, beta_, gap_):
+                    y_lat = value
+                    if gap_ is not None:
+                        y_cens = censoring_const - gap_
+                        y_lat = pt.set_subtensor(y_lat[cens_idx_const], y_cens)
+                    resid = y_lat - pt.dot(X_const, beta_)
+                    return (
+                        resid
+                        - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    )
+
+                if self.robust:
+                    nu = model["nu"]
+
+                    if n_cens > 0:
+
+                        def sempanel_tobit_logp(value, lam_, beta_, sigma_, gap_, nu_):
+                            eps = _eps(value, lam_, beta_, gap_)
+                            log_dens = pm.logp(
+                                pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                            )
+                            return log_dens + logdet_fn(lam_) * inv_n
+
+                        pm.CustomDist(
+                            "obs",
+                            lam,
+                            beta,
+                            sigma,
+                            y_cens_gap,
+                            nu,
+                            logp=sempanel_tobit_logp,
+                            observed=self._y,
+                        )
+                    else:
+
+                        def sempanel_tobit_logp(value, lam_, beta_, sigma_, nu_):
+                            eps = _eps(value, lam_, beta_, None)
+                            log_dens = pm.logp(
+                                pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                            )
+                            return log_dens + logdet_fn(lam_) * inv_n
+
+                        pm.CustomDist(
+                            "obs",
+                            lam,
+                            beta,
+                            sigma,
+                            nu,
+                            logp=sempanel_tobit_logp,
+                            observed=self._y,
+                        )
+                else:
+                    if n_cens > 0:
+
+                        def sempanel_tobit_logp(value, lam_, beta_, sigma_, gap_):
+                            eps = _eps(value, lam_, beta_, gap_)
+                            log_dens = pm.logp(
+                                pm.Normal.dist(mu=0.0, sigma=sigma_), eps
+                            )
+                            return log_dens + logdet_fn(lam_) * inv_n
+
+                        pm.CustomDist(
+                            "obs",
+                            lam,
+                            beta,
+                            sigma,
+                            y_cens_gap,
+                            logp=sempanel_tobit_logp,
+                            observed=self._y,
+                        )
+                    else:
+
+                        def sempanel_tobit_logp(value, lam_, beta_, sigma_):
+                            eps = _eps(value, lam_, beta_, None)
+                            log_dens = pm.logp(
+                                pm.Normal.dist(mu=0.0, sigma=sigma_), eps
+                            )
+                            return log_dens + logdet_fn(lam_) * inv_n
+
+                        pm.CustomDist(
+                            "obs",
+                            lam,
+                            beta,
+                            sigma,
+                            logp=sempanel_tobit_logp,
+                            observed=self._y,
+                        )
             else:
-                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-            pm.Potential("eps_loglik", logp_eps)
-            pm.Potential("jacobian", logdet_fn(lam))
+                y_lat = self._latent_y_tensor()
+                resid = y_lat - pt.dot(self._X, beta)
+                eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                if self.robust:
+                    nu = model["nu"]
+                    logp_eps = pm.logp(
+                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                    ).sum()
+                else:
+                    logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+                pm.Potential("eps_loglik", logp_eps)
+                pm.Potential("jacobian", logdet_fn(lam))
 
         return model
 

@@ -12,6 +12,8 @@ All tests are marked slow because they run MCMC. Run them with::
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import pytest
 from libpysal.graph import Graph
@@ -19,6 +21,29 @@ from libpysal.graph import Graph
 from .helpers import PANEL_N, W_to_graph, make_line_W, make_rook_W
 
 SIDE = 6  # 36 cross-sectional units
+
+
+# ---------------------------------------------------------------------------
+# Pytest collection hooks
+# ---------------------------------------------------------------------------
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip ``requires_jax``-marked tests on Windows.
+
+    JAX (and the JAX-backed NUTS samplers ``numpyro``/``blackjax``) is not
+    reliably installable on Windows CI. Tests that activate those backends
+    are tagged with ``@pytest.mark.requires_jax`` and skipped here so that
+    cross-platform CI matrices don't need per-job marker exclusions.
+    """
+    if not sys.platform.startswith("win"):
+        return
+    skip_marker = pytest.mark.skip(
+        reason="JAX backends (numpyro/blackjax) are not supported on Windows CI"
+    )
+    for item in items:
+        if "requires_jax" in item.keywords:
+            item.add_marker(skip_marker)
 
 
 # ---------------------------------------------------------------------------

@@ -562,14 +562,25 @@ class SEMPanelFE(SpatialPanelModel):
         ),
     ]
 
-    def _build_pymc_model(self) -> pm.Model:
+    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
         """Construct the PyMC model for SEM panel regression.
+
+        Parameters
+        ----------
+        nuts_sampler :
+            Resolved sampler name.  When JAX-backed (``"blackjax"`` /
+            ``"numpyro"``), the likelihood is registered via
+            :class:`pymc.CustomDist` so PyMC's JAX path captures
+            ``log_likelihood`` natively.  Otherwise the (benchmarked)
+            :func:`pymc.Potential` formulation is used.
 
         Returns
         -------
         pymc.Model
             Compiled probabilistic model object.
         """
+        from ._sampler import use_jax_likelihood
+
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -588,24 +599,79 @@ class SEMPanelFE(SpatialPanelModel):
             self._WX_all_cache = self._sparse_panel_lag(self._X)
         WX_all = self._WX_all_cache
 
+        n_obs = int(self._y.shape[0])  # = N * T
+        # Per-observation Jacobian split: ``_logdet_pytensor_fn`` is built via
+        # ``make_logdet_fn(..., T=self._T)`` and already returns the full
+        # panel log-determinant ``T * log|I_N - λW|``.  Distribute that
+        # scalar over the ``N*T`` observations so the sum reproduces the
+        # joint log-density (matches the manual NumPy fallback).
+        inv_n = 1.0 / n_obs
+        jax_logp = use_jax_likelihood(nuts_sampler)
+
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            y_star = self._y - lam * self._Wy
-            X_star = self._X - lam * WX_all
-            eps = y_star - pt.dot(X_star, beta)
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model["nu"]
-                logp_eps = pm.logp(
-                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
-                ).sum()
+
+            if jax_logp:
+                Wy_const = pt.as_tensor_variable(self._Wy)
+                X_const = pt.as_tensor_variable(self._X)
+                WX_const = pt.as_tensor_variable(WX_all)
+
+                if self.robust:
+                    nu = model["nu"]
+
+                    def sempanel_logp(value, lam_, beta_, sigma_, nu_):
+                        y_star = value - lam_ * Wy_const
+                        X_star = X_const - lam_ * WX_const
+                        eps = y_star - pt.dot(X_star, beta_)
+                        log_dens = pm.logp(
+                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                        )
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        beta,
+                        sigma,
+                        nu,
+                        logp=sempanel_logp,
+                        observed=self._y,
+                    )
+                else:
+
+                    def sempanel_logp(value, lam_, beta_, sigma_):
+                        y_star = value - lam_ * Wy_const
+                        X_star = X_const - lam_ * WX_const
+                        eps = y_star - pt.dot(X_star, beta_)
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        beta,
+                        sigma,
+                        logp=sempanel_logp,
+                        observed=self._y,
+                    )
             else:
-                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-            pm.Potential("eps_loglik", logp_eps)
-            pm.Potential("jacobian", logdet_fn(lam))
+                y_star = self._y - lam * self._Wy
+                X_star = self._X - lam * WX_all
+                eps = y_star - pt.dot(X_star, beta)
+                if self.robust:
+                    nu = model["nu"]
+                    logp_eps = pm.logp(
+                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                    ).sum()
+                else:
+                    logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+                pm.Potential("eps_loglik", logp_eps)
+                pm.Potential("jacobian", logdet_fn(lam))
         return model
 
     def fit(
@@ -1094,14 +1160,24 @@ class SDEMPanelFE(SpatialPanelModel):
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
-    def _build_pymc_model(self) -> pm.Model:
+    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
         """Construct the PyMC model for SDEM panel regression.
+
+        Parameters
+        ----------
+        nuts_sampler :
+            Resolved sampler name.  When JAX-backed, the likelihood is
+            registered via :class:`pymc.CustomDist` so PyMC's JAX path
+            captures ``log_likelihood`` natively; otherwise the
+            :func:`pymc.Potential` formulation is used.
 
         Returns
         -------
         pymc.Model
             Compiled probabilistic model object.
         """
+        from ._sampler import use_jax_likelihood
+
         Z = np.hstack([self._X, self._WX])
 
         lam_lower = self.priors.get("lam_lower", -1.0)
@@ -1119,24 +1195,74 @@ class SDEMPanelFE(SpatialPanelModel):
             self._WZ_sdem_cache = self._sparse_panel_lag(Z)
         WZ = self._WZ_sdem_cache
 
+        n_obs = int(self._y.shape[0])
+        inv_n = 1.0 / n_obs  # see SEMPanelFE for derivation
+        jax_logp = use_jax_likelihood(nuts_sampler)
+
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
 
-            y_star = self._y - lam * self._Wy
-            Z_star = Z - lam * WZ
-            eps = y_star - pt.dot(Z_star, beta)
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model["nu"]
-                logp_eps = pm.logp(
-                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
-                ).sum()
+
+            if jax_logp:
+                Wy_const = pt.as_tensor_variable(self._Wy)
+                Z_const = pt.as_tensor_variable(Z)
+                WZ_const = pt.as_tensor_variable(WZ)
+
+                if self.robust:
+                    nu = model["nu"]
+
+                    def sdempanel_logp(value, lam_, beta_, sigma_, nu_):
+                        y_star = value - lam_ * Wy_const
+                        Z_star = Z_const - lam_ * WZ_const
+                        eps = y_star - pt.dot(Z_star, beta_)
+                        log_dens = pm.logp(
+                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                        )
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        beta,
+                        sigma,
+                        nu,
+                        logp=sdempanel_logp,
+                        observed=self._y,
+                    )
+                else:
+
+                    def sdempanel_logp(value, lam_, beta_, sigma_):
+                        y_star = value - lam_ * Wy_const
+                        Z_star = Z_const - lam_ * WZ_const
+                        eps = y_star - pt.dot(Z_star, beta_)
+                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
+                        return log_dens + logdet_fn(lam_) * inv_n
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        beta,
+                        sigma,
+                        logp=sdempanel_logp,
+                        observed=self._y,
+                    )
             else:
-                logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-            pm.Potential("eps_loglik", logp_eps)
-            pm.Potential("jacobian", logdet_fn(lam))
+                y_star = self._y - lam * self._Wy
+                Z_star = Z - lam * WZ
+                eps = y_star - pt.dot(Z_star, beta)
+                if self.robust:
+                    nu = model["nu"]
+                    logp_eps = pm.logp(
+                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                    ).sum()
+                else:
+                    logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
+                pm.Potential("eps_loglik", logp_eps)
+                pm.Potential("jacobian", logdet_fn(lam))
         return model
 
     def fit(
