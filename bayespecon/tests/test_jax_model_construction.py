@@ -67,13 +67,11 @@ def _assert_has_potential(model: pm.Model, label: str):
     """Assert that the model uses pm.Potential (no 'obs' observed RV)."""
     obs_rvs = [rv for rv in model.observed_RVs if rv.name == "obs"]
     assert len(obs_rvs) == 0, (
-        f"{label}: expected no 'obs' observed RV (Potential path), "
-        f"but found {obs_rvs}"
+        f"{label}: expected no 'obs' observed RV (Potential path), but found {obs_rvs}"
     )
     pot_names = [p.name for p in model.potentials]
     assert "eps_loglik" in pot_names or "jacobian" in pot_names, (
-        f"{label}: expected 'eps_loglik' or 'jacobian' Potential, "
-        f"got {pot_names}"
+        f"{label}: expected 'eps_loglik' or 'jacobian' Potential, got {pot_names}"
     )
 
 
