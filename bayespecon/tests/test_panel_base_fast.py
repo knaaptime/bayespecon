@@ -518,3 +518,169 @@ class TestPanelDiagnosticsDecision:
             model.spatial_diagnostics_decision(alpha=0.05, format="model")
             == "MANSARPanelFE"
         )
+
+    def test_slx_panel_fe_robust_lag_sdm(self, W_graph, monkeypatch):
+        from bayespecon.models.panel import SLXPanelFE
+
+        rng = np.random.default_rng(0)
+        model = SLXPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"p_value": [0.001, 0.9]},
+            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model")
+            == "SDMPanelFE"
+        )
+
+    def test_slx_panel_fe_robust_error_sdem(self, W_graph, monkeypatch):
+        from bayespecon.models.panel import SLXPanelFE
+
+        rng = np.random.default_rng(0)
+        model = SLXPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"p_value": [0.9, 0.001]},
+            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model")
+            == "SDEMPanelFE"
+        )
+
+    def test_slx_panel_fe_robust_both_lag_wins(self, W_graph, monkeypatch):
+        """When both robust tests fire, the smaller-p side wins (Lag-SDM here)."""
+        from bayespecon.models.panel import SLXPanelFE
+
+        rng = np.random.default_rng(0)
+        model = SLXPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"p_value": [0.0001, 0.01]},
+            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model")
+            == "SDMPanelFE"
+        )
+
+    def test_slx_panel_fe_robust_both_error_wins(self, W_graph, monkeypatch):
+        """When both robust tests fire, the smaller-p side wins (Error-SDEM here)."""
+        from bayespecon.models.panel import SLXPanelFE
+
+        rng = np.random.default_rng(0)
+        model = SLXPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"p_value": [0.01, 0.0001]},
+            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model")
+            == "SDEMPanelFE"
+        )
+
+    def test_slx_panel_fe_neither_robust(self, W_graph, monkeypatch):
+        """When neither robust test fires, SLX is the terminal model."""
+        from bayespecon.models.panel import SLXPanelFE
+
+        rng = np.random.default_rng(0)
+        model = SLXPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"p_value": [0.9, 0.9]},
+            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model")
+            == "SLXPanelFE"
+        )
+
+    def test_sar_panel_fe_error_and_wx(self, W_graph, monkeypatch):
+        """SAR panel: LM-Error significant, Robust-LM-WX significant → SDM."""
+        from bayespecon.models.panel import SARPanelFE
+
+        rng = np.random.default_rng(0)
+        model = SARPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"p_value": [0.001, 0.001]},
+            index=["Panel-LM-Error", "Panel-Robust-LM-WX"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model")
+            == "SDMPanelFE"
+        )
+
+    def test_sem_panel_fe_lag_and_wx(self, W_graph, monkeypatch):
+        """SEM panel: LM-Lag significant, LM-WX significant → SDEM."""
+        from bayespecon.models.panel import SEMPanelFE
+
+        rng = np.random.default_rng(0)
+        model = SEMPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {"p_value": [0.001, 0.001]},
+            index=["Panel-LM-Lag", "Panel-LM-WX"],
+        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model")
+            == "SDEMPanelFE"
+        )
