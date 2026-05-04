@@ -322,8 +322,15 @@ class TestClosedFormRobust:
         return np.linalg.lstsq(Z, y, rcond=None)[0]
 
     def test_robust_lm_lag_sdm_matches_closed_form(self):
-        # SLX-null robust LM-Lag: LM = (e_slx' Wy)^2 / (sigma^4 T_ww + sigma^2 ||M_Z W y_hat||^2)
-        # where Z = [X, WX] is the SLX design (gamma already absorbed).
+        # SLX-null robust LM-Lag with Schur correction on λ (the other
+        # spatial parameter):
+        #   g_rho_star = g_rho - (J_rl/J_ll) * g_lambda
+        #   V_rho|lambda = J_rr - J_rl^2 / J_ll
+        # where J_rr, J_ll, J_rl come from _info_matrix_blocks_slx_robust.
+        from bayespecon.diagnostics.bayesian_lmtests import (
+            _info_matrix_blocks_slx_robust,
+        )
+
         y, X, WX, _Wd, W_sp, T_ww = _make_data(n=24, k_wx=2)
         Wy = np.asarray(W_sp @ y)
         beta_full = self._fit_slx_beta(X, WX, y)
@@ -333,14 +340,19 @@ class TestClosedFormRobust:
         Z = np.hstack([X, WX])
         e = y - Z @ beta_full
         g_rho = float(e @ Wy)
-        Wy_hat = np.asarray(W_sp @ (Z @ beta_full))
-        # M_Z-projected quadratic
-        ZtWyhat = Z.T @ Wy_hat
-        mz_quad = float(Wy_hat @ Wy_hat) - float(
-            ZtWyhat @ np.linalg.solve(Z.T @ Z, ZtWyhat)
+        We = np.asarray(W_sp @ e)
+        g_lam = float(e @ We)
+
+        blocks = _info_matrix_blocks_slx_robust(
+            X, WX, W_sp, sigma_hat**2, beta_full, T_ww=T_ww
         )
-        V = sigma_hat**4 * T_ww + sigma_hat**2 * mz_quad
-        expected = g_rho * g_rho / (V + 1e-12)
+        J_rr = blocks["J_rho_rho"]
+        J_ll = blocks["J_lam_lam"]
+        J_rl = blocks["J_rho_lam"]
+        coef = J_rl / (J_ll + 1e-12)
+        g_rho_star = g_rho - coef * g_lam
+        V = J_rr - (J_rl * J_rl) / (J_ll + 1e-12)
+        expected = g_rho_star * g_rho_star / (V + 1e-12)
 
         result = bayesian_robust_lm_lag_sdm_test(model)
         assert result.lm_samples[0] == pytest.approx(expected, rel=1e-10, abs=1e-12)
@@ -363,9 +375,16 @@ class TestClosedFormRobust:
         assert result.lm_samples[0] >= 0.0
 
     def test_robust_lm_error_sdem_matches_closed_form(self):
-        # SLX-null robust LM-Err: LM = (e_slx' W e_slx)^2 / (sigma^4 T_ww)
-        # (Koley-Bera 2024: J_{lambda,gamma} = 0 under spherical errors.)
+        # SLX-null robust LM-Err with Schur correction on ρ (the other
+        # spatial parameter):
+        #   g_lambda_star = g_lambda - (J_rl/J_rr) * g_rho
+        #   V_lambda|rho = J_ll - J_rl^2 / J_rr
+        from bayespecon.diagnostics.bayesian_lmtests import (
+            _info_matrix_blocks_slx_robust,
+        )
+
         y, X, WX, _Wd, W_sp, T_ww = _make_data(n=24, k_wx=2)
+        Wy = np.asarray(W_sp @ y)
         beta_full = self._fit_slx_beta(X, WX, y)
         sigma_hat = 0.6  # non-unity
         model = _mock_slx(y, X, WX, W_sp, T_ww, beta_full, sigma_hat=sigma_hat)
@@ -374,8 +393,18 @@ class TestClosedFormRobust:
         e = y - Z @ beta_full
         We = np.asarray(W_sp @ e)
         g_lam = float(e @ We)
-        V = sigma_hat**4 * T_ww
-        expected = g_lam * g_lam / (V + 1e-12)
+        g_rho = float(e @ Wy)
+
+        blocks = _info_matrix_blocks_slx_robust(
+            X, WX, W_sp, sigma_hat**2, beta_full, T_ww=T_ww
+        )
+        J_rr = blocks["J_rho_rho"]
+        J_ll = blocks["J_lam_lam"]
+        J_rl = blocks["J_rho_lam"]
+        coef = J_rl / (J_rr + 1e-12)
+        g_lam_star = g_lam - coef * g_rho
+        V = J_ll - (J_rl * J_rl) / (J_rr + 1e-12)
+        expected = g_lam_star * g_lam_star / (V + 1e-12)
 
         result = bayesian_robust_lm_error_sdem_test(model)
         assert result.lm_samples[0] == pytest.approx(expected, rel=1e-10, abs=1e-12)

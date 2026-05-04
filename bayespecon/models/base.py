@@ -101,6 +101,85 @@ def _parse_W(
     return W_csr, row_std
 
 
+def _pointwise_gaussian_loglik(
+    eps: np.ndarray,
+    sigma_draws: np.ndarray,
+    nu_draws: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Compute pointwise Gaussian or Student-t log-likelihood.
+
+    Parameters
+    ----------
+    eps : np.ndarray
+        Residual matrix of shape ``(n_draws, n_obs)``.
+    sigma_draws : np.ndarray
+        Posterior scale draws of shape ``(n_draws,)``.
+    nu_draws : np.ndarray, optional
+        Student-t degrees-of-freedom draws of shape ``(n_draws,)``.
+        When ``None``, computes Gaussian log-likelihood.
+
+    Returns
+    -------
+    np.ndarray
+        Pointwise log-likelihood with shape ``(n_draws, n_obs)``.
+    """
+    eps = np.asarray(eps, dtype=np.float64)
+    sigma = np.asarray(sigma_draws, dtype=np.float64).reshape(-1)
+    if eps.ndim != 2:
+        raise ValueError(f"eps must be 2D (n_draws, n_obs), got shape {eps.shape}.")
+    if sigma.shape[0] != eps.shape[0]:
+        raise ValueError(
+            "sigma_draws length must equal eps first dimension; "
+            f"got {sigma.shape[0]} and {eps.shape[0]}."
+        )
+
+    sigma = np.maximum(sigma, np.finfo(np.float64).tiny)
+    sigma_2d = sigma[:, None]
+
+    if nu_draws is None:
+        return (
+            -0.5 * (eps / sigma_2d) ** 2
+            - np.log(sigma_2d)
+            - 0.5 * np.log(2.0 * np.pi)
+        )
+
+    nu = np.asarray(nu_draws, dtype=np.float64).reshape(-1)
+    if nu.shape[0] != eps.shape[0]:
+        raise ValueError(
+            "nu_draws length must equal eps first dimension; "
+            f"got {nu.shape[0]} and {eps.shape[0]}."
+        )
+    nu = np.maximum(nu, np.finfo(np.float64).tiny)
+    from scipy import stats
+
+    return stats.t.logpdf(eps, df=nu[:, None], loc=0.0, scale=sigma_2d)
+
+
+def _write_log_likelihood_to_idata(
+    idata: az.InferenceData,
+    ll_array: np.ndarray,
+) -> None:
+    """Write a complete pointwise log-likelihood array to InferenceData.
+
+    Parameters
+    ----------
+    idata : az.InferenceData
+        Target inference data object to mutate in place.
+    ll_array : np.ndarray
+        Array with shape ``(chain, draw, obs)``.
+    """
+    import xarray as xr
+
+    ll = np.asarray(ll_array, dtype=np.float64)
+    if ll.ndim != 3:
+        raise ValueError(
+            f"ll_array must be 3D (chain, draw, obs), got shape {ll.shape}."
+        )
+
+    ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
+    idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+
+
 class SpatialModel(ABC):
     """Base class for Bayesian spatial regression models. Models follow the notation
     of :cite:p:`anselin1988SpatialEconometrics` and :cite:p:`lesage2009IntroductionSpatial`.
@@ -936,6 +1015,17 @@ class SpatialModel(ABC):
         def _lag_le_error() -> bool:
             return diag.loc["LM-Lag", "p_value"] <= diag.loc["LM-Error", "p_value"]
 
+        def _robust_lag_le_error() -> bool:
+            # OLS tree tie-break: when both naive AND both robust tests
+            # fire, route to the dominant single-channel model based on
+            # the smaller robust p-value.  We never escalate directly to
+            # SARAR from OLS; the user must fit SAR (or SEM) and re-run
+            # diagnostics from there.
+            return (
+                diag.loc["Robust-LM-Lag", "p_value"]
+                <= diag.loc["Robust-LM-Error", "p_value"]
+            )
+
         def _lag_sdm_le_error_sdem() -> bool:
             # Used by the SLX decision tree to break ties when both
             # ``Robust-LM-Lag-SDM`` and ``Robust-LM-Error-SDEM`` are
@@ -946,13 +1036,26 @@ class SpatialModel(ABC):
                 <= diag.loc["Robust-LM-Error-SDEM", "p_value"]
             )
 
+        def _lag_sem_le_wx_sem() -> bool:
+            # Used by the SEM decision tree to break ties when both
+            # ``Robust-LM-Lag`` (SEM-null lag score, Schur-purged for the
+            # WX block) and ``Robust-LM-WX`` (SEM-null WX score,
+            # Schur-purged for the lag) survive.  Smaller p (larger stat)
+            # wins: lag direction → SARAR, WX direction → SDEM.
+            return (
+                diag.loc["Robust-LM-Lag", "p_value"]
+                <= diag.loc["Robust-LM-WX", "p_value"]
+            )
+
         spec = _dt.get_spec(model_type)
         decision, path = _dt.evaluate(
             spec,
             sig_lookup=_sig,
             predicate_lookup={
                 "lag_pval_le_error_pval": _lag_le_error,
+                "robust_lag_pval_le_error_pval": _robust_lag_le_error,
                 "lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
+                "lag_sem_pval_le_wx_sem_pval": _lag_sem_le_wx_sem,
             },
         )
 

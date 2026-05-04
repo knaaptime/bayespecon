@@ -163,6 +163,13 @@ class SARTobit(_SpatialTobitBase):
             ).bayesian_robust_lm_wx_test(m),
             "Robust-LM-WX",
         ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_error_sar_test"],
+            ).bayesian_robust_lm_error_sar_test(m),
+            "Robust-LM-Error",
+        ),
     ]
 
     def _build_pymc_model(self) -> pm.Model:
@@ -483,6 +490,20 @@ class SEMTobit(_SpatialTobitBase):
             ).bayesian_lm_wx_sem_test(m),
             "LM-WX",
         ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_lag_sem_test"],
+            ).bayesian_robust_lm_lag_sem_test(m),
+            "Robust-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_wx_sem_test"],
+            ).bayesian_robust_lm_wx_sem_test(m),
+            "Robust-LM-WX",
+        ),
     ]
 
     def _build_pymc_model(self) -> pm.Model:
@@ -772,6 +793,13 @@ class SDMTobit(_SpatialTobitBase):
                 fromlist=["bayesian_lm_error_test"],
             ).bayesian_lm_error_test(m),
             "LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_error_sdm_test"],
+            ).bayesian_robust_lm_error_sdm_test(m),
+            "Robust-LM-Error",
         ),
     ]
 

@@ -16,9 +16,17 @@ import arviz as az
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
-import xarray as xr
 
-from .base import SpatialModel
+from ._sampler import (
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+    use_jax_likelihood,
+)
+from .base import (
+    SpatialModel,
+    _pointwise_gaussian_loglik,
+    _write_log_likelihood_to_idata,
+)
 
 
 class SDEM(SpatialModel):
@@ -113,6 +121,13 @@ class SDEM(SpatialModel):
             ).bayesian_lm_lag_sdem_test(m),
             "LM-Lag-SDEM",
         ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_lag_sdem_test"],
+            ).bayesian_robust_lm_lag_sdem_test(m),
+            "Robust-LM-Lag-SDEM",
+        ),
     ]
 
     def fit(
@@ -162,12 +177,6 @@ class SDEM(SpatialModel):
         same per-observation density is registered via :class:`pymc.CustomDist`
         so PyMC populates ``log_likelihood`` natively.
         """
-        from ._sampler import (
-            prepare_compile_kwargs,
-            prepare_idata_kwargs,
-            use_jax_likelihood,
-        )
-
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
@@ -207,51 +216,20 @@ class SDEM(SpatialModel):
                 -1, Z.shape[1]
             )  # (n_draws, 2k)
             sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
+            nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
 
-            # Residuals: resid = y - Z @ beta.T  => (n_draws, n)
             resid = self._y[None, :] - (beta_draws @ Z.T)  # (n_draws, n)
-
-            # Spatially filtered residuals: eps = resid - lam * W @ resid
             eps = resid - lam_draws[:, None] * (resid @ W.T)  # (n_draws, n)
 
-            # Pointwise log-likelihood for eps
-            if self.robust:
-                nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
-                from scipy.special import gammaln
-
-                ll_gauss = (
-                    gammaln((nu_draws[:, None] + 1) / 2)
-                    - gammaln(nu_draws[:, None] / 2)
-                    - 0.5 * np.log(nu_draws[:, None] * np.pi)
-                    - np.log(sigma_draws[:, None])
-                    - ((nu_draws[:, None] + 1) / 2)
-                    * np.log1p((eps / sigma_draws[:, None]) ** 2 / nu_draws[:, None])
-                )  # (n_draws, n)
-            else:
-                ll_gauss = (
-                    -0.5 * (eps / sigma_draws[:, None]) ** 2
-                    - np.log(sigma_draws[:, None])
-                    - 0.5 * np.log(2 * np.pi)
-                )  # (n_draws, n)
-
-            # Jacobian contribution per draw: log|I - lam*W| / n (respects logdet_method)
+            ll_gauss = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
             jacobian = self._logdet_numpy_vec_fn(lam_draws)  # (n_draws,)
-            ll_jac = jacobian[:, None] / n  # (n_draws, 1) broadcast to (n_draws, n)
+            ll_total = ll_gauss + jacobian[:, None] / n  # (n_draws, n)
 
-            ll_total = ll_gauss + ll_jac  # (n_draws, n)
-
-            # Reshape to (chains, draws, n)
             n_chains = idata.posterior.sizes["chain"]
             n_draws_per_chain = idata.posterior.sizes["draw"]
-            ll_array = ll_total.reshape(n_chains, n_draws_per_chain, n)
-
-            # Attach to idata — use explicit Dataset creation to ensure
-            # "obs" is a data variable, not a coordinate.
-            ll_da = xr.DataArray(
-                ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
+            _write_log_likelihood_to_idata(
+                idata, ll_total.reshape(n_chains, n_draws_per_chain, n)
             )
-            ll_ds = xr.Dataset({"obs": ll_da})
-            idata["log_likelihood"] = ll_ds
 
         return self._idata
 
@@ -276,8 +254,6 @@ class SDEM(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        from ._sampler import use_jax_likelihood
-
         if not self._wx_column_indices:
             raise ValueError(
                 "SDEM requires at least one WX column. Pass `w_vars=[...]` to "

@@ -274,6 +274,10 @@ class SpatialPanelModel(ABC):
         Pass a subset, e.g. ``w_vars=["income", "density"]``.
     """
 
+    # Emit a ResourceWarning before materializing very large dense panel
+    # weight matrices. Tests may monkeypatch this value.
+    _DENSE_W_WARN_BYTES: int = 100 * 1024 * 1024
+
     def __init__(
         self,
         formula: Optional[str] = None,
@@ -370,45 +374,29 @@ class SpatialPanelModel(ABC):
 
         # Validate W and store as N×N CSR. Dense expansion is deferred.
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
-        # Eigenvalues of the N×N matrix, pre-computed once (O(n³)).
-        self._W_eigs: np.ndarray = np.linalg.eigvals(
-            self._W_sparse.toarray().astype(np.float64)
-        )
+        # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
+        self._W_eigs_cache: np.ndarray | None = None
 
         self._y, self._X = _demean_panel(
             self._y_raw, self._X_raw, self._N, self._T, self.model
         )
 
-        # Compute spatial lags with the sparse Kronecker block W⊗I_T, avoiding
-        # full dense materialisation.  For an N×N unit matrix W, the panel lag
-        # of a stacked vector v (length N*T, ordered T×N) is equivalent to
-        # applying W row-wise within each time period.
-        # Store a numpy logdet callable for post-sampling LL Jacobians.
-        self._logdet_numpy_fn = make_logdet_numpy_fn(
-            self._W_sparse, self._W_eigs.real, method=self.logdet_method
-        )
-        # Vectorized version: evaluates logdet over an array of rho draws in one call.
-        self._logdet_numpy_vec_fn = make_logdet_numpy_vec_fn(
-            self._W_sparse, self._W_eigs.real, method=self.logdet_method
-        )
-        # Store the correct W argument for logdet calls.
-        # For eigenvalue method (explicit or auto-selected for n ≤ 2000),
-        # pass 1-D eigenvalues to avoid O(n²) dense materialisation.
-        # For other methods, pass the 2-D dense matrix.
-        _resolved_logdet = (
+        # Resolve the logdet method up-front so the lazy property accessors
+        # know whether eigenvalues are required.
+        self._resolved_logdet_method = (
             self.logdet_method
             if self.logdet_method is not None
             else _auto_logdet_method(self._W_sparse.shape[0])
         )
-        self._W_for_logdet: np.ndarray = (
-            self._W_eigs.real.astype(np.float64)
-            if _resolved_logdet in ("eigenvalue", "chebyshev")
-            else self._W_sparse.toarray().astype(np.float64)
-        )
-        # Store a pytensor logdet callable for use in _build_pymc_model.
-        self._logdet_pytensor_fn = make_logdet_fn(
-            self._W_for_logdet, method=self.logdet_method, T=self._T
-        )
+        # Logdet builders are constructed lazily on first access — see the
+        # ``_logdet_numpy_fn``, ``_logdet_numpy_vec_fn`` and
+        # ``_logdet_pytensor_fn`` properties.  Caches are seeded as None so
+        # that init never triggers the underlying eigendecomposition for
+        # methods that do not need it (chebyshev, sparse_grid, etc.).
+        self._logdet_numpy_fn_cache = None
+        self._logdet_numpy_vec_fn_cache = None
+        self._logdet_pytensor_fn_cache = None
+        self._W_for_logdet_cache = None
 
         self._Wy = self._sparse_panel_lag(self._y)
         if self._wx_column_indices:
@@ -446,10 +434,138 @@ class SpatialPanelModel(ABC):
             return np.asarray(W @ v, dtype=float)
         return np.asarray(W @ v, dtype=float)
 
+    def _batch_sparse_lag(
+        self,
+        resid: np.ndarray,
+        T_eff: int | None = None,
+    ) -> np.ndarray:
+        """Apply panel spatial lag to a batch of stacked residual draws.
+
+        Parameters
+        ----------
+        resid : np.ndarray
+            Residual draws with shape ``(n_draws, N*T_eff)``.
+        T_eff : int, optional
+            Effective time periods in the stacked residual layout. Defaults to
+            ``self._T``. Dynamic panel paths may pass ``T-1``.
+
+        Returns
+        -------
+        np.ndarray
+            Spatially lagged residuals with the same shape as ``resid``.
+        """
+        R = np.asarray(resid, dtype=np.float64)
+        if R.ndim != 2:
+            raise ValueError(
+                f"resid must be 2D (n_draws, N*T_eff), got shape {R.shape}."
+            )
+
+        N = int(self._N)
+        Te = int(self._T if T_eff is None else T_eff)
+        expected = N * Te
+        if R.shape[1] != expected:
+            raise ValueError(
+                "resid second dimension must equal N*T_eff; "
+                f"got {R.shape[1]} and expected {expected} (N={N}, T_eff={Te})."
+            )
+
+        W = self._W_sparse
+        if W.shape[0] == N:
+            # Reshape (draws, N*T_eff) -> (draws*T_eff, N), apply one sparse
+            # matrix multiply, then reshape back.
+            draws = R.shape[0]
+            R_flat = R.reshape(draws * Te, N)
+            WR_flat = np.asarray(W @ R_flat.T, dtype=np.float64).T
+            return WR_flat.reshape(draws, Te * N)
+
+        # Full panel matrix path (N*T x N*T) if supplied by caller.
+        if W.shape[0] != expected:
+            raise ValueError(
+                f"W has shape {W.shape}; expected ({N},{N}) or ({expected},{expected}) "
+                "for the provided N and T_eff."
+            )
+        return np.asarray(W @ R.T, dtype=np.float64).T
+
+    @property
+    def _W_eigs(self) -> np.ndarray:
+        """Eigenvalues of the N×N spatial weights matrix, computed lazily.
+
+        Cached on first access to keep init O(n²) when chebyshev / sparse-grid
+        log-determinants are used (those methods do not need the full
+        eigendecomposition).
+        """
+        if self._W_eigs_cache is None:
+            self._W_eigs_cache = np.linalg.eigvals(
+                self._W_sparse.toarray().astype(np.float64)
+            )
+        return self._W_eigs_cache
+
+    @property
+    def _W_for_logdet(self):
+        """Argument passed to ``make_logdet_fn`` — eigenvalues or sparse W.
+
+        Computed lazily so that init never forces an eigendecomposition for
+        chebyshev / sparse-grid methods.
+        """
+        if self._W_for_logdet_cache is None:
+            if self._resolved_logdet_method == "eigenvalue":
+                self._W_for_logdet_cache = self._W_eigs.real.astype(np.float64)
+            else:
+                self._W_for_logdet_cache = self._W_sparse
+        return self._W_for_logdet_cache
+
+    @property
+    def _logdet_numpy_fn(self):
+        """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
+        if self._logdet_numpy_fn_cache is None:
+            eigs = (
+                self._W_eigs.real
+                if self._resolved_logdet_method == "eigenvalue"
+                else None
+            )
+            self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
+                self._W_sparse, eigs, method=self.logdet_method
+            )
+        return self._logdet_numpy_fn_cache
+
+    @property
+    def _logdet_numpy_vec_fn(self):
+        """Vectorised pure-numpy logdet evaluator (lazy)."""
+        if self._logdet_numpy_vec_fn_cache is None:
+            eigs = (
+                self._W_eigs.real
+                if self._resolved_logdet_method == "eigenvalue"
+                else None
+            )
+            self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
+                self._W_sparse, eigs, method=self.logdet_method
+            )
+        return self._logdet_numpy_vec_fn_cache
+
+    @property
+    def _logdet_pytensor_fn(self):
+        """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
+        if self._logdet_pytensor_fn_cache is None:
+            self._logdet_pytensor_fn_cache = make_logdet_fn(
+                self._W_for_logdet, method=self.logdet_method, T=self._T
+            )
+        return self._logdet_pytensor_fn_cache
+
     @property
     def _W_dense(self) -> np.ndarray:
         """Dense (N*T)×(N*T) weight matrix, materialised lazily on first access."""
         if self._W_dense_cache is None:
+            # If W is N x N, dense panel matrix is (N*T) x (N*T); otherwise
+            # caller supplied full panel matrix already.
+            n_nt = self._N * self._T if self._W_sparse.shape[0] == self._N else int(self._W_sparse.shape[0])
+            nbytes = n_nt * n_nt * 8
+            if nbytes > int(self._DENSE_W_WARN_BYTES):
+                warnings.warn(
+                    f"Materialising a dense panel weight matrix of size {n_nt}x{n_nt} "
+                    f"(~{nbytes / 1024**2:.0f} MB).",
+                    ResourceWarning,
+                    stacklevel=2,
+                )
             self._W_dense_cache = _as_dense_W(self._W_sparse, self._N, self._T)
         return self._W_dense_cache
 
@@ -1037,6 +1153,14 @@ class SpatialPanelModel(ABC):
                 <= diag.loc["Panel-LM-Error", "p_value"]
             )
 
+        def _robust_lag_le_error() -> bool:
+            # Panel-OLS tree tie-break.  See cross-sectional analogue in
+            # ``base.SpatialModel.spatial_diagnostics_decision``.
+            return (
+                diag.loc["Panel-Robust-LM-Lag", "p_value"]
+                <= diag.loc["Panel-Robust-LM-Error", "p_value"]
+            )
+
         def _lag_sdm_le_error_sdem() -> bool:
             return (
                 diag.loc["Panel-Robust-LM-Lag-SDM", "p_value"]
@@ -1049,6 +1173,7 @@ class SpatialPanelModel(ABC):
             sig_lookup=_sig,
             predicate_lookup={
                 "panel_lag_pval_le_error_pval": _lag_le_error,
+                "panel_robust_lag_pval_le_error_pval": _robust_lag_le_error,
                 "panel_lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
             },
         )

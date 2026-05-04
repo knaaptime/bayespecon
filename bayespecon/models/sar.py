@@ -15,7 +15,12 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from .base import SpatialModel
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from .base import (
+    SpatialModel,
+    _pointwise_gaussian_loglik,
+    _write_log_likelihood_to_idata,
+)
 
 
 class SAR(SpatialModel):
@@ -104,8 +109,8 @@ class SAR(SpatialModel):
         (
             lambda m: __import__(
                 "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_error_test"],
-            ).bayesian_lm_error_test(m),
+                fromlist=["bayesian_lm_error_from_sar_test"],
+            ).bayesian_lm_error_from_sar_test(m),
             "LM-Error",
         ),
         (
@@ -121,6 +126,13 @@ class SAR(SpatialModel):
                 fromlist=["bayesian_robust_lm_wx_test"],
             ).bayesian_robust_lm_wx_test(m),
             "Robust-LM-WX",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_error_sar_test"],
+            ).bayesian_robust_lm_error_sar_test(m),
+            "Robust-LM-Error",
         ),
     ]
 
@@ -215,11 +227,6 @@ class SAR(SpatialModel):
         used for sampling.
         """
 
-        from ._sampler import (
-            prepare_compile_kwargs,
-            prepare_idata_kwargs,
-        )
-
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
@@ -228,6 +235,7 @@ class SAR(SpatialModel):
         model = self._build_pymc_model(compute_log_likelihood=compute_log_likelihood)
         self._pymc_model = model
         idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
 
         with model:
@@ -247,69 +255,30 @@ class SAR(SpatialModel):
         # Jacobian log|I - rho*W| (added via pm.Potential) is absent.
         # We recompute the complete pointwise LL and overwrite the group.
         if compute_log_likelihood and hasattr(self, "_idata"):
-            import xarray as xr
-
             idata = self._idata
             n = self._y.shape[0]
 
-            # Posterior draws: shape (chains, draws, ...)
             rho_draws = idata.posterior["rho"].values.reshape(-1)  # (n_draws,)
             beta_draws = idata.posterior["beta"].values.reshape(
                 -1, self._X.shape[1]
             )  # (n_draws, k)
             sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
+            nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
 
-            # Residuals per draw: resid = y - rho*Wy - X@beta
-            # Shapes: y (n,), Wy (n,), X (n, k)
-            # mu = rho * Wy + X @ beta.T  => (n_draws, n)
             mu = rho_draws[:, None] * self._Wy[None, :] + (
                 beta_draws @ self._X.T
             )  # (n_draws, n)
             resid = self._y[None, :] - mu  # (n_draws, n)
 
-            # Pointwise log-likelihood
-            if self.robust:
-                nu_draws = idata.posterior["nu"].values.reshape(-1)  # (n_draws,)
-                from scipy.special import gammaln
-
-                ll_gauss = (
-                    gammaln((nu_draws[:, None] + 1) / 2)
-                    - gammaln(nu_draws[:, None] / 2)
-                    - 0.5 * np.log(nu_draws[:, None] * np.pi)
-                    - np.log(sigma_draws[:, None])
-                    - ((nu_draws[:, None] + 1) / 2)
-                    * np.log1p((resid / sigma_draws[:, None]) ** 2 / nu_draws[:, None])
-                )  # (n_draws, n)
-            else:
-                ll_gauss = (
-                    -0.5 * (resid / sigma_draws[:, None]) ** 2
-                    - np.log(sigma_draws[:, None])
-                    - 0.5 * np.log(2 * np.pi)
-                )  # (n_draws, n)
-
-            # Jacobian contribution per draw: log|I - rho*W| / n (respects logdet_method)
+            ll_gauss = _pointwise_gaussian_loglik(resid, sigma_draws, nu_draws)
             jacobian = self._logdet_numpy_vec_fn(rho_draws)  # (n_draws,)
-            ll_jac = jacobian[:, None] / n  # (n_draws, 1) broadcast to (n_draws, n)
+            ll_total = ll_gauss + jacobian[:, None] / n  # (n_draws, n)
 
-            ll_total = ll_gauss + ll_jac  # (n_draws, n)
-
-            # Reshape to (chains, draws, n)
             n_chains = idata.posterior.sizes["chain"]
             n_draws_per_chain = idata.posterior.sizes["draw"]
-            ll_array = ll_total.reshape(n_chains, n_draws_per_chain, n)
-
-            # Attach to idata — replace the entire log_likelihood group with complete LL
-            # (pm.sample auto-captures Gaussian LL; we replace with complete LL)
-            #
-            # Use explicit Dataset creation to ensure "obs" is a data variable, not a coordinate.
-            # Assigning via idata["log_likelihood"] = xr.Dataset({"obs": da}) can silently
-            # treat "obs" as a dimension coordinate if da.dims includes "obs" as a dim name,
-            # causing data_vars to be empty and breaking az.loo() / az.waic().
-            ll_da = xr.DataArray(
-                ll_array, dims=("chain", "draw", "obs_dim"), name="obs"
+            _write_log_likelihood_to_idata(
+                idata, ll_total.reshape(n_chains, n_draws_per_chain, n)
             )
-            ll_ds = xr.Dataset({"obs": ll_da})
-            idata["log_likelihood"] = ll_ds
 
         return self._idata
 

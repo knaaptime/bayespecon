@@ -99,12 +99,18 @@ def prepare_idata_kwargs(
     model,
     nuts_sampler: str,
 ) -> dict:
-    """Strip ``log_likelihood=True`` for JAX backends on potential-only models.
+    """Normalize ``idata_kwargs`` and handle JAX ``log_likelihood`` policy.
 
     PyMC's JAX sampling path (``pm.sampling.jax._get_log_likelihood``) iterates
     ``model.observed_RVs``; when a model defines its likelihood purely with
     ``pm.Potential`` and no observed RV, that list is empty and the helper
     raises ``TypeError: 'NoneType' object is not iterable``.
+
+    To make model-comparison diagnostics (BIC/Bayes factors/LOO/WAIC) work out
+    of the box, JAX samplers default to requesting pointwise log-likelihood
+    unless the caller explicitly sets ``log_likelihood=False``. For potential-
+    only models, the request is then stripped as a defensive fallback to avoid
+    the PyMC JAX crash described above.
 
     Most spatial-error models (SEM, SDEM, all panel SEM/SDEM variants,
     SEMPanelTobit) now expose a dual-path ``_build_pymc_model``: when the

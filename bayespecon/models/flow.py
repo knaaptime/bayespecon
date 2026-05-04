@@ -30,7 +30,7 @@ Two variants are provided:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -47,8 +47,14 @@ from ..logdet import (
     flow_logdet_numpy,
     flow_logdet_pytensor,
     make_flow_separable_logdet,
+    make_flow_separable_logdet_numpy,
 )
 from ..ops import kron_solve_matrix, kron_solve_vec
+from ._sampler import (
+    enforce_c_backend,
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+)
 
 
 def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -410,9 +416,18 @@ class FlowModel(ABC):
         # Also keep _W_eigs for backward compatibility.
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
+        self._separable_logdet_numpy_fn = None
         _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
         if logdet_method in _SEPARABLE_METHODS:
             self._separable_logdet_fn = make_flow_separable_logdet(
+                self._W_sparse,
+                self._n,
+                method=logdet_method,
+                miter=miter,
+                riter=trace_riter,
+                random_state=trace_seed,
+            )
+            self._separable_logdet_numpy_fn = make_flow_separable_logdet_numpy(
                 self._W_sparse,
                 self._n,
                 method=logdet_method,
@@ -538,12 +553,6 @@ class FlowModel(ABC):
         -------
         arviz.InferenceData
         """
-        from ._sampler import (
-            enforce_c_backend,
-            prepare_compile_kwargs,
-            prepare_idata_kwargs,
-        )
-
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
@@ -710,6 +719,60 @@ class FlowModel(ABC):
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
         return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
+
+    def spatial_diagnostics_decision(
+        self, alpha: float = 0.05, format: str = "graphviz"
+    ) -> Any:
+        """Return a model-selection decision from Bayesian LM test results.
+
+        Walks the flow decision tree using Bayesian p-values from
+        :meth:`spatial_diagnostics` and recommends either ``OLSFlow`` (no
+        spatial dependence detected) or ``SARFlow`` (at least one direction
+        is significant).
+
+        Parameters
+        ----------
+        alpha : float, default 0.05
+            Significance level for the Bayesian p-values.
+        format : {"graphviz", "ascii", "model"}, default "graphviz"
+            Output format.  ``"model"`` returns the recommended model name
+            string.  ``"ascii"`` returns an indented box-drawing tree.
+            ``"graphviz"`` returns a :class:`graphviz.Digraph` (with ASCII
+            fallback if graphviz is not installed).
+
+        Returns
+        -------
+        str or graphviz.Digraph
+        """
+        from ..diagnostics import _decision_trees as _dt
+
+        diag = self.spatial_diagnostics()
+        model_type = self.__class__.__name__
+
+        def _sig(test_name: str) -> bool:
+            if test_name not in diag.index:
+                return False
+            pval = diag.loc[test_name, "p_value"]
+            return not np.isnan(pval) and pval < alpha
+
+        spec = _dt.get_flow_spec(model_type)
+        decision, path = _dt.evaluate(spec, sig_lookup=_sig)
+
+        p_values: dict[str, float] = {}
+        for test_name in diag.index:
+            pv = diag.loc[test_name, "p_value"]
+            if not np.isnan(pv):
+                p_values[str(test_name)] = float(pv)
+
+        return _dt.render(
+            spec,
+            path,
+            decision,
+            p_values=p_values,
+            alpha=alpha,
+            fmt=format,
+            title=f"{model_type} decision tree (alpha={alpha})",
+        )
 
     def _model_coords(self, extra: Optional[dict] = None) -> dict:
         """Return PyMC coordinate labels for named dimensions."""
@@ -1399,18 +1462,12 @@ class SARFlowSeparable(FlowModel):
     def _compute_jacobian_log_det(self, posterior) -> np.ndarray:
         rho_d = np.asarray(posterior["rho_d"].values.reshape(-1), dtype=np.float64)
         rho_o = np.asarray(posterior["rho_o"].values.reshape(-1), dtype=np.float64)
-        n = self._n
-        if self._W_eigs is not None:
-            eigs = self._W_eigs
-            ld_d = np.log(np.abs(1.0 - rho_d[:, None] * eigs[None, :])).sum(axis=1)
-            ld_o = np.log(np.abs(1.0 - rho_o[:, None] * eigs[None, :])).sum(axis=1)
-        else:
-            W_dense = self._W_sparse.toarray().astype(np.float64)
-            eigs = np.linalg.eigvals(W_dense).real.astype(np.float64)
-            self._W_eigs = eigs
-            ld_d = np.log(np.abs(1.0 - rho_d[:, None] * eigs[None, :])).sum(axis=1)
-            ld_o = np.log(np.abs(1.0 - rho_o[:, None] * eigs[None, :])).sum(axis=1)
-        return n * (ld_d + ld_o)
+        if self._separable_logdet_numpy_fn is None:
+            raise RuntimeError(
+                "Missing separable numeric logdet evaluator. "
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+            )
+        return self._separable_logdet_numpy_fn(rho_d, rho_o)
 
     def _compute_spatial_effects_posterior(
         self, draws: Optional[int] = None
@@ -2181,6 +2238,249 @@ class PoissonFlow(OLSFlow):
 
 
 # ---------------------------------------------------------------------------
+# Model 7: NegativeBinomial SAR/OLS flow variants
+# ---------------------------------------------------------------------------
+
+
+class NegativeBinomialSARFlow(PoissonSARFlow):
+    r"""Bayesian SAR flow model with NB2 observation noise.
+
+    This class mirrors :class:`PoissonSARFlow` but replaces the Poisson
+    likelihood with:
+
+    .. math::
+
+        y_{ij} \sim \operatorname{NegBin}(\mu_{ij}, \alpha),
+
+    where ``alpha`` is an overdispersion parameter sampled from a
+    HalfNormal prior.
+    """
+
+    def _build_pymc_model(self) -> pm.Model:
+        from ..ops import SparseFlowSolveOp
+
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+
+        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+
+        with pm.Model(coords=self._model_coords()) as model:
+            if self.restrict_positive:
+                rho_simplex = pm.Dirichlet("rho_simplex", a=np.ones(4))
+                rho_d = pm.Deterministic("rho_d", rho_simplex[0])
+                rho_o = pm.Deterministic("rho_o", rho_simplex[1])
+                rho_w = pm.Deterministic("rho_w", rho_simplex[2])
+            else:
+                rho_lower = self.priors.get("rho_lower", -1.0)
+                rho_upper = self.priors.get("rho_upper", 1.0)
+                rho_d = pm.Uniform("rho_d", lower=rho_lower, upper=rho_upper)
+                rho_o = pm.Uniform("rho_o", lower=rho_lower, upper=rho_upper)
+                rho_w = pm.Uniform("rho_w", lower=rho_lower, upper=rho_upper)
+                slack = 1.0 - rho_d - rho_o - rho_w
+                pm.Potential(
+                    "stability",
+                    pt.switch(slack > 0.0, 0.0, -1e6 * slack**2),
+                )
+
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+
+            Xb = pt.dot(X_t, beta)
+            solve_op = SparseFlowSolveOp(self._Wd, self._Wo, self._Ww)
+            eta = solve_op(rho_d, rho_o, rho_w, Xb)
+            lam = pm.Deterministic("lambda", pt.exp(eta))
+
+            pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
+
+            pm.Potential(
+                "jacobian",
+                flow_logdet_pytensor(
+                    rho_d,
+                    rho_o,
+                    rho_w,
+                    self._poly_a,
+                    self._poly_b,
+                    self._poly_c,
+                    self._poly_coeffs,
+                    self._miter_a,
+                    self._miter_b,
+                    self._miter_c,
+                    self._miter_coeffs,
+                    self.miter,
+                    self.titer,
+                ),
+            )
+
+        return model
+
+    def posterior_predictive(
+        self,
+        n_draws: Optional[int] = None,
+        random_seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """Draw posterior-predictive flow counts for NB SAR flow model."""
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        post = self._idata.posterior
+        beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
+        rho_d_draws = post["rho_d"].values.reshape(-1)
+        rho_o_draws = post["rho_o"].values.reshape(-1)
+        rho_w_draws = post["rho_w"].values.reshape(-1)
+        alpha_draws = post["alpha"].values.reshape(-1)
+
+        total = beta_draws.shape[0]
+        if n_draws is not None:
+            total = min(int(n_draws), total)
+            beta_draws = beta_draws[:total]
+            rho_d_draws = rho_d_draws[:total]
+            rho_o_draws = rho_o_draws[:total]
+            rho_w_draws = rho_w_draws[:total]
+            alpha_draws = alpha_draws[:total]
+
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g in range(total):
+            A = self._assemble_A(rho_d_draws[g], rho_o_draws[g], rho_w_draws[g])
+            eta = sp.linalg.spsolve(A, self._X_design @ beta_draws[g])
+            lam = np.exp(np.clip(eta, -50.0, 50.0))
+            alpha = float(alpha_draws[g])
+            p = alpha / (alpha + lam)
+            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
+        return out
+
+
+class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
+    """Separable SAR flow model with NB2 observation noise."""
+
+    def _build_pymc_model(self) -> pm.Model:
+        from ..ops import KroneckerFlowSolveOp
+
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        rho_lower = self.priors.get("rho_lower", -0.999)
+        rho_upper = self.priors.get("rho_upper", 0.999)
+
+        n = self._n
+        if self._separable_logdet_fn is None:
+            raise RuntimeError(
+                "NegativeBinomialSARFlowSeparable requires precomputed logdet data; "
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+            )
+        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+
+        with pm.Model(coords=self._model_coords()) as model:
+            rho_d = pm.Uniform("rho_d", lower=rho_lower, upper=rho_upper)
+            rho_o = pm.Uniform("rho_o", lower=rho_lower, upper=rho_upper)
+            pm.Deterministic("rho_w", -rho_d * rho_o)
+
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+
+            Xb = pt.dot(X_t, beta)
+            solve_op = KroneckerFlowSolveOp(self._W_sparse, n)
+            eta = solve_op(rho_d, rho_o, Xb)
+            lam = pm.Deterministic("lambda", pt.exp(eta))
+
+            pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
+
+            pm.Potential(
+                "jacobian",
+                self._separable_logdet_fn(rho_d, rho_o),
+            )
+
+        return model
+
+    def posterior_predictive(
+        self,
+        n_draws: Optional[int] = None,
+        random_seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """Draw posterior-predictive flow counts for separable NB SAR flow."""
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        post = self._idata.posterior
+        beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
+        rho_d_draws = post["rho_d"].values.reshape(-1)
+        rho_o_draws = post["rho_o"].values.reshape(-1)
+        alpha_draws = post["alpha"].values.reshape(-1)
+
+        total = beta_draws.shape[0]
+        if n_draws is not None:
+            total = min(int(n_draws), total)
+            beta_draws = beta_draws[:total]
+            rho_d_draws = rho_d_draws[:total]
+            rho_o_draws = rho_o_draws[:total]
+            alpha_draws = alpha_draws[:total]
+
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        n = self._n
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        for g in range(total):
+            Ld = I_n - float(rho_d_draws[g]) * self._W_sparse
+            Lo = I_n - float(rho_o_draws[g]) * self._W_sparse
+            eta = kron_solve_vec(Lo, Ld, self._X_design @ beta_draws[g], n)
+            lam = np.exp(np.clip(eta, -50.0, 50.0))
+            alpha = float(alpha_draws[g])
+            p = alpha / (alpha + lam)
+            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
+        return out
+
+
+class NegativeBinomialFlow(PoissonFlow):
+    """Aspatial OD-flow Negative Binomial gravity baseline."""
+
+    def _build_pymc_model(self) -> pm.Model:
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+
+        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+
+        with pm.Model(coords=self._model_coords()) as model:
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            eta = pt.dot(X_t, beta)
+            lam = pm.Deterministic("lambda", pt.exp(eta))
+            pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
+
+        return model
+
+    def posterior_predictive(
+        self,
+        n_draws: Optional[int] = None,
+        random_seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """Draw posterior-predictive flow counts for NB gravity baseline."""
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
+
+        post = self._idata.posterior
+        beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
+        alpha_draws = post["alpha"].values.reshape(-1)
+
+        total = beta_draws.shape[0]
+        if n_draws is not None:
+            total = min(int(n_draws), total)
+            beta_draws = beta_draws[:total]
+            alpha_draws = alpha_draws[:total]
+
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g in range(total):
+            eta = self._X_design @ beta_draws[g]
+            lam = np.exp(np.clip(eta, -50.0, 50.0))
+            alpha = float(alpha_draws[g])
+            p = alpha / (alpha + lam)
+            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
+        return out
+
+
+# ---------------------------------------------------------------------------
 # Model 7: SEMFlow — Spatial-error analogue of SARFlow (unrestricted 3-rho)
 # ---------------------------------------------------------------------------
 
@@ -2573,12 +2873,9 @@ class SEMFlowSeparable(SEMFlow):
     def _compute_jacobian_log_det(self, posterior) -> np.ndarray:
         lam_d = np.asarray(posterior["lam_d"].values.reshape(-1), dtype=np.float64)
         lam_o = np.asarray(posterior["lam_o"].values.reshape(-1), dtype=np.float64)
-        n = self._n
-        if self._W_eigs is None:
-            self._W_eigs = np.linalg.eigvals(
-                self._W_sparse.toarray().astype(np.float64)
-            ).real.astype(np.float64)
-        eigs = self._W_eigs
-        ld_d = np.log(np.abs(1.0 - lam_d[:, None] * eigs[None, :])).sum(axis=1)
-        ld_o = np.log(np.abs(1.0 - lam_o[:, None] * eigs[None, :])).sum(axis=1)
-        return n * (ld_d + ld_o)
+        if self._separable_logdet_numpy_fn is None:
+            raise RuntimeError(
+                "Missing separable numeric logdet evaluator. "
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+            )
+        return self._separable_logdet_numpy_fn(lam_d, lam_o)

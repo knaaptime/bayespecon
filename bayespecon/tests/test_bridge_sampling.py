@@ -355,6 +355,19 @@ class TestBayesFactorCompareModels:
         assert df.shape == (1, 1)
         assert df.loc["OLS", "OLS"] == 1.0
 
+    def test_bic_metric_alias_with_idata(self):
+        """Backward compatibility: metric='bic' should behave like method='bic'."""
+        idata = _make_simple_linear_idata()
+        df = bayes_factor_compare_models([idata], model_labels=["OLS"], metric="bic")
+        assert df.shape == (1, 1)
+        assert df.loc["OLS", "OLS"] == 1.0
+
+    def test_method_metric_conflict_raises(self):
+        """Passing conflicting method and metric should raise a clear error."""
+        idata = _make_simple_linear_idata()
+        with pytest.raises(ValueError, match="both `method` and `metric`"):
+            bayes_factor_compare_models([idata], method="bic", metric="bridge")
+
     def test_bridge_requires_model_object(self):
         """Bridge method raises ValueError when InferenceData is passed without model object."""
         idata, _ = _make_2d_normal_idata(n_samples=1000, seed=42)

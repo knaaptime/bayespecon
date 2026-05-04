@@ -1,7 +1,7 @@
 """Formula-level checks for spatial_effects against explicit matrix calculations.
 
 These tests avoid MCMC by injecting posterior means directly into model
-InferenceData objects. They verify that impacts match MATLAB-style formulas.
+InferenceData objects. They verify that impacts match legacy-style formulas.
 """
 
 from __future__ import annotations

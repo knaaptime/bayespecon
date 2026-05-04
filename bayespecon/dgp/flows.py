@@ -549,6 +549,84 @@ def generate_poisson_flow_data(
     }
 
 
+def generate_negbin_flow_data(
+    n: int | None = None,
+    k: int = 2,
+    k_d: int | None = None,
+    k_o: int | None = None,
+    rho_d: float = 0.3,
+    rho_o: float = 0.2,
+    rho_w: float = 0.1,
+    beta_d: float | list[float] | None = None,
+    beta_o: float | list[float] | None = None,
+    alpha: float = 2.0,
+    gamma_dist: float = -0.5,
+    seed: int = 42,
+    G: Graph | None = None,
+    err_hetero: bool = False,
+    gdf: object = None,
+    knn_k: int = 4,
+) -> dict:
+    r"""Generate synthetic O-D flow counts from an NB2 SAR flow DGP.
+
+    Mirrors :func:`generate_poisson_flow_data` but samples counts from
+    :math:`\mathrm{NegBin}(\mu, \alpha)` where
+    :math:`\mathrm{Var}(y)=\mu+\mu^2/\alpha`.
+    """
+    if alpha <= 0:
+        raise ValueError("alpha must be strictly positive.")
+
+    base = generate_poisson_flow_data(
+        n=n,
+        k=k,
+        k_d=k_d,
+        k_o=k_o,
+        rho_d=rho_d,
+        rho_o=rho_o,
+        rho_w=rho_w,
+        beta_d=beta_d,
+        beta_o=beta_o,
+        gamma_dist=gamma_dist,
+        seed=seed,
+        G=G,
+        err_hetero=err_hetero,
+        gdf=gdf,
+        knn_k=knn_k,
+    )
+    rng = np.random.default_rng(seed)
+    mu = np.asarray(base["lambda_vec"], dtype=np.float64)
+    p = alpha / (alpha + mu)
+    y_vec = rng.negative_binomial(alpha, p).astype(np.int64)
+    n_obs = int(base["W"].shape[0])
+    y_mat = y_vec.reshape(n_obs, n_obs)
+
+    base.update(
+        {
+            "y_vec": y_vec,
+            "y_mat": y_mat,
+            "alpha": float(alpha),
+        }
+    )
+    return base
+
+
+def generate_negbin_flow_data_separable(
+    n: int | None = None,
+    rho_d: float = 0.3,
+    rho_o: float = 0.2,
+    **kwargs,
+) -> dict:
+    """NB2 flow DGP with separability constraint ``rho_w = -rho_d * rho_o``."""
+    rho_w = -rho_d * rho_o
+    return generate_negbin_flow_data(
+        n=n,
+        rho_d=rho_d,
+        rho_o=rho_o,
+        rho_w=rho_w,
+        **kwargs,
+    )
+
+
 def generate_panel_flow_data(
     n: Optional[int] = None,
     T: int = 5,
@@ -902,7 +980,7 @@ def generate_panel_poisson_flow_data(
             "Check that rho_d + rho_o + rho_w < 1 for row-stochastic W."
         ) from exc
 
-    y_list, X_list = [], []
+    y_list, X_list, lambda_list = [], [], []
     col_names = None
 
     # Distance matrix (time-invariant)
@@ -939,13 +1017,16 @@ def generate_panel_poisson_flow_data(
         y_t = rng.poisson(lambda_t).astype(np.int64)
 
         y_list.append(y_t)
+        lambda_list.append(lambda_t)
         X_list.append(design.combined)
 
     y = np.concatenate(y_list)  # (N*T,)
+    lambda_vec = np.concatenate(lambda_list)  # (N*T,)
     X = np.vstack(X_list)  # (N*T, p)
 
     return {
         "y": y,
+        "lambda": lambda_vec,
         "X": X,
         "col_names": col_names,
         "G": G,
@@ -966,6 +1047,63 @@ def generate_panel_poisson_flow_data(
             "gamma_dist": gamma_dist,
         },
     }
+
+
+def generate_panel_negbin_flow_data(
+    n: int | None = None,
+    T: int = 5,
+    G: Graph | None = None,
+    rho_d: float = 0.3,
+    rho_o: float = 0.2,
+    rho_w: float = 0.1,
+    beta_d: float | list[float] | None = None,
+    beta_o: float | list[float] | None = None,
+    alpha: float = 2.0,
+    gamma_dist: float = -0.5,
+    seed: int = 42,
+    k: int = 2,
+    k_d: int | None = None,
+    k_o: int | None = None,
+    err_hetero: bool = False,
+    gdf: object = None,
+    knn_k: int = 4,
+) -> dict:
+    r"""Generate panel NB2 flow counts from a spatial autoregressive DGP."""
+    if alpha <= 0:
+        raise ValueError("alpha must be strictly positive.")
+
+    base = generate_panel_poisson_flow_data(
+        n=n,
+        T=T,
+        G=G,
+        rho_d=rho_d,
+        rho_o=rho_o,
+        rho_w=rho_w,
+        beta_d=beta_d,
+        beta_o=beta_o,
+        gamma_dist=gamma_dist,
+        seed=seed,
+        k=k,
+        k_d=k_d,
+        k_o=k_o,
+        err_hetero=err_hetero,
+        gdf=gdf,
+        knn_k=knn_k,
+    )
+    rng = np.random.default_rng(seed)
+    mu = np.asarray(base["lambda"], dtype=np.float64)
+    p = alpha / (alpha + mu)
+    y = rng.negative_binomial(alpha, p).astype(np.int64)
+
+    base.update(
+        {
+            "y": y,
+            "alpha": float(alpha),
+        }
+    )
+    if "params_true" in base:
+        base["params_true"]["alpha"] = float(alpha)
+    return base
 
 
 def generate_flow_data_separable(
@@ -1159,6 +1297,27 @@ def generate_panel_poisson_flow_data_separable(
     rho_w = -rho_d * rho_o
     return generate_panel_poisson_flow_data(
         n=n, T=T, G=G, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w, **kwargs
+    )
+
+
+def generate_panel_negbin_flow_data_separable(
+    n: int | None = None,
+    T: int = 5,
+    G: Graph | None = None,
+    rho_d: float = 0.3,
+    rho_o: float = 0.2,
+    **kwargs,
+) -> dict:
+    """Panel NB2 flow DGP with separability constraint ``rho_w=-rho_d*rho_o``."""
+    rho_w = -rho_d * rho_o
+    return generate_panel_negbin_flow_data(
+        n=n,
+        T=T,
+        G=G,
+        rho_d=rho_d,
+        rho_o=rho_o,
+        rho_w=rho_w,
+        **kwargs,
     )
 
 

@@ -12,8 +12,7 @@ Each model class uses PySAL [`graph`](https://pysal.org/libpysal/stable/generate
 
 This design makes it simple to build and iterate on spatial regression models using a straightforward notation while retaining all the benefits of a Bayesian framework. The resulting `pymc.Model` object is augmented to include the (correct) log-likelihood if requested, facilitating the use of Bayes Factors in model specification searches. The package also implements a suite of novel Bayesian spatial diagnostics.
 
-Because models are compiled to PyMC, you can use the classes to specify a common model, then inspect the `pymc_model` object to sketch out a more complex specification. The model classes use Jim LeSage's [spatial econometrics toolbox](https://www.spatial-econometrics.com/) as a reference implementation and test case.
-
+Because models are compiled to PyMC, you can use the classes to specify a common model, then inspect the `pymc_model` object to sketch out a more complex specification. 
 **Main Features**:
 
 - Wide variety of spatial econometric models using Wilkinson formulas and PySAL `Graph` objects

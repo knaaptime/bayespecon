@@ -11,6 +11,9 @@ BUILDDIR      = build
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
+clearnbs:
+	jupyter nbconvert --clear-output --inplace source/user-guide/*.ipynb
+
 
 .PHONY: help Makefile 
 

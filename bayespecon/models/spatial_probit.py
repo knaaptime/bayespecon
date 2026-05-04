@@ -1,6 +1,6 @@
 """Spatial probit model with spatially dependent regional effects.
 
-Implements a Bayesian binary-response model analogous to MATLAB ``semip_g``:
+Implements a Bayesian binary-response model analogous to legacy ``semip_g``:
 
 .. math::
     y_{ij} = 1[z_{ij} > 0],\\quad z = X\\beta + \\Delta a + \\varepsilon,
@@ -24,6 +24,8 @@ import pymc as pm
 import pytensor.tensor as pt
 from formulaic import model_matrix
 from libpysal.graph import Graph
+
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 
 
 class SpatialProbit:
@@ -98,7 +100,7 @@ class SpatialProbit:
     This class follows the core ``semip_g`` structure (binary response with
     spatially dependent regional effects). It uses a standard probit link with
     unit observation-level variance and does not currently sample the ``v_i``/
-    ``r`` heteroskedastic hierarchy from MATLAB ``semip_g``.
+    ``r`` heteroskedastic hierarchy from legacy ``semip_g``.
 
     **Robust regression**
 
@@ -309,11 +311,6 @@ class SpatialProbit:
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
-        from ._sampler import (
-            prepare_compile_kwargs,
-            prepare_idata_kwargs,
-        )
-
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
         model = self._build_pymc_model()
         self._pymc_model = model

@@ -1,12 +1,13 @@
-"""Spatial panel model classes analogous to MATLAB panel_g routines."""
+"""Spatial panel model classes analogous to legacy panel_g routines."""
 
 from __future__ import annotations
 
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
-import xarray as xr
 
+from ._sampler import use_jax_likelihood
+from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 
 
@@ -386,7 +387,7 @@ class SARPanelFE(SpatialPanelModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if idata_kwargs.get("log_likelihood", False):
+        if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
         return idata
 
@@ -579,8 +580,6 @@ class SEMPanelFE(SpatialPanelModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        from ._sampler import use_jax_likelihood
-
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -713,14 +712,13 @@ class SEMPanelFE(SpatialPanelModel):
         c, d = lam.shape
         s = c * d
         n = self._y.shape[0]
-        W = self._W_dense
 
         lam_f = lam.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
 
         resid = self._y[None, :] - beta_f @ X.T
-        eps = resid - lam_f[:, None] * (resid @ W.T)
+        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
 
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
@@ -746,8 +744,7 @@ class SEMPanelFE(SpatialPanelModel):
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -958,7 +955,7 @@ class SDMPanelFE(SpatialPanelModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if idata_kwargs.get("log_likelihood", False):
+        if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
         return idata
 
@@ -1176,8 +1173,6 @@ class SDEMPanelFE(SpatialPanelModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        from ._sampler import use_jax_likelihood
-
         Z = np.hstack([self._X, self._WX])
 
         lam_lower = self.priors.get("lam_lower", -1.0)
@@ -1304,14 +1299,13 @@ class SDEMPanelFE(SpatialPanelModel):
         c, d = lam.shape
         s = c * d
         n = self._y.shape[0]
-        W = self._W_dense
 
         lam_f = lam.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
 
         resid = self._y[None, :] - beta_f @ Z.T
-        eps = resid - lam_f[:, None] * (resid @ W.T)
+        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
 
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
@@ -1337,8 +1331,7 @@ class SDEMPanelFE(SpatialPanelModel):
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:

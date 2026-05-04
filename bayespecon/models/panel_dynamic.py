@@ -1,4 +1,4 @@
-"""Dynamic spatial panel model classes inspired by MATLAB dynamic panel routines.
+"""Dynamic spatial panel model classes inspired by legacy dynamic panel routines.
 
 This module provides Bayesian dynamic spatial panel models that include a
 lagged dependent variable :math:`\\phi y_{i,t-1}` alongside the spatial lag.
@@ -32,7 +32,9 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from ..logdet import make_logdet_fn
+from ..logdet import get_cached_logdet_fn
+from ._sampler import use_jax_likelihood
+from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 
 
@@ -114,8 +116,28 @@ class _DynamicPanelMixin:
 
     @property
     def _W_dense_dyn(self) -> np.ndarray:
-        """Dense (N*(T-1)) x (N*(T-1)) block-diagonal W for dynamic period."""
+        """Dense (N*(T-1)) x (N*(T-1)) block-diagonal W for dynamic period.
+
+        .. warning::
+
+           This property materialises an ``(N*(T-1)) × (N*(T-1))`` dense matrix
+           and grows as ``O(N² (T-1)²)``.  Prefer :meth:`_batch_sparse_lag`
+           with ``T_eff=self._n_time_eff`` for batch log-likelihood paths.
+           This property is retained for diagnostics requiring the full matrix.
+        """
         if self._W_dense_dyn_cache is None:
+            import warnings
+
+            n = self._N * self._n_time_eff
+            nbytes = n * n * 8
+            if nbytes > 100 * 1024 * 1024:
+                warnings.warn(
+                    f"Materialising a {n}×{n} dense dynamic-panel weight matrix "
+                    f"({nbytes / 1024**2:.0f} MB).  Use _batch_sparse_lag with "
+                    "T_eff=self._n_time_eff instead.",
+                    ResourceWarning,
+                    stacklevel=3,
+                )
             Wn = (
                 self._W_sparse.toarray()
                 if hasattr(self._W_sparse, "toarray")
@@ -158,6 +180,24 @@ class _DynamicPanelMixin:
                 f"W*{name}" for name in self._wx_feature_names
             ]
         return self._feature_names
+
+    def _dynamic_logdet_fn(self, lower: float, upper: float):
+        """Build and cache dynamic-panel logdet callable keyed by bounds."""
+        if not hasattr(self, "_dynamic_logdet_cache"):
+            self._dynamic_logdet_cache = {}
+        method = getattr(self, "_resolved_logdet_method", self.logdet_method)
+        key = (method, float(lower), float(upper), int(self._n_time_eff))
+        fn = self._dynamic_logdet_cache.get(key)
+        if fn is None:
+            fn = get_cached_logdet_fn(
+                self._W_for_logdet,
+                method=method,
+                rho_min=lower,
+                rho_max=upper,
+                T=self._n_time_eff,
+            )
+            self._dynamic_logdet_cache[key] = fn
+        return fn
 
 
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
@@ -424,13 +464,7 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_for_logdet,
-            method=self.logdet_method,
-            rho_min=rho_lower,
-            rho_max=rho_upper,
-            T=self._n_time_eff,
-        )
+        logdet_fn = self._dynamic_logdet_fn(rho_lower, rho_upper)
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -481,7 +515,7 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if idata_kwargs.get("log_likelihood", False):
+        if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(
                 idata, "rho", T=self._n_time_eff
             )
@@ -718,13 +752,7 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_for_logdet,
-            method=self.logdet_method,
-            rho_min=rho_lower,
-            rho_max=rho_upper,
-            T=self._n_time_eff,
-        )
+        logdet_fn = self._dynamic_logdet_fn(rho_lower, rho_upper)
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -776,7 +804,7 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if idata_kwargs.get("log_likelihood", False):
+        if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(
                 idata, "rho", T=self._n_time_eff
             )
@@ -1010,13 +1038,7 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_for_logdet,
-            method=self.logdet_method,
-            rho_min=rho_lower,
-            rho_max=rho_upper,
-            T=self._n_time_eff,
-        )
+        logdet_fn = self._dynamic_logdet_fn(rho_lower, rho_upper)
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
@@ -1056,7 +1078,7 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if idata_kwargs.get("log_likelihood", False):
+        if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(
                 idata, "rho", T=self._n_time_eff
             )
@@ -1248,8 +1270,6 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         return self._feature_names
 
     def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
-        from ._sampler import use_jax_likelihood
-
         self._prepare_dynamic_design()
 
         lam_lower = self.priors.get("lam_lower", -0.95)
@@ -1260,13 +1280,7 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_for_logdet,
-            method=self.logdet_method,
-            rho_min=lam_lower,
-            rho_max=lam_upper,
-            T=self._n_time_eff,
-        )
+        logdet_fn = self._dynamic_logdet_fn(lam_lower, lam_upper)
 
         W_pt = self._W_pt_sparse_dyn
         n_obs = int(self._y_dyn.shape[0])
@@ -1371,8 +1385,6 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import xarray as xr
-
         X = self._X_dyn
         lam = idata.posterior["lam"].values
         phi = idata.posterior["phi"].values
@@ -1382,7 +1394,13 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         c, d = lam.shape
         s = c * d
         n = self._y_dyn.shape[0]
-        W = self._W_dense_dyn
+        n_units = self._N
+        n_time_eff = self._n_time_eff
+        Wn = (
+            self._W_sparse.toarray()
+            if hasattr(self._W_sparse, "toarray")
+            else np.asarray(self._W_sparse)
+        )
 
         lam_f = lam.reshape(s)
         phi_f = phi.reshape(s)
@@ -1392,7 +1410,9 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         resid = (
             self._y_dyn[None, :] - phi_f[:, None] * self._y_lag[None, :] - beta_f @ X.T
         )
-        eps = resid - lam_f[:, None] * (resid @ W.T)
+        resid_block = resid.reshape(s, n_time_eff, n_units)
+        wy_block = resid_block @ Wn.T
+        eps = resid - lam_f[:, None] * wy_block.reshape(s, n)
 
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
@@ -1417,8 +1437,7 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -1606,8 +1625,6 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         return self._feature_names
 
     def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
-        from ._sampler import use_jax_likelihood
-
         self._prepare_dynamic_design()
 
         Z = np.hstack([self._X_dyn, self._WX_dyn])
@@ -1620,13 +1637,7 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        logdet_fn = make_logdet_fn(
-            self._W_for_logdet,
-            method=self.logdet_method,
-            rho_min=lam_lower,
-            rho_max=lam_upper,
-            T=self._n_time_eff,
-        )
+        logdet_fn = self._dynamic_logdet_fn(lam_lower, lam_upper)
 
         W_pt = self._W_pt_sparse_dyn
         n_obs = int(self._y_dyn.shape[0])
@@ -1729,8 +1740,6 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import xarray as xr
-
         Z = np.hstack([self._X_dyn, self._WX_dyn])
         lam = idata.posterior["lam"].values
         phi = idata.posterior["phi"].values
@@ -1740,7 +1749,6 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         c, d = lam.shape
         s = c * d
         n = self._y_dyn.shape[0]
-        W = self._W_dense_dyn
 
         lam_f = lam.reshape(s)
         phi_f = phi.reshape(s)
@@ -1750,7 +1758,9 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         resid = (
             self._y_dyn[None, :] - phi_f[:, None] * self._y_lag[None, :] - beta_f @ Z.T
         )
-        eps = resid - lam_f[:, None] * (resid @ W.T)
+        eps = resid - lam_f[:, None] * self._batch_sparse_lag(
+            resid, T_eff=self._n_time_eff
+        )
 
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
@@ -1775,8 +1785,7 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:

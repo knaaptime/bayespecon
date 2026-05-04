@@ -3,6 +3,7 @@
 This module enables JAX-backed NUTS samplers (``"blackjax"``, ``"numpyro"``)
 for models that depend on :class:`~bayespecon.ops.SparseFlowSolveOp`,
 :class:`~bayespecon.ops.SparseFlowSolveMatrixOp`,
+:class:`~bayespecon.ops.SparseSARSolveOp`,
 :class:`~bayespecon.ops.KroneckerFlowSolveOp`, and
 :class:`~bayespecon.ops.KroneckerFlowSolveMatrixOp`.
 
@@ -22,6 +23,8 @@ so importing this module is always safe.
 from __future__ import annotations
 
 import importlib.util
+import os
+import warnings
 from functools import lru_cache
 
 
@@ -32,6 +35,94 @@ def _jax_available() -> bool:
         importlib.util.find_spec("jax") is not None
         and importlib.util.find_spec("pytensor.link.jax.dispatch") is not None
     )
+
+
+@lru_cache(maxsize=1)
+def _klujax_available() -> bool:
+    """Return ``True`` when optional ``klujax`` is importable."""
+    return importlib.util.find_spec("klujax") is not None
+
+
+@lru_cache(maxsize=1)
+def _umfpack_available() -> bool:
+    """Return ``True`` when optional ``scikits.umfpack`` is importable."""
+    return importlib.util.find_spec("scikits.umfpack") is not None
+
+
+@lru_cache(maxsize=1)
+def _warn_jax_auto_fallback_once(missing: str, target: str) -> None:
+    """Emit a one-time advisory warning for JAX sparse backend auto-fallbacks."""
+    install_hint = ""
+    if missing == "scikits.umfpack":
+        install_hint = " Install 'scikit-umfpack' to enable the UMFPACK callback path."
+    elif missing == "klujax":
+        install_hint = " Install 'klujax' to enable the faster JAX-native sparse path."
+    warnings.warn(
+        "BAYESPECON_JAX_SPARSE_BACKEND=auto selected fallback backend "
+        f"'{target}' because optional dependency '{missing}' is not installed. "
+        f"Estimation is likely faster when the optional sparse backend is installed.{install_hint}",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+@lru_cache(maxsize=1)
+def _select_jax_sparse_backend() -> str:
+    """Resolve JAX sparse backend from env vars with robust fallback.
+
+    Environment
+    -----------
+    BAYESPECON_JAX_SPARSE_BACKEND : {"auto", "callback", "klujax"}
+        Default ``auto``. ``auto`` prefers ``klujax`` when available.
+    BAYESPECON_JAX_SPARSE_STRICT : {"0", "1", "false", "true"}
+        If truthy, missing requested optional backends raise ImportError.
+    """
+    requested = os.environ.get("BAYESPECON_JAX_SPARSE_BACKEND", "auto").strip().lower()
+    strict = os.environ.get("BAYESPECON_JAX_SPARSE_STRICT", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    if requested in {"", "auto"}:
+        if _klujax_available():
+            return "klujax"
+        # JAX path fallback chain:
+        #   1) klujax
+        #   2) callback + umfpack
+        #   3) callback + scipy
+        # The callback solver selection is handled in ops._select_sparse_backend.
+        if _umfpack_available():
+            _warn_jax_auto_fallback_once("klujax", "callback+umfpack")
+        else:
+            _warn_jax_auto_fallback_once("klujax", "callback+scipy")
+            _warn_jax_auto_fallback_once("scikits.umfpack", "callback+scipy")
+        return "callback"
+
+    if requested in {"callback", "scipy", "pure_callback"}:
+        return "callback"
+
+    if requested in {"klu", "klujax"}:
+        if _klujax_available():
+            return "klujax"
+        msg = (
+            "BAYESPECON_JAX_SPARSE_BACKEND=klujax requested, but optional "
+            "dependency 'klujax' is not installed. Falling back to callback backend."
+        )
+        if strict:
+            raise ImportError(msg)
+        warnings.warn(msg, RuntimeWarning)
+        return "callback"
+
+    msg = (
+        f"Unknown BAYESPECON_JAX_SPARSE_BACKEND='{requested}'. "
+        "Valid values are: auto, callback, klujax. Falling back to auto."
+    )
+    if strict:
+        raise ValueError(msg)
+    warnings.warn(msg, RuntimeWarning)
+    return "klujax" if _klujax_available() else "callback"
 
 
 @lru_cache(maxsize=1)
@@ -48,17 +139,25 @@ def register_jax_dispatch() -> bool:
     import jax.numpy as jnp
     import jax.scipy.linalg as jsla
     import numpy as np
+    import scipy.sparse as sp
     from pytensor.link.jax.dispatch import jax_funcify
+
+    sparse_backend = _select_jax_sparse_backend()
+    klujax = None
+    if sparse_backend == "klujax":
+        import klujax
 
     from .ops import (
         KroneckerFlowSolveMatrixOp,
         KroneckerFlowSolveOp,
         SparseFlowSolveMatrixOp,
         SparseFlowSolveOp,
+        SparseSARSolveOp,
         _KroneckerFlowVJPMatrixOp,
         _KroneckerFlowVJPOp,
         _SparseFlowVJPMatrixOp,
         _SparseFlowVJPOp,
+        _SparseSARVJPOp,
     )
 
     # ------------------------------------------------------------------
@@ -369,5 +468,122 @@ def register_jax_dispatch() -> bool:
             )
 
         return sparse_vjp_mat
+
+    # ------------------------------------------------------------------
+    # Cross-sectional SAR sparse Op — wrap scipy splu via jax.pure_callback
+    # ------------------------------------------------------------------
+
+    def _make_sar_solve_with_custom_vjp(forward_op, vjp_op):
+        """Build a custom_vjp wrapper for SparseSARSolveOp."""
+
+        def _host_solve(rho, rhs):
+            outputs = [[None]]
+            forward_op.perform(
+                None,
+                [np.asarray(rho), np.asarray(rhs)],
+                outputs,
+            )
+            return outputs[0][0]
+
+        def _host_vjp(rho, sol, g):
+            outputs = [[None], [None]]
+            vjp_op.perform(
+                None,
+                [np.asarray(rho), np.asarray(sol), np.asarray(g)],
+                outputs,
+            )
+            return (outputs[0][0], outputs[1][0])
+
+        @jax.custom_vjp
+        def solve(rho, rhs):
+            return jax.pure_callback(
+                _host_solve,
+                jax.ShapeDtypeStruct(rhs.shape, jnp.float64),
+                rho,
+                rhs,
+                vmap_method="sequential",
+            )
+
+        def solve_fwd(rho, rhs):
+            sol = solve(rho, rhs)
+            return sol, (rho, sol)
+
+        def solve_bwd(residuals, g):
+            rho, sol = residuals
+            scalar = jax.ShapeDtypeStruct((), jnp.float64)
+            shapes = (
+                scalar,
+                jax.ShapeDtypeStruct(sol.shape, jnp.float64),
+            )
+            grad_rho, grad_rhs = jax.pure_callback(
+                _host_vjp,
+                shapes,
+                rho,
+                sol,
+                g,
+                vmap_method="sequential",
+            )
+            return grad_rho, grad_rhs
+
+        solve.defvjp(solve_fwd, solve_bwd)
+        return solve
+
+    @jax_funcify.register(SparseSARSolveOp)
+    def _funcify_sparse_sar_solve(op, **kwargs):
+        if sparse_backend == "klujax":
+            n = op._n
+            I = np.eye(n, dtype=np.float64)
+            W_dense = np.asarray(op._W.toarray(), dtype=np.float64)
+            A_pat = (sp.eye(n, format="csr", dtype=np.float64) + op._W).tocoo()
+            Ai = jnp.asarray(np.asarray(A_pat.row, dtype=np.int32))
+            Aj = jnp.asarray(np.asarray(A_pat.col, dtype=np.int32))
+            const_vals = jnp.asarray(I[A_pat.row, A_pat.col], dtype=jnp.float64)
+            w_vals = jnp.asarray(W_dense[A_pat.row, A_pat.col], dtype=jnp.float64)
+            # Sparsity pattern is fixed for A(rho)=I-rho*W, so analyze once and
+            # reuse symbolic metadata across all solves.
+            symbolic = klujax.analyze(Ai, Aj, n)
+
+            def sparse_sar_solve(rho, b):
+                Ax = const_vals - rho * w_vals
+                return klujax.solve_with_symbol(Ai, Aj, Ax, b, symbolic)
+
+            return sparse_sar_solve
+
+        solve = _make_sar_solve_with_custom_vjp(op, op._vjp_op)
+
+        def sparse_sar_solve(rho, b):
+            return solve(rho, b)
+
+        return sparse_sar_solve
+
+    @jax_funcify.register(_SparseSARVJPOp)
+    def _funcify_sparse_sar_vjp(op, **kwargs):
+        # Used by PyTensor's symbolic L_op path. This node is itself the
+        # gradient, so pure_callback is sufficient.
+        def _host_vjp(rho, eta, g):
+            outputs = [[None], [None]]
+            op.perform(
+                None,
+                [np.asarray(rho), np.asarray(eta), np.asarray(g)],
+                outputs,
+            )
+            return (outputs[0][0], outputs[1][0])
+
+        def sparse_sar_vjp(rho, eta, g):
+            scalar = jax.ShapeDtypeStruct((), jnp.float64)
+            shapes = (
+                scalar,
+                jax.ShapeDtypeStruct(eta.shape, jnp.float64),
+            )
+            return jax.pure_callback(
+                _host_vjp,
+                shapes,
+                rho,
+                eta,
+                g,
+                vmap_method="sequential",
+            )
+
+        return sparse_sar_vjp
 
     return True

@@ -1,11 +1,20 @@
-"""Tests for MATLAB-style log-determinant helper implementations."""
+"""Tests for legacy-style log-determinant helper implementations."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from bayespecon.logdet import chebyshev, ilu, make_logdet_fn, mc, sparse_grid, spline
+from bayespecon.logdet import (
+    chebyshev,
+    clear_logdet_fn_cache,
+    get_cached_logdet_fn,
+    ilu,
+    make_logdet_fn,
+    mc,
+    sparse_grid,
+    spline,
+)
 
 
 def _toy_w() -> np.ndarray:
@@ -20,7 +29,7 @@ def _toy_w() -> np.ndarray:
     )
 
 
-def test_lndetfull_returns_expected_keys_and_lengths() -> None:
+def test_sparse_grid_returns_expected_keys_and_lengths() -> None:
     W = _toy_w()
     out = sparse_grid(W, -0.5, 0.5, grid=0.25)
 
@@ -29,7 +38,7 @@ def test_lndetfull_returns_expected_keys_and_lengths() -> None:
     assert np.all(np.isfinite(out["lndet"]))
 
 
-def test_lndetint_returns_expected_keys_and_lengths() -> None:
+def test_spline_returns_expected_keys_and_lengths() -> None:
     W = _toy_w()
     out = spline(W, 1e-5, 0.5, n_grid=30)
 
@@ -38,7 +47,7 @@ def test_lndetint_returns_expected_keys_and_lengths() -> None:
     assert np.all(np.isfinite(out["lndet"]))
 
 
-def test_lndetmc_returns_confidence_bounds() -> None:
+def test_mc_returns_confidence_bounds() -> None:
     W = _toy_w()
     out = mc(order=12, iter=32, W=W, rmin=1e-5, rmax=0.5, grid=0.05, random_state=7)
 
@@ -49,7 +58,7 @@ def test_lndetmc_returns_confidence_bounds() -> None:
     assert np.all(out["up95"] >= out["lo95"])
 
 
-def test_lndetichol_returns_expected_keys_and_lengths() -> None:
+def test_ilu_returns_expected_keys_and_lengths() -> None:
     W = _toy_w()
     out = ilu(W, -0.5, 0.5, grid=0.25)
 
@@ -84,7 +93,7 @@ def test_logdet_grids_match_direct_slogdet_for_full_int_ichol() -> None:
     assert np.max(np.abs(out_ichol["lndet"] - exact_ichol)) < 1e-8
 
 
-def test_lndetmc_tracks_exact_trend_for_symmetric_row_standardized_w() -> None:
+def test_mc_tracks_exact_trend_for_symmetric_row_standardized_w() -> None:
     n = 20
     W = np.zeros((n, n), dtype=float)
     for i in range(n):
@@ -155,6 +164,26 @@ def test_make_logdet_fn_chebyshev() -> None:
         approx = float(compiled(rho))
         exact = np.linalg.slogdet(I - rho * W)[1]
         assert abs(approx - exact) < 0.05
+
+
+def test_get_cached_logdet_fn_reuses_callable_for_same_key() -> None:
+    W = _toy_w()
+    clear_logdet_fn_cache()
+
+    fn1 = get_cached_logdet_fn(W, method="chebyshev", rho_min=-0.5, rho_max=0.5)
+    fn2 = get_cached_logdet_fn(W, method="chebyshev", rho_min=-0.5, rho_max=0.5)
+
+    assert fn1 is fn2
+
+
+def test_get_cached_logdet_fn_separates_different_bounds() -> None:
+    W = _toy_w()
+    clear_logdet_fn_cache()
+
+    fn1 = get_cached_logdet_fn(W, method="chebyshev", rho_min=-0.5, rho_max=0.5)
+    fn2 = get_cached_logdet_fn(W, method="chebyshev", rho_min=-0.3, rho_max=0.3)
+
+    assert fn1 is not fn2
 
 
 # ---------------------------------------------------------------------------

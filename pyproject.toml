@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 viz = ["graphviz"]
-
+backend = ['dm-tree', 'klujax', 'scikit-umfpack', 'blackjax', 'numpyro']
 
 [tool.setuptools.packages.find]
 include = ["bayespecon", "bayespecon.*"]

@@ -9,6 +9,8 @@ Covers:
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytensor
 import pytensor.tensor as pt
@@ -381,3 +383,371 @@ class TestSeparablePoissonLogpCompiles:
             ip = pm_model.initial_point()
             lp = pm_model.compile_logp()(ip)
         assert np.isfinite(lp)
+
+
+# ---------------------------------------------------------------------------
+# SparseSARSolveOp tests
+# ---------------------------------------------------------------------------
+
+
+class TestSparseSARSolveOp:
+    """Tests for the cross-sectional SAR sparse solve Op."""
+
+    def test_matches_reference_solve(self):
+        """SparseSARSolveOp output matches numpy.linalg.solve."""
+        from bayespecon.ops import SparseSARSolveOp
+
+        n = 20
+        W = _ring_W(n)
+        W_dense = W.toarray()
+        rng = np.random.default_rng(42)
+        b = rng.standard_normal(n)
+        rho = 0.4
+
+        # Reference: dense solve
+        A_ref = np.eye(n) - rho * W_dense
+        eta_ref = np.linalg.solve(A_ref, b)
+
+        # Op: sparse solve
+        op = SparseSARSolveOp(W)
+        rho_pt = pt.scalar("rho")
+        b_pt = pt.vector("b")
+        eta_pt = op(rho_pt, b_pt)
+        fn = pytensor.function([rho_pt, b_pt], eta_pt)
+        eta_op = fn(np.float64(rho), b)
+
+        np.testing.assert_allclose(eta_op, eta_ref, rtol=1e-10, atol=1e-12)
+
+    def test_vjp_rho_and_b(self):
+        """VJP (gradient) w.r.t. rho and b is numerically correct."""
+        from bayespecon.ops import SparseSARSolveOp
+
+        n = 10
+        W = _ring_W(n)
+        rng = np.random.default_rng(123)
+        b = rng.standard_normal(n).astype(np.float64)
+        rho_val = np.float64(0.3)
+
+        op = SparseSARSolveOp(W)
+
+        # Check gradient w.r.t. rho via finite differences
+        rho_pt = pt.scalar("rho")
+        b_pt = pt.vector("b")
+        eta = op(rho_pt, b_pt)
+        loss = eta.sum()
+        grad_rho = pytensor.grad(loss, rho_pt)
+        grad_b = pytensor.grad(loss, b_pt)
+        fn = pytensor.function([rho_pt, b_pt], [loss, grad_rho, grad_b])
+        _, grad_rho_num, grad_b_num = fn(rho_val, b)
+
+        # Finite difference check for rho
+        eps = 1e-5
+        f_plus, _, _ = fn(rho_val + eps, b)
+        f_minus, _, _ = fn(rho_val - eps, b)
+        grad_rho_fd = (f_plus - f_minus) / (2 * eps)
+        np.testing.assert_allclose(
+            float(grad_rho_num), grad_rho_fd, rtol=1e-4, atol=1e-4
+        )
+
+        # Finite difference check for b
+        grad_b_fd = np.zeros_like(b)
+        for i in range(n):
+            b_plus = b.copy()
+            b_plus[i] += eps
+            b_minus = b.copy()
+            b_minus[i] -= eps
+            f_plus_b, _, _ = fn(rho_val, b_plus)
+            f_minus_b, _, _ = fn(rho_val, b_minus)
+            grad_b_fd[i] = (f_plus_b - f_minus_b) / (2 * eps)
+        np.testing.assert_allclose(grad_b_num, grad_b_fd, rtol=1e-4, atol=1e-4)
+
+
+class TestOptionalSparseBackends:
+    def test_auto_sparse_backend_warns_and_falls_back_to_scipy_without_umfpack(
+        self, monkeypatch
+    ):
+        from bayespecon import ops as ops_mod
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "auto")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "0")
+        monkeypatch.setattr(ops_mod, "_umfpack_available", lambda: False)
+        ops_mod._select_sparse_backend.cache_clear()
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            backend = ops_mod._select_sparse_backend()
+
+        assert backend == "scipy"
+        msgs = [str(w.message) for w in caught]
+        assert any("scikit-umfpack" in m for m in msgs)
+        assert any("likely faster" in m for m in msgs)
+
+    def test_selects_umfpack_when_requested_and_installed(self, monkeypatch):
+        pytest.importorskip("scikits.umfpack")
+        from bayespecon.ops import _select_sparse_backend
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
+        _select_sparse_backend.cache_clear()
+        assert _select_sparse_backend() == "umfpack"
+
+    def test_sparse_vector_solver_routes_to_umfpack_backend(self, monkeypatch):
+        pytest.importorskip("scikits.umfpack")
+        from bayespecon import ops as ops_mod
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
+        monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "0")
+        ops_mod._select_sparse_backend.cache_clear()
+
+        called = {"umfpack": False}
+
+        def _fake_umfpack_spsolve(A, rhs):
+            called["umfpack"] = True
+            return np.linalg.solve(A.toarray(), rhs)
+
+        monkeypatch.setattr(
+            ops_mod, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
+        )
+
+        A = sp.csr_matrix(np.array([[2.0, 1.0], [1.0, 2.0]], dtype=np.float64))
+        rhs = np.array([1.0, 2.0], dtype=np.float64)
+        got = ops_mod._solve_sparse_vector(A, rhs)
+        ref = np.linalg.solve(A.toarray(), rhs)
+
+        assert called["umfpack"] is True
+        np.testing.assert_allclose(got, ref, atol=1e-12)
+
+    def test_sparse_flow_solver_routes_to_umfpack_backend(self, monkeypatch):
+        pytest.importorskip("scikits.umfpack")
+        from bayespecon import ops as ops_mod
+        from bayespecon.ops import SparseFlowSolveOp
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
+        monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "0")
+        ops_mod._select_sparse_backend.cache_clear()
+
+        called = {"umfpack": 0}
+
+        def _fake_umfpack_spsolve(A, rhs):
+            called["umfpack"] += 1
+            return np.linalg.solve(A.toarray(), rhs)
+
+        monkeypatch.setattr(
+            ops_mod, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
+        )
+
+        n = 3
+        W = _ring_W(n)
+        Wd, Wo, Ww = _flow_weight_mats(W)
+        op = SparseFlowSolveOp(Wd, Wo, Ww)
+        rd_t = pt.dscalar()
+        ro_t = pt.dscalar()
+        rw_t = pt.dscalar()
+        b_t = pt.dvector()
+        f = pytensor.function([rd_t, ro_t, rw_t, b_t], op(rd_t, ro_t, rw_t, b_t))
+
+        b = np.arange(1, n * n + 1, dtype=np.float64)
+        got = f(0.2, -0.1, 0.05, b)
+        ref = _unrestricted_ref(0.2, -0.1, 0.05, W, b)
+
+        assert called["umfpack"] >= 1
+        np.testing.assert_allclose(got, ref, atol=1e-10)
+
+    def test_sparse_flow_matrix_solver_routes_to_umfpack_backend(self, monkeypatch):
+        pytest.importorskip("scikits.umfpack")
+        from bayespecon import ops as ops_mod
+        from bayespecon.ops import SparseFlowSolveMatrixOp
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
+        ops_mod._select_sparse_backend.cache_clear()
+
+        called = {"umfpack": 0}
+
+        def _fake_umfpack_spsolve(A, rhs):
+            called["umfpack"] += 1
+            return np.linalg.solve(A.toarray(), rhs)
+
+        monkeypatch.setattr(
+            ops_mod, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
+        )
+
+        n, T = 3, 2
+        W = _ring_W(n)
+        Wd, Wo, Ww = _flow_weight_mats(W)
+        op = SparseFlowSolveMatrixOp(Wd, Wo, Ww)
+        rd_t = pt.dscalar()
+        ro_t = pt.dscalar()
+        rw_t = pt.dscalar()
+        B_t = pt.dmatrix()
+        f = pytensor.function([rd_t, ro_t, rw_t, B_t], op(rd_t, ro_t, rw_t, B_t))
+
+        B = np.arange(1, n * n * T + 1, dtype=np.float64).reshape(n * n, T)
+        got = f(0.15, 0.1, -0.05, B)
+        ref = _unrestricted_ref_matrix(0.15, 0.1, -0.05, W, B)
+
+        assert called["umfpack"] >= T
+        np.testing.assert_allclose(got, ref, atol=1e-10)
+
+    def test_sparse_sar_forward_reuses_umfpack_factorization(self, monkeypatch):
+        pytest.importorskip("scikits.umfpack")
+        from bayespecon import ops as ops_mod
+        from bayespecon.ops import SparseSARSolveOp
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
+        monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "0")
+        ops_mod._select_sparse_backend.cache_clear()
+
+        called = {"factorized": 0}
+
+        def _fake_cached_solver(A):
+            called["factorized"] += 1
+            A_dense = A.toarray()
+
+            class _Solver:
+                def solve(self, rhs, trans="N"):
+                    assert trans == "N"
+                    return np.linalg.solve(A_dense, rhs)
+
+            return _Solver()
+
+        monkeypatch.setattr(ops_mod, "_make_cached_umfpack_solver", _fake_cached_solver)
+
+        n = 8
+        W = _ring_W(n)
+        op = SparseSARSolveOp(W)
+        b = np.linspace(1.0, 2.0, n, dtype=np.float64)
+
+        got1 = op._solve_forward(0.25, b)
+        got2 = op._solve_forward(0.25, b)
+
+        assert called["factorized"] == 1
+        np.testing.assert_allclose(got1, got2, atol=1e-12)
+
+    def test_sparse_sar_adjoint_reuses_umfpack_factorization(self, monkeypatch):
+        pytest.importorskip("scikits.umfpack")
+        from bayespecon import ops as ops_mod
+        from bayespecon.ops import _SparseSARVJPOp
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
+        monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "0")
+        ops_mod._select_sparse_backend.cache_clear()
+
+        called = {"factorized": 0}
+
+        def _fake_cached_solver(A):
+            called["factorized"] += 1
+            A_dense = A.toarray()
+
+            class _Solver:
+                def solve(self, rhs, trans="N"):
+                    assert trans == "N"
+                    return np.linalg.solve(A_dense, rhs)
+
+            return _Solver()
+
+        monkeypatch.setattr(ops_mod, "_make_cached_umfpack_solver", _fake_cached_solver)
+
+        n = 8
+        W = _ring_W(n)
+        op = _SparseSARVJPOp(W)
+        g = np.linspace(1.0, 2.0, n, dtype=np.float64)
+
+        got1 = op._solve_adjoint(0.25, g)
+        got2 = op._solve_adjoint(0.25, g)
+
+        assert called["factorized"] == 1
+        np.testing.assert_allclose(got1, got2, atol=1e-12)
+
+
+class TestFlowSparseLUCache:
+    def test_sparse_flow_scipy_lu_reused_for_same_rhos(self, monkeypatch):
+        from bayespecon import ops as ops_mod
+        from bayespecon.ops import SparseFlowSolveOp
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "scipy")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
+        ops_mod._select_sparse_backend.cache_clear()
+
+        calls = {"splu": 0}
+        orig_splu = ops_mod.sp.linalg.splu
+
+        def _counting_splu(*args, **kwargs):
+            calls["splu"] += 1
+            return orig_splu(*args, **kwargs)
+
+        monkeypatch.setattr(ops_mod.sp.linalg, "splu", _counting_splu)
+
+        n = 3
+        W = _ring_W(n)
+        Wd, Wo, Ww = _flow_weight_mats(W)
+        op = SparseFlowSolveOp(Wd, Wo, Ww)
+        rd_t = pt.dscalar()
+        ro_t = pt.dscalar()
+        rw_t = pt.dscalar()
+        b_t = pt.dvector()
+        f = pytensor.function([rd_t, ro_t, rw_t, b_t], op(rd_t, ro_t, rw_t, b_t))
+
+        b = np.linspace(-1.0, 1.0, n * n)
+        _ = f(0.2, -0.1, 0.05, b)
+        _ = f(0.2, -0.1, 0.05, b)
+
+        assert calls["splu"] == 1
+
+
+class TestSparseSARSolveOpNumbaDispatch:
+    def test_numba_dense_path_matches_default(self, monkeypatch):
+        pytest.importorskip("numba")
+        from bayespecon.ops import SparseSARSolveOp
+
+        # Keep dense path active for this small n.
+        monkeypatch.delenv("BAYESPECON_KRON_DENSE_MAX", raising=False)
+
+        n = 8
+        W = _ring_W(n)
+        rng = np.random.default_rng(2026)
+        b = rng.standard_normal(n)
+
+        op = SparseSARSolveOp(W)
+        rho = pt.scalar("rho")
+        b_t = pt.vector("b")
+        eta = op(rho, b_t)
+
+        f_default = pytensor.function([rho, b_t], eta)
+        f_numba = pytensor.function([rho, b_t], eta, mode="NUMBA")
+
+        np.testing.assert_allclose(
+            f_numba(0.2, b),
+            f_default(0.2, b),
+            atol=1e-10,
+            rtol=1e-10,
+        )
+
+    def test_numba_sparse_path_has_no_pytensor_fallback_warning(self, monkeypatch):
+        pytest.importorskip("numba")
+        from bayespecon.ops import SparseSARSolveOp
+
+        # Force sparse path by lowering dense threshold below n.
+        monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "2")
+
+        n = 10
+        W = _ring_W(n)
+        rng = np.random.default_rng(2027)
+        b = rng.standard_normal(n)
+
+        op = SparseSARSolveOp(W)
+        rho = pt.scalar("rho")
+        b_t = pt.vector("b")
+        eta = op(rho, b_t)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            f_numba = pytensor.function([rho, b_t], eta, mode="NUMBA")
+            _ = f_numba(0.2, b)
+
+        msgs = [str(w.message) for w in caught]
+        assert not any("Numba will use object mode to run" in m for m in msgs)

@@ -221,10 +221,21 @@ class TestGetSpec:
         assert result == "UnknownModel"
 
     def test_ols_tree_evaluate_all_sig(self):
-        """Walk the OLS tree with all tests significant → SARAR."""
+        """All naive + robust significant → SAR via robust p-value tie-break.
+
+        ``SARAR`` is intentionally unreachable from the OLS tree because
+        its proper null is a fitted SAR (or SEM) model.
+        """
         tree = get_spec("OLS")
-        result, path = evaluate(tree, sig_lookup=lambda _: True)
-        assert result == "SARAR"
+        result, path = evaluate(
+            tree,
+            sig_lookup=lambda _: True,
+            predicate_lookup={
+                "robust_lag_pval_le_error_pval": lambda: True,
+                "lag_pval_le_error_pval": lambda: True,
+            },
+        )
+        assert result == "SAR"
 
     def test_ols_tree_evaluate_none_sig(self):
         """Walk the OLS tree with no tests significant → OLS."""
@@ -273,7 +284,12 @@ class TestGetSpec:
         assert result == "SEM"
 
     def test_ols_tree_robust_both(self):
-        """Both naive and both robust sig → SARAR."""
+        """Both naive and both robust sig → robust p-value tie-break (SAR/SEM).
+
+        The OLS tree never reaches SARAR because SARAR's correct null is
+        a fitted SAR (or SEM); the user must escalate by fitting that
+        intermediate model and re-running diagnostics.
+        """
         tree = get_spec("OLS")
 
         def lookup(name):
@@ -284,8 +300,21 @@ class TestGetSpec:
                 "Robust-LM-Error",
             )
 
-        result, path = evaluate(tree, sig_lookup=lookup)
-        assert result == "SARAR"
+        # Robust-LM-Lag wins the tie-break -> SAR.
+        result, path = evaluate(
+            tree,
+            sig_lookup=lookup,
+            predicate_lookup={"robust_lag_pval_le_error_pval": lambda: True},
+        )
+        assert result == "SAR"
+
+        # Robust-LM-Error wins the tie-break -> SEM.
+        result, path = evaluate(
+            tree,
+            sig_lookup=lookup,
+            predicate_lookup={"robust_lag_pval_le_error_pval": lambda: False},
+        )
+        assert result == "SEM"
 
     def test_ols_tree_robust_neither_predicate(self):
         """Both naive sig, neither robust → predicate fallback."""
@@ -349,9 +378,19 @@ class TestGetPanelSpec:
         assert result == "UnknownPanel"
 
     def test_panel_ols_all_sig(self):
+        # All naive + robust significant: route via the robust p-value
+        # tie-break to the dominant single-channel panel model.  SARAR is
+        # intentionally unreachable from a panel-OLS fit.
         tree = get_panel_spec("OLSPanelFE")
-        result, path = evaluate(tree, sig_lookup=lambda _: True)
-        assert "SARAR" in result
+        result, path = evaluate(
+            tree,
+            sig_lookup=lambda _: True,
+            predicate_lookup={
+                "panel_robust_lag_pval_le_error_pval": lambda: True,
+                "panel_lag_pval_le_error_pval": lambda: True,
+            },
+        )
+        assert result == "SARPanelFE"
 
     def test_panel_ols_none_sig(self):
         tree = get_panel_spec("OLSPanelFE")

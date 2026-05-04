@@ -43,6 +43,8 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ._sampler import use_jax_likelihood
+from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 
 
@@ -202,7 +204,7 @@ class SARPanelTobit(_PanelTobitBase):
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
         y_lat = self._posterior_latent_y_mean()
-        return rho * (self._W_dense @ y_lat) + self._X @ beta
+        return rho * self._sparse_panel_lag(y_lat) + self._X @ beta
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         ni = self._nonintercept_indices
@@ -285,7 +287,6 @@ class SARPanelTobit(_PanelTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import xarray as xr
         from scipy.stats import norm
 
         rho = idata.posterior["rho"].values
@@ -296,7 +297,6 @@ class SARPanelTobit(_PanelTobitBase):
         s = c * d
         n = self._y.shape[0]
         X = self._X
-        W = self._W_dense
         censored = self._censored_mask
         censoring = self.censoring
 
@@ -306,7 +306,8 @@ class SARPanelTobit(_PanelTobitBase):
 
         # Get posterior mean of latent y* for computing mu
         y_lat = self._posterior_latent_y_mean()
-        mu = rho_f[:, None] * (W @ y_lat)[None, :] + beta_f @ X.T  # (s, n)
+        Wy_lat = self._sparse_panel_lag(y_lat)
+        mu = rho_f[:, None] * Wy_lat[None, :] + beta_f @ X.T  # (s, n)
 
         # Tobit pointwise log-likelihood
         ll = np.empty((s, n), dtype=np.float64)
@@ -346,8 +347,7 @@ class SARPanelTobit(_PanelTobitBase):
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
 
@@ -434,8 +434,6 @@ class SEMPanelTobit(_PanelTobitBase):
     """
 
     def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
-        from ._sampler import use_jax_likelihood
-
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -658,7 +656,6 @@ class SEMPanelTobit(_PanelTobitBase):
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
 
-        import xarray as xr
         from scipy.stats import norm
 
         lam = idata.posterior["lam"].values
@@ -717,6 +714,5 @@ class SEMPanelTobit(_PanelTobitBase):
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        _write_log_likelihood_to_idata(idata, ll)
         return idata

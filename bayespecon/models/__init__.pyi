@@ -1,6 +1,24 @@
 from .base import SpatialModel as SpatialModel
+from .flow import (
+    NegativeBinomialFlow as NegativeBinomialFlow,
+)
+from .flow import (
+    NegativeBinomialSARFlow as NegativeBinomialSARFlow,
+)
+from .flow import (
+    NegativeBinomialSARFlowSeparable as NegativeBinomialSARFlowSeparable,
+)
 from .flow_panel import (
     FlowPanelModel as FlowPanelModel,
+)
+from .flow_panel import (
+    NegativeBinomialFlowPanel as NegativeBinomialFlowPanel,
+)
+from .flow_panel import (
+    NegativeBinomialSARFlowPanel as NegativeBinomialSARFlowPanel,
+)
+from .flow_panel import (
+    NegativeBinomialSARFlowSeparablePanel as NegativeBinomialSARFlowSeparablePanel,
 )
 from .flow_panel import (
     OLSFlowPanel as OLSFlowPanel,
@@ -86,6 +104,7 @@ from .panel_tobit import (
     SEMPanelTobit as SEMPanelTobit,
 )
 from .sar import SAR as SAR
+from .sar_negbin import SARNegativeBinomial as SARNegativeBinomial
 from .sdem import SDEM as SDEM
 from .sdm import SDM as SDM
 from .sem import SEM as SEM

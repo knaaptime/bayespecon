@@ -179,6 +179,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import arviz as az
 import numpy as np
+import scipy.sparse as sp
 from scipy import stats as sp_stats
 
 
@@ -1056,6 +1057,139 @@ def _info_matrix_blocks_sdem(
     }
 
 
+def _info_matrix_blocks_slx_robust(
+    X: np.ndarray,
+    WX: np.ndarray,
+    W_sparse,
+    sigma2: float,
+    beta_slx_mean: np.ndarray,
+    T_ww: float | None = None,
+) -> dict:
+    r"""Compute the (ρ, λ) raw-score variance blocks at the SLX null.
+
+    Used by :func:`bayesian_robust_lm_lag_sdm_test` and
+    :func:`bayesian_robust_lm_error_sdem_test` (and their panel
+    counterparts) to apply the Doğan-Taşpınar-Bera Neyman-orthogonal
+    correction (:cite:p:`dogan2021BayesianRobust`, Proposition 3) for
+    the **other** spatial parameter.  The SLX OLS normal equations zero
+    out the γ-direction exactly, so the only non-trivial nuisance under
+    H_0: ρ = λ = 0 in the SDM/SDEM neighbourhood is the *opposite*
+    spatial parameter.  Without this correction, residuals from the SLX
+    null carry an unconcentrated component of the true λ (resp. ρ) and
+    bias the score upward — see the n = 1600 SDEM-DGP failure documented
+    in ``reference/lm_diagnostics_paper.md`` §3.3.
+
+    With ``e ~ N(0, σ² M_Z)`` under H_0 (where ``M_Z = I - Z(Z'Z)⁻¹Z'``
+    and ``Z = [X, WX]``), Isserlis' theorem gives the exact raw-score
+    variance blocks:
+
+    .. math::
+        J_{\rho\rho}   &= \bar{\sigma}^4 T_{WW}
+                        + \bar{\sigma}^2 \, \| M_Z\, W Z \bar{\beta}_{slx} \|^2 \\
+        J_{\lambda\lambda} &= \bar{\sigma}^4 T_{WW} \\
+        J_{\rho\lambda}     &= \bar{\sigma}^4 \,
+            \bigl[\,\mathrm{tr}(M_Z W M_Z W)
+                 + \mathrm{tr}(M_Z W M_Z W^\top)\,\bigr]
+
+    where :math:`T_{WW} = \mathrm{tr}(W^\top W + W^2)` is on the same
+    dimension as ``W_sparse`` (i.e. the *full* :math:`W_{NT}` for panel
+    data).  The cross-term ``J_rho_lam`` collapses to
+    :math:`\sigma^4 T_{WW}` only when :math:`M_Z = I` (no β,γ to project
+    out); the corrections induced by the M_Z projection are computed
+    exactly via trace identities on :math:`Z^\top W Z`,
+    :math:`Z^\top W^2 Z` and :math:`Z^\top W^\top W Z` rather than by
+    forming the dense :math:`(n,n)` annihilator.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Design matrix of shape ``(n, k)`` including intercept (cross-
+        section) or stacked/demeaned design (panel).
+    WX : np.ndarray
+        Spatially lagged design matrix of shape ``(n, k_wx)``.  For
+        panel data this should already use :math:`W_{NT} = I_T \otimes W`.
+    W_sparse : scipy.sparse matrix
+        Spatial weights matrix of shape ``(n, n)``.  Caller passes the
+        full :math:`W_{NT}` for panel data so that all trace identities
+        work on the same dimension as ``X``.
+    sigma2 : float
+        Posterior mean of :math:`\sigma^2`.
+    beta_slx_mean : np.ndarray
+        Posterior mean of the SLX coefficient vector covering
+        :math:`[X, WX]`, shape ``(k + k_wx,)``.
+    T_ww : float or None, optional
+        Pre-computed :math:`\mathrm{tr}(W^\top W + W^2)` on the same
+        dimension as ``W_sparse``.  Computed if not supplied.  For panel
+        callers using ``W_NT = I_T ⊗ W`` and a cross-sectional
+        ``model._T_ww``, pass ``T * model._T_ww``.
+
+    Returns
+    -------
+    dict
+        Keys ``J_rho_rho``, ``J_lam_lam``, ``J_rho_lam``, ``T_ww``.
+    """
+    Z = np.hstack([X, WX])
+    ZtZ = Z.T @ Z
+    # Use pseudo-inverse to handle the (rare) case of collinear WX
+    # columns; equivalent to np.linalg.inv when ZtZ is full rank.
+    ZtZ_inv = np.linalg.pinv(ZtZ)
+
+    if T_ww is None:
+        T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
+
+    # Trace identities for tr(M_Z A M_Z B) without forming dense M_Z:
+    #   tr(M_Z A M_Z B) = tr(AB) - tr(P_Z AB) - tr(P_Z BA) + tr(P_Z A P_Z B)
+    #   tr(P_Z C) = tr((Z'Z)^{-1} Z' C Z)
+    #   tr(P_Z A P_Z B) = tr( (Z'Z)^{-1}Z'AZ · (Z'Z)^{-1}Z'BZ )
+    # For A=W, B=W:  AB = W², BA = W², so tr(P_Z AB)=tr(P_Z BA).
+    # For A=W, B=W': AB = W·W', BA = W'·W; their P_Z traces differ but
+    #               their sum equals tr(P_Z (WW' + W'W)).
+    WZ = np.asarray(W_sparse @ Z)            # (n, k_total)
+    W2Z = np.asarray(W_sparse @ WZ)          # W²·Z
+    WtWZ = np.asarray(W_sparse.T @ WZ)       # W'·W·Z
+    # Note: tr(P_Z W·W') = tr((Z'Z)^{-1} Z' W W' Z) = tr((Z'Z)^{-1} (W'Z)' (W'Z))
+    WtZ = np.asarray(W_sparse.T @ Z)         # (n, k_total)
+
+    ZtWZ = Z.T @ WZ
+    ZtWtZ = ZtWZ.T
+
+    A_ZtWZ = ZtZ_inv @ ZtWZ
+    A_ZtWtZ = ZtZ_inv @ ZtWtZ
+
+    # tr(W²) and tr(W'W) on the W_sparse dimension
+    tr_W2 = float(W_sparse.multiply(W_sparse.T).sum())
+    tr_WtW = float(W_sparse.power(2).sum())
+
+    # Case A=W, B=W
+    tr_PZ_W2 = float(np.trace(ZtZ_inv @ (Z.T @ W2Z)))
+    tr_PZ_W_PZ_W = float(np.trace(A_ZtWZ @ A_ZtWZ))
+    tr_MZWMZW = tr_W2 - 2.0 * tr_PZ_W2 + tr_PZ_W_PZ_W
+
+    # Case A=W, B=W'.  tr(P_Z W·W') = tr((Z'Z)^{-1}(W'Z)'(W'Z)) and
+    # tr(P_Z W'·W) = tr((Z'Z)^{-1}(WZ)'(WZ)).  Their sum is the
+    # symmetric "+ - " contribution.
+    tr_PZ_WWt = float(np.trace(ZtZ_inv @ (WtZ.T @ WtZ)))
+    tr_PZ_WtW = float(np.trace(ZtZ_inv @ (Z.T @ WtWZ)))
+    tr_PZ_W_PZ_Wt = float(np.trace(A_ZtWZ @ A_ZtWtZ))
+    tr_MZWMZWt = tr_WtW - tr_PZ_WWt - tr_PZ_WtW + tr_PZ_W_PZ_Wt
+
+    # M_Z W Z β̄
+    Wybeta = WZ @ beta_slx_mean              # (n,)
+    proj = Z @ (ZtZ_inv @ (Z.T @ Wybeta))
+    mz_quad = float(np.dot(Wybeta, Wybeta - proj))
+
+    J_rho_rho = float(sigma2**2 * T_ww + sigma2 * mz_quad)
+    J_lam_lam = float(sigma2**2 * T_ww)
+    J_rho_lam = float(sigma2**2 * (tr_MZWMZW + tr_MZWMZWt))
+
+    return {
+        "J_rho_rho": J_rho_rho,
+        "J_lam_lam": J_lam_lam,
+        "J_rho_lam": J_rho_lam,
+        "T_ww": T_ww,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Robust Bayesian LM tests (Neyman orthogonal score, Dogan et al. 2021)
 # ---------------------------------------------------------------------------
@@ -1072,7 +1206,7 @@ def bayesian_robust_lm_lag_sdm_test(
     which is the Bayesian analogue of the robust LM-Lag-SDM test in
     :cite:t:`koley2024UseNot`.
 
-    The alternative model is SAR (the SDM relaxation that adds
+    The alternative model is SDM (the SLX relaxation that adds
     :math:`\rho`); the null model used to draw posteriors is **SLX**, in
     which :math:`\gamma` is a free parameter and has already been
     absorbed into the residuals.  For each posterior draw of
@@ -1081,36 +1215,52 @@ def bayesian_robust_lm_lag_sdm_test(
     .. math::
         \mathbf{e} = \mathbf{y} - X\beta - WX\gamma,
 
-    and the raw score for :math:`\rho` is
-    :math:`g_\rho = \mathbf{e}^\top W \mathbf{y}`.  The companion score
-    for :math:`\gamma`, :math:`\mathbf{g}_\gamma = (WX)^\top \mathbf{e}`,
-    is identically zero by the OLS normal equations of the SLX fit, so
-    the Doğan Neyman-orthogonal adjustment
-    (:cite:p:`dogan2021BayesianRobust`, Proposition 3) reduces to a
-    no-op and the test simplifies to a Schur-concentrated lag LM.
-
-    Concentrating both :math:`\beta` and :math:`\gamma` out of the SDM
-    information matrix at :math:`\theta^\star = (\bar{\beta}, \bar{\gamma},
-    \bar{\sigma}^2)` (:cite:p:`anselin1996SimpleDiagnostic`, eq. 13;
-    :cite:p:`koley2024UseNot`, Section 3) gives the variance of the raw
-    score under :math:`H_0`:
+    and the raw scores are
 
     .. math::
-        V_{\rho \cdot \beta, \gamma} = \bar{\sigma}^4 \, T_{WW}
-            + \bar{\sigma}^2 \,
-              \| M_Z\, W (X \bar{\beta} + W X \bar{\gamma}) \|^2,
+        g_\rho     = \mathbf{e}^\top W \mathbf{y}, \qquad
+        g_\lambda  = \mathbf{e}^\top W \mathbf{e}.
+
+    The companion score for :math:`\gamma`,
+    :math:`\mathbf{g}_\gamma = (WX)^\top \mathbf{e}`, is identically zero
+    by the OLS normal equations of the SLX fit, so the γ-direction of the
+    Doğan-Taşpınar-Bera Neyman-orthogonal adjustment
+    (:cite:p:`dogan2021BayesianRobust`, Proposition 3) collapses to a
+    no-op.  However the SLX null leaves :math:`\lambda` *unconcentrated*:
+    when the true DGP is SDEM, :math:`g_\rho` is biased upward by
+    :math:`\sigma^2 \, \mathrm{tr}\bigl(M_Z W (I-\lambda W)^{-1}
+    (I-\lambda W^\top)^{-1}\bigr)`, which destroys the χ² calibration at
+    moderate-to-large :math:`n`.  We therefore Schur-correct on
+    :math:`\lambda` as a second nuisance, using the raw-score variance
+    blocks at the SLX null supplied by
+    :func:`_info_matrix_blocks_slx_robust`:
+
+    .. math::
+        g_\rho^* &= g_\rho - \frac{J_{\rho\lambda}}{J_{\lambda\lambda}}\, g_\lambda \\
+        V_{\rho \cdot \lambda} &= J_{\rho\rho}
+            - \frac{J_{\rho\lambda}^2}{J_{\lambda\lambda}}
+
+    with
+
+    .. math::
+        J_{\rho\rho}       &= \bar{\sigma}^4 T_{WW}
+                            + \bar{\sigma}^2 \, \| M_Z W Z \bar{\beta}_{slx} \|^2 \\
+        J_{\lambda\lambda} &= \bar{\sigma}^4 T_{WW} \\
+        J_{\rho\lambda}    &= \bar{\sigma}^4 \,
+            \bigl[\,\mathrm{tr}(M_Z W M_Z W) + \mathrm{tr}(M_Z W M_Z W^\top)\,\bigr]
 
     where :math:`Z = [X, WX]` is the SLX design and
     :math:`M_Z = I - Z(Z^\top Z)^{-1} Z^\top` is the SLX OLS annihilator.
     The per-draw robust LM statistic is
 
     .. math::
-        \mathrm{LM}_R^{(d)} = \frac{\bigl(g_\rho^{(d)}\bigr)^2}
-                                   {V_{\rho \cdot \beta, \gamma}}
+        \mathrm{LM}_R^{(d)} = \frac{\bigl(g_\rho^{*\,(d)}\bigr)^2}
+                                   {V_{\rho \cdot \lambda}}
         \;\xrightarrow{d}\; \chi^2_1
         \quad \text{under } H_0,
 
-    independent of local misspecification in :math:`\gamma`.
+    independent of local misspecification in either :math:`\gamma` or
+    :math:`\lambda`.
 
     Parameters
     ----------
@@ -1135,22 +1285,33 @@ def bayesian_robust_lm_lag_sdm_test(
     beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k+k_wx)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
-    # SLX residuals (gamma already absorbed)
+    # SLX residuals (gamma already absorbed by SLX OLS normal equations)
     Z = np.hstack([X, WX])
     fitted = beta_draws @ Z.T  # (draws, n)
     resid = y[None, :] - fitted  # (draws, n)
 
-    # Per-draw raw lag score
+    # Per-draw raw scores: lag (g_rho) and the companion error score
+    # (g_lambda) used for the Schur correction below.
     g_rho = np.dot(resid, Wy)  # (draws,)
+    We = (W_sp @ resid.T).T  # (draws, n)
+    g_lambda = np.sum(resid * We, axis=1)  # (draws,)
 
-    # Schur-concentrated variance under H_0 with Z = [X, WX] annihilator
+    # Raw-score variance blocks at the SLX null with (β, γ) Schur-purged.
     beta_mean = np.mean(beta_draws, axis=0)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    y_hat = Z @ beta_mean
-    Wy_hat = np.asarray(W_sp @ y_hat).ravel()
-    V_rho = sigma2_mean**2 * model._T_ww + sigma2_mean * _mx_quadratic(Z, Wy_hat)
+    info = _info_matrix_blocks_slx_robust(
+        X, WX, W_sp, sigma2_mean, beta_mean, T_ww=model._T_ww
+    )
+    J_rr = info["J_rho_rho"]
+    J_ll = info["J_lam_lam"]
+    J_rl = info["J_rho_lam"]
 
-    LM = g_rho**2 / (V_rho + 1e-12)
+    # Schur correction on λ as a second nuisance.
+    coef = J_rl / (J_ll + 1e-12)
+    g_rho_star = g_rho - coef * g_lambda
+    V_rho_given_lambda = J_rr - J_rl**2 / (J_ll + 1e-12)
+
+    LM = g_rho_star**2 / (V_rho_given_lambda + 1e-12)
 
     return _finalize_lm(
         LM,
@@ -1289,26 +1450,38 @@ def bayesian_robust_lm_error_sdem_test(
     is **SLX**, in which :math:`\gamma` is a free parameter and has
     already been absorbed into the residuals.  For each posterior draw of
     :math:`(\beta, \gamma, \sigma^2)` from the SLX fit, residuals are
-    :math:`\mathbf{e} = \mathbf{y} - X\beta - WX\gamma` and the raw error
-    score is :math:`g_\lambda = \mathbf{e}^\top W \mathbf{e}`.
-
-    Under :math:`H_0` with spherical errors, the variance block
-    :math:`V_{\lambda\gamma} = 0` because odd moments of normal errors
-    vanish (:cite:p:`koley2024UseNot`).  Hence the Doğan
-    Neyman-orthogonal adjustment for :math:`\gamma`-nuisance is exactly
-    a no-op, and the test simplifies to
+    :math:`\mathbf{e} = \mathbf{y} - X\beta - WX\gamma` and the raw
+    scores are
 
     .. math::
-        \mathrm{LM}_R^{(d)} = \frac{\bigl(g_\lambda^{(d)}\bigr)^2}
-                                   {\bar{\sigma}^4 \, T_{WW}}
+        g_\lambda = \mathbf{e}^\top W \mathbf{e}, \qquad
+        g_\rho    = \mathbf{e}^\top W \mathbf{y}.
+
+    Under :math:`H_0` with spherical errors the cross-block
+    :math:`V_{\lambda\gamma} = 0` (odd normal moments vanish,
+    :cite:p:`koley2024UseNot`), so the γ-direction of the
+    Neyman-orthogonal adjustment is a no-op.  However the SLX null
+    leaves :math:`\rho` unconcentrated: when the true DGP is SDM, the
+    error score :math:`g_\lambda` is biased upward.  We therefore
+    Schur-correct on :math:`\rho` as a second nuisance, using the
+    raw-score variance blocks at the SLX null supplied by
+    :func:`_info_matrix_blocks_slx_robust`:
+
+    .. math::
+        g_\lambda^* &= g_\lambda - \frac{J_{\rho\lambda}}{J_{\rho\rho}}\, g_\rho \\
+        V_{\lambda \cdot \rho} &= J_{\lambda\lambda}
+            - \frac{J_{\rho\lambda}^2}{J_{\rho\rho}}.
+
+    The per-draw robust LM statistic is
+
+    .. math::
+        \mathrm{LM}_R^{(d)} = \frac{\bigl(g_\lambda^{*\,(d)}\bigr)^2}
+                                   {V_{\lambda \cdot \rho}}
         \;\xrightarrow{d}\; \chi^2_1
         \quad \text{under } H_0,
 
-    where :math:`T_{WW} = \mathrm{tr}(W^\top W + W^2)`.  Note that this
-    is structurally identical to :func:`bayesian_lm_error_test` but with
-    residuals drawn from the SLX (γ-augmented) posterior rather than the
-    OLS posterior — making the test robust to local misspecification in
-    :math:`\gamma`.
+    independent of local misspecification in either :math:`\gamma` or
+    :math:`\rho`.
 
     Parameters
     ----------
@@ -1325,6 +1498,7 @@ def bayesian_robust_lm_error_sdem_test(
     y = model._y
     X = model._X
     WX = model._WX
+    Wy = model._Wy
     W_sp = model._W_sparse
     k_wx = WX.shape[1]
 
@@ -1332,20 +1506,33 @@ def bayesian_robust_lm_error_sdem_test(
     beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k+k_wx)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
-    # SLX residuals (gamma already absorbed)
+    # SLX residuals (gamma already absorbed by SLX OLS normal equations)
     Z = np.hstack([X, WX])
     fitted = beta_draws @ Z.T  # (draws, n)
     resid = y[None, :] - fitted  # (draws, n)
 
-    # Per-draw raw error score
+    # Per-draw raw scores: error (g_lambda) and the companion lag score
+    # (g_rho) used for the Schur correction on ρ as a second nuisance.
     We = (W_sp @ resid.T).T  # (draws, n)
     g_lambda = np.sum(resid * We, axis=1)  # (draws,)
+    g_rho = np.dot(resid, Wy)  # (draws,)
 
-    # Variance under H_0 (J_{lam,gamma} = 0 → no Schur correction needed)
+    # Raw-score variance blocks at the SLX null with (β, γ) Schur-purged.
+    beta_mean = np.mean(beta_draws, axis=0)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    V_lambda = sigma2_mean**2 * model._T_ww
+    info = _info_matrix_blocks_slx_robust(
+        X, WX, W_sp, sigma2_mean, beta_mean, T_ww=model._T_ww
+    )
+    J_rr = info["J_rho_rho"]
+    J_ll = info["J_lam_lam"]
+    J_rl = info["J_rho_lam"]
 
-    LM = g_lambda**2 / (V_lambda + 1e-12)
+    # Schur correction on ρ as a second nuisance.
+    coef = J_rl / (J_rr + 1e-12)
+    g_lambda_star = g_lambda - coef * g_rho
+    V_lambda_given_rho = J_ll - J_rl**2 / (J_rr + 1e-12)
+
+    LM = g_lambda_star**2 / (V_lambda_given_rho + 1e-12)
 
     return _finalize_lm(
         LM,
@@ -1384,8 +1571,9 @@ def _panel_residuals(model, beta_draws: np.ndarray) -> np.ndarray:
         Residual matrix of shape ``(draws, n)`` where ``n = N*T``.
     """
     y = model._y
-    X = model._X
-    fitted = beta_draws @ X.T  # (draws, n)
+    # Auto-stack [X, WX] when the posterior covers both blocks (SLX/SDM/SDEM).
+    Z = _resolve_X_for_beta(model, beta_draws)
+    fitted = beta_draws @ Z.T  # (draws, n)
     resid = y[None, :] - fitted  # (draws, n)
 
     # RE models: subtract random effects alpha[unit_idx]
@@ -1395,10 +1583,14 @@ def _panel_residuals(model, beta_draws: np.ndarray) -> np.ndarray:
 
 
 def _panel_spatial_lag(W_sparse, v: np.ndarray, N: int, T: int) -> np.ndarray:
-    """Apply panel spatial lag W⊗I_T to a vector or matrix of draws.
+    """Apply panel spatial lag ``I_T ⊗ W`` to a vector or batch of draws.
 
-    For each of the T time periods, the N-length slice is multiplied by
-    the N×N sparse weight matrix.
+    Exploits the Kronecker structure ``I_T ⊗ W_n``: all T time-period
+    slices are processed in a single sparse BLAS call by reshaping the
+    input to ``(T, N)`` (1-D) or ``(draws*T, N)`` (2-D) and applying the
+    N×N weight matrix once, then reshaping back.  This avoids the O(T)
+    Python-loop overhead of the naive per-period approach and matches the
+    Phase-3 ``_batch_sparse_lag`` optimisation in the model layer.
 
     Parameters
     ----------
@@ -1418,18 +1610,16 @@ def _panel_spatial_lag(W_sparse, v: np.ndarray, N: int, T: int) -> np.ndarray:
         Spatially lagged array with the same shape as *v*.
     """
     if v.ndim == 1:
-        out = np.zeros_like(v)
-        for t in range(T):
-            s, e = t * N, (t + 1) * N
-            out[s:e] = np.asarray(W_sparse @ v[s:e]).ravel()
-        return out
+        # Reshape (N*T,) → (T, N), apply W once, reshape back.
+        r = v.reshape(T, N)
+        Wr = np.asarray(W_sparse @ r.T, dtype=float).T  # (T, N)
+        return Wr.reshape(N * T)
     else:
-        # v is (draws, N*T)
-        out = np.zeros_like(v)
-        for t in range(T):
-            s, e = t * N, (t + 1) * N
-            out[:, s:e] = np.asarray(W_sparse @ v[:, s:e].T).T
-        return out
+        # v is (draws, N*T) — reshape to (draws*T, N), single sparse matmul.
+        s = v.shape[0]
+        r_flat = v.reshape(s * T, N)  # (draws*T, N)
+        Wr_flat = np.asarray(W_sparse @ r_flat.T, dtype=float).T  # (draws*T, N)
+        return Wr_flat.reshape(s, T * N)
 
 
 def _panel_trace_WtW_WW(W_sparse) -> float:
@@ -1614,7 +1804,6 @@ def bayesian_panel_lm_lag_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
-    X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
     N = model._N
@@ -1630,19 +1819,24 @@ def bayesian_panel_lm_lag_test(
     # Score: S = e'Wy for each draw
     S = np.dot(resid, Wy)  # (draws,)
 
+    # Use the design matrix that matches the posterior beta block; for
+    # SLX/SDM/SDEM panels this is ``Z = [X, WX]`` so the projection
+    # absorbs the WX nuisance direction.
+    Z = _resolve_X_for_beta(model, beta_draws)
+
     # Compute information matrix for panel LM-lag (Anselin et al. 2008)
     # J = (Wb'MWb + T*tr(W'W+W²)*σ²) / σ²
     # LM = (e'Wy)² / (σ² * J) = (e'Wy)² / (Wb'MWb + T*tr*σ²)
     beta_mean = np.mean(beta_draws, axis=0)  # (k,)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    y_hat = X @ beta_mean  # (n,)
+    y_hat = Z @ beta_mean  # (n,)
 
     # Panel spatial lag of y_hat
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)  # (n,)
 
-    # Annihilator matrix: M = I - X(X'X)^{-1}X'
-    XtX_inv = _safe_inv(X.T @ X, "X'X (panel LM-lag)")
-    M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
+    # Annihilator matrix: M = I - Z(Z'Z)^{-1}Z'
+    ZtZ_inv = _safe_inv(Z.T @ Z, "X'X (panel LM-lag)")
+    M_Wy = Wy_hat - Z @ (ZtZ_inv @ (Z.T @ Wy_hat))
     WbMWb = float(Wy_hat @ M_Wy)
 
     T_ww = model._T_ww
@@ -2205,23 +2399,40 @@ def bayesian_panel_robust_lm_lag_sdm_test(
     r"""Bayesian panel robust LM-Lag in SDM context (H₀: ρ = 0 | SLX panel).
 
     Tests :math:`H_0: \rho = 0` using the **SLX panel as the restricted
-    null model**.  Because the SLX OLS normal equations imply
-    :math:`(WX)^\top \mathbf{e}_{slx} = \mathbf{0}` exactly, the Neyman
-    orthogonal score adjustment for the WX nuisance direction is a no-op
-    (:cite:p:`dogan2021BayesianRobust`, Proposition 3) and the LM
-    statistic reduces to the direct quadratic form
+    null model**.  The SLX OLS normal equations zero the γ-direction
+    score :math:`(WX)^\top \mathbf{e}_{slx} = \mathbf{0}` exactly, but
+    leave the *other* spatial parameter :math:`\lambda` as a non-trivial
+    nuisance.  Without correcting for it, residuals from the SLX null
+    carry an unconcentrated component of any true λ and bias
+    :math:`g_\rho = \mathbf{e}^\top W_{NT} \mathbf{y}` upward — see the
+    SDEM-DGP failure documented in
+    ``reference/lm_diagnostics_paper.md`` §5.9.  Following
+    :cite:p:`dogan2021BayesianRobust` (Proposition 3) we apply the
+    Schur-complement Neyman correction with respect to λ:
 
     .. math::
-        \mathrm{LM}^{(d)} =
-        \frac{(\mathbf{e}^{(d)\,\top} W_{NT} \mathbf{y})^2}{
-            \bar{\sigma}^4\, T \cdot \mathrm{tr}(W'W + W^2)
-          + \bar{\sigma}^2\, \| M_Z W_{NT} \hat{\mathbf{y}}_{slx} \|^2},
+        g_\rho^{*\,(d)}      &= g_\rho^{(d)}
+            - (J_{\rho\lambda}/J_{\lambda\lambda})\, g_\lambda^{(d)}, \\
+        V_{\rho|\lambda}     &= J_{\rho\rho} - J_{\rho\lambda}^2 / J_{\lambda\lambda}, \\
+        \mathrm{LM}^{(d)}    &= (g_\rho^{*\,(d)})^2 / V_{\rho|\lambda}
+        \;\xrightarrow{d}\; \chi^2_1.
 
-    where :math:`Z = [X,\;WX]` is the full SLX design matrix,
-    :math:`M_Z = I - Z(Z^\top Z)^{-1} Z^\top`, and
-    :math:`\hat{\mathbf{y}}_{slx} = Z \bar{\beta}_{slx}` uses the
-    posterior mean.  Under :math:`H_0` the statistic is asymptotically
-    :math:`\chi^2_1`.
+    The information blocks are computed at the posterior means using
+    Isserlis' identity for :math:`\mathbf{e} \sim N(0, \sigma^2 M_Z)`
+    (with :math:`Z = [X,\;WX]`):
+
+    .. math::
+        J_{\rho\rho}       &= \bar{\sigma}^4\, T \cdot T_{WW}
+                              + \bar{\sigma}^2 \|M_Z W_{NT} Z\bar{\beta}_{slx}\|^2 \\
+        J_{\lambda\lambda} &= \bar{\sigma}^4\, T \cdot T_{WW} \\
+        J_{\rho\lambda}     &= \bar{\sigma}^4 \bigl[
+            \mathrm{tr}(M_Z W_{NT} M_Z W_{NT}) +
+            \mathrm{tr}(M_Z W_{NT} M_Z W_{NT}^\top)\bigr]
+
+    where :math:`T_{WW} = \mathrm{tr}(W^\top W + W^2)` and
+    :math:`W_{NT} = I_T \otimes W`.  Trace blocks are computed exactly
+    via :math:`Z^\top W_{NT} Z`, :math:`Z^\top W_{NT}^2 Z`, etc., so
+    that we never form the dense :math:`(NT, NT)` annihilator.
 
     Note: this null model differs from the spreg-style algebraic
     subtraction (joint SDM minus LM-WX), which uses an OLS null and
@@ -2259,26 +2470,46 @@ def bayesian_panel_robust_lm_lag_sdm_test(
     resid = y[None, :] - fitted  # (draws, n)
     resid = _maybe_subtract_alpha(model, idata, resid)
 
-    # Per-draw raw score for rho
+    # Per-draw raw scores
     g_rho = np.dot(resid, Wy)  # (draws,)
+    We_panel = _panel_spatial_lag(W_sp, resid, N, T)
+    g_lambda = np.sum(resid * We_panel, axis=1)  # (draws,)
 
-    # M_Z-projected variance (Z absorbs gamma => Neyman adjustment is no-op).
+    # Information matrix blocks at posterior means using full W_NT.
     beta_mean = np.mean(beta_draws, axis=0)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    y_hat_slx = Z @ beta_mean
-    Wy_hat = _panel_spatial_lag(W_sp, y_hat_slx, N, T)
+    W_NT = sp.kron(sp.identity(T, format="csr"), W_sp, format="csr")
+    blocks = _info_matrix_blocks_slx_robust(
+        X=X,
+        WX=WX,
+        W_sparse=W_NT,
+        sigma2=sigma2_mean,
+        beta_slx_mean=beta_mean,
+        T_ww=T * model._T_ww,
+    )
+    J_rr = blocks["J_rho_rho"]
+    J_ll = blocks["J_lam_lam"]
+    J_rl = blocks["J_rho_lam"]
 
-    mz_quad = _mx_quadratic(Z, Wy_hat)
-    T_ww = model._T_ww
-    V_rho = sigma2_mean * sigma2_mean * T * T_ww + sigma2_mean * mz_quad
+    # Schur-complement Neyman correction on λ
+    coef = J_rl / (J_ll + 1e-12)
+    g_rho_star = g_rho - coef * g_lambda
+    V_rho_given_lambda = J_rr - (J_rl * J_rl) / (J_ll + 1e-12)
 
-    LM = g_rho**2 / (V_rho + 1e-12)
+    LM = g_rho_star**2 / (V_rho_given_lambda + 1e-12)
 
     return _finalize_lm(
         LM,
         test_type="bayesian_panel_robust_lm_lag_sdm",
         df=1,
-        details={"k_wx": k_wx, "N": N, "T": T},
+        details={
+            "k_wx": k_wx,
+            "N": N,
+            "T": T,
+            "J_rho_rho": J_rr,
+            "J_lam_lam": J_ll,
+            "J_rho_lam": J_rl,
+        },
     )
 
 
@@ -2406,21 +2637,26 @@ def bayesian_panel_robust_lm_error_sdem_test(
     r"""Bayesian panel robust LM-Error in SDEM context (H₀: λ = 0 | SLX panel).
 
     Tests :math:`H_0: \lambda = 0` using the **SLX panel as the
-    restricted null**.  Under spherical errors
-    :math:`V_{\lambda\gamma} = \mathbf{0}` and the SLX OLS normal
-    equations imply :math:`(WX)^\top \mathbf{e}_{slx} = \mathbf{0}`, so
-    the Neyman orthogonal score adjustment for the WX nuisance
-    direction is a no-op (:cite:p:`dogan2021BayesianRobust`,
-    Proposition 3) and the LM statistic reduces to
+    restricted null**.  The SLX normal equations zero the γ-direction
+    score :math:`(WX)^\top \mathbf{e}_{slx} = \mathbf{0}` exactly, but
+    leave the *other* spatial parameter :math:`\rho` as a non-trivial
+    nuisance.  Following :cite:p:`dogan2021BayesianRobust` (Proposition
+    3) we apply the Schur-complement Neyman correction with respect to
+    ρ:
 
     .. math::
-        \mathrm{LM}^{(d)} =
-        \frac{(\mathbf{e}^{(d)\,\top} W_{NT} \mathbf{e}^{(d)})^2}{
-            \bar{\sigma}^4 \, T \cdot \mathrm{tr}(W'W + W^2)},
+        g_\lambda^{*\,(d)}    &= g_\lambda^{(d)}
+            - (J_{\rho\lambda}/J_{\rho\rho})\, g_\rho^{(d)}, \\
+        V_{\lambda|\rho}      &= J_{\lambda\lambda} - J_{\rho\lambda}^2 / J_{\rho\rho}, \\
+        \mathrm{LM}^{(d)}     &= (g_\lambda^{*\,(d)})^2 / V_{\lambda|\rho}
+        \;\xrightarrow{d}\; \chi^2_1.
 
-    asymptotically :math:`\chi^2_1` under :math:`H_0`
-    (:cite:p:`anselin2008SpatialPanel`,
-    :cite:p:`elhorst2014SpatialEconometrics`).
+    Information blocks (:math:`J_{\rho\rho}, J_{\lambda\lambda},
+    J_{\rho\lambda}`) are computed at the posterior means via
+    :func:`_info_matrix_blocks_slx_robust` using
+    :math:`W_{NT} = I_T \otimes W` and :math:`T \cdot T_{WW}`; see
+    :func:`bayesian_panel_robust_lm_lag_sdm_test` for the full math
+    block.
 
     Parameters
     ----------
@@ -2451,22 +2687,46 @@ def bayesian_panel_robust_lm_error_sdem_test(
     resid = y[None, :] - fitted
     resid = _maybe_subtract_alpha(model, idata, resid)
 
-    # Score for error: g_lambda = e'W_nt e
+    # Per-draw raw scores
     We_panel = _panel_spatial_lag(W_sp, resid, N, T)
     g_lambda = np.sum(resid * We_panel, axis=1)  # (draws,)
+    g_rho = np.dot(resid, model._Wy)  # (draws,)
 
-    # Direct raw-score variance V_lambda_lambda = sigma^4 * T * T_ww
+    # Information matrix blocks at posterior means using full W_NT.
+    beta_mean = np.mean(beta_draws, axis=0)
     sigma2_mean = float(np.mean(sigma_draws**2))
-    T_ww = model._T_ww
-    V_lambda = sigma2_mean * sigma2_mean * T * T_ww
+    W_NT = sp.kron(sp.identity(T, format="csr"), W_sp, format="csr")
+    blocks = _info_matrix_blocks_slx_robust(
+        X=X,
+        WX=WX,
+        W_sparse=W_NT,
+        sigma2=sigma2_mean,
+        beta_slx_mean=beta_mean,
+        T_ww=T * model._T_ww,
+    )
+    J_rr = blocks["J_rho_rho"]
+    J_ll = blocks["J_lam_lam"]
+    J_rl = blocks["J_rho_lam"]
 
-    LM = g_lambda**2 / (V_lambda + 1e-12)
+    # Schur-complement Neyman correction on ρ
+    coef = J_rl / (J_rr + 1e-12)
+    g_lambda_star = g_lambda - coef * g_rho
+    V_lambda_given_rho = J_ll - (J_rl * J_rl) / (J_rr + 1e-12)
+
+    LM = g_lambda_star**2 / (V_lambda_given_rho + 1e-12)
 
     return _finalize_lm(
         LM,
         test_type="bayesian_panel_robust_lm_error_sdem",
         df=1,
-        details={"k_wx": k_wx, "N": N, "T": T},
+        details={
+            "k_wx": k_wx,
+            "N": N,
+            "T": T,
+            "J_rho_rho": J_rr,
+            "J_lam_lam": J_ll,
+            "J_rho_lam": J_rl,
+        },
     )
 
 
@@ -3031,27 +3291,29 @@ def bayesian_robust_lm_lag_test(
 
     idata = model.inference_data
     beta_draws = _get_posterior_draws(idata, "beta")
-    X_full = _resolve_X_for_beta(model, beta_draws)
     sigma_draws = _get_posterior_draws(idata, "sigma")
 
-    fitted = beta_draws @ X_full.T  # (draws, n)
-    resid = y[None, :] - fitted
-
-    S_lag = np.dot(resid, Wy)  # (draws,)
-    We = (W_sp @ resid.T).T  # (draws, n)
-    S_err = np.sum(resid * We, axis=1)  # (draws,)
+    # Use M_X-projected residual e_perp = M_X y (fixed across draws). The
+    # ABFY robust score is evaluated at the OLS estimator, where residuals
+    # are X-orthogonal by construction. Replacing e^(d) = y - X beta^(d)
+    # with M_X y keeps the score invariant to beta posterior draws -- the
+    # information-orthogonality of beta to (rho, lambda) under H_0 means
+    # beta-posterior variance does not enter the LM reference distribution.
+    XtX_inv = _safe_inv(X.T @ X, "X'X (cross-sectional robust LM-Lag)")
+    e_perp = y - X @ (XtX_inv @ (X.T @ y))  # = M_X y, shape (n,)
+    We_perp = np.asarray(W_sp @ e_perp).ravel()  # = W M_X y
+    S_lag = float(e_perp @ Wy)  # scalar (constant across draws)
+    S_err = float(e_perp @ We_perp)  # scalar (constant across draws)
 
     sigma2_draws = sigma_draws**2
     sigma2_mean = float(np.mean(sigma2_draws))
 
     beta_mean = np.mean(beta_draws, axis=0)
-    # Use the X-only design when computing the analytical J (matches the
-    # OLS-null Anselin formulation; if beta covers WX, we still use X here).
     beta_mean_x = beta_mean[: X.shape[1]]
     J_val = _ols_lag_information(model, beta_mean_x, sigma2_mean)
     denom = J_val / sigma2_mean - T_ww
 
-    robust_score = S_lag / sigma2_draws - S_err / sigma2_draws
+    robust_score = (S_lag - S_err) / sigma2_draws
     LM = robust_score**2 / (abs(denom) + 1e-12)
 
     return _finalize_lm(LM, test_type="bayesian_robust_lm_lag", df=1)
@@ -3099,15 +3361,17 @@ def bayesian_robust_lm_error_test(
 
     idata = model.inference_data
     beta_draws = _get_posterior_draws(idata, "beta")
-    X_full = _resolve_X_for_beta(model, beta_draws)
     sigma_draws = _get_posterior_draws(idata, "sigma")
 
-    fitted = beta_draws @ X_full.T
-    resid = y[None, :] - fitted
-
-    S_lag = np.dot(resid, Wy)
-    We = (W_sp @ resid.T).T
-    S_err = np.sum(resid * We, axis=1)
+    # Use M_X-projected residual (see bayesian_robust_lm_lag_test for the
+    # principled justification: beta is information-orthogonal to (rho,
+    # lambda) under H_0, so beta posterior variance does not enter the LM
+    # reference distribution).
+    XtX_inv = _safe_inv(X.T @ X, "X'X (cross-sectional robust LM-Error)")
+    e_perp = y - X @ (XtX_inv @ (X.T @ y))
+    We_perp = np.asarray(W_sp @ e_perp).ravel()
+    S_lag = float(e_perp @ Wy)
+    S_err = float(e_perp @ We_perp)
 
     sigma2_draws = sigma_draws**2
     sigma2_mean = float(np.mean(sigma2_draws))
@@ -3117,7 +3381,7 @@ def bayesian_robust_lm_error_test(
     J_val = _ols_lag_information(model, beta_mean_x, sigma2_mean)
     J_scaled = J_val / sigma2_mean
 
-    robust_score = S_err / sigma2_draws - (T_ww / J_scaled) * S_lag / sigma2_draws
+    robust_score = (S_err - (T_ww / J_scaled) * S_lag) / sigma2_draws
     denom = T_ww * (1.0 - T_ww / J_scaled)
     LM = robust_score**2 / (abs(denom) + 1e-12)
 
@@ -3386,4 +3650,674 @@ def bayesian_panel_lm_lag_sdem_test(
         test_type="bayesian_panel_lm_lag_sdem",
         df=1,
         details={"N": N, "T": T},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Robust-after-naive Bayesian LM tests for SAR / SEM / SDM / SDEM nulls
+# (Anselin–Bera–Florax–Yoon precondition; full Schur at posterior mean)
+# ---------------------------------------------------------------------------
+
+
+def _sar_null_lambda_info(
+    W_sparse,
+    W_dense: np.ndarray,
+    X_design: np.ndarray,
+    beta_full_mean: np.ndarray,
+    rho_mean: float,
+    sigma2_mean: float,
+    T_ww: float,
+) -> dict:
+    r"""Raw-score variance blocks at a SAR (or SDM) null point for the
+    pair :math:`(g_\lambda = \mathbf{e}^\top W \mathbf{e},\,
+    g_\rho = \mathbf{e}^\top W \mathbf{y})`.
+
+    Evaluated at :math:`\theta^\star = (\bar\beta_{\text{full}},
+    \bar\rho, \bar\sigma^2)` with :math:`\lambda = 0`.  Let
+    :math:`\bar A = I - \bar\rho W` and :math:`G = \bar A^{-1} W`.
+    Under spherical errors and using the Magnus / Anselin (1988) Fisher
+    information for SARAR concentrated on :math:`\beta`:
+
+    .. math::
+        V_{\lambda\lambda} &= \bar\sigma^4 \, T_{WW},\\
+        V_{\lambda\rho}    &= \bar\sigma^4 \, \mathrm{tr}(W^\top G + WG),\\
+        V_{\rho\rho}       &= \bar\sigma^4 \, \mathrm{tr}(G^\top G + G^2)
+                              + \bar\sigma^2 \,\| M_X (G\,X_{\text{design}}
+                              \bar\beta_{\text{full}}) \|^2,
+
+    where :math:`M_X = I - X_{\text{design}}(X_{\text{design}}^\top
+    X_{\text{design}})^{-1} X_{\text{design}}^\top`.  ``X_design`` is the
+    OLS-projection design (``X`` for SAR null, ``[X, WX]`` for SDM null);
+    ``beta_full_mean`` must match its column count.  The dense
+    :math:`G = \bar A^{-1} W` is built once via ``solve(A, W_dense)`` —
+    appropriate for the moderate ``N`` typical of cross-sectional fits.
+    """
+    n = W_sparse.shape[0]
+    A = np.eye(n) - rho_mean * W_dense
+    G = np.linalg.solve(A, W_dense)  # = (I - rho W)^{-1} W
+    # Trace identities: tr(B'C + BC) = sum(B*C) + tr(B@C)
+    T_GG = float(np.sum(G * G) + np.trace(G @ G))
+    T_WG = float(np.sum(W_dense * G) + np.trace(W_dense @ G))
+
+    V_ll = sigma2_mean ** 2 * T_ww
+    V_lr = sigma2_mean ** 2 * T_WG
+
+    GxBeta = G @ (X_design @ beta_full_mean)
+    proj = _mx_quadratic(X_design, GxBeta)
+    V_rr = sigma2_mean ** 2 * T_GG + sigma2_mean * proj
+
+    return {
+        "V_ll": V_ll,
+        "V_lr": V_lr,
+        "V_rr": V_rr,
+        "T_GG": T_GG,
+        "T_WG": T_WG,
+    }
+
+
+def bayesian_lm_error_from_sar_test(
+    model,
+) -> BayesianLMTestResult:
+    r"""Bayesian LM-Error test from a SAR posterior (H₀: λ = 0 | SAR).
+
+    SAR-aware companion of :func:`bayesian_lm_error_test`. Residuals are
+    formed using the SAR mean structure
+    :math:`\mathbf{e}^{(d)} = \mathbf{y} - \rho^{(d)} W\mathbf{y} -
+    X\beta^{(d)}` so that the LM-Error score is evaluated at the *correct*
+    null model (SAR), not at OLS. The score and variance are otherwise
+    identical to :func:`bayesian_lm_error_test`:
+
+    .. math::
+        S^{(d)} = \mathbf{e}^{(d)\,\top} W \mathbf{e}^{(d)}, \qquad
+        V = \bar\sigma^4\, T_{WW},
+
+    so the per-draw statistic is :math:`\mathrm{LM}^{(d)} = (S^{(d)})^2/V`
+    and is referenced against :math:`\chi^2_1`.
+
+    This is a precursor diagnostic for the SAR-context Schur-robust
+    LM-Error of :func:`bayesian_robust_lm_error_sar_test`; the decision
+    tree fires the robust adjustment only when this naive test rejects.
+    """
+    y = model._y
+    X = model._X
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    T_ww = model._T_ww
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
+    rho_draws = _get_posterior_draws(idata, "rho").reshape(-1)  # (draws,)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    fitted = rho_draws[:, None] * Wy[None, :] + beta_draws @ X.T
+    resid = y[None, :] - fitted  # (draws, n)
+    We = (W_sp @ resid.T).T
+    S = np.sum(resid * We, axis=1)  # (draws,)
+
+    sigma2_mean = float(np.mean(sigma_draws ** 2))
+    V = sigma2_mean ** 2 * T_ww
+    LM = S ** 2 / (V + 1e-12)
+
+    return _finalize_lm(LM, test_type="bayesian_lm_error_from_sar", df=1)
+
+
+def bayesian_robust_lm_error_sar_test(
+    model,
+) -> BayesianLMTestResult:
+    r"""Bayesian robust LM-Error test in SAR context (H₀: λ = 0 | SAR).
+
+    Tests whether a SAR fit should be extended to SARAR by adding a
+    spatial-error process, robust to the locally-estimated lag parameter
+    :math:`\rho`.  Implements the Doǧan–Taşpınar–Bera (2021) Bayesian
+    Neyman-orthogonal score adjustment
+    (:cite:p:`dogan2021BayesianRobust`, Proposition 3) with the SARAR
+    information blocks at the SAR posterior mean
+    (:cite:p:`anselin1988SpatialEconometrics`,
+    :cite:p:`anselin1996SimpleDiagnostic`).
+
+    For each posterior draw of :math:`(\beta, \rho, \sigma^2)` from the
+    SAR fit the residual is
+    :math:`\mathbf{e}^{(d)} = \mathbf{y} - \rho^{(d)} W\mathbf{y} -
+    X\beta^{(d)}`, and the raw scores are
+
+    .. math::
+        g_\lambda^{(d)} = \mathbf{e}^{(d)\,\top} W \mathbf{e}^{(d)},
+        \qquad
+        g_\rho^{(d)} = \mathbf{e}^{(d)\,\top} W \mathbf{y}.
+
+    With :math:`\bar A = I - \bar\rho W`, :math:`G = \bar A^{-1} W` and
+    :math:`T_{B,C} = \mathrm{tr}(B^\top C + BC)`, the variance blocks at
+    :math:`\theta^\star` are
+
+    .. math::
+        V_{\lambda\lambda} &= \bar\sigma^4 \, T_{WW},\\
+        V_{\lambda\rho}    &= \bar\sigma^4 \, T_{W,G},\\
+        V_{\rho\rho}       &= \bar\sigma^4 \, T_{G,G}
+            + \bar\sigma^2 \, \| M_X (G\,X\bar\beta) \|^2.
+
+    The Neyman-orthogonal adjusted score is
+
+    .. math::
+        g_\lambda^{*\,(d)} = g_\lambda^{(d)}
+            - \frac{V_{\lambda\rho}}{V_{\rho\rho}}\, g_\rho^{(d)},
+
+    with adjusted variance
+    :math:`V_{\lambda\,|\,\rho} = V_{\lambda\lambda} - V_{\lambda\rho}^2 /
+    V_{\rho\rho}` and per-draw statistic
+
+    .. math::
+        \mathrm{LM}_R^{(d)} = \frac{(g_\lambda^{*\,(d)})^2}
+                                   {V_{\lambda\,|\,\rho}}
+        \;\xrightarrow{d}\; \chi^2_1
+        \quad \text{under } H_0,
+
+    independent of local misspecification in :math:`\rho`.
+
+    Parameters
+    ----------
+    model : SAR
+        Fitted SAR model exposing ``inference_data`` with posterior draws
+        of ``beta``, ``rho``, ``sigma`` and the cached ``_y``, ``_X``,
+        ``_Wy``, ``_W_sparse``, ``_W_dense``, ``_T_ww`` attributes.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Per-draw LM samples, summary statistics and ``df = 1``.
+    """
+    y = model._y
+    X = model._X
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    W_dense = model._W_dense
+    T_ww = model._T_ww
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
+    rho_draws = _get_posterior_draws(idata, "rho").reshape(-1)  # (draws,)
+    sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
+
+    # Project residual onto M_X to remove beta-direction posterior noise
+    # (information-orthogonality of beta to lambda under H_0). The SAR
+    # residual e^(d) = y - rho^(d) Wy - X beta^(d) becomes
+    # M_X e^(d) = M_X y - rho^(d) M_X Wy, preserving rho-uncertainty
+    # propagation while killing the beta-noise component that would
+    # otherwise dominate the small Schur-complement denominator.
+    XtX_inv = _safe_inv(X.T @ X, "X'X (SAR-null robust LM-Error)")
+    Mx_y = y - X @ (XtX_inv @ (X.T @ y))  # = M_X y, shape (n,)
+    Mx_Wy = Wy - X @ (XtX_inv @ (X.T @ Wy))  # = M_X Wy, shape (n,)
+    # e_perp^(d) = Mx_y - rho^(d) * Mx_Wy
+    resid_perp = Mx_y[None, :] - rho_draws[:, None] * Mx_Wy[None, :]
+    We_perp = (W_sp @ resid_perp.T).T
+    g_lambda = np.sum(resid_perp * We_perp, axis=1)  # (draws,)
+    g_rho = np.dot(resid_perp, Wy)  # (draws,)
+
+    beta_mean = np.mean(beta_draws, axis=0)
+    rho_mean = float(np.mean(rho_draws))
+    sigma2_mean = float(np.mean(sigma_draws ** 2))
+
+    info = _sar_null_lambda_info(
+        W_sp, W_dense, X, beta_mean, rho_mean, sigma2_mean, T_ww
+    )
+    V_ll = info["V_ll"]
+    V_lr = info["V_lr"]
+    V_rr = info["V_rr"]
+
+    coef = V_lr / (V_rr + 1e-12)
+    g_lambda_star = g_lambda - coef * g_rho
+    V_l_given_r = V_ll - V_lr * coef
+
+    LM = g_lambda_star ** 2 / (abs(V_l_given_r) + 1e-12)
+
+    return _finalize_lm(
+        LM,
+        test_type="bayesian_robust_lm_error_sar",
+        df=1,
+    )
+
+
+def bayesian_robust_lm_error_sdm_test(
+    model,
+) -> BayesianLMTestResult:
+    r"""Bayesian robust LM-Error test in SDM context (H₀: λ = 0 | SDM).
+
+    Tests whether a SDM fit should be extended to MANSAR by adding a
+    spatial-error process, robust to the SDM lag parameter
+    :math:`\rho`.  The WX coefficients :math:`\gamma` are already in the
+    SDM mean structure and are absorbed via the
+    :math:`M_Z`-projection with :math:`Z = [X, WX]`; the only nuisance to
+    Schur against is :math:`\rho`
+    (:cite:p:`dogan2021BayesianRobust`, Proposition 3;
+    :cite:p:`anselin1996SimpleDiagnostic`;
+    :cite:p:`koley2024UseNot`).
+
+    For each posterior draw of :math:`(\beta, \gamma, \rho, \sigma^2)`
+    from the SDM fit the residual is
+    :math:`\mathbf{e}^{(d)} = \mathbf{y} - \rho^{(d)} W\mathbf{y}
+    - X\beta^{(d)} - WX\gamma^{(d)}`.  Raw scores
+    :math:`g_\lambda = \mathbf{e}^\top W \mathbf{e}` and
+    :math:`g_\rho = \mathbf{e}^\top W \mathbf{y}` are evaluated per
+    draw, and the variance blocks
+    :math:`(V_{\lambda\lambda}, V_{\lambda\rho}, V_{\rho\rho})` use the
+    SAR-null Magnus identities of
+    :func:`_sar_null_lambda_info` with :math:`X_{\text{design}} = Z`.
+    The Neyman-orthogonal adjustment and Schur complement are identical
+    to :func:`bayesian_robust_lm_error_sar_test`; only the projector
+    differs.  The statistic is :math:`\chi^2_1` under :math:`H_0`.
+
+    Parameters
+    ----------
+    model : SDM
+        Fitted SDM model with ``inference_data`` containing posterior
+        draws for ``beta`` (covering ``[X, WX]``), ``rho``, ``sigma``.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Per-draw LM samples, summary statistics and ``df = 1``.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    W_dense = model._W_dense
+    T_ww = model._T_ww
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k+k_wx)
+    rho_draws = _get_posterior_draws(idata, "rho").reshape(-1)
+    sigma_draws = _get_posterior_draws(idata, "sigma")
+
+    Z = np.hstack([X, WX])
+    fitted = beta_draws @ Z.T + rho_draws[:, None] * Wy[None, :]
+    resid = y[None, :] - fitted
+
+    We = (W_sp @ resid.T).T
+    g_lambda = np.sum(resid * We, axis=1)
+    g_rho = np.dot(resid, Wy)
+
+    beta_mean = np.mean(beta_draws, axis=0)
+    rho_mean = float(np.mean(rho_draws))
+    sigma2_mean = float(np.mean(sigma_draws ** 2))
+
+    info = _sar_null_lambda_info(
+        W_sp, W_dense, Z, beta_mean, rho_mean, sigma2_mean, T_ww
+    )
+    V_ll = info["V_ll"]
+    V_lr = info["V_lr"]
+    V_rr = info["V_rr"]
+
+    coef = V_lr / (V_rr + 1e-12)
+    g_lambda_star = g_lambda - coef * g_rho
+    V_l_given_r = V_ll - V_lr * coef
+
+    LM = g_lambda_star ** 2 / (abs(V_l_given_r) + 1e-12)
+
+    return _finalize_lm(
+        LM,
+        test_type="bayesian_robust_lm_error_sdm",
+        df=1,
+        details={"k_wx": WX.shape[1]},
+    )
+
+
+def _sem_filtered_blocks(
+    W_sparse,
+    W_dense: np.ndarray,
+    X: np.ndarray,
+    Wy: np.ndarray,
+    WX: np.ndarray,
+    lam_mean: float,
+    sigma2_mean: float,
+    T_ww: float,
+) -> dict:
+    r"""Filtered-OLS raw-score variance blocks at a SEM null point.
+
+    Define :math:`\bar A_\lambda = I - \bar\lambda W`,
+    :math:`\tilde X = \bar A_\lambda X`, :math:`\tilde z_\rho =
+    \bar A_\lambda W\mathbf{y}` and :math:`\tilde Z_\gamma =
+    \bar A_\lambda WX`.  Under the spatially-filtered Gaussian model the
+    raw-score variance blocks for the additional SARAR / SDEM
+    parameters :math:`(\rho, \gamma)`, evaluated with :math:`\beta`
+    concentrated out via :math:`M_{\tilde X}`, are
+
+    .. math::
+        V_{\rho\rho} &= \bar\sigma^4 \, T_{WW}
+                       + \bar\sigma^2 \, \tilde z_\rho^{\top}
+                         M_{\tilde X}\, \tilde z_\rho,\\
+        V_{\rho\gamma} &= \bar\sigma^2 \, \tilde z_\rho^{\top}
+                          M_{\tilde X}\, \tilde Z_\gamma,\\
+        V_{\gamma\gamma} &= \bar\sigma^2 \, \tilde Z_\gamma^{\top}
+                            M_{\tilde X}\, \tilde Z_\gamma,
+
+    with :math:`T_{WW} = \mathrm{tr}(W^\top W + W^2)`.  The
+    :math:`T_{WW}` contribution to :math:`V_{\rho\rho}` arises from the
+    SARAR Hessian's Magnus trace term, which is independent of the
+    filter at :math:`\rho = 0`.
+    """
+    n = W_sparse.shape[0]
+    A_lam = np.eye(n) - lam_mean * W_dense
+    X_tilde = A_lam @ X
+    z_rho = A_lam @ Wy
+    Z_gamma = A_lam @ WX
+
+    V_rr = sigma2_mean ** 2 * T_ww + sigma2_mean * _mx_quadratic(X_tilde, z_rho)
+    if WX.shape[1] > 0:
+        V_gg = sigma2_mean * _mx_cross(X_tilde, Z_gamma, Z_gamma)
+        V_rg = sigma2_mean * np.asarray(_mx_cross(X_tilde, z_rho, Z_gamma)).ravel()
+    else:
+        V_gg = np.zeros((0, 0))
+        V_rg = np.zeros(0)
+
+    return {"V_rr": V_rr, "V_gg": V_gg, "V_rg": V_rg, "A_lam": A_lam}
+
+
+def bayesian_robust_lm_lag_sem_test(
+    model,
+) -> BayesianLMTestResult:
+    r"""Bayesian robust LM-Lag test in SEM context (H₀: ρ = 0 | SEM).
+
+    Tests whether a SEM fit should be extended to add a spatial lag
+    (→ SARAR or SDM/SDEM family), robust to the WX block.  The SEM
+    posterior provides :math:`(\beta, \lambda, \sigma^2)`; treating
+    :math:`\bar\lambda` as the filtering point, the alternative model
+    becomes a filtered OLS with two candidate omitted blocks
+    (:math:`\rho` for the lag, :math:`\gamma` for WX).
+
+    For each posterior draw the whitened residual is
+    :math:`\mathbf{u}^{(d)} = (I - \lambda^{(d)} W)
+    (\mathbf{y} - X\beta^{(d)})`.  In the filter at :math:`\bar\lambda`
+    let :math:`\tilde z_\rho = \bar A_\lambda W\mathbf{y}` and
+    :math:`\tilde Z_\gamma = \bar A_\lambda WX`.  Raw scores are
+
+    .. math::
+        g_\rho^{(d)} = \mathbf{u}^{(d)\,\top} \tilde z_\rho,
+        \qquad
+        \mathbf{g}_\gamma^{(d)} = \tilde Z_\gamma^{\top} \mathbf{u}^{(d)}.
+
+    Variance blocks come from :func:`_sem_filtered_blocks`.  The
+    Neyman-orthogonal score adjusts :math:`g_\rho` for the
+    :math:`\gamma` direction:
+
+    .. math::
+        g_\rho^{*\,(d)} &= g_\rho^{(d)}
+            - V_{\rho\gamma} V_{\gamma\gamma}^{-1}
+              \mathbf{g}_\gamma^{(d)},\\
+        V_{\rho\,|\,\gamma} &= V_{\rho\rho}
+            - V_{\rho\gamma} V_{\gamma\gamma}^{-1} V_{\gamma\rho}.
+
+    The per-draw statistic is
+
+    .. math::
+        \mathrm{LM}_R^{(d)} = \frac{(g_\rho^{*\,(d)})^2}
+                                   {V_{\rho\,|\,\gamma}}
+        \;\xrightarrow{d}\; \chi^2_1
+        \quad \text{under } H_0,
+
+    independent of local misspecification in :math:`\gamma`.
+
+    Parameters
+    ----------
+    model : SEM
+        Fitted SEM model exposing ``inference_data`` with posterior
+        draws of ``beta``, ``lam`` (or ``lambda``), ``sigma``.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Per-draw LM samples, summary statistics and ``df = 1``.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    W_dense = model._W_dense
+    T_ww = model._T_ww
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")
+    lam_name = "lam" if "lam" in idata.posterior else "lambda"
+    lam_draws = _get_posterior_draws(idata, lam_name).reshape(-1)
+    sigma_draws = _get_posterior_draws(idata, "sigma")
+
+    # Per-draw whitened residuals u_d = (I - lam_d W)(y - X beta_d)
+    raw = y[None, :] - beta_draws @ X.T  # (draws, n)
+    Wraw = (W_sp @ raw.T).T
+    u = raw - lam_draws[:, None] * Wraw
+
+    # Filtered designs at posterior-mean lambda
+    lam_mean = float(np.mean(lam_draws))
+    sigma2_mean = float(np.mean(sigma_draws ** 2))
+    blocks = _sem_filtered_blocks(
+        W_sp, W_dense, X, Wy, WX, lam_mean, sigma2_mean, T_ww
+    )
+    A_lam_bar = blocks["A_lam"]
+    z_rho = A_lam_bar @ Wy  # (n,)
+    Z_gamma = A_lam_bar @ WX  # (n, k_wx)
+
+    g_rho = u @ z_rho  # (draws,)
+    g_gamma = u @ Z_gamma  # (draws, k_wx)
+
+    V_rr = blocks["V_rr"]
+    V_gg = blocks["V_gg"]
+    V_rg = blocks["V_rg"]
+    k_wx = WX.shape[1]
+
+    if k_wx > 0:
+        V_gg_inv = _safe_inv(V_gg, "V_gg (robust LM-Lag-SEM)")
+        coef = V_rg @ V_gg_inv  # (k_wx,)
+        g_rho_star = g_rho - g_gamma @ coef
+        V_r_given_g = float(V_rr) - float(V_rg @ V_gg_inv @ V_rg)
+    else:
+        g_rho_star = g_rho
+        V_r_given_g = float(V_rr)
+
+    LM = g_rho_star ** 2 / (abs(V_r_given_g) + 1e-12)
+
+    return _finalize_lm(
+        LM,
+        test_type="bayesian_robust_lm_lag_sem",
+        df=1,
+        details={"k_wx": k_wx},
+    )
+
+
+def bayesian_robust_lm_wx_sem_test(
+    model,
+) -> BayesianLMTestResult:
+    r"""Bayesian robust LM-WX test in SEM context (H₀: γ = 0 | SEM).
+
+    Companion to :func:`bayesian_robust_lm_lag_sem_test` with target and
+    nuisance swapped: tests whether the SEM fit should be extended to
+    SDEM by adding the WX block, robust to a locally-omitted spatial
+    lag.
+
+    Setup mirrors :func:`bayesian_robust_lm_lag_sem_test`: per-draw
+    whitened residuals :math:`\mathbf{u}^{(d)} = (I - \lambda^{(d)} W)
+    (\mathbf{y} - X\beta^{(d)})`, filtered designs at
+    :math:`\bar\lambda`, raw scores
+
+    .. math::
+        \mathbf{g}_\gamma^{(d)} = \tilde Z_\gamma^{\top} \mathbf{u}^{(d)},
+        \qquad
+        g_\rho^{(d)} = \mathbf{u}^{(d)\,\top} \tilde z_\rho.
+
+    The Neyman-orthogonal adjustment and Schur complement (with target
+    :math:`\gamma`, nuisance :math:`\rho`) give
+
+    .. math::
+        \mathbf{g}_\gamma^{*\,(d)} &= \mathbf{g}_\gamma^{(d)}
+            - V_{\gamma\rho} V_{\rho\rho}^{-1} g_\rho^{(d)},\\
+        V_{\gamma\,|\,\rho} &= V_{\gamma\gamma}
+            - V_{\gamma\rho} V_{\rho\rho}^{-1} V_{\rho\gamma}.
+
+    The per-draw statistic is
+
+    .. math::
+        \mathrm{LM}_R^{(d)} = \mathbf{g}_\gamma^{*\,(d)\,\top}
+            V_{\gamma\,|\,\rho}^{-1} \mathbf{g}_\gamma^{*\,(d)}
+        \;\xrightarrow{d}\; \chi^2_{k_{wx}}
+        \quad \text{under } H_0,
+
+    independent of local misspecification in :math:`\rho`.
+
+    Parameters
+    ----------
+    model : SEM
+        Fitted SEM model with ``inference_data`` containing posterior
+        draws for ``beta``, ``lam`` (or ``lambda``) and ``sigma``.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Per-draw LM samples, summary statistics and ``df = k_{wx}``.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    W_dense = model._W_dense
+    T_ww = model._T_ww
+    k_wx = WX.shape[1]
+
+    if k_wx == 0:
+        raise ValueError(
+            "Model has no WX columns. The robust LM-WX test requires at "
+            "least one spatially lagged covariate."
+        )
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")
+    lam_name = "lam" if "lam" in idata.posterior else "lambda"
+    lam_draws = _get_posterior_draws(idata, lam_name).reshape(-1)
+    sigma_draws = _get_posterior_draws(idata, "sigma")
+
+    raw = y[None, :] - beta_draws @ X.T
+    Wraw = (W_sp @ raw.T).T
+    u = raw - lam_draws[:, None] * Wraw
+
+    lam_mean = float(np.mean(lam_draws))
+    sigma2_mean = float(np.mean(sigma_draws ** 2))
+    blocks = _sem_filtered_blocks(
+        W_sp, W_dense, X, Wy, WX, lam_mean, sigma2_mean, T_ww
+    )
+    A_lam_bar = blocks["A_lam"]
+    z_rho = A_lam_bar @ Wy
+    Z_gamma = A_lam_bar @ WX
+
+    g_rho = u @ z_rho
+    g_gamma = u @ Z_gamma
+
+    V_rr = float(blocks["V_rr"])
+    V_gg = blocks["V_gg"]
+    V_rg = blocks["V_rg"]
+
+    # Neyman: g_gamma_star = g_gamma - V_{gamma,rho} V_{rho,rho}^{-1} g_rho.
+    coef = V_rg / (V_rr + 1e-12)  # (k_wx,)
+    g_gamma_star = g_gamma - np.outer(g_rho, coef)
+    V_g_given_r = V_gg - np.outer(V_rg, V_rg) / (V_rr + 1e-12)
+
+    V_inv = _safe_inv(V_g_given_r, "V_g_given_r (robust LM-WX-SEM)")
+    LM = np.einsum("di,ij,dj->d", g_gamma_star, V_inv, g_gamma_star)
+
+    return _finalize_lm(
+        LM,
+        test_type="bayesian_robust_lm_wx_sem",
+        df=k_wx,
+        details={"k_wx": k_wx},
+    )
+
+
+def bayesian_robust_lm_lag_sdem_test(
+    model,
+) -> BayesianLMTestResult:
+    r"""Bayesian robust LM-Lag test in SDEM context (H₀: ρ = 0 | SDEM).
+
+    Tests whether a SDEM fit should be extended to MANSAR by adding a
+    spatial lag, with the WX block already absorbed in the SDEM mean
+    structure and the SDEM error parameter :math:`\lambda` absorbed via a
+    posterior-mean filter
+    (:cite:p:`dogan2021BayesianRobust`, Proposition 3;
+    :cite:p:`koley2024UseNot`).
+
+    For each posterior draw of :math:`(\beta, \gamma, \lambda,
+    \sigma^2)` from the SDEM fit the whitened residual is
+
+    .. math::
+        \mathbf{u}^{(d)} = (I - \lambda^{(d)} W)
+            \bigl(\mathbf{y} - X\beta^{(d)} - WX\gamma^{(d)}\bigr).
+
+    Letting :math:`Z = [X, WX]`, :math:`\tilde Z = \bar A_\lambda Z` and
+    :math:`\tilde z_\rho = \bar A_\lambda W\mathbf{y}`, the raw score
+    and concentrated variance are
+
+    .. math::
+        g_\rho^{(d)} &= \mathbf{u}^{(d)\,\top} \tilde z_\rho,\\
+        V_{\rho \cdot \beta,\gamma} &= \bar\sigma^4 \, T_{WW}
+            + \bar\sigma^2 \, \tilde z_\rho^{\top} M_{\tilde Z}\,
+              \tilde z_\rho.
+
+    Because the SDEM mean structure already contains :math:`WX` (so the
+    score for :math:`\gamma` is identically zero from the SDEM normal
+    equations) and the filter absorbs :math:`\lambda` at
+    :math:`\bar\lambda`, the Doǧan Neyman-orthogonal adjustment is a
+    no-op and the statistic reduces to
+
+    .. math::
+        \mathrm{LM}_R^{(d)} = \frac{(g_\rho^{(d)})^2}
+                                   {V_{\rho \cdot \beta,\gamma}}
+        \;\xrightarrow{d}\; \chi^2_1
+        \quad \text{under } H_0.
+
+    Parameters
+    ----------
+    model : SDEM
+        Fitted SDEM model with ``inference_data`` containing posterior
+        draws for ``beta`` (covering ``[X, WX]``), ``lam`` (or
+        ``lambda``), and ``sigma``.
+
+    Returns
+    -------
+    BayesianLMTestResult
+        Per-draw LM samples, summary statistics and ``df = 1``.
+    """
+    y = model._y
+    X = model._X
+    WX = model._WX
+    Wy = model._Wy
+    W_sp = model._W_sparse
+    W_dense = model._W_dense
+    T_ww = model._T_ww
+
+    idata = model.inference_data
+    beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k+k_wx)
+    lam_name = "lam" if "lam" in idata.posterior else "lambda"
+    lam_draws = _get_posterior_draws(idata, lam_name).reshape(-1)
+    sigma_draws = _get_posterior_draws(idata, "sigma")
+
+    Z = np.hstack([X, WX])
+    raw = y[None, :] - beta_draws @ Z.T
+    Wraw = (W_sp @ raw.T).T
+    u = raw - lam_draws[:, None] * Wraw
+
+    lam_mean = float(np.mean(lam_draws))
+    sigma2_mean = float(np.mean(sigma_draws ** 2))
+    n = W_sp.shape[0]
+    A_lam = np.eye(n) - lam_mean * W_dense
+    Z_tilde = A_lam @ Z
+    z_rho = A_lam @ Wy
+
+    g_rho = u @ z_rho
+
+    V_rr = sigma2_mean ** 2 * T_ww + sigma2_mean * _mx_quadratic(Z_tilde, z_rho)
+    LM = g_rho ** 2 / (abs(V_rr) + 1e-12)
+
+    return _finalize_lm(
+        LM,
+        test_type="bayesian_robust_lm_lag_sdem",
+        df=1,
+        details={"k_wx": WX.shape[1]},
     )

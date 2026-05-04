@@ -982,6 +982,11 @@ class TestSpatialDiagnosticsMethod:
             posterior.setdefault("rho", rng.normal(scale=0.05, size=draws)[:, None])
         if cls is SDEM:
             posterior["lam"] = rng.normal(scale=0.05, size=draws)[:, None]
+        # SEM mock needs ``lam`` for the new robust-after-naive tests
+        # (``bayesian_robust_lm_lag_sem_test``, ``bayesian_robust_lm_wx_sem_test``).
+        from bayespecon.models import SEM as _SEM
+        if cls is _SEM:
+            posterior["lam"] = rng.normal(scale=0.05, size=draws)[:, None]
 
         idata = az.from_dict(
             posterior=posterior,
@@ -1000,6 +1005,14 @@ class TestSpatialDiagnosticsMethod:
         obj._WX = WX
         obj._Wy = Wy
         obj._W_sparse = W_sparse
+        # Eager-fill the lazy-cache slots used by ``base.Model._W_dense``
+        # and ``base.Model._T_ww`` so the new robust-after-naive tests
+        # (which require dense W) work on these mock objects.
+        W_dense_arr = np.asarray(W_sparse.todense())
+        obj._W_dense_cache = W_dense_arr
+        obj._T_ww_cache = float(
+            np.sum(W_dense_arr * W_dense_arr) + np.trace(W_dense_arr @ W_dense_arr)
+        )
         obj._idata = idata
         return obj
 
@@ -1034,7 +1047,7 @@ class TestSpatialDiagnosticsMethod:
         assert df.attrs["n_draws"] > 0
 
     def test_sar_spatial_diagnostics_returns_dataframe(self):
-        """SAR.spatial_diagnostics() should return a DataFrame with 3 tests."""
+        """SAR.spatial_diagnostics() should return a DataFrame with 4 tests."""
         from bayespecon.models import SAR
 
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
@@ -1043,8 +1056,8 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 3
-        assert set(df.index) == {"LM-Error", "LM-WX", "Robust-LM-WX"}
+        assert len(df) == 4
+        assert set(df.index) == {"LM-Error", "LM-WX", "Robust-LM-WX", "Robust-LM-Error"}
 
     def test_slx_spatial_diagnostics_returns_dataframe(self):
         """SLX.spatial_diagnostics() should return a DataFrame with 4 tests."""
@@ -1065,7 +1078,7 @@ class TestSpatialDiagnosticsMethod:
         }
 
     def test_sdm_spatial_diagnostics_returns_dataframe(self):
-        """SDM.spatial_diagnostics() should return a DataFrame with 1 test."""
+        """SDM.spatial_diagnostics() should return a DataFrame with 2 tests."""
         from bayespecon.models import SDM
 
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
@@ -1074,11 +1087,11 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 1
-        assert df.index[0] == "LM-Error-SDM"
+        assert len(df) == 2
+        assert set(df.index) == {"LM-Error-SDM", "Robust-LM-Error-SDM"}
 
     def test_sdem_spatial_diagnostics_returns_dataframe(self):
-        """SDEM.spatial_diagnostics() should return a DataFrame with 1 test."""
+        """SDEM.spatial_diagnostics() should return a DataFrame with 2 tests."""
         from bayespecon.models import SDEM
 
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
@@ -1087,11 +1100,11 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 1
-        assert df.index[0] == "LM-Lag-SDEM"
+        assert len(df) == 2
+        assert set(df.index) == {"LM-Lag-SDEM", "Robust-LM-Lag-SDEM"}
 
     def test_sem_spatial_diagnostics_returns_dataframe(self):
-        """SEM.spatial_diagnostics() should return a DataFrame with 2 tests."""
+        """SEM.spatial_diagnostics() should return a DataFrame with 4 tests."""
         from bayespecon.models import SEM
 
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
@@ -1100,8 +1113,8 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 2
-        assert set(df.index) == {"LM-Lag", "LM-WX"}
+        assert len(df) == 4
+        assert set(df.index) == {"LM-Lag", "LM-WX", "Robust-LM-Lag", "Robust-LM-WX"}
 
     def test_spatial_diagnostics_decision_returns_string(self):
         """spatial_diagnostics_decision(format="model") should return a model name string."""
@@ -1173,17 +1186,23 @@ class TestSpatialDiagnosticsMethod:
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
         model = self._make_model_with_class(y, X, W_sparse, SDM, WX=WX)
 
-        # Monkeypatch spatial_diagnostics to return a controlled DataFrame
+        # Monkeypatch spatial_diagnostics to return a controlled DataFrame.
+        # The new SDM tree requires both naive ``LM-Error-SDM`` and the
+        # robust-after-naive ``Robust-LM-Error-SDM`` gate to fire before
+        # escalating to MANSAR.
         df = pd.DataFrame(
-            {"p_value": [0.001]},
-            index=["LM-Error-SDM"],
+            {"p_value": [0.001, 0.001]},
+            index=["LM-Error-SDM", "Robust-LM-Error-SDM"],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
             model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
         )
 
-        df2 = pd.DataFrame({"p_value": [0.9]}, index=["LM-Error-SDM"])
+        df2 = pd.DataFrame(
+            {"p_value": [0.9, 0.9]},
+            index=["LM-Error-SDM", "Robust-LM-Error-SDM"],
+        )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df2)
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
 
@@ -1194,7 +1213,10 @@ class TestSpatialDiagnosticsMethod:
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
         model = self._make_model_with_class(y, X, W_sparse, SDEM, WX=WX)
 
-        df = pd.DataFrame({"p_value": [0.001]}, index=["LM-Lag-SDEM"])
+        df = pd.DataFrame(
+            {"p_value": [0.001, 0.001]},
+            index=["LM-Lag-SDEM", "Robust-LM-Lag-SDEM"],
+        )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
             model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
@@ -1232,9 +1254,17 @@ class TestSpatialDiagnosticsMethod:
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.9, 0.001))
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SEM"
 
-        # Both robust fire -> SARAR
+        # Both robust fire -> route via robust p-value tie-break.  Equal
+        # robust p-values resolve in favour of SAR (lag <= error).  We
+        # never escalate directly to SARAR from OLS.
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.001, 0.001))
-        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SARAR"
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SAR"
+
+        # Both robust fire, error robust strictly smaller -> SEM wins.
+        monkeypatch.setattr(
+            model, "spatial_diagnostics", lambda: make_df(0.01, 0.0001)
+        )
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SEM"
 
 
 # ---------------------------------------------------------------------------

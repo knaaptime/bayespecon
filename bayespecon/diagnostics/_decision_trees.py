@@ -30,6 +30,8 @@ __all__ = [
     "graphviz_available",
     "get_spec",
     "get_panel_spec",
+    "get_flow_spec",
+    "get_panel_flow_spec",
 ]
 
 
@@ -71,13 +73,21 @@ class TreeNode:
     _node_id: str = field(default="", repr=False)
 
 
-def _assign_ids(node: Union[TreeNode, str], counter: list[int]) -> None:
+def _assign_ids(
+    node: Union[TreeNode, str], counter: list[int], _visited: set | None = None
+) -> None:
+    if _visited is None:
+        _visited = set()
     if isinstance(node, str):
         return
+    obj_id = id(node)
+    if obj_id in _visited:
+        return  # shared node: ID already assigned on first encounter
+    _visited.add(obj_id)
     node._node_id = f"n{counter[0]}"
     counter[0] += 1
-    _assign_ids(node.if_true, counter)
-    _assign_ids(node.if_false, counter)
+    _assign_ids(node.if_true, counter, _visited)
+    _assign_ids(node.if_false, counter, _visited)
 
 
 # ---------------------------------------------------------------------------
@@ -148,12 +158,16 @@ def render_ascii(
     """Render the decision tree as an indented ASCII string.
 
     The traversed path is highlighted (``*`` marker on the chosen edge),
-    and the chosen leaf is annotated with ``← SELECTED``.
+    and the chosen leaf is annotated with ``← SELECTED``.  Shared subtree
+    objects (DAG nodes with multiple parents) are expanded once; subsequent
+    references emit a short back-pointer line instead of repeating the
+    subtree.
     """
     p_values = p_values or {}
     path_dict = dict(path)
 
     lines: list[str] = []
+    rendered_nodes: set[str] = set()  # node_ids already fully expanded
 
     def render(
         node: Union[TreeNode, str],
@@ -176,16 +190,24 @@ def render_ascii(
             pv = p_values[node.name]
             annot = f"  (p={pv:.4f}, alpha={alpha})"
         edge_str = f"<{edge_label}> " if edge_label else ""
+
+        # Shared-node deduplication: if this node was already fully rendered,
+        # emit a back-reference instead of re-expanding the subtree.
+        if node._node_id in rendered_nodes:
+            lines.append(
+                f"{prefix}{connector}{edge_str}→ {label}{marker}  (see above)"
+            )
+            return
+
+        rendered_nodes.add(node._node_id)
         lines.append(f"{prefix}{connector}{edge_str}{label}{marker}{annot}")
 
         # Determine child path membership
         new_prefix = prefix + ("    " if is_last else "│   ") if edge_label else ""
-        # Children:
         children: list[tuple[str, Union[TreeNode, str]]] = [
             ("sig" if node.kind == "test" else "true", node.if_true),
             ("not sig" if node.kind == "test" else "false", node.if_false),
         ]
-        # Determine which child is on path
         taken = path_dict.get(node._node_id)
         for i, (lbl, child) in enumerate(children):
             child_on_path = on_path and (
@@ -247,6 +269,7 @@ def render_graphviz(
         return dot
 
     leaf_counter = [0]
+    emitted_nodes: set[str] = set()  # node_ids already rendered (DAG dedup)
 
     def add(
         node: Union[TreeNode, str],
@@ -278,13 +301,16 @@ def render_graphviz(
         label = _node_label(node)
         if on_path and node.kind == "test" and node.name in p_values:
             label = f"{label}\np={p_values[node.name]:.3f}"
-        dot.node(
-            node._node_id,
-            label=label,
-            shape="ellipse",
-            style="filled" + (",bold" if on_path else ""),
-            fillcolor="#ffd966" if on_path else "white",
-        )
+        already_emitted = node._node_id in emitted_nodes
+        if not already_emitted:
+            emitted_nodes.add(node._node_id)
+            dot.node(
+                node._node_id,
+                label=label,
+                shape="ellipse",
+                style="filled" + (",bold" if on_path else ""),
+                fillcolor="#ffd966" if on_path else "white",
+            )
         if parent_id is not None:
             dot.edge(
                 parent_id,
@@ -294,11 +320,12 @@ def render_graphviz(
                 penwidth="2.0" if on_path else "1.0",
             )
 
-        taken = path_dict.get(node._node_id)
-        true_label = "sig" if node.kind == "test" else "true"
-        false_label = "not sig" if node.kind == "test" else "false"
-        add(node.if_true, node._node_id, true_label, on_path and taken is True)
-        add(node.if_false, node._node_id, false_label, on_path and taken is False)
+        if not already_emitted:
+            taken = path_dict.get(node._node_id)
+            true_label = "sig" if node.kind == "test" else "true"
+            false_label = "not sig" if node.kind == "test" else "false"
+            add(node.if_true, node._node_id, true_label, on_path and taken is True)
+            add(node.if_false, node._node_id, false_label, on_path and taken is False)
 
     add(root, None, None, on_path=True)
     return dot
@@ -351,15 +378,36 @@ def render(
 
 
 def _ols_spec() -> TreeNode:
-    """OLS decision tree (Koley & Bera 2024, stge_kb)."""
-    # Both naive sig: robust pair branch
+    """OLS decision tree (Koley & Bera 2024, stge_kb).
+
+    Reachable terminals: ``OLS``, ``SAR``, ``SEM``.
+
+    ``SARAR`` is intentionally **not** a terminal here.  SARAR's correct
+    null model is SAR (or SEM), not OLS, so a Bayesian specification test
+    for the SARAR alternative cannot be conducted from an OLS fit alone.
+    When the OLS tests indicate joint lag+error dependence, the tree
+    recommends the dominant single-channel model (SAR or SEM) and the
+    user is expected to fit that intermediate model and re-run
+    diagnostics from there to potentially escalate to SARAR.
+    """
+    # Robust-vs-robust tie-break used when both naive AND both robust
+    # tests fire: the smaller-p (= larger-stat) channel wins.
+    robust_tie_break = TreeNode(
+        kind="predicate",
+        name="Robust-LM-Lag p <= Robust-LM-Error p",
+        if_true="SAR",
+        if_false="SEM",
+        predicate_id="robust_lag_pval_le_error_pval",
+    )
+    # Both naive sig: robust pair branch.  We never escalate to SARAR
+    # because that would require a fitted SAR/SEM null.
     both_sig = TreeNode(
         kind="test",
         name="Robust-LM-Lag",
         if_true=TreeNode(
             kind="test",
             name="Robust-LM-Error",
-            if_true="SARAR",
+            if_true=robust_tie_break,
             if_false="SAR",
         ),
         if_false=TreeNode(
@@ -394,31 +442,48 @@ def _ols_spec() -> TreeNode:
 
 
 def _sar_spec() -> TreeNode:
-    # If LM-Error fires from a SAR fit it can mean either (i) a true error
-    # process on top of the lag (→ SARAR) or (ii) omitted WX whose signal
-    # leaks into the residual autocorrelation (→ SDM).  ``Robust-LM-WX``
-    # disambiguates: when WX is genuinely missing it stays significant after
-    # adjusting for ρ, so SDM is preferred even though LM-Error fired.
+    # Precondition principle: a robust LM test only refines its naive
+    # precursor — never consult ``Robust-LM-WX`` unless ``LM-WX`` has
+    # already fired, and never commit to a model whose only support comes
+    # from a robust test.
+    #
+    # WX channel: if naive ``LM-WX`` from the SAR fit fires AND the robust
+    # version survives the ρ-orthogonalisation, the omitted block is WX
+    # (→ SDM).  If naive LM-WX is silent, or fires but the robust check
+    # clears it, fall through to the error channel.
+    #
+    # Error channel (fall-through): naive ``LM-Error`` only escalates to
+    # SARAR if the SAR-null-conditional ``Robust-LM-Error`` (Schur-purged
+    # for ρ) also fires; otherwise the naive signal is attributable to
+    # nuisance dependence already absorbed by the SAR fit and we keep SAR.
+    #
+    # The error branch is constructed twice (instead of being shared) so
+    # the graphviz renderer draws two distinct subtrees and the visual
+    # ordering matches the strict naive→robust descent within each
+    # channel.
+    def _error_branch() -> TreeNode:
+        return TreeNode(
+            kind="test",
+            name="LM-Error",
+            if_true=TreeNode(
+                kind="test",
+                name="Robust-LM-Error",
+                if_true="SARAR",
+                if_false="SAR",
+            ),
+            if_false="SAR",
+        )
+
     return TreeNode(
         kind="test",
-        name="LM-Error",
+        name="LM-WX",
         if_true=TreeNode(
             kind="test",
             name="Robust-LM-WX",
             if_true="SDM",
-            if_false="SARAR",
+            if_false=_error_branch(),
         ),
-        if_false=TreeNode(
-            kind="test",
-            name="Robust-LM-WX",
-            if_true="SDM",
-            if_false=TreeNode(
-                kind="test",
-                name="LM-WX",
-                if_true="SDM",
-                if_false="SAR",
-            ),
-        ),
+        if_false=_error_branch(),
     )
 
 
@@ -427,31 +492,76 @@ def _sem_spec() -> TreeNode:
     # of the error process (→ SARAR) or (ii) omitted WX masquerading as ρ
     # (→ SDEM).  ``LM-WX`` (here the SEM-null variant exposed under that
     # label, see SEM._spatial_diagnostics_tests) settles the ambiguity.
+    #
+    # Robust-after-naive precondition: a naive precursor (``LM-Lag`` or
+    # ``LM-WX``) must fire before consulting its Schur-orthogonalised
+    # robust counterpart.  When both naive precursors fire AND both robust
+    # tests survive, ``Robust-LM-Lag`` p vs ``Robust-LM-WX`` p settles
+    # which direction the SEM fit is missing the most evidence in:
+    # smaller-p (larger-stat) wins.
+    both_robust = TreeNode(
+        kind="predicate",
+        name="Robust-LM-Lag p <= Robust-LM-WX p",
+        if_true="SARAR",
+        if_false="SDEM",
+        predicate_id="lag_sem_pval_le_wx_sem_pval",
+    )
+    both_naive_sig = TreeNode(
+        kind="test",
+        name="Robust-LM-Lag",
+        if_true=TreeNode(
+            kind="test",
+            name="Robust-LM-WX",
+            if_true=both_robust,
+            if_false="SARAR",
+        ),
+        if_false=TreeNode(
+            kind="test",
+            name="Robust-LM-WX",
+            if_true="SDEM",
+            if_false="SEM",
+        ),
+    )
     return TreeNode(
         kind="test",
         name="LM-Lag",
         if_true=TreeNode(
             kind="test",
             name="LM-WX",
-            if_true="SDEM",
-            if_false="SARAR",
+            if_true=both_naive_sig,
+            if_false=TreeNode(
+                kind="test",
+                name="Robust-LM-Lag",
+                if_true="SARAR",
+                if_false="SEM",
+            ),
         ),
         if_false=TreeNode(
             kind="test",
             name="LM-WX",
-            if_true="SDEM",
+            if_true=TreeNode(
+                kind="test",
+                name="Robust-LM-WX",
+                if_true="SDEM",
+                if_false="SEM",
+            ),
             if_false="SEM",
         ),
     )
 
 
 def _slx_spec() -> TreeNode:
-    # When both robust tests fire from an SLX fit the omitted channel is
-    # whichever side carries the stronger signal: smaller p on Lag-SDM ⇒
-    # SDM, smaller p on Error-SDEM ⇒ SDEM.  ``MANSAR`` is intentionally
-    # not a terminal here; users wanting MANSAR should fit it explicitly
-    # and compare via :func:`bayes_factor_compare_models`.
-    return TreeNode(
+    # Precondition principle: ``Robust-LM-Lag-SDM`` only refines naive
+    # ``LM-Lag``, and ``Robust-LM-Error-SDEM`` only refines naive
+    # ``LM-Error``.  Never escalate the SLX fit to SDM/SDEM unless the
+    # corresponding naive precursor from the SLX fit has fired.
+    #
+    # When both naive precursors fire, both robust refinements are
+    # consulted; if both robust tests survive, the smaller-p (larger-stat)
+    # side wins via ``lag_sdm_pval_le_error_sdem_pval``.  ``MANSAR`` is
+    # intentionally not a terminal here; users wanting MANSAR should fit
+    # it explicitly and compare via :func:`bayes_factor_compare_models`.
+    both_naive_sig = TreeNode(
         kind="test",
         name="Robust-LM-Lag-SDM",
         if_true=TreeNode(
@@ -473,65 +583,165 @@ def _slx_spec() -> TreeNode:
             if_false="SLX",
         ),
     )
+    return TreeNode(
+        kind="test",
+        name="LM-Lag",
+        if_true=TreeNode(
+            kind="test",
+            name="LM-Error",
+            if_true=both_naive_sig,
+            if_false=TreeNode(
+                kind="test",
+                name="Robust-LM-Lag-SDM",
+                if_true="SDM",
+                if_false="SLX",
+            ),
+        ),
+        if_false=TreeNode(
+            kind="test",
+            name="LM-Error",
+            if_true=TreeNode(
+                kind="test",
+                name="Robust-LM-Error-SDEM",
+                if_true="SDEM",
+                if_false="SLX",
+            ),
+            if_false="SLX",
+        ),
+    )
 
 
 def _sdm_spec() -> TreeNode:
+    # Robust-after-naive: only escalate to MANSAR when both the naive SDM
+    # error score (``LM-Error-SDM``) and its Neyman-orthogonal
+    # counterpart (``Robust-LM-Error-SDM``, Schur-purged for ρ at the
+    # SDM posterior mean) survive.  Without the robust gate the naive
+    # error signal can be a relabelling of mis-specified ρ.
     return TreeNode(
         kind="test",
         name="LM-Error-SDM",
-        if_true="MANSAR",
+        if_true=TreeNode(
+            kind="test",
+            name="Robust-LM-Error-SDM",
+            if_true="MANSAR",
+            if_false="SDM",
+        ),
         if_false="SDM",
     )
 
 
 def _sdem_spec() -> TreeNode:
+    # Robust-after-naive: only escalate to MANSAR when both ``LM-Lag-SDEM``
+    # and ``Robust-LM-Lag-SDEM`` (Schur-purged for the WX block, with
+    # λ filtered at its posterior mean) fire.
     return TreeNode(
         kind="test",
         name="LM-Lag-SDEM",
-        if_true="MANSAR",
+        if_true=TreeNode(
+            kind="test",
+            name="Robust-LM-Lag-SDEM",
+            if_true="MANSAR",
+            if_false="SDEM",
+        ),
         if_false="SDEM",
     )
 
 
 # Tobit variants: same logic with -Tobit suffix on leaves.
 def _sar_tobit_spec() -> TreeNode:
+    # Tobit mirror of ``_sar_spec`` — see that docstring.  The error
+    # branch is built twice (not shared) so the graphviz layout draws
+    # naive→robust strictly within each channel.
+    def _error_branch() -> TreeNode:
+        return TreeNode(
+            kind="test",
+            name="LM-Error",
+            if_true=TreeNode(
+                kind="test",
+                name="Robust-LM-Error",
+                if_true="SARAR-Tobit",
+                if_false="SAR-Tobit",
+            ),
+            if_false="SAR-Tobit",
+        )
+
     return TreeNode(
         kind="test",
-        name="LM-Error",
-        if_true="SARAR-Tobit",
-        if_false=TreeNode(
+        name="LM-WX",
+        if_true=TreeNode(
             kind="test",
             name="Robust-LM-WX",
             if_true="SDM-Tobit",
-            if_false=TreeNode(
-                kind="test",
-                name="LM-WX",
-                if_true="SDM-Tobit",
-                if_false="SAR-Tobit",
-            ),
+            if_false=_error_branch(),
         ),
+        if_false=_error_branch(),
     )
 
 
 def _sem_tobit_spec() -> TreeNode:
+    # Tobit mirror of ``_sem_spec`` — see that docstring.
+    both_robust = TreeNode(
+        kind="predicate",
+        name="Robust-LM-Lag p <= Robust-LM-WX p",
+        if_true="SARAR-Tobit",
+        if_false="SDEM-Tobit",
+        predicate_id="lag_sem_pval_le_wx_sem_pval",
+    )
+    both_naive_sig = TreeNode(
+        kind="test",
+        name="Robust-LM-Lag",
+        if_true=TreeNode(
+            kind="test",
+            name="Robust-LM-WX",
+            if_true=both_robust,
+            if_false="SARAR-Tobit",
+        ),
+        if_false=TreeNode(
+            kind="test",
+            name="Robust-LM-WX",
+            if_true="SDEM-Tobit",
+            if_false="SEM-Tobit",
+        ),
+    )
     return TreeNode(
         kind="test",
         name="LM-Lag",
-        if_true="SARAR-Tobit",
+        if_true=TreeNode(
+            kind="test",
+            name="LM-WX",
+            if_true=both_naive_sig,
+            if_false=TreeNode(
+                kind="test",
+                name="Robust-LM-Lag",
+                if_true="SARAR-Tobit",
+                if_false="SEM-Tobit",
+            ),
+        ),
         if_false=TreeNode(
             kind="test",
             name="LM-WX",
-            if_true="SDEM-Tobit",
+            if_true=TreeNode(
+                kind="test",
+                name="Robust-LM-WX",
+                if_true="SDEM-Tobit",
+                if_false="SEM-Tobit",
+            ),
             if_false="SEM-Tobit",
         ),
     )
 
 
 def _sdm_tobit_spec() -> TreeNode:
+    # Tobit mirror of ``_sdm_spec`` — see that docstring.
     return TreeNode(
         kind="test",
         name="LM-Error",
-        if_true="MANSAR-Tobit",
+        if_true=TreeNode(
+            kind="test",
+            name="Robust-LM-Error",
+            if_true="MANSAR-Tobit",
+            if_false="SDM-Tobit",
+        ),
         if_false="SDM-Tobit",
     )
 
@@ -567,13 +777,26 @@ def get_spec(model_type: str) -> TreeNode | str:
 
 
 def _panel_ols_spec(suffix: str) -> TreeNode:
+    # Panel mirror of :func:`_ols_spec`.  ``SARARPanel{suffix}`` is
+    # intentionally not a reachable terminal: its proper null is
+    # ``SARPanel{suffix}`` (or ``SEMPanel{suffix}``), and a valid
+    # specification test for SARAR cannot be conducted from a panel-OLS
+    # fit alone.  The tree recommends the dominant single-channel model
+    # and the user re-runs diagnostics from there.
+    robust_tie_break = TreeNode(
+        kind="predicate",
+        name="Panel-Robust-LM-Lag p <= Panel-Robust-LM-Error p",
+        if_true=f"SARPanel{suffix}",
+        if_false=f"SEMPanel{suffix}",
+        predicate_id="panel_robust_lag_pval_le_error_pval",
+    )
     both_sig = TreeNode(
         kind="test",
         name="Panel-Robust-LM-Lag",
         if_true=TreeNode(
             kind="test",
             name="Panel-Robust-LM-Error",
-            if_true=f"SARARPanel{suffix}",
+            if_true=robust_tie_break,
             if_false=f"SARPanel{suffix}",
         ),
         if_false=TreeNode(
@@ -611,27 +834,27 @@ def _panel_ols_spec(suffix: str) -> TreeNode:
 
 
 def _panel_sar_spec(suffix: str) -> TreeNode:
-    # Panel mirror of ``_sar_spec`` — see that docstring.
+    # Panel mirror of ``_sar_spec`` — see that docstring.  Build the
+    # error branch twice (not shared) so graphviz draws naive→robust
+    # strictly within each channel.
+    def _error_branch() -> TreeNode:
+        return TreeNode(
+            kind="test",
+            name="Panel-LM-Error",
+            if_true=f"SARARPanel{suffix}",
+            if_false=f"SARPanel{suffix}",
+        )
+
     return TreeNode(
         kind="test",
-        name="Panel-LM-Error",
+        name="Panel-LM-WX",
         if_true=TreeNode(
             kind="test",
             name="Panel-Robust-LM-WX",
             if_true=f"SDMPanel{suffix}",
-            if_false=f"SARARPanel{suffix}",
+            if_false=_error_branch(),
         ),
-        if_false=TreeNode(
-            kind="test",
-            name="Panel-Robust-LM-WX",
-            if_true=f"SDMPanel{suffix}",
-            if_false=TreeNode(
-                kind="test",
-                name="Panel-LM-WX",
-                if_true=f"SDMPanel{suffix}",
-                if_false=f"SARPanel{suffix}",
-            ),
-        ),
+        if_false=_error_branch(),
     )
 
 
@@ -657,7 +880,7 @@ def _panel_sem_spec(suffix: str) -> TreeNode:
 
 def _panel_slx_spec(suffix: str) -> TreeNode:
     # Panel mirror of ``_slx_spec`` — see that docstring.
-    return TreeNode(
+    both_naive_sig = TreeNode(
         kind="test",
         name="Panel-Robust-LM-Lag-SDM",
         if_true=TreeNode(
@@ -676,6 +899,32 @@ def _panel_slx_spec(suffix: str) -> TreeNode:
             kind="test",
             name="Panel-Robust-LM-Error-SDEM",
             if_true=f"SDEMPanel{suffix}",
+            if_false=f"SLXPanel{suffix}",
+        ),
+    )
+    return TreeNode(
+        kind="test",
+        name="Panel-LM-Lag",
+        if_true=TreeNode(
+            kind="test",
+            name="Panel-LM-Error",
+            if_true=both_naive_sig,
+            if_false=TreeNode(
+                kind="test",
+                name="Panel-Robust-LM-Lag-SDM",
+                if_true=f"SDMPanel{suffix}",
+                if_false=f"SLXPanel{suffix}",
+            ),
+        ),
+        if_false=TreeNode(
+            kind="test",
+            name="Panel-LM-Error",
+            if_true=TreeNode(
+                kind="test",
+                name="Panel-Robust-LM-Error-SDEM",
+                if_true=f"SDEMPanel{suffix}",
+                if_false=f"SLXPanel{suffix}",
+            ),
             if_false=f"SLXPanel{suffix}",
         ),
     )
@@ -720,3 +969,112 @@ def get_panel_spec(model_type: str) -> TreeNode | str:
         if model_type.startswith(prefix):
             return factory(suffix)
     return model_type
+
+
+# ---------------------------------------------------------------------------
+# Flow (origin-destination) decision tree specs
+# ---------------------------------------------------------------------------
+
+
+def _ols_flow_spec() -> TreeNode:
+    """OLSFlow decision tree.
+
+    The joint test is the gatekeeper: any spatial dependence across the three
+    flow directions (destination, origin, network) recommends SARFlow; no
+    signal recommends staying with OLSFlow.
+    """
+    return TreeNode(
+        kind="test",
+        name="LM-Flow-Joint",
+        if_true="SARFlow",
+        if_false="OLSFlow",
+    )
+
+
+def _sar_flow_spec() -> TreeNode:
+    """SARFlow decision tree (Neyman-orthogonalised robust marginals).
+
+    Robust marginals are queried in sequence (destination → origin →
+    network); each is tested only once the previous has been checked.  Any
+    significant direction confirms the SARFlow fit is warranted.  If none
+    survive the orthogonalisation the simpler OLSFlow is preferred.
+    """
+    return TreeNode(
+        kind="test",
+        name="Robust-LM-Flow-Dest",
+        if_true="SARFlow",
+        if_false=TreeNode(
+            kind="test",
+            name="Robust-LM-Flow-Orig",
+            if_true="SARFlow",
+            if_false=TreeNode(
+                kind="test",
+                name="Robust-LM-Flow-Network",
+                if_true="SARFlow",
+                if_false="OLSFlow",
+            ),
+        ),
+    )
+
+
+def _panel_ols_flow_spec() -> TreeNode:
+    """OLSFlowPanel decision tree (panel mirror of ``_ols_flow_spec``)."""
+    return TreeNode(
+        kind="test",
+        name="Panel-LM-Flow-Joint",
+        if_true="SARFlowPanel",
+        if_false="OLSFlowPanel",
+    )
+
+
+def _panel_sar_flow_spec() -> TreeNode:
+    """SARFlowPanel decision tree (panel mirror of ``_sar_flow_spec``)."""
+    return TreeNode(
+        kind="test",
+        name="Panel-Robust-LM-Flow-Dest",
+        if_true="SARFlowPanel",
+        if_false=TreeNode(
+            kind="test",
+            name="Panel-Robust-LM-Flow-Orig",
+            if_true="SARFlowPanel",
+            if_false=TreeNode(
+                kind="test",
+                name="Panel-Robust-LM-Flow-Network",
+                if_true="SARFlowPanel",
+                if_false="OLSFlowPanel",
+            ),
+        ),
+    )
+
+
+_FLOW_SPECS: dict[str, Callable[[], TreeNode]] = {
+    "OLSFlow": _ols_flow_spec,
+    "SARFlow": _sar_flow_spec,
+}
+
+_PANEL_FLOW_SPECS: dict[str, Callable[[], TreeNode]] = {
+    "OLSFlowPanel": _panel_ols_flow_spec,
+    "SARFlowPanel": _panel_sar_flow_spec,
+}
+
+
+def get_flow_spec(model_type: str) -> TreeNode | str:
+    """Return the flow decision tree for ``model_type``.
+
+    Falls back to a single leaf with the model name if no spec is defined.
+    """
+    factory = _FLOW_SPECS.get(model_type)
+    if factory is None:
+        return model_type
+    return factory()
+
+
+def get_panel_flow_spec(model_type: str) -> TreeNode | str:
+    """Return the panel-flow decision tree for ``model_type``.
+
+    Falls back to a single leaf with the model name if no spec is defined.
+    """
+    factory = _PANEL_FLOW_SPECS.get(model_type)
+    if factory is None:
+        return model_type
+    return factory()

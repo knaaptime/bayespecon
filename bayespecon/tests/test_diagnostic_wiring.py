@@ -70,11 +70,11 @@ EXPECTED_REGISTRIES = {
         "Robust-LM-Lag",
         "Robust-LM-Error",
     ],
-    SAR: ["LM-Error", "LM-WX", "Robust-LM-WX"],
-    SEM: ["LM-Lag", "LM-WX"],
+    SAR: ["LM-Error", "LM-WX", "Robust-LM-WX", "Robust-LM-Error"],
+    SEM: ["LM-Lag", "LM-WX", "Robust-LM-Lag", "Robust-LM-WX"],
     SLX: ["LM-Lag", "LM-Error", "Robust-LM-Lag-SDM", "Robust-LM-Error-SDEM"],
-    SDM: ["LM-Error-SDM"],
-    SDEM: ["LM-Lag-SDEM"],
+    SDM: ["LM-Error-SDM", "Robust-LM-Error-SDM"],
+    SDEM: ["LM-Lag-SDEM", "Robust-LM-Lag-SDEM"],
     OLSPanelFE: [
         "Panel-LM-Lag",
         "Panel-LM-Error",
@@ -141,3 +141,48 @@ def test_slx_uses_slx_specific_lm_tests():
     labels = [label for _, label in SLX._spatial_diagnostics_tests]
     # Must not be empty placeholders
     assert len(labels) >= 2
+
+
+def test_flow_models_expose_decision_api():
+    """FlowModel and FlowPanelModel must expose spatial_diagnostics_decision."""
+    from bayespecon.models.flow import FlowModel
+    from bayespecon.models.flow_panel import FlowPanelModel
+
+    assert hasattr(FlowModel, "spatial_diagnostics_decision")
+    assert callable(FlowModel.spatial_diagnostics_decision)
+    assert hasattr(FlowPanelModel, "spatial_diagnostics_decision")
+    assert callable(FlowPanelModel.spatial_diagnostics_decision)
+
+
+def test_flow_decision_tree_dispatch():
+    """get_flow_spec and get_panel_flow_spec dispatch to correct tree roots."""
+    import pandas as pd
+    from bayespecon.diagnostics import _decision_trees as _dt
+
+    # OLSFlow: joint sig -> SARFlow
+    spec = _dt.get_flow_spec("OLSFlow")
+    sig_all = lambda name: name == "LM-Flow-Joint"
+    d, _ = _dt.evaluate(spec, sig_all)
+    assert d == "SARFlow"
+
+    # OLSFlow: no sig -> OLSFlow
+    d2, _ = _dt.evaluate(spec, lambda name: False)
+    assert d2 == "OLSFlow"
+
+    # SARFlow: dest robust sig -> SARFlow
+    spec_sar = _dt.get_flow_spec("SARFlow")
+    d3, _ = _dt.evaluate(spec_sar, lambda name: name == "Robust-LM-Flow-Dest")
+    assert d3 == "SARFlow"
+
+    # SARFlow: no robust sig -> OLSFlow
+    d4, _ = _dt.evaluate(spec_sar, lambda name: False)
+    assert d4 == "OLSFlow"
+
+    # Panel variants
+    spec_p = _dt.get_panel_flow_spec("OLSFlowPanel")
+    dp, _ = _dt.evaluate(spec_p, lambda name: name == "Panel-LM-Flow-Joint")
+    assert dp == "SARFlowPanel"
+
+    spec_sp = _dt.get_panel_flow_spec("SARFlowPanel")
+    dp2, _ = _dt.evaluate(spec_sp, lambda name: False)
+    assert dp2 == "OLSFlowPanel"

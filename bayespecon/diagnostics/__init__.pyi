@@ -14,6 +14,9 @@ from .bayesian_lmtests import (
     BayesianLMTestResult as BayesianLMTestResult,
 )
 from .bayesian_lmtests import (
+    bayesian_lm_error_from_sar_test as bayesian_lm_error_from_sar_test,
+)
+from .bayesian_lmtests import (
     bayesian_lm_error_sdm_test as bayesian_lm_error_sdm_test,
 )
 from .bayesian_lmtests import (
@@ -110,7 +113,22 @@ from .bayesian_lmtests import (
     bayesian_robust_lm_error_sdem_test as bayesian_robust_lm_error_sdem_test,
 )
 from .bayesian_lmtests import (
+    bayesian_robust_lm_error_sar_test as bayesian_robust_lm_error_sar_test,
+)
+from .bayesian_lmtests import (
+    bayesian_robust_lm_error_sdm_test as bayesian_robust_lm_error_sdm_test,
+)
+from .bayesian_lmtests import (
     bayesian_robust_lm_error_test as bayesian_robust_lm_error_test,
+)
+from .bayesian_lmtests import (
+    bayesian_robust_lm_lag_sdem_test as bayesian_robust_lm_lag_sdem_test,
+)
+from .bayesian_lmtests import (
+    bayesian_robust_lm_lag_sem_test as bayesian_robust_lm_lag_sem_test,
+)
+from .bayesian_lmtests import (
+    bayesian_robust_lm_wx_sem_test as bayesian_robust_lm_wx_sem_test,
 )
 from .bayesian_lmtests import (
     bayesian_robust_lm_flow_dest_test as bayesian_robust_lm_flow_dest_test,
