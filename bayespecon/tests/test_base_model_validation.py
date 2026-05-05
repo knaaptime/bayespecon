@@ -229,8 +229,7 @@ class TestCrossSectionalDiagnosticsDecision:
         )
         monkeypatch.setattr(ols_model, "spatial_diagnostics", lambda: df)
         assert (
-            ols_model.spatial_diagnostics_decision(alpha=0.05, format="model")
-            == "SAR"
+            ols_model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SAR"
         )
 
     def test_ols_both_no_robust_fallback(self, ols_model, monkeypatch):
@@ -401,7 +400,9 @@ class TestCrossSectionalDiagnosticsDecision:
             index=["LM-Error-SDM", "Robust-LM-Error-SDM"],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
-        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
+        )
 
     def test_sdm_naive_only_keeps_sdm(self, W_graph, monkeypatch):
         from bayespecon.models.sdm import SDM
@@ -425,7 +426,9 @@ class TestCrossSectionalDiagnosticsDecision:
             index=["LM-Lag-SDEM", "Robust-LM-Lag-SDEM"],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
-        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
+        assert (
+            model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
+        )
 
     def test_sdem_naive_only_keeps_sdem(self, W_graph, monkeypatch):
         from bayespecon.models.sdem import SDEM
@@ -731,9 +734,11 @@ class TestDecisionOutputFormats:
         from bayespecon.diagnostics import _decision_trees as _dt
 
         spec = _dt.get_spec("SAR")
-        sig = lambda name: {"LM-WX": False, "LM-Error": True, "Robust-LM-WX": False}.get(
-            name, False
-        )
+        sig = lambda name: {
+            "LM-WX": False,
+            "LM-Error": True,
+            "Robust-LM-WX": False,
+        }.get(name, False)
         d, p = _dt.evaluate(spec, sig)
         result = _dt.render_ascii(
             spec,
@@ -748,7 +753,8 @@ class TestDecisionOutputFormats:
         # "Robust-LM-Error", which is itself an inner gate inside each
         # error_branch subtree).
         full_expansions = [
-            ln for ln in lines
+            ln
+            for ln in lines
             if " LM-Error" in ln and "see above" not in ln and "→" not in ln
         ]
         assert len(full_expansions) == 2, (

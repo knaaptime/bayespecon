@@ -985,6 +985,7 @@ class TestSpatialDiagnosticsMethod:
         # SEM mock needs ``lam`` for the new robust-after-naive tests
         # (``bayesian_robust_lm_lag_sem_test``, ``bayesian_robust_lm_wx_sem_test``).
         from bayespecon.models import SEM as _SEM
+
         if cls is _SEM:
             posterior["lam"] = rng.normal(scale=0.05, size=draws)[:, None]
 
@@ -1261,9 +1262,7 @@ class TestSpatialDiagnosticsMethod:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SAR"
 
         # Both robust fire, error robust strictly smaller -> SEM wins.
-        monkeypatch.setattr(
-            model, "spatial_diagnostics", lambda: make_df(0.01, 0.0001)
-        )
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.01, 0.0001))
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SEM"
 
 

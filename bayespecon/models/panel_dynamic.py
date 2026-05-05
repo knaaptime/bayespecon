@@ -465,7 +465,6 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         }
 
 
-
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
@@ -629,7 +628,6 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "total": total,
             "feature_names": names,
         }
-
 
 
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
@@ -859,7 +857,6 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         }
 
 
-
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
@@ -1050,7 +1047,6 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "total": total,
             "feature_names": self._nonintercept_feature_names,
         }
-
 
 
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
@@ -1342,7 +1338,6 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "total": beta[ni].copy(),
             "feature_names": self._nonintercept_feature_names,
         }
-
 
 
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
@@ -1651,7 +1646,6 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         }
 
 
-
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
@@ -1807,4 +1801,3 @@ class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "total": total,
             "feature_names": self._wx_feature_names,
         }
-

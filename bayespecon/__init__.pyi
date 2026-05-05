@@ -137,10 +137,10 @@ from .diagnostics import (
     bayesian_panel_robust_lm_wx_test as bayesian_panel_robust_lm_wx_test,
 )
 from .diagnostics import (
-    bayesian_robust_lm_error_sdem_test as bayesian_robust_lm_error_sdem_test,
+    bayesian_robust_lm_error_sar_test as bayesian_robust_lm_error_sar_test,
 )
 from .diagnostics import (
-    bayesian_robust_lm_error_sar_test as bayesian_robust_lm_error_sar_test,
+    bayesian_robust_lm_error_sdem_test as bayesian_robust_lm_error_sdem_test,
 )
 from .diagnostics import (
     bayesian_robust_lm_error_sdm_test as bayesian_robust_lm_error_sdm_test,
@@ -158,10 +158,10 @@ from .diagnostics import (
     bayesian_robust_lm_flow_orig_test as bayesian_robust_lm_flow_orig_test,
 )
 from .diagnostics import (
-    bayesian_robust_lm_lag_sdm_test as bayesian_robust_lm_lag_sdm_test,
+    bayesian_robust_lm_lag_sdem_test as bayesian_robust_lm_lag_sdem_test,
 )
 from .diagnostics import (
-    bayesian_robust_lm_lag_sdem_test as bayesian_robust_lm_lag_sdem_test,
+    bayesian_robust_lm_lag_sdm_test as bayesian_robust_lm_lag_sdm_test,
 )
 from .diagnostics import (
     bayesian_robust_lm_lag_sem_test as bayesian_robust_lm_lag_sem_test,

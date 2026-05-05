@@ -158,6 +158,7 @@ def test_flow_models_expose_decision_api():
 def test_flow_decision_tree_dispatch():
     """get_flow_spec and get_panel_flow_spec dispatch to correct tree roots."""
     import pandas as pd
+
     from bayespecon.diagnostics import _decision_trees as _dt
 
     # OLSFlow: joint sig -> SARFlow

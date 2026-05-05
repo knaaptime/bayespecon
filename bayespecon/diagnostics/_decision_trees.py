@@ -194,9 +194,7 @@ def render_ascii(
         # Shared-node deduplication: if this node was already fully rendered,
         # emit a back-reference instead of re-expanding the subtree.
         if node._node_id in rendered_nodes:
-            lines.append(
-                f"{prefix}{connector}{edge_str}→ {label}{marker}  (see above)"
-            )
+            lines.append(f"{prefix}{connector}{edge_str}→ {label}{marker}  (see above)")
             return
 
         rendered_nodes.add(node._node_id)
@@ -967,6 +965,7 @@ _PANEL_DYNAMIC_SPECS: dict[str, Callable[[str], TreeNode]] = {
     "SDMPanel": _panel_sdm_spec,
     "SDEMPanel": _panel_sdem_spec,
 }
+
 
 # Panel Tobit specs mirror the cross-sectional Tobit specs but with
 # "PanelTobit" leaf suffix.

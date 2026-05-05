@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
+
 import arviz as az
 import numpy as np
 import scipy.sparse as sp
 from scipy import stats as sp_stats
+
 
 def bayesian_panel_lm_wx_sem_test(
     model,
@@ -168,6 +170,7 @@ def bayesian_lm_wx_sem_test(
         df=k_wx,
         details={"k_wx": k_wx},
     )
+
 
 def _finalize_lm(
     LM: np.ndarray,
@@ -960,6 +963,7 @@ def _info_matrix_blocks_sdm(
     # Callers should pass the pre-computed model._T_ww to avoid redundant work.
     if T_ww is None:
         import warnings
+
         warnings.warn(
             "T_ww not provided to _info_matrix_blocks_sdm; computing from W_sparse. "
             "Pass model._T_ww for efficiency.",
@@ -1035,6 +1039,7 @@ def _info_matrix_blocks_sdem(
     """
     if T_ww is None:
         import warnings
+
         warnings.warn(
             "T_ww not provided to _info_matrix_blocks_sdem; computing from W_sparse. "
             "Pass model._T_ww for efficiency.",
@@ -1143,11 +1148,11 @@ def _info_matrix_blocks_slx_robust(
     # For A=W, B=W:  AB = W², BA = W², so tr(P_Z AB)=tr(P_Z BA).
     # For A=W, B=W': AB = W·W', BA = W'·W; their P_Z traces differ but
     #               their sum equals tr(P_Z (WW' + W'W)).
-    WZ = np.asarray(W_sparse @ Z)            # (n, k_total)
-    W2Z = np.asarray(W_sparse @ WZ)          # W²·Z
-    WtWZ = np.asarray(W_sparse.T @ WZ)       # W'·W·Z
+    WZ = np.asarray(W_sparse @ Z)  # (n, k_total)
+    W2Z = np.asarray(W_sparse @ WZ)  # W²·Z
+    WtWZ = np.asarray(W_sparse.T @ WZ)  # W'·W·Z
     # Note: tr(P_Z W·W') = tr((Z'Z)^{-1} Z' W W' Z) = tr((Z'Z)^{-1} (W'Z)' (W'Z))
-    WtZ = np.asarray(W_sparse.T @ Z)         # (n, k_total)
+    WtZ = np.asarray(W_sparse.T @ Z)  # (n, k_total)
 
     ZtWZ = Z.T @ WZ
     ZtWtZ = ZtWZ.T
@@ -1173,7 +1178,7 @@ def _info_matrix_blocks_slx_robust(
     tr_MZWMZWt = tr_WtW - tr_PZ_WWt - tr_PZ_WtW + tr_PZ_W_PZ_Wt
 
     # M_Z W Z β̄
-    Wybeta = WZ @ beta_slx_mean              # (n,)
+    Wybeta = WZ @ beta_slx_mean  # (n,)
     proj = Z @ (ZtZ_inv @ (Z.T @ Wybeta))
     mz_quad = float(np.dot(Wybeta, Wybeta - proj))
 
@@ -3698,12 +3703,12 @@ def _sar_null_lambda_info(
     T_GG = float(np.sum(G * G) + np.trace(G @ G))
     T_WG = float(np.sum(W_dense * G) + np.trace(W_dense @ G))
 
-    V_ll = sigma2_mean ** 2 * T_ww
-    V_lr = sigma2_mean ** 2 * T_WG
+    V_ll = sigma2_mean**2 * T_ww
+    V_lr = sigma2_mean**2 * T_WG
 
     GxBeta = G @ (X_design @ beta_full_mean)
     proj = _mx_quadratic(X_design, GxBeta)
-    V_rr = sigma2_mean ** 2 * T_GG + sigma2_mean * proj
+    V_rr = sigma2_mean**2 * T_GG + sigma2_mean * proj
 
     return {
         "V_ll": V_ll,
@@ -3753,9 +3758,9 @@ def bayesian_lm_error_from_sar_test(
     We = (W_sp @ resid.T).T
     S = np.sum(resid * We, axis=1)  # (draws,)
 
-    sigma2_mean = float(np.mean(sigma_draws ** 2))
-    V = sigma2_mean ** 2 * T_ww
-    LM = S ** 2 / (V + 1e-12)
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    V = sigma2_mean**2 * T_ww
+    LM = S**2 / (V + 1e-12)
 
     return _finalize_lm(LM, test_type="bayesian_lm_error_from_sar", df=1)
 
@@ -3853,7 +3858,7 @@ def bayesian_robust_lm_error_sar_test(
 
     beta_mean = np.mean(beta_draws, axis=0)
     rho_mean = float(np.mean(rho_draws))
-    sigma2_mean = float(np.mean(sigma_draws ** 2))
+    sigma2_mean = float(np.mean(sigma_draws**2))
 
     info = _sar_null_lambda_info(
         W_sp, W_dense, X, beta_mean, rho_mean, sigma2_mean, T_ww
@@ -3866,7 +3871,7 @@ def bayesian_robust_lm_error_sar_test(
     g_lambda_star = g_lambda - coef * g_rho
     V_l_given_r = V_ll - V_lr * coef
 
-    LM = g_lambda_star ** 2 / (abs(V_l_given_r) + 1e-12)
+    LM = g_lambda_star**2 / (abs(V_l_given_r) + 1e-12)
 
     return _finalize_lm(
         LM,
@@ -3938,7 +3943,7 @@ def bayesian_robust_lm_error_sdm_test(
 
     beta_mean = np.mean(beta_draws, axis=0)
     rho_mean = float(np.mean(rho_draws))
-    sigma2_mean = float(np.mean(sigma_draws ** 2))
+    sigma2_mean = float(np.mean(sigma_draws**2))
 
     info = _sar_null_lambda_info(
         W_sp, W_dense, Z, beta_mean, rho_mean, sigma2_mean, T_ww
@@ -3951,7 +3956,7 @@ def bayesian_robust_lm_error_sdm_test(
     g_lambda_star = g_lambda - coef * g_rho
     V_l_given_r = V_ll - V_lr * coef
 
-    LM = g_lambda_star ** 2 / (abs(V_l_given_r) + 1e-12)
+    LM = g_lambda_star**2 / (abs(V_l_given_r) + 1e-12)
 
     return _finalize_lm(
         LM,
@@ -4001,7 +4006,7 @@ def _sem_filtered_blocks(
     z_rho = A_lam @ Wy
     Z_gamma = A_lam @ WX
 
-    V_rr = sigma2_mean ** 2 * T_ww + sigma2_mean * _mx_quadratic(X_tilde, z_rho)
+    V_rr = sigma2_mean**2 * T_ww + sigma2_mean * _mx_quadratic(X_tilde, z_rho)
     if WX.shape[1] > 0:
         V_gg = sigma2_mean * _mx_cross(X_tilde, Z_gamma, Z_gamma)
         V_rg = sigma2_mean * np.asarray(_mx_cross(X_tilde, z_rho, Z_gamma)).ravel()
@@ -4088,10 +4093,8 @@ def bayesian_robust_lm_lag_sem_test(
 
     # Filtered designs at posterior-mean lambda
     lam_mean = float(np.mean(lam_draws))
-    sigma2_mean = float(np.mean(sigma_draws ** 2))
-    blocks = _sem_filtered_blocks(
-        W_sp, W_dense, X, Wy, WX, lam_mean, sigma2_mean, T_ww
-    )
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    blocks = _sem_filtered_blocks(W_sp, W_dense, X, Wy, WX, lam_mean, sigma2_mean, T_ww)
     A_lam_bar = blocks["A_lam"]
     z_rho = A_lam_bar @ Wy  # (n,)
     Z_gamma = A_lam_bar @ WX  # (n, k_wx)
@@ -4113,7 +4116,7 @@ def bayesian_robust_lm_lag_sem_test(
         g_rho_star = g_rho
         V_r_given_g = float(V_rr)
 
-    LM = g_rho_star ** 2 / (abs(V_r_given_g) + 1e-12)
+    LM = g_rho_star**2 / (abs(V_r_given_g) + 1e-12)
 
     return _finalize_lm(
         LM,
@@ -4199,10 +4202,8 @@ def bayesian_robust_lm_wx_sem_test(
     u = raw - lam_draws[:, None] * Wraw
 
     lam_mean = float(np.mean(lam_draws))
-    sigma2_mean = float(np.mean(sigma_draws ** 2))
-    blocks = _sem_filtered_blocks(
-        W_sp, W_dense, X, Wy, WX, lam_mean, sigma2_mean, T_ww
-    )
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    blocks = _sem_filtered_blocks(W_sp, W_dense, X, Wy, WX, lam_mean, sigma2_mean, T_ww)
     A_lam_bar = blocks["A_lam"]
     z_rho = A_lam_bar @ Wy
     Z_gamma = A_lam_bar @ WX
@@ -4303,7 +4304,7 @@ def bayesian_robust_lm_lag_sdem_test(
     u = raw - lam_draws[:, None] * Wraw
 
     lam_mean = float(np.mean(lam_draws))
-    sigma2_mean = float(np.mean(sigma_draws ** 2))
+    sigma2_mean = float(np.mean(sigma_draws**2))
     n = W_sp.shape[0]
     A_lam = np.eye(n) - lam_mean * W_dense
     Z_tilde = A_lam @ Z
@@ -4311,8 +4312,8 @@ def bayesian_robust_lm_lag_sdem_test(
 
     g_rho = u @ z_rho
 
-    V_rr = sigma2_mean ** 2 * T_ww + sigma2_mean * _mx_quadratic(Z_tilde, z_rho)
-    LM = g_rho ** 2 / (abs(V_rr) + 1e-12)
+    V_rr = sigma2_mean**2 * T_ww + sigma2_mean * _mx_quadratic(Z_tilde, z_rho)
+    LM = g_rho**2 / (abs(V_rr) + 1e-12)
 
     return _finalize_lm(
         LM,

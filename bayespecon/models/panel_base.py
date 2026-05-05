@@ -557,7 +557,11 @@ class SpatialPanelModel(ABC):
         if self._W_dense_cache is None:
             # If W is N x N, dense panel matrix is (N*T) x (N*T); otherwise
             # caller supplied full panel matrix already.
-            n_nt = self._N * self._T if self._W_sparse.shape[0] == self._N else int(self._W_sparse.shape[0])
+            n_nt = (
+                self._N * self._T
+                if self._W_sparse.shape[0] == self._N
+                else int(self._W_sparse.shape[0])
+            )
             nbytes = n_nt * n_nt * 8
             if nbytes > int(self._DENSE_W_WARN_BYTES):
                 warnings.warn(

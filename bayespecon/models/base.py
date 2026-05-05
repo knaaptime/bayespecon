@@ -138,9 +138,7 @@ def _pointwise_gaussian_loglik(
 
     if nu_draws is None:
         return (
-            -0.5 * (eps / sigma_2d) ** 2
-            - np.log(sigma_2d)
-            - 0.5 * np.log(2.0 * np.pi)
+            -0.5 * (eps / sigma_2d) ** 2 - np.log(sigma_2d) - 0.5 * np.log(2.0 * np.pi)
         )
 
     nu = np.asarray(nu_draws, dtype=np.float64).reshape(-1)

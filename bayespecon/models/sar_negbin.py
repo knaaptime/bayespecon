@@ -237,26 +237,26 @@ class SARNegativeBinomial(SpatialModel):
 
         # Cached eigendecomposition: W = V @ diag(lambda) @ V^{-1}
         eigs = self._W_eigs_full  # (n,)
-        V = self._V_full            # (n, n)
-        Vt = V.T                    # (n, n)
+        V = self._V_full  # (n, n)
+        Vt = V.T  # (n, n)
         V_col_sums = V.sum(axis=0)  # (n,)
-        V_sq = V ** 2               # (n, n)
+        V_sq = V**2  # (n, n)
 
         # Precompute V^T @ X  (n, k) — reused for every draw
-        VtX = Vt @ self._X          # (n, k)
+        VtX = Vt @ self._X  # (n, k)
 
         for draw_idx, (rho, beta) in enumerate(
             zip(rho_draws, beta_draws, strict=False)
         ):
-            inv_eigs = 1.0 / (1.0 - float(rho) * eigs)      # (n,)
+            inv_eigs = 1.0 / (1.0 - float(rho) * eigs)  # (n,)
 
             # eta = V @ (inv_eigs * (V^T @ X @ beta))
-            coeff = inv_eigs * (VtX @ beta)                  # (n,)
-            eta = V @ coeff                                  # (n,)
+            coeff = inv_eigs * (VtX @ beta)  # (n,)
+            eta = V @ coeff  # (n,)
             mu = np.exp(np.clip(eta, -50.0, 50.0))
 
             # diag((I - rho W)^{-1}) = sum_j V_{ij}^2 / (1 - rho lambda_j)
-            multiplier_diag = V_sq @ inv_eigs                # (n,)
+            multiplier_diag = V_sq @ inv_eigs  # (n,)
 
             if self._is_row_std:
                 multiplier_row_sums = np.full(
