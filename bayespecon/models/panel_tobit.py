@@ -81,6 +81,29 @@ class _PanelTobitBase(SpatialPanelModel):
 
 
 class SARPanelTobit(_PanelTobitBase):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_test"],
+            ).bayesian_panel_lm_error_test(m),
+            "Panel-LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_wx_test"],
+            ).bayesian_panel_lm_wx_test(m),
+            "Panel-LM-WX",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_wx_test"],
+            ).bayesian_panel_robust_lm_wx_test(m),
+            "Panel-Robust-LM-WX",
+        ),
+    ]
     """Bayesian spatial lag panel Tobit model.
 
     .. math::
@@ -352,6 +375,22 @@ class SARPanelTobit(_PanelTobitBase):
 
 
 class SEMPanelTobit(_PanelTobitBase):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_sdem_test"],
+            ).bayesian_panel_lm_lag_sdem_test(m),
+            "Panel-LM-Lag-SDEM",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_lag_sdem_test"],
+            ).bayesian_panel_robust_lm_lag_sdem_test(m),
+            "Panel-Robust-LM-Lag-SDEM",
+        ),
+    ]
     """Bayesian spatial error panel Tobit model.
 
     .. math::

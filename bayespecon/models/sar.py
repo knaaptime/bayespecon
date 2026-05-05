@@ -150,7 +150,7 @@ class SAR(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        self._X.shape[1]
+        assert self._X.shape[1] > 0, "Design matrix must have at least one column"
 
         rho_lower = self.priors.get("rho_lower", -1.0)
         rho_upper = self.priors.get("rho_upper", 1.0)

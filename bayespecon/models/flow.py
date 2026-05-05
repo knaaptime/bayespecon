@@ -1151,6 +1151,13 @@ class SARFlow(FlowModel):
             ).bayesian_robust_lm_flow_network_test(m),
             "Robust-LM-Flow-Network",
         ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_flow_intra_test"],
+            ).bayesian_lm_flow_intra_test(m),
+            "LM-Flow-Intra",
+        ),
     ]
 
     def _build_pymc_model(self) -> pm.Model:

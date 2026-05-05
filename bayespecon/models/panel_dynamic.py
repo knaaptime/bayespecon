@@ -62,6 +62,79 @@ class _DynamicPanelMixin:
     _n_time_eff: int
     _W_dense_dyn_cache: np.ndarray | None
 
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute posterior samples of direct, indirect, and total effects."""
+        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.spatial_effects import _chunked_eig_means
+
+        idata = self.inference_data
+
+        if isinstance(self, SARPanelDynamic):
+            rho_draws = _get_posterior_draws(idata, "rho")
+            beta_draws = _get_posterior_draws(idata, "beta")
+            eigs = self._W_eigs.real.astype(np.float64)
+            mean_diag = _chunked_eig_means(rho_draws, eigs)
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
+            ni = self._nonintercept_indices
+            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
+            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
+            indirect_samples = total_samples - direct_samples
+
+        elif isinstance(self, SEMPanelDynamic):
+            beta_draws = _get_posterior_draws(idata, "beta")
+            ni = self._nonintercept_indices
+            direct_samples = beta_draws[:, ni].copy()
+            indirect_samples = np.zeros_like(direct_samples)
+            total_samples = direct_samples.copy()
+
+        elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
+            self._prepare_dynamic_design()
+            rho_draws = _get_posterior_draws(idata, "rho")
+            beta_draws = _get_posterior_draws(idata, "beta")
+            beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
+            beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
+            eigs = self._W_eigs.real.astype(np.float64)
+            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
+            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
+            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
+            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
+            wx_idx = self._wx_column_indices
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
+            indirect_samples = total_samples - direct_samples
+
+        else:
+            # SLX/SDEM/DLM-like: no rho, effects are linear in beta
+            self._prepare_dynamic_design()
+            beta_draws = _get_posterior_draws(idata, "beta")
+            k = self._X_dyn.shape[1]
+            kw = self._WX_dyn.shape[1]
+            beta1_draws = beta_draws[:, :k]
+
+            if kw == 0:
+                # No WX columns: direct = beta, indirect = 0, total = beta
+                direct_samples = beta1_draws.copy()
+                indirect_samples = np.zeros_like(beta1_draws)
+                total_samples = beta1_draws.copy()
+            else:
+                beta2_draws = beta_draws[:, k : k + kw]
+                mean_diag_w = float(self._W_sparse.diagonal().mean())
+                mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+                wx_idx = self._wx_column_indices
+                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
+                indirect_samples = total_samples - direct_samples
+
+        return direct_samples, indirect_samples, total_samples
+
     def __init__(self, *args, model: int = 0, **kwargs):
         if model == 1:
             raise ValueError(
@@ -201,6 +274,50 @@ class _DynamicPanelMixin:
 
 
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_test"],
+            ).bayesian_panel_lm_lag_test(m),
+            "Panel-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_test"],
+            ).bayesian_panel_lm_error_test(m),
+            "Panel-LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_sdm_joint_test"],
+            ).bayesian_panel_lm_sdm_joint_test(m),
+            "Panel-LM-SDM-Joint",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_slx_error_joint_test"],
+            ).bayesian_panel_lm_slx_error_joint_test(m),
+            "Panel-LM-SLX-Error-Joint",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_lag_test"],
+            ).bayesian_panel_robust_lm_lag_test(m),
+            "Panel-Robust-LM-Lag",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_error_test"],
+            ).bayesian_panel_robust_lm_error_test(m),
+            "Panel-Robust-LM-Error",
+        ),
+    ]
     """Dynamic panel regression without contemporaneous spatial dependence.
 
     Implements
@@ -347,81 +464,18 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "feature_names": names,
         }
 
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        idata = self.inference_data
-
-        if isinstance(self, SARPanelDynamic):
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
-            mean_row_sum = self._batch_mean_row_sum(rho_draws)
-            ni = self._nonintercept_indices
-            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
-            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
-            indirect_samples = total_samples - direct_samples
-
-        elif isinstance(self, SEMPanelDynamic):
-            beta_draws = _get_posterior_draws(idata, "beta")
-            ni = self._nonintercept_indices
-            direct_samples = beta_draws[:, ni].copy()
-            indirect_samples = np.zeros_like(direct_samples)
-            total_samples = direct_samples.copy()
-
-        elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
-            self._prepare_dynamic_design()
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
-            beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
-            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
-            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
-            wx_idx = self._wx_column_indices
-            direct_samples = (
-                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_diag_MW[:, None] * beta2_draws
-            )
-            total_samples = (
-                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_row_sum_MW[:, None] * beta2_draws
-            )
-            indirect_samples = total_samples - direct_samples
-
-        else:
-            # SLX/SDEM/DLM-like: no rho, effects are linear in beta
-            self._prepare_dynamic_design()
-            beta_draws = _get_posterior_draws(idata, "beta")
-            k = self._X_dyn.shape[1]
-            kw = self._WX_dyn.shape[1]
-            beta1_draws = beta_draws[:, :k]
-
-            if kw == 0:
-                # No WX columns: direct = beta, indirect = 0, total = beta
-                direct_samples = beta1_draws.copy()
-                indirect_samples = np.zeros_like(beta1_draws)
-                total_samples = beta1_draws.copy()
-            else:
-                beta2_draws = beta_draws[:, k : k + kw]
-                mean_diag_w = float(self._W_sparse.diagonal().mean())
-                mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-                wx_idx = self._wx_column_indices
-                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
-                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
-                indirect_samples = total_samples - direct_samples
-
-        return direct_samples, indirect_samples, total_samples
 
 
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_sdm_test"],
+            ).bayesian_panel_lm_error_sdm_test(m),
+            "Panel-LM-Error-SDM",
+        ),
+    ]
     """Dynamic restricted spatial Durbin panel regression.
 
     Implements
@@ -576,81 +630,18 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "feature_names": names,
         }
 
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        idata = self.inference_data
-
-        if isinstance(self, SARPanelDynamic):
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
-            mean_row_sum = self._batch_mean_row_sum(rho_draws)
-            ni = self._nonintercept_indices
-            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
-            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
-            indirect_samples = total_samples - direct_samples
-
-        elif isinstance(self, SEMPanelDynamic):
-            beta_draws = _get_posterior_draws(idata, "beta")
-            ni = self._nonintercept_indices
-            direct_samples = beta_draws[:, ni].copy()
-            indirect_samples = np.zeros_like(direct_samples)
-            total_samples = direct_samples.copy()
-
-        elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
-            self._prepare_dynamic_design()
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
-            beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
-            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
-            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
-            wx_idx = self._wx_column_indices
-            direct_samples = (
-                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_diag_MW[:, None] * beta2_draws
-            )
-            total_samples = (
-                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_row_sum_MW[:, None] * beta2_draws
-            )
-            indirect_samples = total_samples - direct_samples
-
-        else:
-            # SLX/SDEM/DLM-like: no rho, effects are linear in beta
-            self._prepare_dynamic_design()
-            beta_draws = _get_posterior_draws(idata, "beta")
-            k = self._X_dyn.shape[1]
-            kw = self._WX_dyn.shape[1]
-            beta1_draws = beta_draws[:, :k]
-
-            if kw == 0:
-                # No WX columns: direct = beta, indirect = 0, total = beta
-                direct_samples = beta1_draws.copy()
-                indirect_samples = np.zeros_like(beta1_draws)
-                total_samples = beta1_draws.copy()
-            else:
-                beta2_draws = beta_draws[:, k : k + kw]
-                mean_diag_w = float(self._W_sparse.diagonal().mean())
-                mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-                wx_idx = self._wx_column_indices
-                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
-                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
-                indirect_samples = total_samples - direct_samples
-
-        return direct_samples, indirect_samples, total_samples
 
 
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_sdm_test"],
+            ).bayesian_panel_lm_error_sdm_test(m),
+            "Panel-LM-Error-SDM",
+        ),
+    ]
     """Dynamic unrestricted spatial Durbin panel regression.
 
     Implements
@@ -867,81 +858,32 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "feature_names": names,
         }
 
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        idata = self.inference_data
-
-        if isinstance(self, SARPanelDynamic):
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
-            mean_row_sum = self._batch_mean_row_sum(rho_draws)
-            ni = self._nonintercept_indices
-            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
-            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
-            indirect_samples = total_samples - direct_samples
-
-        elif isinstance(self, SEMPanelDynamic):
-            beta_draws = _get_posterior_draws(idata, "beta")
-            ni = self._nonintercept_indices
-            direct_samples = beta_draws[:, ni].copy()
-            indirect_samples = np.zeros_like(direct_samples)
-            total_samples = direct_samples.copy()
-
-        elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
-            self._prepare_dynamic_design()
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
-            beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
-            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
-            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
-            wx_idx = self._wx_column_indices
-            direct_samples = (
-                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_diag_MW[:, None] * beta2_draws
-            )
-            total_samples = (
-                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_row_sum_MW[:, None] * beta2_draws
-            )
-            indirect_samples = total_samples - direct_samples
-
-        else:
-            # SLX/SDEM/DLM-like: no rho, effects are linear in beta
-            self._prepare_dynamic_design()
-            beta_draws = _get_posterior_draws(idata, "beta")
-            k = self._X_dyn.shape[1]
-            kw = self._WX_dyn.shape[1]
-            beta1_draws = beta_draws[:, :k]
-
-            if kw == 0:
-                # No WX columns: direct = beta, indirect = 0, total = beta
-                direct_samples = beta1_draws.copy()
-                indirect_samples = np.zeros_like(beta1_draws)
-                total_samples = beta1_draws.copy()
-            else:
-                beta2_draws = beta_draws[:, k : k + kw]
-                mean_diag_w = float(self._W_sparse.diagonal().mean())
-                mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-                wx_idx = self._wx_column_indices
-                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
-                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
-                indirect_samples = total_samples - direct_samples
-
-        return direct_samples, indirect_samples, total_samples
 
 
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_error_test"],
+            ).bayesian_panel_lm_error_test(m),
+            "Panel-LM-Error",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_wx_test"],
+            ).bayesian_panel_lm_wx_test(m),
+            "Panel-LM-WX",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_wx_test"],
+            ).bayesian_panel_robust_lm_wx_test(m),
+            "Panel-Robust-LM-WX",
+        ),
+    ]
     """Dynamic spatial-lag panel regression.
 
     Implements
@@ -1109,81 +1051,25 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        idata = self.inference_data
-
-        if isinstance(self, SARPanelDynamic):
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
-            mean_row_sum = self._batch_mean_row_sum(rho_draws)
-            ni = self._nonintercept_indices
-            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
-            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
-            indirect_samples = total_samples - direct_samples
-
-        elif isinstance(self, SEMPanelDynamic):
-            beta_draws = _get_posterior_draws(idata, "beta")
-            ni = self._nonintercept_indices
-            direct_samples = beta_draws[:, ni].copy()
-            indirect_samples = np.zeros_like(direct_samples)
-            total_samples = direct_samples.copy()
-
-        elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
-            self._prepare_dynamic_design()
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
-            beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
-            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
-            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
-            wx_idx = self._wx_column_indices
-            direct_samples = (
-                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_diag_MW[:, None] * beta2_draws
-            )
-            total_samples = (
-                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_row_sum_MW[:, None] * beta2_draws
-            )
-            indirect_samples = total_samples - direct_samples
-
-        else:
-            # SLX/SDEM/DLM-like: no rho, effects are linear in beta
-            self._prepare_dynamic_design()
-            beta_draws = _get_posterior_draws(idata, "beta")
-            k = self._X_dyn.shape[1]
-            kw = self._WX_dyn.shape[1]
-            beta1_draws = beta_draws[:, :k]
-
-            if kw == 0:
-                # No WX columns: direct = beta, indirect = 0, total = beta
-                direct_samples = beta1_draws.copy()
-                indirect_samples = np.zeros_like(beta1_draws)
-                total_samples = beta1_draws.copy()
-            else:
-                beta2_draws = beta_draws[:, k : k + kw]
-                mean_diag_w = float(self._W_sparse.diagonal().mean())
-                mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-                wx_idx = self._wx_column_indices
-                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
-                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
-                indirect_samples = total_samples - direct_samples
-
-        return direct_samples, indirect_samples, total_samples
 
 
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_sdem_test"],
+            ).bayesian_panel_lm_lag_sdem_test(m),
+            "Panel-LM-Lag-SDEM",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_lag_sdem_test"],
+            ).bayesian_panel_robust_lm_lag_sdem_test(m),
+            "Panel-Robust-LM-Lag-SDEM",
+        ),
+    ]
     """Dynamic spatial-error panel regression.
 
     Implements
@@ -1457,81 +1343,18 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "feature_names": self._nonintercept_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        idata = self.inference_data
-
-        if isinstance(self, SARPanelDynamic):
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
-            mean_row_sum = self._batch_mean_row_sum(rho_draws)
-            ni = self._nonintercept_indices
-            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
-            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
-            indirect_samples = total_samples - direct_samples
-
-        elif isinstance(self, SEMPanelDynamic):
-            beta_draws = _get_posterior_draws(idata, "beta")
-            ni = self._nonintercept_indices
-            direct_samples = beta_draws[:, ni].copy()
-            indirect_samples = np.zeros_like(direct_samples)
-            total_samples = direct_samples.copy()
-
-        elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
-            self._prepare_dynamic_design()
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
-            beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
-            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
-            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
-            wx_idx = self._wx_column_indices
-            direct_samples = (
-                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_diag_MW[:, None] * beta2_draws
-            )
-            total_samples = (
-                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_row_sum_MW[:, None] * beta2_draws
-            )
-            indirect_samples = total_samples - direct_samples
-
-        else:
-            # SLX/SDEM/DLM-like: no rho, effects are linear in beta
-            self._prepare_dynamic_design()
-            beta_draws = _get_posterior_draws(idata, "beta")
-            k = self._X_dyn.shape[1]
-            kw = self._WX_dyn.shape[1]
-            beta1_draws = beta_draws[:, :k]
-
-            if kw == 0:
-                # No WX columns: direct = beta, indirect = 0, total = beta
-                direct_samples = beta1_draws.copy()
-                indirect_samples = np.zeros_like(beta1_draws)
-                total_samples = beta1_draws.copy()
-            else:
-                beta2_draws = beta_draws[:, k : k + kw]
-                mean_diag_w = float(self._W_sparse.diagonal().mean())
-                mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-                wx_idx = self._wx_column_indices
-                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
-                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
-                indirect_samples = total_samples - direct_samples
-
-        return direct_samples, indirect_samples, total_samples
 
 
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_lm_lag_sdem_test"],
+            ).bayesian_panel_lm_lag_sdem_test(m),
+            "Panel-LM-Lag-SDEM",
+        ),
+    ]
     """Dynamic spatial Durbin error panel regression.
 
     Implements
@@ -1827,96 +1650,25 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "feature_names": names,
         }
 
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        idata = self.inference_data
-
-        if isinstance(self, SARPanelDynamic):
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
-            mean_row_sum = self._batch_mean_row_sum(rho_draws)
-            ni = self._nonintercept_indices
-            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
-            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
-            indirect_samples = total_samples - direct_samples
-
-        elif isinstance(self, SEMPanelDynamic):
-            # SEM: λ does not affect impact measures; effects are just beta
-            beta_draws = _get_posterior_draws(idata, "beta")
-            direct_samples = beta_draws.copy()
-            indirect_samples = np.zeros_like(beta_draws)
-            total_samples = beta_draws.copy()
-
-        elif isinstance(self, SDEMPanelDynamic):
-            # SDEM: λ does not affect impact measures; effects match SLX form
-            self._prepare_dynamic_design()
-            beta_draws = _get_posterior_draws(idata, "beta")
-            k = self._X_dyn.shape[1]
-            kw = self._WX_dyn.shape[1]
-            beta1_draws = beta_draws[:, :k]
-            beta2_draws = beta_draws[:, k : k + kw]
-            mean_diag_w = float(self._W_sparse.diagonal().mean())
-            mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-            wx_idx = self._wx_column_indices
-            direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
-            total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
-            indirect_samples = total_samples - direct_samples
-
-        elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
-            self._prepare_dynamic_design()
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
-            beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
-            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
-            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
-            wx_idx = self._wx_column_indices
-            direct_samples = (
-                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_diag_MW[:, None] * beta2_draws
-            )
-            total_samples = (
-                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_row_sum_MW[:, None] * beta2_draws
-            )
-            indirect_samples = total_samples - direct_samples
-
-        else:
-            # SLX/SDEM/DLM-like: no rho, effects are linear in beta
-            self._prepare_dynamic_design()
-            beta_draws = _get_posterior_draws(idata, "beta")
-            k = self._X_dyn.shape[1]
-            kw = self._WX_dyn.shape[1]
-            beta1_draws = beta_draws[:, :k]
-
-            if kw == 0:
-                # No WX columns: direct = beta, indirect = 0, total = beta
-                direct_samples = beta1_draws.copy()
-                indirect_samples = np.zeros_like(beta1_draws)
-                total_samples = beta1_draws.copy()
-            else:
-                beta2_draws = beta_draws[:, k : k + kw]
-                mean_diag_w = float(self._W_sparse.diagonal().mean())
-                mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-                wx_idx = self._wx_column_indices
-                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
-                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
-                indirect_samples = total_samples - direct_samples
-
-        return direct_samples, indirect_samples, total_samples
 
 
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _spatial_diagnostics_tests = [
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_lag_sdm_test"],
+            ).bayesian_panel_robust_lm_lag_sdm_test(m),
+            "Panel-Robust-LM-Lag-SDM",
+        ),
+        (
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_panel_robust_lm_error_sdem_test"],
+            ).bayesian_panel_robust_lm_error_sdem_test(m),
+            "Panel-Robust-LM-Error-SDEM",
+        ),
+    ]
     """Dynamic SLX panel regression.
 
     Implements
@@ -2056,75 +1808,3 @@ class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             "feature_names": self._wx_feature_names,
         }
 
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        idata = self.inference_data
-
-        if isinstance(self, SARPanelDynamic):
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
-            mean_row_sum = self._batch_mean_row_sum(rho_draws)
-            ni = self._nonintercept_indices
-            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
-            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
-            indirect_samples = total_samples - direct_samples
-
-        elif isinstance(self, SEMPanelDynamic):
-            beta_draws = _get_posterior_draws(idata, "beta")
-            ni = self._nonintercept_indices
-            direct_samples = beta_draws[:, ni].copy()
-            indirect_samples = np.zeros_like(direct_samples)
-            total_samples = direct_samples.copy()
-
-        elif isinstance(self, (SDMRPanelDynamic, SDMUPanelDynamic)):
-            self._prepare_dynamic_design()
-            rho_draws = _get_posterior_draws(idata, "rho")
-            beta_draws = _get_posterior_draws(idata, "beta")
-            beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
-            beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs.real.astype(np.float64)
-            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
-            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
-            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
-            wx_idx = self._wx_column_indices
-            direct_samples = (
-                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_diag_MW[:, None] * beta2_draws
-            )
-            total_samples = (
-                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
-                + mean_row_sum_MW[:, None] * beta2_draws
-            )
-            indirect_samples = total_samples - direct_samples
-
-        else:
-            # SLX/SDEM/DLM-like: no rho, effects are linear in beta
-            self._prepare_dynamic_design()
-            beta_draws = _get_posterior_draws(idata, "beta")
-            k = self._X_dyn.shape[1]
-            kw = self._WX_dyn.shape[1]
-            beta1_draws = beta_draws[:, :k]
-
-            if kw == 0:
-                # No WX columns: direct = beta, indirect = 0, total = beta
-                direct_samples = beta1_draws.copy()
-                indirect_samples = np.zeros_like(beta1_draws)
-                total_samples = beta1_draws.copy()
-            else:
-                beta2_draws = beta_draws[:, k : k + kw]
-                mean_diag_w = float(self._W_sparse.diagonal().mean())
-                mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-                wx_idx = self._wx_column_indices
-                direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
-                total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
-                indirect_samples = total_samples - direct_samples
-
-        return direct_samples, indirect_samples, total_samples

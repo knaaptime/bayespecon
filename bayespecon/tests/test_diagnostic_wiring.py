@@ -115,6 +115,7 @@ EXPECTED_REGISTRIES = {
         "Robust-LM-Flow-Dest",
         "Robust-LM-Flow-Orig",
         "Robust-LM-Flow-Network",
+        "LM-Flow-Intra",
     ],
     OLSFlowPanel: [
         "Panel-LM-Flow-Dest",

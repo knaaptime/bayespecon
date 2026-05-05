@@ -186,7 +186,7 @@ class SpatialProbit:
         elif hasattr(W, "sparse") and hasattr(W, "transform"):
             raise TypeError(
                 "W appears to be a legacy libpysal.weights.W object. "
-                "Convert it to a libpysal.graph.Graph first: "
+                "Convert it to a libpysysal.graph.Graph first: "
                 "Graph.from_W(w), or pass w.sparse (the scipy sparse matrix) directly."
             )
         else:
@@ -378,3 +378,131 @@ class SpatialProbit:
         self._require_fit()
         p = self._idata.posterior["p"].mean(("chain", "draw")).to_numpy()
         return np.asarray(p, dtype=float)
+
+    def spatial_effects(
+        self,
+        return_posterior_samples: bool = False,
+    ) -> Union[pd.DataFrame, tuple[pd.DataFrame, dict[str, np.ndarray]]]:
+        r"""Compute average marginal effects (AME) for the spatial probit model.
+
+        For the spatial probit with SAR regional random effects
+
+        .. math::
+
+            z_i = x_i'\beta + a_{r(i)} + \varepsilon_i,
+            \quad a = \rho W a + u,
+
+        the marginal effect of covariate :math:`k` on the choice
+        probability is
+
+        .. math::
+
+            \frac{\partial P(y_i=1)}{\partial x_{ik}}
+            = \phi(x_i'\beta + a_{r(i)}) \, \beta_k,
+
+        where :math:`\phi(\cdot)` is the standard-normal PDF.
+
+        Because the spatial autoregression enters only through the
+        unobserved regional effects :math:`a` (not through a spatial
+        multiplier on :math:`x`), there is **no indirect effect** of
+        :math:`x_j` on :math:`y_i` for :math:`i \neq j`.  The
+        ``indirect`` column is therefore zero and ``total`` equals
+        ``direct``.
+
+        Parameters
+        ----------
+        return_posterior_samples : bool, default False
+            If ``True``, also return a dict of posterior draws for
+            each effect type.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per non-intercept covariate with columns
+            ``direct``, ``direct_ci_lower``, ``direct_ci_upper``,
+            ``direct_pvalue``, ``indirect_*``, ``total_*``.
+        dict, optional
+            Only returned when ``return_posterior_samples=True``.
+            Keys: ``direct_samples``, ``indirect_samples``,
+            ``total_samples``.
+        """
+        import scipy.stats as st
+
+        self._require_fit()
+        post = self._idata.posterior
+        beta_draws = post["beta"].stack(samples=("chain", "draw")).values.T
+        a_draws = post["a"].stack(samples=("chain", "draw")).values.T
+        n_draws = beta_draws.shape[0]
+
+        # Identify non-intercept columns
+        ni = [
+            i
+            for i, name in enumerate(self._feature_names)
+            if name not in ("Intercept", "1", "intercept")
+        ]
+        if not ni:
+            ni = list(range(len(self._feature_names)))
+        names = [self._feature_names[i] for i in ni]
+
+        n_obs = self._X.shape[0]
+        n_eff = len(ni)
+
+        direct_samples = np.empty((n_draws, n_eff), dtype=np.float64)
+
+        for g in range(n_draws):
+            beta_g = beta_draws[g]
+            a_g = a_draws[g]
+            # Linear predictor for each observation (using region-level a)
+            z_g = self._X @ beta_g + a_g[self._region_codes]
+            # Standard-normal PDF evaluated at z_g
+            pdf_g = st.norm.pdf(z_g)
+            # Average marginal effect per covariate
+            direct_samples[g] = np.mean(pdf_g[:, None] * self._X[:, ni], axis=0)
+
+        indirect_samples = np.zeros_like(direct_samples)
+        total_samples = direct_samples.copy()
+
+        def _summarise(samples: np.ndarray) -> dict[str, np.ndarray]:
+            return {
+                "mean": np.mean(samples, axis=0),
+                "ci_lower": np.percentile(samples, 2.5, axis=0),
+                "ci_upper": np.percentile(samples, 97.5, axis=0),
+                "pvalue": 2.0
+                * np.minimum(
+                    np.mean(samples > 0, axis=0),
+                    np.mean(samples < 0, axis=0),
+                ),
+            }
+
+        d = _summarise(direct_samples)
+        i = _summarise(indirect_samples)
+        t = _summarise(total_samples)
+
+        df = pd.DataFrame(
+            {
+                "direct": d["mean"],
+                "direct_ci_lower": d["ci_lower"],
+                "direct_ci_upper": d["ci_upper"],
+                "direct_pvalue": d["pvalue"],
+                "indirect": i["mean"],
+                "indirect_ci_lower": i["ci_lower"],
+                "indirect_ci_upper": i["ci_upper"],
+                "indirect_pvalue": i["pvalue"],
+                "total": t["mean"],
+                "total_ci_lower": t["ci_lower"],
+                "total_ci_upper": t["ci_upper"],
+                "total_pvalue": t["pvalue"],
+            },
+            index=names,
+        )
+        df.attrs["model_type"] = self.__class__.__name__
+        df.attrs["n_draws"] = n_draws
+
+        if return_posterior_samples:
+            samples_dict = {
+                "direct_samples": direct_samples,
+                "indirect_samples": indirect_samples,
+                "total_samples": total_samples,
+            }
+            return df, samples_dict
+        return df

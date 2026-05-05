@@ -1,3 +1,10 @@
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple
+import arviz as az
+import numpy as np
+import scipy.sparse as sp
+from scipy import stats as sp_stats
+
 def bayesian_panel_lm_wx_sem_test(
     model,
 ) -> "BayesianLMTestResult":
@@ -162,27 +169,6 @@ def bayesian_lm_wx_sem_test(
         details={"k_wx": k_wx},
     )
 
-
-"""
-Bayesian LM-type diagnostics for spatial models :cite:p:`dogan2021BayesianRobust`.
-
-Implements Bayesian LM tests for omitted spatial lag (SAR) and error (SEM)
-models, as well as SDM/SDEM variant tests (WX, joint, and robust),
-following the formulas in :cite:t:`dogan2021BayesianRobust` and :cite:t:`koley2024UseNot`.
-
-Panel variants follow :cite:t:`anselin2008SpatialPanel` and :cite:t:`elhorst2014SpatialEconometrics` for the
-information-matrix adjustment (T multiplier, Wb'MWb term).
-"""
-
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
-
-import arviz as az
-import numpy as np
-import scipy.sparse as sp
-from scipy import stats as sp_stats
-
-
 def _finalize_lm(
     LM: np.ndarray,
     *,
@@ -262,8 +248,8 @@ def _mx_quadratic(X: np.ndarray, v: np.ndarray) -> float:
     matrix.  Used in the concentrated information-matrix blocks of the
     Bayesian LM-Lag / LM-WX / SDM-joint tests
     (:cite:p:`anselin1996SimpleDiagnostic`, eq. 13;
-    :cite:p:`koley2024UseNot`, Section 3) where the OLS coefficient
     :math:`\beta` has been concentrated out via Schur complement.
+    :cite:p:`koley2024UseNot`, Section 3) where the OLS coefficient
     """
     Xv = X.T @ v
     XtX = X.T @ X
@@ -971,7 +957,14 @@ def _info_matrix_blocks_sdm(
     k_wx = WX.shape[1]
 
     # T_WW = tr(W'W + W²) = ||W||_F^2 + sum(W ⊙ W')
+    # Callers should pass the pre-computed model._T_ww to avoid redundant work.
     if T_ww is None:
+        import warnings
+        warnings.warn(
+            "T_ww not provided to _info_matrix_blocks_sdm; computing from W_sparse. "
+            "Pass model._T_ww for efficiency.",
+            stacklevel=2,
+        )
         T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
 
     # V_{γγ} = σ² · (WX)' M_X (WX)  -- M_X-projected, raw-score scale.
@@ -1041,6 +1034,12 @@ def _info_matrix_blocks_sdem(
         ``k_wx``), ``J_gamma_gamma`` (``k_wx`` x ``k_wx``), ``T_ww``.
     """
     if T_ww is None:
+        import warnings
+        warnings.warn(
+            "T_ww not provided to _info_matrix_blocks_sdem; computing from W_sparse. "
+            "Pass model._T_ww for efficiency.",
+            stacklevel=2,
+        )
         T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
 
     k_wx = WX.shape[1]

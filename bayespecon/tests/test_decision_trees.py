@@ -396,3 +396,80 @@ class TestGetPanelSpec:
         tree = get_panel_spec("OLSPanelFE")
         result, path = evaluate(tree, sig_lookup=lambda _: False)
         assert "OLS" in result
+
+
+class TestGetPanelDynamicSpec:
+    """Dynamic panel decision trees reuse static panel structure with 'Dynamic' suffix."""
+
+    def test_ols_dynamic_spec(self):
+        tree = get_panel_spec("OLSPanelDynamic")
+        assert isinstance(tree, TreeNode)
+
+    def test_sar_dynamic_spec(self):
+        tree = get_panel_spec("SARPanelDynamic")
+        assert isinstance(tree, TreeNode)
+
+    def test_sem_dynamic_spec(self):
+        tree = get_panel_spec("SEMPanelDynamic")
+        assert isinstance(tree, TreeNode)
+
+    def test_slx_dynamic_spec(self):
+        tree = get_panel_spec("SLXPanelDynamic")
+        assert isinstance(tree, TreeNode)
+
+    def test_sdm_dynamic_spec(self):
+        tree = get_panel_spec("SDMPanelDynamic")
+        assert isinstance(tree, TreeNode)
+
+    def test_sdem_dynamic_spec(self):
+        tree = get_panel_spec("SDEMPanelDynamic")
+        assert isinstance(tree, TreeNode)
+
+    def test_dynamic_ols_all_sig(self):
+        tree = get_panel_spec("OLSPanelDynamic")
+        result, path = evaluate(
+            tree,
+            sig_lookup=lambda _: True,
+            predicate_lookup={
+                "panel_robust_lag_pval_le_error_pval": lambda: True,
+                "panel_lag_pval_le_error_pval": lambda: True,
+            },
+        )
+        assert result == "SARPanelDynamic"
+
+    def test_dynamic_ols_none_sig(self):
+        tree = get_panel_spec("OLSPanelDynamic")
+        result, path = evaluate(tree, sig_lookup=lambda _: False)
+        assert "OLS" in result and "Dynamic" in result
+
+
+class TestGetPanelTobitSpec:
+    """Panel Tobit decision trees mirror cross-sectional Tobit specs."""
+
+    def test_sar_tobit_spec(self):
+        tree = get_panel_spec("SARPanelTobit")
+        assert isinstance(tree, TreeNode)
+
+    def test_sem_tobit_spec(self):
+        tree = get_panel_spec("SEMPanelTobit")
+        assert isinstance(tree, TreeNode)
+
+    def test_sar_tobit_all_sig(self):
+        tree = get_panel_spec("SARPanelTobit")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        assert result == "SDMPanelTobit"
+
+    def test_sar_tobit_none_sig(self):
+        tree = get_panel_spec("SARPanelTobit")
+        result, path = evaluate(tree, sig_lookup=lambda _: False)
+        assert result == "SARPanelTobit"
+
+    def test_sem_tobit_all_sig(self):
+        tree = get_panel_spec("SEMPanelTobit")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        assert result == "SDEMPanelTobit"
+
+    def test_sem_tobit_none_sig(self):
+        tree = get_panel_spec("SEMPanelTobit")
+        result, path = evaluate(tree, sig_lookup=lambda _: False)
+        assert result == "SEMPanelTobit"

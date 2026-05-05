@@ -208,6 +208,11 @@ class SARNegativeBinomial(SpatialModel):
         average off-diagonal sum, and their sum respectively. This is more
         expensive than the log-mean-scale formula because it requires the
         diagonal of the spatial multiplier for each posterior draw.
+
+        This implementation uses the cached eigendecomposition
+        (:attr:`_W_eigs_full`, :attr:`_V_full`) to avoid per-draw sparse LU
+        factorisation, reducing complexity from :math:`O(n^3)` per draw to
+        :math:`O(n^2)` per draw.
         """
         from ..diagnostics.bayesian_lmtests import _get_posterior_draws
 
@@ -223,27 +228,43 @@ class SARNegativeBinomial(SpatialModel):
         direct_samples = np.empty((n_draws, n_effects), dtype=np.float64)
         total_samples = np.empty((n_draws, n_effects), dtype=np.float64)
 
-        identity = np.eye(n, dtype=np.float64)
-        ones = np.ones(n, dtype=np.float64)
-        eye_sparse = sp.eye(n, format="csc", dtype=np.float64)
+        # Ensure eigendecomposition is available (may not be cached for row-std W)
+        if not hasattr(self, "_W_eigs_full"):
+            W_dense = self._W_dense
+            eigs, V = np.linalg.eig(W_dense)
+            self._W_eigs_full = eigs.real.astype(np.float64)
+            self._V_full = V.real.astype(np.float64)
+
+        # Cached eigendecomposition: W = V @ diag(lambda) @ V^{-1}
+        eigs = self._W_eigs_full  # (n,)
+        V = self._V_full            # (n, n)
+        Vt = V.T                    # (n, n)
+        V_col_sums = V.sum(axis=0)  # (n,)
+        V_sq = V ** 2               # (n, n)
+
+        # Precompute V^T @ X  (n, k) — reused for every draw
+        VtX = Vt @ self._X          # (n, k)
 
         for draw_idx, (rho, beta) in enumerate(
             zip(rho_draws, beta_draws, strict=False)
         ):
-            system = eye_sparse - float(rho) * self._W_sparse.tocsc()
-            lu = spla.splu(system)
+            inv_eigs = 1.0 / (1.0 - float(rho) * eigs)      # (n,)
 
-            xbeta = self._X @ beta
-            eta = lu.solve(np.asarray(xbeta, dtype=np.float64))
+            # eta = V @ (inv_eigs * (V^T @ X @ beta))
+            coeff = inv_eigs * (VtX @ beta)                  # (n,)
+            eta = V @ coeff                                  # (n,)
             mu = np.exp(np.clip(eta, -50.0, 50.0))
 
-            multiplier_diag = np.diag(lu.solve(identity))
+            # diag((I - rho W)^{-1}) = sum_j V_{ij}^2 / (1 - rho lambda_j)
+            multiplier_diag = V_sq @ inv_eigs                # (n,)
+
             if self._is_row_std:
                 multiplier_row_sums = np.full(
                     n, 1.0 / (1.0 - float(rho)), dtype=np.float64
                 )
             else:
-                multiplier_row_sums = lu.solve(ones)
+                # row_sum_i = sum_j V_{ij} * col_sum_j / (1 - rho lambda_j)
+                multiplier_row_sums = V @ (V_col_sums * inv_eigs)  # (n,)
 
             direct_base = float(np.mean(mu * multiplier_diag))
             total_base = float(np.mean(mu * multiplier_row_sums))

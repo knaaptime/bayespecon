@@ -957,15 +957,91 @@ _PANEL_SPECS: dict[str, Callable[[str], TreeNode]] = {
     "SDEMPanel": _panel_sdem_spec,
 }
 
+# Dynamic panels reuse the same tree structure as static panels;
+# the only difference is the leaf suffix ("Dynamic" instead of "FE"/"RE").
+_PANEL_DYNAMIC_SPECS: dict[str, Callable[[str], TreeNode]] = {
+    "OLSPanel": _panel_ols_spec,
+    "SARPanel": _panel_sar_spec,
+    "SEMPanel": _panel_sem_spec,
+    "SLXPanel": _panel_slx_spec,
+    "SDMPanel": _panel_sdm_spec,
+    "SDEMPanel": _panel_sdem_spec,
+}
+
+# Panel Tobit specs mirror the cross-sectional Tobit specs but with
+# "PanelTobit" leaf suffix.
+def _panel_tobit_sar_spec() -> TreeNode:
+    return TreeNode(
+        kind="test",
+        name="Panel-LM-Error",
+        if_true=TreeNode(
+            kind="test",
+            name="Panel-Robust-LM-WX",
+            if_true="SDMPanelTobit",
+            if_false="SARARPanelTobit",
+        ),
+        if_false=TreeNode(
+            kind="test",
+            name="Panel-Robust-LM-WX",
+            if_true="SDMPanelTobit",
+            if_false=TreeNode(
+                kind="test",
+                name="Panel-LM-WX",
+                if_true="SDMPanelTobit",
+                if_false="SARPanelTobit",
+            ),
+        ),
+    )
+
+
+def _panel_tobit_sem_spec() -> TreeNode:
+    return TreeNode(
+        kind="test",
+        name="Panel-LM-Lag",
+        if_true=TreeNode(
+            kind="test",
+            name="Panel-LM-WX",
+            if_true="SDEMPanelTobit",
+            if_false="SARARPanelTobit",
+        ),
+        if_false=TreeNode(
+            kind="test",
+            name="Panel-LM-WX",
+            if_true="SDEMPanelTobit",
+            if_false="SEMPanelTobit",
+        ),
+    )
+
+
+_PANEL_TOBIT_SPECS: dict[str, Callable[[], TreeNode]] = {
+    "SARPanelTobit": _panel_tobit_sar_spec,
+    "SEMPanelTobit": _panel_tobit_sem_spec,
+}
+
 
 def get_panel_spec(model_type: str) -> TreeNode | str:
     """Return the panel decision tree for ``model_type``.
 
     The model type is expected to be ``<Family>Panel<Suffix>`` where
-    ``Suffix`` is ``FE`` or ``RE``. Falls back to a leaf if not found.
+    ``Suffix`` is ``FE``, ``RE``, ``Dynamic``, or ``Tobit``.
+    Falls back to a leaf if not found.
     """
-    suffix = "FE" if "FE" in model_type else "RE" if "RE" in model_type else ""
-    for prefix, factory in _PANEL_SPECS.items():
+    # Panel Tobit (e.g. SARPanelTobit, SEMPanelTobit)
+    if "Tobit" in model_type:
+        factory = _PANEL_TOBIT_SPECS.get(model_type)
+        if factory is not None:
+            return factory()
+        return model_type
+
+    # Dynamic panels (e.g. OLSPanelDynamic, SARPanelDynamic)
+    if "Dynamic" in model_type:
+        suffix = "Dynamic"
+        specs = _PANEL_DYNAMIC_SPECS
+    else:
+        suffix = "FE" if "FE" in model_type else "RE" if "RE" in model_type else ""
+        specs = _PANEL_SPECS
+
+    for prefix, factory in specs.items():
         if model_type.startswith(prefix):
             return factory(suffix)
     return model_type
