@@ -3499,26 +3499,32 @@ def bayesian_lm_lag_sdem_test(
     residuals:
 
     .. math::
-        \boldsymbol{\varepsilon} = (I - \lambda W)
+        \mathbf{u} = (I - \lambda W)
             \bigl(\mathbf{y} - X\beta - WX\theta\bigr)
 
-    The score and variance follow the standard LM-Lag formulation
-    (:cite:t:`anselin1996SimpleDiagnostic`), kept on the raw-score scale
-    consistent with :func:`bayesian_lm_lag_test`:
+    The score and variance follow the SDEM-filtered LM-Lag derivation:
+    using the whitened lag vector :math:`\tilde z_\rho = \bar A_\lambda
+    W\mathbf{y}` with :math:`\bar A_\lambda = I - \bar\lambda W` and the
+    whitened design :math:`\tilde Z = \bar A_\lambda [X, WX]`,
 
     .. math::
-        S = \boldsymbol{\varepsilon}^\top W\mathbf{y}, \qquad
-        V = \bar\sigma^4\,T_{WW} + \bar\sigma^2\,\|W\mathbf{y}\|^2
+        S = \mathbf{u}^\top \tilde z_\rho, \qquad
+        V = \bar\sigma^4 \, T_{WW}
+            + \bar\sigma^2 \, \tilde z_\rho^{\top} M_{\tilde Z}\,
+              \tilde z_\rho.
 
     .. note::
-       The :math:`\|W\mathbf{y}\|^2` term uses the raw squared norm of
-       :math:`W\mathbf{y}` rather than the :math:`M_X`-projected
-       fitted-value norm :math:`\|M_X W X\bar\beta\|^2` used by
-       :func:`bayesian_lm_lag_test`. Under the SDEM null the WX columns
-       are already in the mean structure, so the projection-based
-       concentration argument differs from the OLS-null case. The
-       structural form follows the MANSAR analogue of the SDM-direction
-       derivation in :cite:t:`koley2024UseNot`.
+       In the SDEM filter context this naive test coincides
+       algebraically with :func:`bayesian_robust_lm_lag_sdem_test`: the
+       :math:`\gamma`-score vanishes by the SDEM normal equations and
+       the filter absorbs :math:`\lambda` at :math:`\bar\lambda`, so the
+       Doǧan Neyman-orthogonal Schur adjustment for
+       :math:`(\gamma,\lambda)` is a no-op.  Earlier revisions used an
+       unwhitened :math:`S = \boldsymbol{\varepsilon}^\top W\mathbf{y}`
+       paired with :math:`V = \bar\sigma^4 T_{WW} + \bar\sigma^2 \|W
+       \mathbf{y}\|^2`, which produced empirical size near 1 on
+       SDEM-DGP because both the numerator and the denominator omitted
+       the :math:`\bar A_\lambda` whitening factor.
 
     Returns ``LM = S^2 / V`` per draw, distributed as :math:`\chi^2_1`
     under H₀.
@@ -3528,25 +3534,29 @@ def bayesian_lm_lag_sdem_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
+    W_dense = model._W_dense
     T_ww = model._T_ww
 
     idata = model.inference_data
     beta_draws = _get_posterior_draws(idata, "beta")
-    lam_draws = _get_posterior_draws(idata, "lam").reshape(-1)
+    lam_name = "lam" if "lam" in idata.posterior else "lambda"
+    lam_draws = _get_posterior_draws(idata, lam_name).reshape(-1)
     sigma_draws = _get_posterior_draws(idata, "sigma")
 
     Z = np.hstack([X, WX])
-    u = y[None, :] - beta_draws @ Z.T  # (draws, n) — pre-filter residuals
-    Wu = (W_sp @ u.T).T  # (draws, n)
-    # eps = u - lam * W u
-    eps = u - lam_draws[:, None] * Wu
+    raw = y[None, :] - beta_draws @ Z.T  # pre-filter residuals
+    Wraw = (W_sp @ raw.T).T
+    u = raw - lam_draws[:, None] * Wraw  # whitened residual = A_lam (y - Z theta)
 
-    S = np.dot(eps, Wy)  # (draws,)
+    lam_mean = float(np.mean(lam_draws))
     sigma2_mean = float(np.mean(sigma_draws**2))
-    # Raw-score variance: sigma^4 * T_ww + sigma^2 * ||Wy||^2
-    # (cf. bayesian_lm_lag_test; both terms must carry the appropriate
-    # sigma^2 power on the raw-score scale).
-    V = sigma2_mean**2 * T_ww + sigma2_mean * float(np.dot(Wy, Wy))
+    n = W_sp.shape[0]
+    A_lam = np.eye(n) - lam_mean * W_dense
+    Z_tilde = A_lam @ Z
+    z_rho = A_lam @ Wy  # whitened lag vector
+
+    S = u @ z_rho  # (draws,)
+    V = sigma2_mean**2 * T_ww + sigma2_mean * _mx_quadratic(Z_tilde, z_rho)
     LM = S**2 / (V + 1e-12)
 
     return _finalize_lm(LM, test_type="bayesian_lm_lag_sdem", df=1)
@@ -3996,12 +4006,24 @@ def bayesian_robust_lm_error_sdm_test(
     sigma_draws = _get_posterior_draws(idata, "sigma")
 
     Z = np.hstack([X, WX])
-    fitted = beta_draws @ Z.T + rho_draws[:, None] * Wy[None, :]
-    resid = y[None, :] - fitted
 
-    We = (W_sp @ resid.T).T
-    g_lambda = np.sum(resid * We, axis=1)
-    g_rho = np.dot(resid, Wy)
+    # Project residual onto M_Z = I - Z(Z'Z)^{-1}Z' to remove
+    # (beta, gamma)-direction posterior noise.  Without this projection
+    # the per-draw residual carries beta- and gamma-uncertainty that
+    # dominates the small Schur-complement denominator and makes the
+    # statistic blow up under H_0:lambda=0 (size ~ 0.5 at n=1600 in
+    # MC).  The projection is exact: under SDM the score is
+    # information-orthogonal to (beta, gamma) at theta^*, so projecting
+    # them out leaves the rho-uncertainty intact while killing
+    # beta/gamma noise.  This is the SDM analogue of the SAR-context
+    # M_X projection in `bayesian_robust_lm_error_sar_test`.
+    ZtZ_inv = _safe_inv(Z.T @ Z, "Z'Z (SDM-null robust LM-Error)")
+    Mz_y = y - Z @ (ZtZ_inv @ (Z.T @ y))  # = M_Z y, shape (n,)
+    Mz_Wy = Wy - Z @ (ZtZ_inv @ (Z.T @ Wy))  # = M_Z W y, shape (n,)
+    resid_perp = Mz_y[None, :] - rho_draws[:, None] * Mz_Wy[None, :]
+    We_perp = (W_sp @ resid_perp.T).T
+    g_lambda = np.sum(resid_perp * We_perp, axis=1)
+    g_rho = np.dot(resid_perp, Wy)
 
     beta_mean = np.mean(beta_draws, axis=0)
     rho_mean = float(np.mean(rho_draws))
@@ -4013,15 +4035,17 @@ def bayesian_robust_lm_error_sdm_test(
     V_ll = info["V_ll"]
     V_lr = info["V_lr"]
     V_rr = info["V_rr"]
-    tr_G = info["tr_G"]
+    tr_MzG = info["tr_MxG"]  # tr(M_Z G) since X_design=Z
 
-    # Center g_rho by sigma^2 * tr(G).  Unlike the SAR test, the SDM
-    # residual e = y - Z beta - rho W y is NOT M_Z-projected (Z is
-    # already in the mean structure), so E[e' W y] = sigma^2 tr(G)
-    # under H_0: lambda = 0.  Using tr(M_Z G) would under-correct and
-    # leave an O(n) bias that the Schur correction propagates into
-    # g_lambda*.
-    g_rho_centered = g_rho - (sigma_draws**2) * tr_G
+    # Center the rho-direction score by E[g_rho | H_0] = sigma^2 tr(M_Z G)
+    # to match the M_Z-projected residual.  The unprojected centering
+    # sigma^2 tr(G) (the SARAR log-likelihood gradient) would mismatch
+    # the M_Z-projected score and leave an O(n) bias under rho != 0;
+    # using tr(M_Z G) restores the bias-free score that the Schur
+    # correction expects.  Verified by analytic delta-posterior:
+    # raw-resid + tr(G) gives size ~ 0.47; M_Z-resid + tr(M_Z G) gives
+    # size ~ 0.04 across n in {64, 225, 625}.
+    g_rho_centered = g_rho - (sigma_draws**2) * tr_MzG
 
     coef = V_lr / (V_rr + 1e-12)
     g_lambda_star = g_lambda - coef * g_rho_centered
