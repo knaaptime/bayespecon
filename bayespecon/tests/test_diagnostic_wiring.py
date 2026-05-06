@@ -163,7 +163,10 @@ def test_flow_decision_tree_dispatch():
 
     # OLSFlow: joint sig -> SARFlow
     spec = _dt.get_flow_spec("OLSFlow")
-    sig_all = lambda name: name == "LM-Flow-Joint"
+
+    def sig_all(name):
+        return name == "LM-Flow-Joint"
+
     d, _ = _dt.evaluate(spec, sig_all)
     assert d == "SARFlow"
 

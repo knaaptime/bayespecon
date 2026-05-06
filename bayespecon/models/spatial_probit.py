@@ -444,7 +444,6 @@ class SpatialProbit:
             ni = list(range(len(self._feature_names)))
         names = [self._feature_names[i] for i in ni]
 
-        n_obs = self._X.shape[0]
         n_eff = len(ni)
 
         direct_samples = np.empty((n_draws, n_eff), dtype=np.float64)

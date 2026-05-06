@@ -1182,15 +1182,38 @@ def _info_matrix_blocks_slx_robust(
     proj = Z @ (ZtZ_inv @ (Z.T @ Wybeta))
     mz_quad = float(np.dot(Wybeta, Wybeta - proj))
 
-    J_rho_rho = float(sigma2**2 * T_ww + sigma2 * mz_quad)
-    J_lam_lam = float(sigma2**2 * T_ww)
-    J_rho_lam = float(sigma2**2 * (tr_MZWMZW + tr_MZWMZWt))
+    # Variance of e' W e and e' W y under e ~ N(0, sigma^2 M_Z) (SLX OLS
+    # residuals satisfy Z' e = 0 exactly).  By Isserlis on M_Z-projected
+    # noise, both Var(e' W e) and the "stochastic" part of Var(e' W y)
+    # carry the M_Z projection on BOTH W factors and equal
+    #     sigma^4 * [tr(M_Z W M_Z W) + tr(M_Z W M_Z W')].
+    # The mean-structure quad term sigma^2 * ||M_Z W Z beta||^2 only
+    # contributes to V_rr (since y = Z beta + epsilon under H_0).
+    # The unprojected sigma^4 * T_ww form previously used here matches
+    # neither the M_Z-projected residuals nor the J_rho_lam cross-block
+    # and produces a Schur coefficient < 1, leaking g_lambda noise into
+    # the corrected score.
+    tr_MzWMzW_pair = tr_MZWMZW + tr_MZWMZWt
+    J_lam_lam = float(sigma2**2 * tr_MzWMzW_pair)
+    J_rho_rho = float(sigma2**2 * tr_MzWMzW_pair + sigma2 * mz_quad)
+    J_rho_lam = float(sigma2**2 * tr_MzWMzW_pair)
 
     return {
         "J_rho_rho": J_rho_rho,
         "J_lam_lam": J_lam_lam,
         "J_rho_lam": J_rho_lam,
         "T_ww": T_ww,
+        # Pre-computed σ-free building blocks so callers can construct
+        # per-draw J_* with σ²_d in place of the posterior-mean σ² above.
+        # By Isserlis on M_Z-projected normal noise:
+        #   J_lam_lam(σ²) = σ⁴ · tr_MzWMzW_pair
+        #   J_rho_lam(σ²) = σ⁴ · tr_MzWMzW_pair    (== J_lam_lam by construction)
+        #   J_rho_rho(σ²) = σ⁴ · tr_MzWMzW_pair + σ² · mz_quad
+        # The Schur identity J_rho_lam == J_lam_lam is exact (it is the
+        # algebraic content of "γ already absorbed by SLX OLS"), so the
+        # rho-direction Schur cancels to g_rho_star = e_perp' W Z β̂.
+        "tr_MzWMzW_pair": tr_MzWMzW_pair,
+        "mz_quad": mz_quad,
     }
 
 
@@ -1289,31 +1312,39 @@ def bayesian_robust_lm_lag_sdm_test(
     beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k+k_wx)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
-    # SLX residuals (gamma already absorbed by SLX OLS normal equations)
+    # M_Z-projected residual.  Algebraically e_perp = M_Z y for every
+    # posterior draw of β (since M_Z Z = 0 and e^(d) = y - Z β^(d)),
+    # so the score numerator is draw-independent by construction.  This
+    # is the SLX analogue of the M_X-projection used in
+    # `bayesian_robust_lm_error_sar_test` and is what makes the test
+    # correctly sized at large n: the per-draw col(Z) noise of β^(d)
+    # that previously inflated the score to 100% rejection on SLX-DGP
+    # is killed exactly, while genuine posterior uncertainty enters
+    # below through σ²_d in the Schur denominator.
     Z = np.hstack([X, WX])
-    fitted = beta_draws @ Z.T  # (draws, n)
-    resid = y[None, :] - fitted  # (draws, n)
+    ZtZ_inv = np.linalg.pinv(Z.T @ Z)
+    e_perp = y - Z @ (ZtZ_inv @ (Z.T @ y))  # (n,) — same for all draws
+    g_rho = float(e_perp @ Wy)
+    We_perp = np.asarray(W_sp @ e_perp)
+    g_lambda = float(e_perp @ We_perp)
 
-    # Per-draw raw scores: lag (g_rho) and the companion error score
-    # (g_lambda) used for the Schur correction below.
-    g_rho = np.dot(resid, Wy)  # (draws,)
-    We = (W_sp @ resid.T).T  # (draws, n)
-    g_lambda = np.sum(resid * We, axis=1)  # (draws,)
-
-    # Raw-score variance blocks at the SLX null with (β, γ) Schur-purged.
+    # Information-block scaffolding (σ-free pieces) at the SLX null.
     beta_mean = np.mean(beta_draws, axis=0)
     sigma2_mean = float(np.mean(sigma_draws**2))
     info = _info_matrix_blocks_slx_robust(
         X, WX, W_sp, sigma2_mean, beta_mean, T_ww=model._T_ww
     )
-    J_rr = info["J_rho_rho"]
-    J_ll = info["J_lam_lam"]
-    J_rl = info["J_rho_lam"]
+    pair = info["tr_MzWMzW_pair"]
+    mz_quad = info["mz_quad"]
 
-    # Schur correction on λ as a second nuisance.
-    coef = J_rl / (J_ll + 1e-12)
-    g_rho_star = g_rho - coef * g_lambda
-    V_rho_given_lambda = J_rr - J_rl**2 / (J_ll + 1e-12)
+    # Per-draw J_* with σ²_d.  J_rho_lam == J_lam_lam exactly (Isserlis
+    # on M_Z-projected normal noise), so the Schur coefficient is 1
+    # and the rho-direction adjustment collapses to a draw-independent
+    # numerator g_rho_star = g_rho - g_lambda = e_perp' W Z β̂.  The
+    # Schur denominator V_{ρ·λ} = J_rr - J_rl²/J_ll = σ²_d · ‖M_Z W Z β̂‖²
+    # carries the full per-draw posterior uncertainty in σ².
+    g_rho_star = g_rho - g_lambda
+    V_rho_given_lambda = sigma_draws**2 * mz_quad  # (draws,)
 
     LM = g_rho_star**2 / (V_rho_given_lambda + 1e-12)
 
@@ -1321,7 +1352,7 @@ def bayesian_robust_lm_lag_sdm_test(
         LM,
         test_type="bayesian_robust_lm_lag_sdm",
         df=1,
-        details={"k_wx": k_wx},
+        details={"k_wx": k_wx, "tr_MzWMzW_pair": pair},
     )
 
 
@@ -1510,31 +1541,39 @@ def bayesian_robust_lm_error_sdem_test(
     beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k+k_wx)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
-    # SLX residuals (gamma already absorbed by SLX OLS normal equations)
+    # M_Z-projected residual: see bayesian_robust_lm_lag_sdm_test for
+    # the algebraic rationale.  The projected residual is e_perp = M_Z y
+    # for every posterior draw of β, so the score numerators are
+    # draw-independent and per-draw posterior uncertainty enters via
+    # σ²_d in the Schur denominator below.
     Z = np.hstack([X, WX])
-    fitted = beta_draws @ Z.T  # (draws, n)
-    resid = y[None, :] - fitted  # (draws, n)
+    ZtZ_inv = np.linalg.pinv(Z.T @ Z)
+    e_perp = y - Z @ (ZtZ_inv @ (Z.T @ y))  # (n,)
+    We_perp = np.asarray(W_sp @ e_perp)
+    g_lambda = float(e_perp @ We_perp)
+    g_rho = float(e_perp @ Wy)
 
-    # Per-draw raw scores: error (g_lambda) and the companion lag score
-    # (g_rho) used for the Schur correction on ρ as a second nuisance.
-    We = (W_sp @ resid.T).T  # (draws, n)
-    g_lambda = np.sum(resid * We, axis=1)  # (draws,)
-    g_rho = np.dot(resid, Wy)  # (draws,)
-
-    # Raw-score variance blocks at the SLX null with (β, γ) Schur-purged.
     beta_mean = np.mean(beta_draws, axis=0)
     sigma2_mean = float(np.mean(sigma_draws**2))
     info = _info_matrix_blocks_slx_robust(
         X, WX, W_sp, sigma2_mean, beta_mean, T_ww=model._T_ww
     )
-    J_rr = info["J_rho_rho"]
-    J_ll = info["J_lam_lam"]
-    J_rl = info["J_rho_lam"]
+    pair = info["tr_MzWMzW_pair"]
+    mz_quad = info["mz_quad"]
 
-    # Schur correction on ρ as a second nuisance.
-    coef = J_rl / (J_rr + 1e-12)
-    g_lambda_star = g_lambda - coef * g_rho
-    V_lambda_given_rho = J_ll - J_rl**2 / (J_rr + 1e-12)
+    # Per-draw J_* with σ²_d.  Unlike the lag-direction test (where
+    # J_rl/J_ll = 1 exactly), here the Schur target is ρ as nuisance
+    # so coef = J_rl / J_rr = σ⁴·pair / (σ⁴·pair + σ²·mz_quad), which
+    # depends on σ²_d.  Both numerator and denominator therefore vary
+    # per draw via σ²_d.
+    sigma2_d = sigma_draws**2  # (draws,)
+    J_rr_d = sigma2_d**2 * pair + sigma2_d * mz_quad  # (draws,)
+    J_ll_d = sigma2_d**2 * pair  # (draws,)
+    J_rl_d = sigma2_d**2 * pair  # (draws,)
+
+    coef_d = J_rl_d / (J_rr_d + 1e-12)
+    g_lambda_star = g_lambda - coef_d * g_rho  # (draws,)
+    V_lambda_given_rho = J_ll_d - J_rl_d**2 / (J_rr_d + 1e-12)  # (draws,)
 
     LM = g_lambda_star**2 / (V_lambda_given_rho + 1e-12)
 
@@ -1542,7 +1581,7 @@ def bayesian_robust_lm_error_sdem_test(
         LM,
         test_type="bayesian_robust_lm_error_sdem",
         df=1,
-        details={"k_wx": k_wx},
+        details={"k_wx": k_wx, "tr_MzWMzW_pair": pair},
     )
 
 
@@ -3702,6 +3741,14 @@ def _sar_null_lambda_info(
     # Trace identities: tr(B'C + BC) = sum(B*C) + tr(B@C)
     T_GG = float(np.sum(G * G) + np.trace(G @ G))
     T_WG = float(np.sum(W_dense * G) + np.trace(W_dense @ G))
+    tr_G = float(np.trace(G))
+    # tr(M_X G) for centering the M_X-projected score g_rho = e_perp' W y.
+    # M_X = I - X (X'X)^{-1} X', so
+    #     tr(M_X G) = tr(G) - tr((X'X)^{-1} X' G X).
+    XtX = X_design.T @ X_design
+    XtGX = X_design.T @ (G @ X_design)
+    tr_PxG = float(np.trace(np.linalg.solve(XtX, XtGX)))
+    tr_MxG = tr_G - tr_PxG
 
     V_ll = sigma2_mean**2 * T_ww
     V_lr = sigma2_mean**2 * T_WG
@@ -3716,6 +3763,8 @@ def _sar_null_lambda_info(
         "V_rr": V_rr,
         "T_GG": T_GG,
         "T_WG": T_WG,
+        "tr_G": tr_G,
+        "tr_MxG": tr_MxG,
     }
 
 
@@ -3866,9 +3915,22 @@ def bayesian_robust_lm_error_sar_test(
     V_ll = info["V_ll"]
     V_lr = info["V_lr"]
     V_rr = info["V_rr"]
+    tr_MxG = info["tr_MxG"]
+
+    # Center the rho-direction score.  The score uses the M_X-projected
+    # residual e_perp = M_X y - rho M_X W y, so under H_0:lambda=0
+    #     E[g_rho] = E[(M_X eps)' W y] = sigma^2 tr(M_X G),
+    # since W y = G(X beta + eps) and M_X X = 0.  The unprojected
+    # centering sigma^2 tr(G) (the SARAR log-likelihood gradient) would
+    # mismatch the M_X-projected score and leave an O(n) bias under
+    # rho != 0; using tr(M_X G) restores the bias-free score that the
+    # Schur correction expects.  At rho = 0, G = W and tr(M_X W) = 0
+    # for row-standardised W with intercept, recovering the OLS-null
+    # behaviour.
+    g_rho_centered = g_rho - (sigma_draws**2) * tr_MxG
 
     coef = V_lr / (V_rr + 1e-12)
-    g_lambda_star = g_lambda - coef * g_rho
+    g_lambda_star = g_lambda - coef * g_rho_centered
     V_l_given_r = V_ll - V_lr * coef
 
     LM = g_lambda_star**2 / (abs(V_l_given_r) + 1e-12)
@@ -3951,9 +4013,18 @@ def bayesian_robust_lm_error_sdm_test(
     V_ll = info["V_ll"]
     V_lr = info["V_lr"]
     V_rr = info["V_rr"]
+    tr_G = info["tr_G"]
+
+    # Center g_rho by sigma^2 * tr(G).  Unlike the SAR test, the SDM
+    # residual e = y - Z beta - rho W y is NOT M_Z-projected (Z is
+    # already in the mean structure), so E[e' W y] = sigma^2 tr(G)
+    # under H_0: lambda = 0.  Using tr(M_Z G) would under-correct and
+    # leave an O(n) bias that the Schur correction propagates into
+    # g_lambda*.
+    g_rho_centered = g_rho - (sigma_draws**2) * tr_G
 
     coef = V_lr / (V_rr + 1e-12)
-    g_lambda_star = g_lambda - coef * g_rho
+    g_lambda_star = g_lambda - coef * g_rho_centered
     V_l_given_r = V_ll - V_lr * coef
 
     LM = g_lambda_star**2 / (abs(V_l_given_r) + 1e-12)

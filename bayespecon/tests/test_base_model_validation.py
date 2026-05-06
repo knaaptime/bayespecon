@@ -734,11 +734,14 @@ class TestDecisionOutputFormats:
         from bayespecon.diagnostics import _decision_trees as _dt
 
         spec = _dt.get_spec("SAR")
-        sig = lambda name: {
-            "LM-WX": False,
-            "LM-Error": True,
-            "Robust-LM-WX": False,
-        }.get(name, False)
+
+        def sig(name):
+            return {
+                "LM-WX": False,
+                "LM-Error": True,
+                "Robust-LM-WX": False,
+            }.get(name, False)
+
         d, p = _dt.evaluate(spec, sig)
         result = _dt.render_ascii(
             spec,

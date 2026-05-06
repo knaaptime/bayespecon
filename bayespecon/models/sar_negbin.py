@@ -22,7 +22,6 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 
 from .base import SpatialModel
 
