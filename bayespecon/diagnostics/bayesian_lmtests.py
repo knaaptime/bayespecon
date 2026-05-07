@@ -1979,24 +1979,32 @@ def bayesian_panel_lm_error_test(
 def bayesian_panel_robust_lm_lag_test(
     model,
 ) -> BayesianLMTestResult:
-    """Bayesian panel robust LM-Lag test (H₀: ρ = 0, robust to λ).
+    r"""Bayesian panel robust LM-Lag test (H₀: ρ = 0, robust to λ).
 
-    Follows :cite:t:`elhorst2014SpatialEconometrics`. Tests the null hypothesis that the spatial
-    lag coefficient is zero, robust to the local presence of spatial
-    error autocorrelation.
+    Follows :cite:t:`elhorst2014SpatialEconometrics`. Tests the null
+    hypothesis that the spatial lag coefficient is zero, robust to the
+    local presence of spatial error autocorrelation.
 
-    The null model is a pooled/FE panel OLS. The robust LM statistic is:
+    The null model is a pooled/FE panel OLS.  For each posterior draw,
 
     .. math::
-        \\mathrm{LM}_R = \\frac{
-        \\left( \\frac{\\mathbf{e}^\\top W \\mathbf{y}}{\\sigma^2}
-        - \\frac{\\mathbf{e}^\\top W \\mathbf{e}}{\\sigma^2} \\right)^2
-        }{J - T \\cdot \\mathrm{tr}(W'W + W^2)}
+        \mathrm{LM}_R = \frac{
+        \left( \frac{\mathbf{e}^\top W_{NT} \mathbf{y}}{\sigma^2}
+        - \frac{\mathbf{e}^\top W_{NT} \mathbf{e}}{\sigma^2} \right)^2
+        }{J - T \cdot \mathrm{tr}(W'W + W^2)}
 
     where :math:`J` is the information matrix from the panel LM-lag test
-    and :math:`\\mathrm{tr}` denotes :math:`\\mathrm{tr}(W'W + W^2)`.
+    and :math:`\mathrm{tr}` denotes :math:`\mathrm{tr}(W'W + W^2)`.
 
-    This is distributed as :math:`\\chi^2_1` under H₀.
+    The score is evaluated at the **M_X-projected residual**
+    :math:`\mathbf{e}_\perp = M_X \mathbf{y}` (constant across draws),
+    because :math:`\beta` is information-orthogonal to
+    :math:`(\rho,\lambda)` under :math:`H_0` and therefore
+    :math:`\beta`-posterior variance does not enter the LM reference
+    distribution.  This matches the cross-sectional correction
+    documented in :func:`bayesian_robust_lm_lag_test`.
+
+    This is distributed as :math:`\chi^2_1` under H₀.
 
     Parameters
     ----------
@@ -2010,6 +2018,7 @@ def bayesian_panel_robust_lm_lag_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
+    y = model._y
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
@@ -2020,22 +2029,23 @@ def bayesian_panel_robust_lm_lag_test(
     beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
-    # Panel residuals
-    resid = _panel_residuals(model, beta_draws)  # (draws, n)
-
-    # Score for lag: S_lag = e'Wy
-    S_lag = np.dot(resid, Wy)  # (draws,)
-
-    # Score for error: S_err = e'W_nt e
-    We_panel = _panel_spatial_lag(W_sp, resid, N, T)
-    S_err = np.sum(resid * We_panel, axis=1)  # (draws,)
+    # Use M_X-projected residual e_perp = M_X y (fixed across draws). The
+    # ABFY robust score is evaluated at the OLS estimator, where residuals
+    # are X-orthogonal by construction. Replacing e^(d) = y - X beta^(d)
+    # with M_X y keeps the score invariant to beta posterior draws -- the
+    # information-orthogonality of beta to (rho, lambda) under H_0 means
+    # beta-posterior variance does not enter the LM reference distribution.
+    XtX_inv = _safe_inv(X.T @ X, "X'X (panel robust LM-lag)")
+    e_perp = y - X @ (XtX_inv @ (X.T @ y))  # = M_X y, shape (n,)
+    We_perp = _panel_spatial_lag(W_sp, e_perp, N, T)
+    S_lag = float(e_perp @ Wy)  # scalar (constant across draws)
+    S_err = float(e_perp @ We_perp)  # scalar (constant across draws)
 
     # Information matrix for lag test
     beta_mean = np.mean(beta_draws, axis=0)
     sigma2_mean = float(np.mean(sigma_draws**2))
     y_hat = X @ beta_mean
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
-    XtX_inv = _safe_inv(X.T @ X, "X'X (panel robust LM-lag)")
     M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
     WbMWb = float(Wy_hat @ M_Wy)
 
@@ -2045,7 +2055,7 @@ def bayesian_panel_robust_lm_lag_test(
     # Robust LM = (S_lag/σ² - S_err/σ²)² / (J - T*tr)
     # where J is in σ² units and tr = tr(W'W+W²)
     sigma2_draws = sigma_draws**2
-    robust_score = S_lag / sigma2_draws - S_err / sigma2_draws  # (draws,)
+    robust_score = (S_lag - S_err) / sigma2_draws  # (draws,)
     denom = J_val / sigma2_mean - T * T_ww  # J/σ² - T*tr (scalar)
 
     LM = robust_score**2 / (abs(denom) + 1e-12)
@@ -2061,27 +2071,35 @@ def bayesian_panel_robust_lm_lag_test(
 def bayesian_panel_robust_lm_error_test(
     model,
 ) -> BayesianLMTestResult:
-    """Bayesian panel robust LM-Error test (H₀: λ = 0, robust to ρ).
+    r"""Bayesian panel robust LM-Error test (H₀: λ = 0, robust to ρ).
 
-    Follows :cite:t:`elhorst2014SpatialEconometrics`. Tests the null hypothesis that the spatial
-    error coefficient is zero, robust to the local presence of a spatial
-    lag.
+    Follows :cite:t:`elhorst2014SpatialEconometrics`. Tests the null
+    hypothesis that the spatial error coefficient is zero, robust to the
+    local presence of a spatial lag.
 
-    The null model is a pooled/FE panel OLS. The robust LM statistic is:
+    The null model is a pooled/FE panel OLS.  For each posterior draw,
 
     .. math::
-        \\mathrm{LM}_R = \\frac{
-        \\left( \\frac{\\mathbf{e}^\\top W \\mathbf{e}}{\\sigma^2}
-        - \\frac{T \\cdot \\mathrm{tr}}{J} \\cdot
-        \\frac{\\mathbf{e}^\\top W \\mathbf{y}}{\\sigma^2} \\right)^2
+        \mathrm{LM}_R = \frac{
+        \left( \frac{\mathbf{e}^\top W_{NT} \mathbf{e}}{\sigma^2}
+        - \frac{T \cdot \mathrm{tr}}{J} \cdot
+        \frac{\mathbf{e}^\top W_{NT} \mathbf{y}}{\sigma^2} \right)^2
         }{
-        T \\cdot \\mathrm{tr} \\cdot \\left(1 - \\frac{T \\cdot \\mathrm{tr}}{J}\\right)
+        T \cdot \mathrm{tr} \cdot \left(1 - \frac{T \cdot \mathrm{tr}}{J}\right)
         }
 
     where :math:`J` is the information matrix from the panel LM-lag test
-    and :math:`\\mathrm{tr} = \\mathrm{tr}(W'W + W^2)`.
+    and :math:`\mathrm{tr} = \mathrm{tr}(W'W + W^2)`.
 
-    This is distributed as :math:`\\chi^2_1` under H₀.
+    The score is evaluated at the **M_X-projected residual**
+    :math:`\mathbf{e}_\perp = M_X \mathbf{y}` (constant across draws),
+    because :math:`\beta` is information-orthogonal to
+    :math:`(\rho,\lambda)` under :math:`H_0` and therefore
+    :math:`\beta`-posterior variance does not enter the LM reference
+    distribution.  This matches the cross-sectional correction
+    documented in :func:`bayesian_robust_lm_error_test`.
+
+    This is distributed as :math:`\chi^2_1` under H₀.
 
     Parameters
     ----------
@@ -2095,6 +2113,7 @@ def bayesian_panel_robust_lm_error_test(
         Dataclass containing LM samples, summary statistics, and metadata.
 
     """
+    y = model._y
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
@@ -2105,22 +2124,21 @@ def bayesian_panel_robust_lm_error_test(
     beta_draws = _get_posterior_draws(idata, "beta")  # (draws, k)
     sigma_draws = _get_posterior_draws(idata, "sigma")  # (draws,)
 
-    # Panel residuals
-    resid = _panel_residuals(model, beta_draws)  # (draws, n)
-
-    # Score for lag: S_lag = e'Wy
-    S_lag = np.dot(resid, Wy)  # (draws,)
-
-    # Score for error: S_err = e'W_nt e
-    We_panel = _panel_spatial_lag(W_sp, resid, N, T)
-    S_err = np.sum(resid * We_panel, axis=1)  # (draws,)
+    # Use M_X-projected residual (see bayesian_panel_robust_lm_lag_test
+    # for the principled justification: beta is information-orthogonal to
+    # (rho, lambda) under H_0, so beta posterior variance does not enter
+    # the LM reference distribution).
+    XtX_inv = _safe_inv(X.T @ X, "X'X (panel robust LM-error)")
+    e_perp = y - X @ (XtX_inv @ (X.T @ y))
+    We_perp = _panel_spatial_lag(W_sp, e_perp, N, T)
+    S_lag = float(e_perp @ Wy)
+    S_err = float(e_perp @ We_perp)
 
     # Information matrix for lag test
     beta_mean = np.mean(beta_draws, axis=0)
     sigma2_mean = float(np.mean(sigma_draws**2))
     y_hat = X @ beta_mean
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
-    XtX_inv = _safe_inv(X.T @ X, "X'X (panel robust LM-error)")
     M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
     WbMWb = float(Wy_hat @ M_Wy)
 
@@ -2134,7 +2152,7 @@ def bayesian_panel_robust_lm_error_test(
     Ttr = T * T_ww
 
     sigma2_draws = sigma_draws**2
-    robust_score = S_err / sigma2_draws - (Ttr / J_scaled) * S_lag / sigma2_draws
+    robust_score = (S_err - (Ttr / J_scaled) * S_lag) / sigma2_draws
     denom = Ttr * (1 - Ttr / J_scaled)
 
     LM = robust_score**2 / (abs(denom) + 1e-12)
@@ -3647,21 +3665,25 @@ def bayesian_panel_lm_lag_sdem_test(
         \mathbf{u} = \mathbf{y} - X\beta - WX\gamma - (\iota_T\otimes\alpha),
         \qquad \boldsymbol{\varepsilon} = \mathbf{u} - \lambda\,(I_T\otimes W)\mathbf{u}.
 
-    The score and variance follow the panel LM-Lag construction
-    (cf. :func:`bayesian_panel_lm_lag_test`), kept on the raw-score
-    scale:
+    The score and variance follow the SDEM-filtered LM-Lag derivation:
+    using the whitened lag vector :math:`\tilde z_\rho = \bar A_\lambda
+    (I_T\otimes W)\mathbf{y}` with :math:`\bar A_\lambda = I - \bar\lambda
+    (I_T\otimes W)` and the whitened design :math:`\tilde Z = \bar A_\lambda
+    [X, WX]`,
 
     .. math::
-        S = \boldsymbol{\varepsilon}^\top (I_T\otimes W)\mathbf{y},
-        \qquad V = \bar{\sigma}^4\,T\,T_{WW}
-                   + \bar{\sigma}^2\,\|(I_T\otimes W)\mathbf{y}\|^2.
+        S = \boldsymbol{\varepsilon}^\top \tilde z_\rho, \qquad
+        V = \bar{\sigma}^4 \, T \, T_{WW}
+            + \bar{\sigma}^2 \, \tilde z_\rho^{\top} M_{\tilde Z}\,
+              \tilde z_\rho.
 
     .. note::
-       As in :func:`bayesian_lm_lag_sdem_test`, the
-       :math:`\|(I_T\otimes W)\mathbf{y}\|^2` term uses the raw squared
-       norm rather than an :math:`M_X`-projected fitted-value norm,
-       reflecting that the SDEM mean structure already includes
-       :math:`WX`.
+       Earlier revisions used an unwhitened :math:`S = \boldsymbol{
+       \varepsilon}^\top (I_T\otimes W)\mathbf{y}` paired with :math:`V =
+       \bar\sigma^4 T \, T_{WW} + \bar\sigma^2 \|(I_T\otimes W)
+       \mathbf{y}\|^2`, which produced empirical size near 1 on SDEM-DGP
+       because both the numerator and the denominator omitted the
+       :math:`\bar A_\lambda` whitening factor.
 
     The LM statistic is :math:`\chi^2_1` under H₀. Tests whether an SDEM
     panel should be extended to a SDARAR panel (SDEM with a spatial lag);
@@ -3676,8 +3698,10 @@ def bayesian_panel_lm_lag_sdem_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
+    W_dense = model._W_dense
     N = model._N
     T = model._T
+    n = N * T
 
     idata = model.inference_data
     beta_draws = _get_posterior_draws(idata, "beta")
@@ -3690,12 +3714,17 @@ def bayesian_panel_lm_lag_sdem_test(
     Wu = _panel_spatial_lag(W_sp, u, N, T)
     eps = u - lam_draws[:, None] * Wu
 
-    S = np.dot(eps, Wy)
+    lam_mean = float(np.mean(lam_draws))
+    sigma2_mean = float(np.mean(sigma_draws**2))
+    A_lam = np.eye(n) - lam_mean * W_dense
+    Z_tilde = A_lam @ Z
+    z_rho = A_lam @ Wy  # whitened lag vector
+
+    S = np.dot(eps, z_rho)
 
     T_ww = model._T_ww
-    sigma2_mean = float(np.mean(sigma_draws**2))
-    # Raw-score variance: sigma^4 * T * T_ww + sigma^2 * ||W_NT y||^2.
-    V = sigma2_mean**2 * T * T_ww + sigma2_mean * float(np.dot(Wy, Wy))
+    # Raw-score variance: sigma^4 * T * T_ww + sigma^2 * z_rho' M_Z_tilde z_rho.
+    V = sigma2_mean**2 * T * T_ww + sigma2_mean * _mx_quadratic(Z_tilde, z_rho)
     LM = S**2 / (V + 1e-12)
 
     return _finalize_lm(

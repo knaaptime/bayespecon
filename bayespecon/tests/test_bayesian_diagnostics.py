@@ -467,6 +467,7 @@ def _make_mock_sdem_model(
     model._WX = WX
     model._Wy = Wy
     model._W_sparse = W_sparse
+    model._W_dense = W_sparse.toarray()
     model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
@@ -521,8 +522,9 @@ class TestBayesianLMLagSDEMTest:
         """Regression test: V must include sigma^4 * T_ww (not sigma^2 * T_ww).
 
         Construct a model with sigma=2 (so sigma^2=4, sigma^4=16). Verify
-        that the LM denominator is sigma^4 * T_ww + sigma^2 * ||Wy||^2,
-        not the previously-buggy sigma^2 * T_ww + ||Wy||^2.
+        that the LM denominator uses the whitened SDEM-filtered formula
+        V = sigma^4 * T_ww + sigma^2 * z_rho' M_{Z_tilde} z_rho,
+        where z_rho = A_lambda * W y and Z_tilde = A_lambda * [X, WX].
         """
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=16, k_wx=1)
         model = _make_mock_sdem_model(
@@ -533,7 +535,6 @@ class TestBayesianLMLagSDEMTest:
         model.inference_data.posterior["sigma"][:] = sigma_val
         T_ww = model._T_ww
         Wy = model._Wy
-        expected_V = sigma_val**4 * T_ww + sigma_val**2 * float(np.dot(Wy, Wy))
 
         result = bayesian_lm_lag_sdem_test(model)
 
@@ -547,7 +548,21 @@ class TestBayesianLMLagSDEMTest:
         u = y[None, :] - beta_draws @ Z.T
         Wu = (W_sparse @ u.T).T
         eps = u - lam_draws[:, None] * Wu
-        S = np.dot(eps, Wy)
+
+        # Whitened quantities (matching the corrected implementation)
+        lam_mean = float(np.mean(lam_draws))
+        n = W_sparse.shape[0]
+        A_lam = np.eye(n) - lam_mean * W_dense
+        Z_tilde = A_lam @ Z
+        z_rho = A_lam @ Wy
+        S = np.dot(eps, z_rho)
+
+        # Expected V using the corrected whitened formula
+        from bayespecon.diagnostics.bayesian_lmtests import _mx_quadratic
+        expected_V = (
+            sigma_val**4 * T_ww
+            + sigma_val**2 * _mx_quadratic(Z_tilde, z_rho)
+        )
         V_implied = float(np.mean(S**2 / (result.lm_samples + 1e-15)))
 
         # The implied V should match the expected sigma^4 formula, not the
