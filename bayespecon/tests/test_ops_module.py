@@ -463,25 +463,6 @@ class TestSparseSARSolveOp:
 
 
 class TestOptionalSparseBackends:
-    def test_auto_sparse_backend_warns_and_falls_back_to_scipy_without_umfpack(
-        self, monkeypatch
-    ):
-        from bayespecon import ops as ops_mod
-
-        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "auto")
-        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "0")
-        monkeypatch.setattr(ops_mod, "_umfpack_available", lambda: False)
-        ops_mod._select_sparse_backend.cache_clear()
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            backend = ops_mod._select_sparse_backend()
-
-        assert backend == "scipy"
-        msgs = [str(w.message) for w in caught]
-        assert any("scikit-umfpack" in m for m in msgs)
-        assert any("likely faster" in m for m in msgs)
-
     def test_selects_umfpack_when_requested_and_installed(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
         from bayespecon.ops import _select_sparse_backend

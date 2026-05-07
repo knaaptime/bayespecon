@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from bayespecon.diagnostics.bayesian_lmtests import (
+from bayespecon.diagnostics.lmtests import (
     _flow_score_info,
     _info_matrix_blocks_sdem,
     _info_matrix_blocks_sdm,
@@ -329,7 +329,7 @@ class TestClosedFormRobust:
         #   g_rho_star = g_rho - (J_rl/J_ll) * g_lambda
         #   V_rho|lambda = J_rr - J_rl^2 / J_ll
         # where J_rr, J_ll, J_rl come from _info_matrix_blocks_slx_robust.
-        from bayespecon.diagnostics.bayesian_lmtests import (
+        from bayespecon.diagnostics.lmtests import (
             _info_matrix_blocks_slx_robust,
         )
 
@@ -381,7 +381,7 @@ class TestClosedFormRobust:
         # spatial parameter):
         #   g_lambda_star = g_lambda - (J_rl/J_rr) * g_rho
         #   V_lambda|rho = J_ll - J_rl^2 / J_rr
-        from bayespecon.diagnostics.bayesian_lmtests import (
+        from bayespecon.diagnostics.lmtests import (
             _info_matrix_blocks_slx_robust,
         )
 
@@ -716,7 +716,9 @@ def _mock_panel_sdm(y, X, WX, Wn_sp, T_ww, beta_hat, rho_hat, sigma_hat, N, T, d
     return model
 
 
-def _mock_panel_sdem(y, X, WX, Wn_sp, T_ww, beta_hat, lam_hat, sigma_hat, N, T, draws=1):
+def _mock_panel_sdem(
+    y, X, WX, Wn_sp, T_ww, beta_hat, lam_hat, sigma_hat, N, T, draws=1
+):
     """Mock SDEM panel model: beta covers [X, WX] and lam is in posterior."""
     Wy = _panel_spatial_lag(Wn_sp, np.asarray(y), N, T)
     model = MagicMock(spec=[])
@@ -861,7 +863,8 @@ class TestPanelClosedForm:
         eps = u - lam_hat * Wu
         S = float(eps @ z_rho)
 
-        from bayespecon.diagnostics.bayesian_lmtests import _mx_quadratic
+        from bayespecon.diagnostics.lmtests import _mx_quadratic
+
         V = sigma_hat**4 * T_per * T_ww + sigma_hat**2 * _mx_quadratic(Z_tilde, z_rho)
         expected = S * S / V
 
@@ -885,7 +888,16 @@ class TestPanelClosedForm:
 
         # Low beta variance — all draws identical
         model_low = _mock_panel_ols(
-            y, X, np.empty((y.size, 0)), Wn_sp, T_ww, beta_hat, sigma_hat, N, T_per, draws=50
+            y,
+            X,
+            np.empty((y.size, 0)),
+            Wn_sp,
+            T_ww,
+            beta_hat,
+            sigma_hat,
+            N,
+            T_per,
+            draws=50,
         )
 
         # High beta variance — noisy draws, but same posterior mean
@@ -894,16 +906,26 @@ class TestPanelClosedForm:
         # Shift so mean equals beta_hat (preserves J_val)
         beta_noisy = beta_noisy - beta_noisy.mean(axis=0) + beta_hat
         model_high = _mock_panel_ols(
-            y, X, np.empty((y.size, 0)), Wn_sp, T_ww, beta_hat, sigma_hat, N, T_per, draws=50
+            y,
+            X,
+            np.empty((y.size, 0)),
+            Wn_sp,
+            T_ww,
+            beta_hat,
+            sigma_hat,
+            N,
+            T_per,
+            draws=50,
         )
         model_high.inference_data = _idata(
             beta=beta_noisy,
             sigma=np.full(50, sigma_hat),
         )
 
-        from bayespecon.diagnostics.bayesian_lmtests import (
+        from bayespecon.diagnostics.lmtests import (
             bayesian_panel_robust_lm_lag_test,
         )
+
         result_low = bayesian_panel_robust_lm_lag_test(model_low)
         result_high = bayesian_panel_robust_lm_lag_test(model_high)
 
@@ -927,22 +949,41 @@ class TestPanelClosedForm:
         sigma_hat = 0.8
 
         model_low = _mock_panel_ols(
-            y, X, np.empty((y.size, 0)), Wn_sp, T_ww, beta_hat, sigma_hat, N, T_per, draws=50
+            y,
+            X,
+            np.empty((y.size, 0)),
+            Wn_sp,
+            T_ww,
+            beta_hat,
+            sigma_hat,
+            N,
+            T_per,
+            draws=50,
         )
         rng = np.random.default_rng(0)
         beta_noisy = beta_hat + rng.normal(scale=5.0, size=(50, len(beta_hat)))
         beta_noisy = beta_noisy - beta_noisy.mean(axis=0) + beta_hat
         model_high = _mock_panel_ols(
-            y, X, np.empty((y.size, 0)), Wn_sp, T_ww, beta_hat, sigma_hat, N, T_per, draws=50
+            y,
+            X,
+            np.empty((y.size, 0)),
+            Wn_sp,
+            T_ww,
+            beta_hat,
+            sigma_hat,
+            N,
+            T_per,
+            draws=50,
         )
         model_high.inference_data = _idata(
             beta=beta_noisy,
             sigma=np.full(50, sigma_hat),
         )
 
-        from bayespecon.diagnostics.bayesian_lmtests import (
+        from bayespecon.diagnostics.lmtests import (
             bayesian_panel_robust_lm_error_test,
         )
+
         result_low = bayesian_panel_robust_lm_error_test(model_low)
         result_high = bayesian_panel_robust_lm_error_test(model_high)
 

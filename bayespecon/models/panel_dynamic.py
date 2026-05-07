@@ -66,7 +66,7 @@ class _DynamicPanelMixin:
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
@@ -276,45 +276,40 @@ class _DynamicPanelMixin:
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_test"],
-            ).bayesian_panel_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
+            ),
             "Panel-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_test"],
-            ).bayesian_panel_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
+            ),
             "Panel-LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_sdm_joint_test"],
-            ).bayesian_panel_lm_sdm_joint_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_sdm_joint_test"
+            ),
             "Panel-LM-SDM-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_slx_error_joint_test"],
-            ).bayesian_panel_lm_slx_error_joint_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests",
+                "bayesian_panel_lm_slx_error_joint_test",
+            ),
             "Panel-LM-SLX-Error-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_lag_test"],
-            ).bayesian_panel_robust_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_lag_test"
+            ),
             "Panel-Robust-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_error_test"],
-            ).bayesian_panel_robust_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_error_test"
+            ),
             "Panel-Robust-LM-Error",
         ),
     ]
@@ -468,10 +463,9 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_sdm_test"],
-            ).bayesian_panel_lm_error_sdm_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_sdm_test"
+            ),
             "Panel-LM-Error-SDM",
         ),
     ]
@@ -633,10 +627,9 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_sdm_test"],
-            ).bayesian_panel_lm_error_sdm_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_sdm_test"
+            ),
             "Panel-LM-Error-SDM",
         ),
     ]
@@ -860,24 +853,21 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_test"],
-            ).bayesian_panel_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
+            ),
             "Panel-LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_wx_test"],
-            ).bayesian_panel_lm_wx_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_test"
+            ),
             "Panel-LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_wx_test"],
-            ).bayesian_panel_robust_lm_wx_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_wx_test"
+            ),
             "Panel-Robust-LM-WX",
         ),
     ]
@@ -1052,17 +1042,16 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_sdem_test"],
-            ).bayesian_panel_lm_lag_sdem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
+            ),
             "Panel-LM-Lag-SDEM",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_lag_sdem_test"],
-            ).bayesian_panel_robust_lm_lag_sdem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests",
+                "bayesian_panel_robust_lm_lag_sdem_test",
+            ),
             "Panel-Robust-LM-Lag-SDEM",
         ),
     ]
@@ -1343,10 +1332,9 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_sdem_test"],
-            ).bayesian_panel_lm_lag_sdem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
+            ),
             "Panel-LM-Lag-SDEM",
         ),
     ]
@@ -1649,17 +1637,17 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_lag_sdm_test"],
-            ).bayesian_panel_robust_lm_lag_sdm_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests",
+                "bayesian_panel_robust_lm_lag_sdm_test",
+            ),
             "Panel-Robust-LM-Lag-SDM",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_error_sdem_test"],
-            ).bayesian_panel_robust_lm_error_sdem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests",
+                "bayesian_panel_robust_lm_error_sdem_test",
+            ),
             "Panel-Robust-LM-Error-SDEM",
         ),
     ]

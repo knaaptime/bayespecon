@@ -74,47 +74,40 @@ class OLS(SpatialModel):
     """
 
     _spatial_diagnostics_tests = [
-        # Lazy import avoids circular dependency; resolved at call time.
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_lag_test"],
-            ).bayesian_lm_lag_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_test"
+            ),
             "LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_error_test"],
-            ).bayesian_lm_error_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_test"
+            ),
             "LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_sdm_joint_test"],
-            ).bayesian_lm_sdm_joint_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_sdm_joint_test"
+            ),
             "LM-SDM-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_slx_error_joint_test"],
-            ).bayesian_lm_slx_error_joint_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_slx_error_joint_test"
+            ),
             "LM-SLX-Error-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_lag_test"],
-            ).bayesian_robust_lm_lag_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_test"
+            ),
             "Robust-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_error_test"],
-            ).bayesian_robust_lm_error_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_test"
+            ),
             "Robust-LM-Error",
         ),
     ]

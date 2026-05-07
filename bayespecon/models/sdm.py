@@ -111,17 +111,15 @@ class SDM(SpatialModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_error_sdm_test"],
-            ).bayesian_lm_error_sdm_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_sdm_test"
+            ),
             "LM-Error-SDM",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_error_sdm_test"],
-            ).bayesian_robust_lm_error_sdm_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sdm_test"
+            ),
             "Robust-LM-Error-SDM",
         ),
     ]
@@ -357,7 +355,7 @@ class SDM(SpatialModel):
         :math:`\\theta W` enters because :math:`WX` is included as a
         regressor block in the SDM design.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data

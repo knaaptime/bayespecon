@@ -107,31 +107,27 @@ class SAR(SpatialModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_error_from_sar_test"],
-            ).bayesian_lm_error_from_sar_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_from_sar_test"
+            ),
             "LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_wx_test"],
-            ).bayesian_lm_wx_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_test"
+            ),
             "LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_wx_test"],
-            ).bayesian_robust_lm_wx_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_test"
+            ),
             "Robust-LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_error_sar_test"],
-            ).bayesian_robust_lm_error_sar_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sar_test"
+            ),
             "Robust-LM-Error",
         ),
     ]
@@ -346,7 +342,7 @@ class SAR(SpatialModel):
         the impact decomposition above and motivate the trace-based
         scalar summaries used here.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data

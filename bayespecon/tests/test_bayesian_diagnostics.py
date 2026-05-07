@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bayespecon.diagnostics.bayesian_lmtests import (
+from bayespecon.diagnostics.lmtests import (
     BayesianLMTestResult,
     bayesian_lm_error_sdm_test,
     bayesian_lm_error_test,
@@ -558,11 +558,9 @@ class TestBayesianLMLagSDEMTest:
         S = np.dot(eps, z_rho)
 
         # Expected V using the corrected whitened formula
-        from bayespecon.diagnostics.bayesian_lmtests import _mx_quadratic
-        expected_V = (
-            sigma_val**4 * T_ww
-            + sigma_val**2 * _mx_quadratic(Z_tilde, z_rho)
-        )
+        from bayespecon.diagnostics.lmtests import _mx_quadratic
+
+        expected_V = sigma_val**4 * T_ww + sigma_val**2 * _mx_quadratic(Z_tilde, z_rho)
         V_implied = float(np.mean(S**2 / (result.lm_samples + 1e-15)))
 
         # The implied V should match the expected sigma^4 formula, not the
@@ -1351,7 +1349,7 @@ def fitted_sarflow(_flow_ring_graph):
 
 class TestFlowLMTests:
     def test_marginal_dest(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_dest_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_dest_test
 
         r = bayesian_lm_flow_dest_test(fitted_olsflow)
         assert isinstance(r, BayesianLMTestResult)
@@ -1362,7 +1360,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_marginal_orig(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_orig_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_orig_test
 
         r = bayesian_lm_flow_orig_test(fitted_olsflow)
         assert r.df == 1
@@ -1370,7 +1368,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_marginal_network(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_network_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_network_test
 
         r = bayesian_lm_flow_network_test(fitted_olsflow)
         assert r.df == 1
@@ -1378,7 +1376,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_joint(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_joint_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_joint_test
 
         r = bayesian_lm_flow_joint_test(fitted_olsflow)
         assert r.df == 3
@@ -1387,7 +1385,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_intra(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_intra_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_intra_test
 
         r = bayesian_lm_flow_intra_test(fitted_olsflow)
         assert r.df >= 1
@@ -1395,7 +1393,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_robust_dest(self, fitted_sarflow):
-        from bayespecon import bayesian_robust_lm_flow_dest_test
+        from bayespecon.diagnostics.lmtests import bayesian_robust_lm_flow_dest_test
 
         r = bayesian_robust_lm_flow_dest_test(fitted_sarflow)
         assert r.df == 1
@@ -1403,7 +1401,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_robust_orig(self, fitted_sarflow):
-        from bayespecon import bayesian_robust_lm_flow_orig_test
+        from bayespecon.diagnostics.lmtests import bayesian_robust_lm_flow_orig_test
 
         r = bayesian_robust_lm_flow_orig_test(fitted_sarflow)
         assert r.df == 1
@@ -1411,7 +1409,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_robust_network(self, fitted_sarflow):
-        from bayespecon import bayesian_robust_lm_flow_network_test
+        from bayespecon.diagnostics.lmtests import bayesian_robust_lm_flow_network_test
 
         r = bayesian_robust_lm_flow_network_test(fitted_sarflow)
         assert r.df == 1
@@ -1462,7 +1460,7 @@ def fitted_olsflow_panel(_flow_ring_graph):
 
 class TestFlowPanelLMTests:
     def test_marginal_dest(self, fitted_olsflow_panel):
-        from bayespecon import bayesian_panel_lm_flow_dest_test
+        from bayespecon.diagnostics.lmtests import bayesian_panel_lm_flow_dest_test
 
         r = bayesian_panel_lm_flow_dest_test(fitted_olsflow_panel)
         assert r.df == 1
@@ -1472,7 +1470,7 @@ class TestFlowPanelLMTests:
         assert r.details["T"] == 3
 
     def test_marginal_orig_network(self, fitted_olsflow_panel):
-        from bayespecon import (
+        from bayespecon.diagnostics.lmtests import (
             bayesian_panel_lm_flow_network_test,
             bayesian_panel_lm_flow_orig_test,
         )
@@ -1487,7 +1485,7 @@ class TestFlowPanelLMTests:
             assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_joint(self, fitted_olsflow_panel):
-        from bayespecon import bayesian_panel_lm_flow_joint_test
+        from bayespecon.diagnostics.lmtests import bayesian_panel_lm_flow_joint_test
 
         r = bayesian_panel_lm_flow_joint_test(fitted_olsflow_panel)
         assert r.df == 3
@@ -1495,7 +1493,7 @@ class TestFlowPanelLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_intra(self, fitted_olsflow_panel):
-        from bayespecon import bayesian_panel_lm_flow_intra_test
+        from bayespecon.diagnostics.lmtests import bayesian_panel_lm_flow_intra_test
 
         r = bayesian_panel_lm_flow_intra_test(fitted_olsflow_panel)
         assert r.df >= 1

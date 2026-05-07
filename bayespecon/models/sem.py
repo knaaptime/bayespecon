@@ -107,17 +107,15 @@ class SEM(SpatialModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_lag_test"],
-            ).bayesian_lm_lag_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_test"
+            ),
             "LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_wx_sem_test"],
-            ).bayesian_lm_wx_sem_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_sem_test"
+            ),
             # Note: this label is "LM-WX" for backwards compatibility, but
             # the underlying score is the SEM-null variant
             # (``bayesian_lm_wx_sem_test``) — i.e. it tests H₀: γ = 0
@@ -126,17 +124,15 @@ class SEM(SpatialModel):
             "LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_lag_sem_test"],
-            ).bayesian_robust_lm_lag_sem_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_sem_test"
+            ),
             "Robust-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_wx_sem_test"],
-            ).bayesian_robust_lm_wx_sem_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_sem_test"
+            ),
             "Robust-LM-WX",
         ),
     ]
@@ -394,7 +390,7 @@ class SEM(SpatialModel):
             ``(direct_samples, indirect_samples, total_samples)``, each
             of shape ``(G, k)`` where *k* is the number of covariates.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)

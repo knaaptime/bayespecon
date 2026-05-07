@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Union
@@ -815,6 +816,21 @@ class SpatialModel(ABC):
     # pairs.  The base spatial_diagnostics() method iterates over this
     # list and builds a summary DataFrame.
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _lazy_lm_test(module: str, name: str):
+        """Return a callable that lazily imports ``name`` from ``module``.
+
+        Used in ``_spatial_diagnostics_tests`` registries to avoid
+        circular imports at module-load time.
+        """
+
+        def _fn(model):
+            mod = importlib.import_module(module)
+            return getattr(mod, name)(model)
+
+        return _fn
+
     _spatial_diagnostics_tests: list[tuple] = []
 
     @staticmethod
@@ -826,7 +842,7 @@ class SpatialModel(ABC):
         :meth:`FlowModel.spatial_diagnostics`, and
         :meth:`FlowPanelModel.spatial_diagnostics`.
         """
-        from ..diagnostics.bayesian_lmtests import BayesianLMTestResult
+        from ..diagnostics.lmtests import BayesianLMTestResult
 
         rows: dict[str, dict] = {}
         raw_results: dict[str, BayesianLMTestResult] = {}
@@ -924,7 +940,7 @@ class SpatialModel(ABC):
         LM-SDM-Joint          7.89    7.12   4    0.096      1.23     18.32
         LM-SLX-Error-Joint    6.45    5.98   4    0.168      0.89     15.67
         """
-        from ..diagnostics.bayesian_lmtests import BayesianLMTestResult  # noqa: F401
+        from ..diagnostics.lmtests import BayesianLMTestResult  # noqa: F401
 
         self._require_fit()
         self._require_W()

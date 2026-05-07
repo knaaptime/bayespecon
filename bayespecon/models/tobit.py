@@ -143,31 +143,27 @@ class SARTobit(_SpatialTobitBase):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_error_test"],
-            ).bayesian_lm_error_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_test"
+            ),
             "LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_wx_test"],
-            ).bayesian_lm_wx_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_test"
+            ),
             "LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_wx_test"],
-            ).bayesian_robust_lm_wx_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_test"
+            ),
             "Robust-LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_error_sar_test"],
-            ).bayesian_robust_lm_error_sar_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sar_test"
+            ),
             "Robust-LM-Error",
         ),
     ]
@@ -227,7 +223,7 @@ class SARTobit(_SpatialTobitBase):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
 
@@ -477,31 +473,27 @@ class SEMTobit(_SpatialTobitBase):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_lag_test"],
-            ).bayesian_lm_lag_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_test"
+            ),
             "LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_wx_sem_test"],
-            ).bayesian_lm_wx_sem_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_sem_test"
+            ),
             "LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_lag_sem_test"],
-            ).bayesian_robust_lm_lag_sem_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_sem_test"
+            ),
             "Robust-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_wx_sem_test"],
-            ).bayesian_robust_lm_wx_sem_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_sem_test"
+            ),
             "Robust-LM-WX",
         ),
     ]
@@ -551,7 +543,7 @@ class SEMTobit(_SpatialTobitBase):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
 
@@ -788,17 +780,15 @@ class SDMTobit(_SpatialTobitBase):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_error_test"],
-            ).bayesian_lm_error_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_test"
+            ),
             "LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_error_sdm_test"],
-            ).bayesian_robust_lm_error_sdm_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sdm_test"
+            ),
             "Robust-LM-Error",
         ),
     ]
@@ -881,7 +871,7 @@ class SDMTobit(_SpatialTobitBase):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
 

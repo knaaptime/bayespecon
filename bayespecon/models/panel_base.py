@@ -1052,6 +1052,22 @@ class SpatialPanelModel(ABC):
     # ------------------------------------------------------------------
     # Class-level registry of applicable Bayesian LM specification tests.
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _lazy_lm_test(module: str, name: str):
+        """Return a callable that lazily imports ``name`` from ``module``.
+
+        Used in ``_spatial_diagnostics_tests`` registries to avoid
+        circular imports at module-load time.
+        """
+        import importlib
+
+        def _fn(model):
+            mod = importlib.import_module(module)
+            return getattr(mod, name)(model)
+
+        return _fn
+
     _spatial_diagnostics_tests: list[tuple] = []
 
     def spatial_diagnostics(self) -> pd.DataFrame:

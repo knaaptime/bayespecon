@@ -237,37 +237,65 @@ def render_graphviz(
     p_values: dict[str, float] | None = None,
     alpha: float = 0.05,
     title: str | None = None,
+    theme: str | Any = "default",
 ) -> Any:
     """Render the decision tree as a ``graphviz.Digraph``.
 
-    The traversed path is drawn with thicker, colored edges and filled
-    nodes; the chosen leaf is highlighted in green.
+    The traversed path is drawn with thicker, coloured edges and filled
+    nodes; the chosen leaf is highlighted.  Three built-in themes are
+    provided (``"default"``, ``"minimal"``, ``"dark"``) and users may
+    supply a custom :class:`~bayespecon.diagnostics._decision_style.GraphTheme`
+    object for full control.
 
     Requires the optional ``graphviz`` Python package.
     """
+    from ._decision_style import get_theme
+
     graphviz = importlib.import_module("graphviz")
     p_values = p_values or {}
     path_dict = dict(path)
+    t = get_theme(theme)
 
     dot = graphviz.Digraph()
-    dot.attr("graph", rankdir="TB")
+    for k, v in t.graph_attrs().items():
+        dot.attr("graph", **{k: v})
     if title:
-        dot.attr(label=title, labelloc="t", fontsize="14")
-    dot.attr("node", fontname="Helvetica", fontsize="11")
-    dot.attr("edge", fontname="Helvetica", fontsize="10")
+        dot.attr(
+            label=title,
+            labelloc="t",
+            fontsize=t.title_fontsize,
+            fontcolor=t.title_fontcolor,
+        )
 
     if isinstance(root, str):
-        dot.node(
-            "leaf",
-            label=root,
-            shape="box",
-            style="filled,bold",
-            fillcolor="#9be29b",
-        )
+        style = t.leaf_chosen.as_dict()
+        dot.node("leaf", label=root, **style)
         return dot
 
     leaf_counter = [0]
-    emitted_nodes: set[str] = set()  # node_ids already rendered (DAG dedup)
+    emitted_nodes: set[str] = set()
+
+    def _node_style(
+        node: TreeNode, on_path: bool, is_chosen: bool = False
+    ) -> dict[str, str]:
+        if is_chosen:
+            base = t.leaf_chosen.as_dict()
+        elif isinstance(node, str):
+            base = t.leaf_other.as_dict()
+        elif node.kind == "test":
+            base = t.test_node.as_dict()
+        elif node.kind == "predicate":
+            base = t.predicate_node.as_dict()
+        else:
+            base = {}
+        if on_path and t.node_on_path is not None:
+            override = t.node_on_path.as_dict()
+            override.pop("shape", None)  # preserve base shape (ellipse / diamond / box)
+            base = {**base, **override}
+        return base
+
+    def _edge_style(on_path: bool) -> dict[str, str]:
+        return t.edge_on_path.as_dict() if on_path else t.edge_off_path.as_dict()
 
     def add(
         node: Union[TreeNode, str],
@@ -279,21 +307,11 @@ def render_graphviz(
             leaf_id = f"leaf{leaf_counter[0]}"
             leaf_counter[0] += 1
             is_chosen = on_path and node == decision
-            dot.node(
-                leaf_id,
-                label=node,
-                shape="box",
-                style="filled" + (",bold" if is_chosen else ""),
-                fillcolor="#9be29b" if is_chosen else "#f0f0f0",
-            )
+            style = _node_style(node, on_path, is_chosen=is_chosen)
+            dot.node(leaf_id, label=node, **style)
             if parent_id is not None:
-                dot.edge(
-                    parent_id,
-                    leaf_id,
-                    label=edge_label or "",
-                    color="#cc3333" if on_path else "#888888",
-                    penwidth="2.0" if on_path else "1.0",
-                )
+                estyle = _edge_style(on_path)
+                dot.edge(parent_id, leaf_id, label=edge_label or "", **estyle)
             return
 
         label = _node_label(node)
@@ -302,21 +320,11 @@ def render_graphviz(
         already_emitted = node._node_id in emitted_nodes
         if not already_emitted:
             emitted_nodes.add(node._node_id)
-            dot.node(
-                node._node_id,
-                label=label,
-                shape="ellipse",
-                style="filled" + (",bold" if on_path else ""),
-                fillcolor="#ffd966" if on_path else "white",
-            )
+            style = _node_style(node, on_path)
+            dot.node(node._node_id, label=label, **style)
         if parent_id is not None:
-            dot.edge(
-                parent_id,
-                node._node_id,
-                label=edge_label or "",
-                color="#cc3333" if on_path else "#888888",
-                penwidth="2.0" if on_path else "1.0",
-            )
+            estyle = _edge_style(on_path)
+            dot.edge(parent_id, node._node_id, label=edge_label or "", **estyle)
 
         if not already_emitted:
             taken = path_dict.get(node._node_id)
@@ -342,6 +350,7 @@ def render(
     alpha: float = 0.05,
     fmt: str = "graphviz",
     title: str | None = None,
+    theme: str | Any = "default",
 ) -> Any:
     """Dispatch to the requested renderer, with graphviz availability check.
 
@@ -363,7 +372,13 @@ def render(
             )
             return render_ascii(root, path, decision, p_values=p_values, alpha=alpha)
         return render_graphviz(
-            root, path, decision, p_values=p_values, alpha=alpha, title=title
+            root,
+            path,
+            decision,
+            p_values=p_values,
+            alpha=alpha,
+            title=title,
+            theme=theme,
         )
     raise ValueError(
         f"unknown format {fmt!r}; expected 'graphviz', 'ascii', or 'model'"

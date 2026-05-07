@@ -115,17 +115,15 @@ class SDEM(SpatialModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_lag_sdem_test"],
-            ).bayesian_lm_lag_sdem_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_sdem_test"
+            ),
             "LM-Lag-SDEM",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_lag_sdem_test"],
-            ).bayesian_robust_lm_lag_sdem_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_sdem_test"
+            ),
             "Robust-LM-Lag-SDEM",
         ),
     ]
@@ -407,7 +405,7 @@ class SDEM(SpatialModel):
             ``(direct_samples, indirect_samples, total_samples)``, each
             of shape ``(G, k_wx)``.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)

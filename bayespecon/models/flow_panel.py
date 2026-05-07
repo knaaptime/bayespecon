@@ -36,6 +36,7 @@ from ._sampler import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
 )
+from .base import SpatialModel
 from .flow import (
     _build_flow_effect_masks,
     _compute_flow_effects_lesage,
@@ -1742,38 +1743,33 @@ class OLSFlowPanel(FlowPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_flow_dest_test"],
-            ).bayesian_panel_lm_flow_dest_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_dest_test"
+            ),
             "Panel-LM-Flow-Dest",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_flow_orig_test"],
-            ).bayesian_panel_lm_flow_orig_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_orig_test"
+            ),
             "Panel-LM-Flow-Orig",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_flow_network_test"],
-            ).bayesian_panel_lm_flow_network_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_network_test"
+            ),
             "Panel-LM-Flow-Network",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_flow_joint_test"],
-            ).bayesian_panel_lm_flow_joint_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_joint_test"
+            ),
             "Panel-LM-Flow-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_flow_intra_test"],
-            ).bayesian_panel_lm_flow_intra_test(m),
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_intra_test"
+            ),
             "Panel-LM-Flow-Intra",
         ),
     ]

@@ -15,6 +15,7 @@ from bayespecon.diagnostics._decision_trees import (
     get_spec,
     render,
     render_ascii,
+    render_graphviz,
 )
 
 # ---------------------------------------------------------------------------
@@ -473,3 +474,122 @@ class TestGetPanelTobitSpec:
         tree = get_panel_spec("SEMPanelTobit")
         result, path = evaluate(tree, sig_lookup=lambda _: False)
         assert result == "SEMPanelTobit"
+
+
+# ---------------------------------------------------------------------------
+# Theme / styling tests
+# ---------------------------------------------------------------------------
+
+
+class TestGraphvizThemes:
+    """Tests for the new style system in render_graphviz."""
+
+    @pytest.fixture(scope="class")
+    def simple_tree(self):
+        return TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+
+    @pytest.fixture(scope="class")
+    def evaluated(self, simple_tree):
+        return evaluate(simple_tree, sig_lookup=lambda _: True)
+
+    def _assert_digraph(self, obj):
+        """Helper: assert that obj is a graphviz.Digraph."""
+        # graphviz may not be installed in all CI jobs, so skip if missing.
+        graphviz = pytest.importorskip("graphviz")
+        assert isinstance(obj, graphviz.Digraph)
+
+    def test_default_theme_renders(self, simple_tree, evaluated):
+        result, path = evaluated
+        dot = render_graphviz(simple_tree, path, result, theme="default")
+        self._assert_digraph(dot)
+
+    def test_minimal_theme_renders(self, simple_tree, evaluated):
+        result, path = evaluated
+        dot = render_graphviz(simple_tree, path, result, theme="minimal")
+        self._assert_digraph(dot)
+
+    def test_dark_theme_renders(self, simple_tree, evaluated):
+        result, path = evaluated
+        dot = render_graphviz(simple_tree, path, result, theme="dark")
+        self._assert_digraph(dot)
+
+    def test_custom_graph_theme(self, simple_tree, evaluated):
+        """Pass a custom GraphTheme object directly."""
+        from bayespecon.diagnostics._decision_style import GraphTheme, NodeStyle
+
+        custom = GraphTheme(
+            name="custom",
+            test_node=NodeStyle(fillcolor="#ff0000", color="#000000"),
+            leaf_chosen=NodeStyle(fillcolor="#00ff00", color="#000000"),
+            leaf_other=NodeStyle(fillcolor="#cccccc", color="#000000"),
+        )
+        result, path = evaluated
+        dot = render_graphviz(simple_tree, path, result, theme=custom)
+        self._assert_digraph(dot)
+
+    def test_unknown_theme_raises(self, simple_tree, evaluated):
+        result, path = evaluated
+        with pytest.raises(ValueError, match="unknown theme"):
+            render_graphviz(simple_tree, path, result, theme="nonexistent")
+
+    def test_predicate_node_is_diamond_default(self):
+        """In the default theme, predicate nodes should be diamonds."""
+        graphviz = pytest.importorskip("graphviz")
+        tree = TreeNode(
+            kind="predicate",
+            name="p comparison",
+            if_true="SAR",
+            if_false="SEM",
+            predicate_id="lag_le_error",
+        )
+        result, path = evaluate(
+            tree,
+            sig_lookup=lambda _: False,
+            predicate_lookup={"lag_le_error": lambda: True},
+        )
+        dot = render_graphviz(tree, path, result, theme="default")
+        assert isinstance(dot, graphviz.Digraph)
+        # The predicate node is on the path (True branch taken).
+        # Check that the node with id "n0" has shape diamond.
+        # graphviz.Digraph stores nodes in dot.body as strings, so we
+        # inspect the generated source.
+        src = dot.source
+        assert "shape=diamond" in src
+
+    def test_pruned_edges_dashed_default(self):
+        """Edges not on the active path should be dashed in default theme."""
+        graphviz = pytest.importorskip("graphviz")
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        dot = render_graphviz(tree, path, result, theme="default")
+        src = dot.source
+        # The active edge (to SAR) should be solid (no style=dashed).
+        # The pruned edge (to OLS) should be dashed.
+        assert "style=dashed" in src
+
+    def test_render_dispatch_passes_theme(self, simple_tree, evaluated):
+        """render(..., fmt='graphviz', theme=...) should forward the theme."""
+        graphviz = pytest.importorskip("graphviz")
+        result, path = evaluated
+        dot = render(simple_tree, path, result, fmt="graphviz", theme="dark")
+        assert isinstance(dot, graphviz.Digraph)
+        # Dark theme has a dark background.
+        assert 'bgcolor="#1e1e1e"' in dot.source
+
+    def test_leaf_string_with_theme(self):
+        """A bare string root should still render correctly with a theme."""
+        graphviz = pytest.importorskip("graphviz")
+        dot = render_graphviz("OLS", [], "OLS", theme="dark")
+        assert isinstance(dot, graphviz.Digraph)
+        assert "OLS" in dot.source
+
+    def test_p_value_annotation_present(self):
+        """When p-values are provided, they should appear in the node label."""
+        graphviz = pytest.importorskip("graphviz")
+        tree = TreeNode(kind="test", name="LM-Lag", if_true="SAR", if_false="OLS")
+        result, path = evaluate(tree, sig_lookup=lambda _: True)
+        dot = render_graphviz(
+            tree, path, result, p_values={"LM-Lag": 0.0123}, theme="default"
+        )
+        src = dot.source
+        assert "p=0.012" in src
