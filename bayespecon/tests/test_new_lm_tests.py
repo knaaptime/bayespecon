@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon.diagnostics.bayesian_lmtests import (
+from bayespecon.diagnostics.lmtests import (
     _ols_lag_information,
     bayesian_lm_error_sdm_test,
     bayesian_lm_lag_sdem_test,
@@ -203,6 +203,7 @@ def _make_sdem_mock(n: int = 20, k: int = 2, draws: int = 50):
     model._WX = WX
     model._Wy = Wy
     model._W_sparse = W_sp
+    model._W_dense = W
     model._T_ww = T_ww
     model.inference_data = idata
 
@@ -317,6 +318,7 @@ def _make_panel_sdem_mock(N: int = 5, T: int = 4, k: int = 2, draws: int = 50):
     model._WX = WX
     model._Wy = Wy
     model._W_sparse = W_sp  # N×N for _panel_spatial_lag
+    model._W_dense = np.kron(np.eye(T), W)  # (N*T)×(N*T) for whitening
     model._T_ww = T_ww
     model._N = N
     model._T = T

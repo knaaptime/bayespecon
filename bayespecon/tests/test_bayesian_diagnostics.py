@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bayespecon.diagnostics.bayesian_lmtests import (
+from bayespecon.diagnostics.lmtests import (
     BayesianLMTestResult,
     bayesian_lm_error_sdm_test,
     bayesian_lm_error_test,
@@ -467,6 +467,7 @@ def _make_mock_sdem_model(
     model._WX = WX
     model._Wy = Wy
     model._W_sparse = W_sparse
+    model._W_dense = W_sparse.toarray()
     model._T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
     model.inference_data = idata
     return model
@@ -521,8 +522,9 @@ class TestBayesianLMLagSDEMTest:
         """Regression test: V must include sigma^4 * T_ww (not sigma^2 * T_ww).
 
         Construct a model with sigma=2 (so sigma^2=4, sigma^4=16). Verify
-        that the LM denominator is sigma^4 * T_ww + sigma^2 * ||Wy||^2,
-        not the previously-buggy sigma^2 * T_ww + ||Wy||^2.
+        that the LM denominator uses the whitened SDEM-filtered formula
+        V = sigma^4 * T_ww + sigma^2 * z_rho' M_{Z_tilde} z_rho,
+        where z_rho = A_lambda * W y and Z_tilde = A_lambda * [X, WX].
         """
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=16, k_wx=1)
         model = _make_mock_sdem_model(
@@ -533,7 +535,6 @@ class TestBayesianLMLagSDEMTest:
         model.inference_data.posterior["sigma"][:] = sigma_val
         T_ww = model._T_ww
         Wy = model._Wy
-        expected_V = sigma_val**4 * T_ww + sigma_val**2 * float(np.dot(Wy, Wy))
 
         result = bayesian_lm_lag_sdem_test(model)
 
@@ -547,7 +548,19 @@ class TestBayesianLMLagSDEMTest:
         u = y[None, :] - beta_draws @ Z.T
         Wu = (W_sparse @ u.T).T
         eps = u - lam_draws[:, None] * Wu
-        S = np.dot(eps, Wy)
+
+        # Whitened quantities (matching the corrected implementation)
+        lam_mean = float(np.mean(lam_draws))
+        n = W_sparse.shape[0]
+        A_lam = np.eye(n) - lam_mean * W_dense
+        Z_tilde = A_lam @ Z
+        z_rho = A_lam @ Wy
+        S = np.dot(eps, z_rho)
+
+        # Expected V using the corrected whitened formula
+        from bayespecon.diagnostics.lmtests import _mx_quadratic
+
+        expected_V = sigma_val**4 * T_ww + sigma_val**2 * _mx_quadratic(Z_tilde, z_rho)
         V_implied = float(np.mean(S**2 / (result.lm_samples + 1e-15)))
 
         # The implied V should match the expected sigma^4 formula, not the
@@ -982,6 +995,12 @@ class TestSpatialDiagnosticsMethod:
             posterior.setdefault("rho", rng.normal(scale=0.05, size=draws)[:, None])
         if cls is SDEM:
             posterior["lam"] = rng.normal(scale=0.05, size=draws)[:, None]
+        # SEM mock needs ``lam`` for the new robust-after-naive tests
+        # (``bayesian_robust_lm_lag_sem_test``, ``bayesian_robust_lm_wx_sem_test``).
+        from bayespecon.models import SEM as _SEM
+
+        if cls is _SEM:
+            posterior["lam"] = rng.normal(scale=0.05, size=draws)[:, None]
 
         idata = az.from_dict(
             posterior=posterior,
@@ -1000,6 +1019,14 @@ class TestSpatialDiagnosticsMethod:
         obj._WX = WX
         obj._Wy = Wy
         obj._W_sparse = W_sparse
+        # Eager-fill the lazy-cache slots used by ``base.Model._W_dense``
+        # and ``base.Model._T_ww`` so the new robust-after-naive tests
+        # (which require dense W) work on these mock objects.
+        W_dense_arr = np.asarray(W_sparse.todense())
+        obj._W_dense_cache = W_dense_arr
+        obj._T_ww_cache = float(
+            np.sum(W_dense_arr * W_dense_arr) + np.trace(W_dense_arr @ W_dense_arr)
+        )
         obj._idata = idata
         return obj
 
@@ -1034,7 +1061,7 @@ class TestSpatialDiagnosticsMethod:
         assert df.attrs["n_draws"] > 0
 
     def test_sar_spatial_diagnostics_returns_dataframe(self):
-        """SAR.spatial_diagnostics() should return a DataFrame with 3 tests."""
+        """SAR.spatial_diagnostics() should return a DataFrame with 4 tests."""
         from bayespecon.models import SAR
 
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
@@ -1043,8 +1070,8 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 3
-        assert set(df.index) == {"LM-Error", "LM-WX", "Robust-LM-WX"}
+        assert len(df) == 4
+        assert set(df.index) == {"LM-Error", "LM-WX", "Robust-LM-WX", "Robust-LM-Error"}
 
     def test_slx_spatial_diagnostics_returns_dataframe(self):
         """SLX.spatial_diagnostics() should return a DataFrame with 4 tests."""
@@ -1065,7 +1092,7 @@ class TestSpatialDiagnosticsMethod:
         }
 
     def test_sdm_spatial_diagnostics_returns_dataframe(self):
-        """SDM.spatial_diagnostics() should return a DataFrame with 1 test."""
+        """SDM.spatial_diagnostics() should return a DataFrame with 2 tests."""
         from bayespecon.models import SDM
 
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
@@ -1074,11 +1101,11 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 1
-        assert df.index[0] == "LM-Error-SDM"
+        assert len(df) == 2
+        assert set(df.index) == {"LM-Error-SDM", "Robust-LM-Error-SDM"}
 
     def test_sdem_spatial_diagnostics_returns_dataframe(self):
-        """SDEM.spatial_diagnostics() should return a DataFrame with 1 test."""
+        """SDEM.spatial_diagnostics() should return a DataFrame with 2 tests."""
         from bayespecon.models import SDEM
 
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
@@ -1087,11 +1114,11 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 1
-        assert df.index[0] == "LM-Lag-SDEM"
+        assert len(df) == 2
+        assert set(df.index) == {"LM-Lag-SDEM", "Robust-LM-Lag-SDEM"}
 
     def test_sem_spatial_diagnostics_returns_dataframe(self):
-        """SEM.spatial_diagnostics() should return a DataFrame with 2 tests."""
+        """SEM.spatial_diagnostics() should return a DataFrame with 4 tests."""
         from bayespecon.models import SEM
 
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
@@ -1100,8 +1127,8 @@ class TestSpatialDiagnosticsMethod:
         df = model.spatial_diagnostics()
 
         assert isinstance(df, pd.DataFrame)
-        assert len(df) == 2
-        assert set(df.index) == {"LM-Lag", "LM-WX"}
+        assert len(df) == 4
+        assert set(df.index) == {"LM-Lag", "LM-WX", "Robust-LM-Lag", "Robust-LM-WX"}
 
     def test_spatial_diagnostics_decision_returns_string(self):
         """spatial_diagnostics_decision(format="model") should return a model name string."""
@@ -1173,17 +1200,23 @@ class TestSpatialDiagnosticsMethod:
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
         model = self._make_model_with_class(y, X, W_sparse, SDM, WX=WX)
 
-        # Monkeypatch spatial_diagnostics to return a controlled DataFrame
+        # Monkeypatch spatial_diagnostics to return a controlled DataFrame.
+        # The new SDM tree requires both naive ``LM-Error-SDM`` and the
+        # robust-after-naive ``Robust-LM-Error-SDM`` gate to fire before
+        # escalating to MANSAR.
         df = pd.DataFrame(
-            {"p_value": [0.001]},
-            index=["LM-Error-SDM"],
+            {"p_value": [0.001, 0.001]},
+            index=["LM-Error-SDM", "Robust-LM-Error-SDM"],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
             model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
         )
 
-        df2 = pd.DataFrame({"p_value": [0.9]}, index=["LM-Error-SDM"])
+        df2 = pd.DataFrame(
+            {"p_value": [0.9, 0.9]},
+            index=["LM-Error-SDM", "Robust-LM-Error-SDM"],
+        )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df2)
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
 
@@ -1194,7 +1227,10 @@ class TestSpatialDiagnosticsMethod:
         y, X, WX, W_dense, W_sparse = _make_data_with_wx(n=20, k_wx=2)
         model = self._make_model_with_class(y, X, W_sparse, SDEM, WX=WX)
 
-        df = pd.DataFrame({"p_value": [0.001]}, index=["LM-Lag-SDEM"])
+        df = pd.DataFrame(
+            {"p_value": [0.001, 0.001]},
+            index=["LM-Lag-SDEM", "Robust-LM-Lag-SDEM"],
+        )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
             model.spatial_diagnostics_decision(alpha=0.05, format="model") == "MANSAR"
@@ -1232,9 +1268,15 @@ class TestSpatialDiagnosticsMethod:
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.9, 0.001))
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SEM"
 
-        # Both robust fire -> SARAR
+        # Both robust fire -> route via robust p-value tie-break.  Equal
+        # robust p-values resolve in favour of SAR (lag <= error).  We
+        # never escalate directly to SARAR from OLS.
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.001, 0.001))
-        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SARAR"
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SAR"
+
+        # Both robust fire, error robust strictly smaller -> SEM wins.
+        monkeypatch.setattr(model, "spatial_diagnostics", lambda: make_df(0.01, 0.0001))
+        assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SEM"
 
 
 # ---------------------------------------------------------------------------
@@ -1307,7 +1349,7 @@ def fitted_sarflow(_flow_ring_graph):
 
 class TestFlowLMTests:
     def test_marginal_dest(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_dest_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_dest_test
 
         r = bayesian_lm_flow_dest_test(fitted_olsflow)
         assert isinstance(r, BayesianLMTestResult)
@@ -1318,7 +1360,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_marginal_orig(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_orig_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_orig_test
 
         r = bayesian_lm_flow_orig_test(fitted_olsflow)
         assert r.df == 1
@@ -1326,7 +1368,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_marginal_network(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_network_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_network_test
 
         r = bayesian_lm_flow_network_test(fitted_olsflow)
         assert r.df == 1
@@ -1334,7 +1376,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_joint(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_joint_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_joint_test
 
         r = bayesian_lm_flow_joint_test(fitted_olsflow)
         assert r.df == 3
@@ -1343,7 +1385,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_intra(self, fitted_olsflow):
-        from bayespecon import bayesian_lm_flow_intra_test
+        from bayespecon.diagnostics.lmtests import bayesian_lm_flow_intra_test
 
         r = bayesian_lm_flow_intra_test(fitted_olsflow)
         assert r.df >= 1
@@ -1351,7 +1393,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_robust_dest(self, fitted_sarflow):
-        from bayespecon import bayesian_robust_lm_flow_dest_test
+        from bayespecon.diagnostics.lmtests import bayesian_robust_lm_flow_dest_test
 
         r = bayesian_robust_lm_flow_dest_test(fitted_sarflow)
         assert r.df == 1
@@ -1359,7 +1401,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_robust_orig(self, fitted_sarflow):
-        from bayespecon import bayesian_robust_lm_flow_orig_test
+        from bayespecon.diagnostics.lmtests import bayesian_robust_lm_flow_orig_test
 
         r = bayesian_robust_lm_flow_orig_test(fitted_sarflow)
         assert r.df == 1
@@ -1367,7 +1409,7 @@ class TestFlowLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_robust_network(self, fitted_sarflow):
-        from bayespecon import bayesian_robust_lm_flow_network_test
+        from bayespecon.diagnostics.lmtests import bayesian_robust_lm_flow_network_test
 
         r = bayesian_robust_lm_flow_network_test(fitted_sarflow)
         assert r.df == 1
@@ -1418,7 +1460,7 @@ def fitted_olsflow_panel(_flow_ring_graph):
 
 class TestFlowPanelLMTests:
     def test_marginal_dest(self, fitted_olsflow_panel):
-        from bayespecon import bayesian_panel_lm_flow_dest_test
+        from bayespecon.diagnostics.lmtests import bayesian_panel_lm_flow_dest_test
 
         r = bayesian_panel_lm_flow_dest_test(fitted_olsflow_panel)
         assert r.df == 1
@@ -1428,7 +1470,7 @@ class TestFlowPanelLMTests:
         assert r.details["T"] == 3
 
     def test_marginal_orig_network(self, fitted_olsflow_panel):
-        from bayespecon import (
+        from bayespecon.diagnostics.lmtests import (
             bayesian_panel_lm_flow_network_test,
             bayesian_panel_lm_flow_orig_test,
         )
@@ -1443,7 +1485,7 @@ class TestFlowPanelLMTests:
             assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_joint(self, fitted_olsflow_panel):
-        from bayespecon import bayesian_panel_lm_flow_joint_test
+        from bayespecon.diagnostics.lmtests import bayesian_panel_lm_flow_joint_test
 
         r = bayesian_panel_lm_flow_joint_test(fitted_olsflow_panel)
         assert r.df == 3
@@ -1451,7 +1493,7 @@ class TestFlowPanelLMTests:
         assert 0.0 <= r.bayes_pvalue <= 1.0
 
     def test_intra(self, fitted_olsflow_panel):
-        from bayespecon import bayesian_panel_lm_flow_intra_test
+        from bayespecon.diagnostics.lmtests import bayesian_panel_lm_flow_intra_test
 
         r = bayesian_panel_lm_flow_intra_test(fitted_olsflow_panel)
         assert r.df >= 1

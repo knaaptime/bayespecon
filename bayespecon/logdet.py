@@ -5,6 +5,12 @@ grid interpolation for large n, used as pm.Potential in spatial likelihoods.
 
 """
 
+import hashlib
+import os
+from collections import OrderedDict
+from dataclasses import dataclass
+from typing import Any, Mapping
+
 import numpy as np
 import pytensor.tensor as pt
 import scipy.sparse as sp
@@ -15,6 +21,102 @@ from scipy.interpolate import CubicSpline
 # rather than a per-rho slogdet loop.  Above this threshold the O(n^3) eigvals
 # cost dominates and the iterative slogdet path is more memory-friendly.
 _LOGDET_GRID_EIG_MAX = 4000
+_LOGDET_FN_CACHE_MAXSIZE = 64
+_LOGDET_FN_CACHE: OrderedDict[tuple, Any] = OrderedDict()
+
+
+@dataclass(frozen=True)
+class LogdetBounds:
+    """Resolved logdet method and rho interval used for approximation."""
+
+    method: str
+    rho_min: float
+    rho_max: float
+    source: str
+
+
+def resolve_logdet_bounds(
+    method: str | None,
+    *,
+    n: int,
+    eigs: np.ndarray | None = None,
+    priors: Mapping[str, Any] | None = None,
+    rho_min: float | None = None,
+    rho_max: float | None = None,
+    eps: float = 1e-6,
+) -> LogdetBounds:
+    """Resolve method-specific rho bounds from defaults, priors, or overrides.
+
+    Resolution precedence is: explicit overrides, prior-derived bounds,
+    method defaults.
+    """
+    resolved_method = method if method is not None else _auto_logdet_method(int(n))
+    source = "default"
+
+    if rho_min is not None or rho_max is not None:
+        if rho_min is None or rho_max is None:
+            raise ValueError("Both rho_min and rho_max must be provided together.")
+        lo = float(rho_min)
+        hi = float(rho_max)
+        source = "override"
+    else:
+        p = priors or {}
+        lo_prior = None
+        hi_prior = None
+        for lk, hk in (("rho_lower", "rho_upper"), ("lam_lower", "lam_upper")):
+            if lk in p and hk in p:
+                lo_prior = float(p[lk])
+                hi_prior = float(p[hk])
+                break
+
+        if lo_prior is not None and hi_prior is not None:
+            lo = lo_prior
+            hi = hi_prior
+            source = "prior"
+        elif resolved_method in {"spline", "mc"}:
+            lo = 1e-5
+            hi = 1.0
+        else:
+            lo = -1.0
+            hi = 1.0
+
+    if resolved_method in {"spline", "mc"} and lo < 0.0:
+        raise ValueError(
+            f"method='{resolved_method}' requires a nonnegative rho range; "
+            "use priors/overrides with rho_min >= 0, or choose a different method."
+        )
+
+    if eigs is not None:
+        eigs_r = np.asarray(eigs, dtype=np.float64).real
+        pos = eigs_r[eigs_r > 0.0]
+        neg = eigs_r[eigs_r < 0.0]
+        lo_stable = -np.inf if neg.size == 0 else float(1.0 / np.max(neg))
+        hi_stable = np.inf if pos.size == 0 else float(1.0 / np.min(pos))
+
+        lo_clip = lo_stable + eps if np.isfinite(lo_stable) else lo
+        hi_clip = hi_stable - eps if np.isfinite(hi_stable) else hi
+
+        if source == "override" and (lo < lo_clip or hi > hi_clip):
+            raise ValueError(
+                "Explicit rho bounds fall outside the spectral stability interval "
+                f"({lo_clip:.6g}, {hi_clip:.6g})."
+            )
+
+        lo = max(lo, lo_clip)
+        hi = min(hi, hi_clip)
+
+    if hi <= lo:
+        raise ValueError(
+            f"Invalid rho interval after resolution for method='{resolved_method}': "
+            f"rho_min={lo}, rho_max={hi}."
+        )
+
+    return LogdetBounds(
+        method=resolved_method,
+        rho_min=float(lo),
+        rho_max=float(hi),
+        source=source,
+    )
 
 
 def _stable_rho_grid(
@@ -151,7 +253,7 @@ def _build_logdet_grid(
 
 
 def sparse_grid(W, lmin: float, lmax: float, grid: float = 0.01) -> dict:
-    """Compute exact sparse-LU log-determinant grid (MATLAB ``lndetfull`` style).
+    """Compute an exact sparse-LU log-determinant grid.
 
     Parameters
     ----------
@@ -184,7 +286,7 @@ def sparse_grid(W, lmin: float, lmax: float, grid: float = 0.01) -> dict:
 
 
 def spline(W, rmin: float = 0.0, rmax: float = 1.0, n_grid: int = 100) -> dict:
-    """Compute spline-interpolated log-determinant grid (MATLAB ``lndetint`` style).
+    """Compute a spline-interpolated log-determinant grid.
 
     Parameters
     ----------
@@ -205,7 +307,7 @@ def spline(W, rmin: float = 0.0, rmax: float = 1.0, n_grid: int = 100) -> dict:
     if n_grid < 20:
         raise ValueError("n_grid must be at least 20 for stable spline interpolation.")
     if rmin < 0.0:
-        raise ValueError("lndetint is defined for nonnegative rho ranges (rmin >= 0).")
+        raise ValueError("spline is defined for nonnegative rho ranges (rmin >= 0).")
     if rmax <= rmin:
         raise ValueError("rmax must be greater than rmin.")
 
@@ -214,7 +316,7 @@ def spline(W, rmin: float = 0.0, rmax: float = 1.0, n_grid: int = 100) -> dict:
     I = sp.eye(n, format="csc", dtype=np.float64)
 
     rho = np.linspace(rmin, rmax, n_grid, endpoint=False, dtype=np.float64)
-    # Follow the original control-point pattern from the MATLAB routine.
+    # Follow the original control-point pattern from the legacy routine.
     ctrl = (
         np.array(
             [10, 20, 40, 50, 60, 70, 80, 85, 90, 95, 96, 97, 98, 99, 100], dtype=int
@@ -277,7 +379,7 @@ def mc(
     if iter <= 0:
         raise ValueError("iter must be positive.")
     if rmin < 0.0:
-        raise ValueError("lndetmc is defined for nonnegative rho ranges (rmin >= 0).")
+        raise ValueError("mc is defined for nonnegative rho ranges (rmin >= 0).")
     if rmax <= rmin:
         raise ValueError("rmax must be greater than rmin.")
     W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
@@ -317,7 +419,7 @@ def ilu(
     drop_tol: float = 1e-3,
     fill_factor: float = 10.0,
 ) -> dict:
-    """Compute ILU-based approximate log-determinant grid (MATLAB ``lndetichol`` analog).
+    """Compute an ILU-based approximate log-determinant grid.
 
     Parameters
     ----------
@@ -465,7 +567,11 @@ def chebyshev(
         n = int(eigs_arr.shape[0])
         W_sp = None
     else:
-        W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
+        # Handle sparse matrices/arrays: don't convert to dense via np.asarray
+        if sp.issparse(W) or hasattr(W, "format"):  # sp.csr_array check
+            W_sp = sp.csr_matrix(W)
+        else:
+            W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
         n = W_sp.shape[0]
         eigs_arr = None
 
@@ -1107,15 +1213,83 @@ def _auto_logdet_method(n: int) -> str:
     Returns
     -------
     str
-        ``'eigenvalue'`` for n ≤ 2000 (exact, O(n) per step after O(n³) pre-compute);
-        ``'chebyshev'`` for n > 2000 (near-minimax, avoids O(n³) eigendecomposition).
+        ``'eigenvalue'`` for n less than or equal to the configured cutoff,
+        otherwise ``'chebyshev'``.
+
+    Notes
+    -----
+    The cutoff is configurable via environment variable
+    ``BAYESPECON_LOGDET_EIGEN_MAX_N`` (default: ``500``). Lowering the
+    cutoff avoids expensive dense eigendecompositions for larger empirical
+    datasets while keeping exact evaluation on small to medium test cases.
     """
-    return "eigenvalue" if n <= 2000 else "chebyshev"
+    cutoff_raw = os.getenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "500")
+    try:
+        cutoff = max(1, int(cutoff_raw))
+    except ValueError:
+        cutoff = 500
+    return "eigenvalue" if n <= cutoff else "chebyshev"
+
+
+_GRID_SPLINE_METHODS = ("dense_grid", "sparse_grid", "spline", "mc", "ilu")
+
+
+def _build_grid_spline(
+    W_dense: np.ndarray,
+    method: str,
+    rho_min: float,
+    rho_max: float,
+    *,
+    clamp_nonnegative: bool,
+) -> CubicSpline:
+    """Build a CubicSpline approximation for grid/interpolation methods."""
+    if method == "dense_grid":
+        rho_grid, logdet_grid = _build_logdet_grid(W_dense, rho_min, rho_max)
+        return CubicSpline(rho_grid, logdet_grid)
+    if method == "sparse_grid":
+        out = sparse_grid(W_dense, rho_min, rho_max)
+        return CubicSpline(out["rho"], out["lndet"])
+    if method == "spline":
+        rmin = max(rho_min, 0.0) if clamp_nonnegative else rho_min
+        out = spline(W_dense, rmin, rho_max)
+        return CubicSpline(out["rho"], out["lndet"])
+    if method == "mc":
+        rmin = max(rho_min, 1e-5) if clamp_nonnegative else rho_min
+        out = mc(order=50, iter=30, W=W_dense, rmin=rmin, rmax=rho_max)
+        return CubicSpline(out["rho"], out["lndet"])
+    if method == "ilu":
+        out = ilu(W_dense, rho_min, rho_max)
+        return CubicSpline(out["rho"], out["lndet"])
+    raise ValueError(
+        f"Grid spline helper does not support method={method!r}. "
+        f"Choose one of {_GRID_SPLINE_METHODS}."
+    )
+
+
+def _make_pytensor_interp_fn(spline_obj: CubicSpline, T: int):
+    """Create a pytensor scalar interpolation closure from a SciPy CubicSpline."""
+    breakpoints_np = spline_obj.x.astype(np.float64)
+    coefficients_np = spline_obj.c.astype(np.float64)
+    step = float(breakpoints_np[1] - breakpoints_np[0])
+    bp0 = float(breakpoints_np[0])
+    n_intervals = len(breakpoints_np) - 2
+
+    def _interp(rho):
+        bp = pt.as_tensor_variable(breakpoints_np)
+        c = pt.as_tensor_variable(coefficients_np)
+        idx = pt.cast(pt.floor((rho - bp0) / step), "int64")
+        idx = pt.clip(idx, 0, n_intervals)
+        dx = rho - bp[idx]
+        coefs = c[:, idx]
+        val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
+        return val if T == 1 else T * val
+
+    return _interp
 
 
 def make_logdet_numpy_fn(
     W_sparse,
-    eigs: np.ndarray,
+    eigs: np.ndarray | None,
     method: str | None,
     rho_min: float = -1.0,
     rho_max: float = 1.0,
@@ -1130,8 +1304,8 @@ def make_logdet_numpy_fn(
     ----------
     W_sparse : scipy.sparse matrix
         Row-standardised n×n spatial weights matrix.
-    eigs : np.ndarray
-        Pre-computed real eigenvalues of W (``W_sparse.toarray()`` eigvals).
+    eigs : np.ndarray, optional
+        Optional pre-computed real eigenvalues of W.
     method : str or None
         Same as :func:`make_logdet_fn`.  ``None`` auto-selects via
         :func:`_auto_logdet_method`.
@@ -1145,11 +1319,15 @@ def make_logdet_numpy_fn(
     callable
         Function ``(rho: float) -> float`` computing log|I - rho*W|.
     """
-    n = eigs.shape[0]
+    n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
     if method is None:
         method = _auto_logdet_method(n)
 
     if method == "eigenvalue":
+        if eigs is None:
+            eigs = np.linalg.eigvals(
+                np.asarray(W_sparse.toarray(), dtype=np.float64)
+            ).real
         _eigs = eigs.real.astype(np.float64)
         return lambda r: float(np.sum(np.log(np.abs(1.0 - r * _eigs))))
 
@@ -1197,26 +1375,16 @@ def make_logdet_numpy_fn(
 
         return _mc_poly_numpy
 
-    elif method in ("dense_grid", "sparse_grid", "spline", "mc", "ilu"):
-        # Grid/spline methods: precompute numpy spline, return scipy interpolator
+    elif method in _GRID_SPLINE_METHODS:
+        # Grid/spline methods: precompute numpy spline, then evaluate directly.
         W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
-        if method == "dense_grid":
-            rho_grid, logdet_grid = _build_logdet_grid(W_dense, rho_min, rho_max)
-            spl = CubicSpline(rho_grid, logdet_grid)
-        elif method == "sparse_grid":
-            out = sparse_grid(W_dense, rho_min, rho_max)
-            spl = CubicSpline(out["rho"], out["lndet"])
-        elif method == "spline":
-            _rmin = max(rho_min, 0.0)
-            out = spline(W_dense, _rmin, rho_max)
-            spl = CubicSpline(out["rho"], out["lndet"])
-        elif method == "mc":
-            _rmin = max(rho_min, 1e-5)
-            out = mc(order=50, iter=30, W=W_dense, rmin=_rmin, rmax=rho_max)
-            spl = CubicSpline(out["rho"], out["lndet"])
-        else:  # ilu
-            out = ilu(W_dense, rho_min, rho_max)
-            spl = CubicSpline(out["rho"], out["lndet"])
+        spl = _build_grid_spline(
+            W_dense,
+            method,
+            rho_min,
+            rho_max,
+            clamp_nonnegative=True,
+        )
         return lambda r: float(spl(float(r)))
 
     else:
@@ -1229,7 +1397,7 @@ def make_logdet_numpy_fn(
 
 def make_logdet_numpy_vec_fn(
     W_sparse,
-    eigs: np.ndarray,
+    eigs: np.ndarray | None,
     method: str | None,
     rho_min: float = -1.0,
     rho_max: float = 1.0,
@@ -1237,17 +1405,15 @@ def make_logdet_numpy_vec_fn(
     """Return a **vectorized** numpy ``(rho_arr: np.ndarray) -> np.ndarray`` logdet evaluator.
 
     Companion to :func:`make_logdet_numpy_fn` for batch evaluation over an
-    array of posterior draws without a Python loop.  For the ``'eigenvalue'``
-    method this is a true vectorized O(G·n) operation; for other methods the
-    scalar callable from :func:`make_logdet_numpy_fn` is wrapped with
-    ``np.vectorize`` as a fallback.
+    array of posterior draws without a Python loop. Each supported method uses
+    an array-native implementation.
 
     Parameters
     ----------
     W_sparse : scipy.sparse matrix
         Row-standardised n×n spatial weights matrix.
-    eigs : np.ndarray
-        Pre-computed real eigenvalues of W.
+    eigs : np.ndarray, optional
+        Optional pre-computed real eigenvalues of W.
     method : str or None
         Same as :func:`make_logdet_numpy_fn`.
     rho_min : float, default -1.0
@@ -1258,11 +1424,15 @@ def make_logdet_numpy_vec_fn(
     callable
         Function ``(rho_arr: np.ndarray) -> np.ndarray`` of shape ``(G,)``.
     """
-    n = eigs.shape[0]
+    n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
     if method is None:
         method = _auto_logdet_method(n)
 
     if method == "eigenvalue":
+        if eigs is None:
+            eigs = np.linalg.eigvals(
+                np.asarray(W_sparse.toarray(), dtype=np.float64)
+            ).real
         _eigs = eigs.real.astype(np.float64)
 
         def _vec_eigenvalue(rho_arr: np.ndarray) -> np.ndarray:
@@ -1273,10 +1443,80 @@ def make_logdet_numpy_vec_fn(
 
         return _vec_eigenvalue
 
-    # For all other methods, build the scalar fn and wrap it.
-    scalar_fn = make_logdet_numpy_fn(W_sparse, eigs, method, rho_min, rho_max)
-    _vfn = np.vectorize(scalar_fn)
-    return lambda rho_arr: _vfn(np.asarray(rho_arr, dtype=np.float64))
+    if method == "chebyshev":
+        out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
+        coeffs = out["coeffs"].astype(np.float64)
+        rmin_cb, rmax_cb = float(out["rmin"]), float(out["rmax"])
+        m = len(coeffs)
+
+        def _vec_chebyshev(rho_arr: np.ndarray) -> np.ndarray:
+            rho_arr = np.asarray(rho_arr, dtype=np.float64)
+            x = (2.0 * rho_arr - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
+
+            if m == 0:
+                return np.zeros_like(rho_arr, dtype=np.float64)
+            if m == 1:
+                return np.full_like(rho_arr, coeffs[0], dtype=np.float64)
+
+            # Vectorized Clenshaw recurrence over all rho draws.
+            b_next = np.zeros_like(x, dtype=np.float64)
+            b_curr = np.full_like(x, coeffs[m - 1], dtype=np.float64)
+            for k in range(m - 2, 0, -1):
+                b_new = 2.0 * x * b_curr - b_next + coeffs[k]
+                b_next = b_curr
+                b_curr = b_new
+            return coeffs[0] + x * b_curr - b_next
+
+        return _vec_chebyshev
+
+    if method == "mc_poly":
+        if sp.issparse(W_sparse):
+            W_sp = W_sparse.tocsr().astype(np.float64)
+        else:
+            W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
+        traces = compute_flow_traces(W_sp, miter=30, riter=50)
+        m = len(traces)
+        k_arr = np.arange(1, m + 1, dtype=np.float64)
+        w = (traces / k_arr).astype(np.float64)
+
+        def _vec_mc_poly(rho_arr: np.ndarray) -> np.ndarray:
+            rho_arr = np.asarray(rho_arr, dtype=np.float64)
+            if m == 0:
+                return np.zeros_like(rho_arr, dtype=np.float64)
+            # Evaluate p(r) = w1 + w2 r + ... + wm r^(m-1) with numpy polynomial,
+            # then return -r * p(r) for the Barry-Pace truncated series.
+            poly_val = np.polynomial.polynomial.polyval(rho_arr, w)
+            return -rho_arr * poly_val
+
+        return _vec_mc_poly
+
+    if method in _GRID_SPLINE_METHODS:
+        W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
+        spl = _build_grid_spline(
+            W_dense,
+            method,
+            rho_min,
+            rho_max,
+            clamp_nonnegative=True,
+        )
+
+        def _vec_grid(rho_arr: np.ndarray) -> np.ndarray:
+            rho_arr = np.asarray(rho_arr, dtype=np.float64)
+            return np.asarray(spl(rho_arr), dtype=np.float64)
+
+        return _vec_grid
+
+    # Fallback: exact batched slogdet using stacked (G, n, n) matrices.
+    W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
+    n_mat = W_dense.shape[0]
+    I = np.eye(n_mat, dtype=np.float64)
+
+    def _vec_exact(rho_arr: np.ndarray) -> np.ndarray:
+        rho_arr = np.asarray(rho_arr, dtype=np.float64)
+        mats = I[None, :, :] - rho_arr[:, None, None] * W_dense[None, :, :]
+        return np.linalg.slogdet(mats)[1]
+
+    return _vec_exact
 
 
 def make_logdet_fn(
@@ -1290,7 +1530,7 @@ def make_logdet_fn(
 
     Parameters
     ----------
-    W : np.ndarray
+    W : np.ndarray or scipy.sparse matrix
         Either a 2-D dense ``(n, n)`` spatial weights matrix **or** a 1-D
         array of pre-computed real eigenvalues.  Passing eigenvalues skips the
         O(n³) decomposition inside this function; the ``'dense_grid'`` and
@@ -1303,15 +1543,14 @@ def make_logdet_fn(
         ``"eigenvalue"`` — pre-compute W's eigenvalues once (O(n³)); every
         subsequent evaluation costs O(n) and is exact.
         ``"exact"`` — exact O(n³) symbolic det via pytensor (slow for n > 500).
-        ``"dense_grid"`` — dense eigenvalue grid + cubic-spline interpolation
-        (MATLAB ``lndetfull`` analog).
+        ``"dense_grid"`` — dense eigenvalue grid + cubic-spline interpolation.
         ``"sparse_grid"`` — sparse-LU grid + cubic-spline interpolation
-        (MATLAB ``lndetfull`` style for large sparse W).
+        for large sparse W.
         ``"spline"`` — sparse-LU + cubic-spline interpolation on
-        ``[max(rho_min, 0), rho_max]`` (MATLAB ``lndetint`` style).
+        ``[max(rho_min, 0), rho_max]``.
         ``"mc"`` — Monte Carlo trace approximation
         (:cite:p:`barry1999MonteCarlo`) + spline interpolation.
-        ``"ilu"`` — ILU-based approximation (MATLAB ``lndetichol`` analog)
+        ``"ilu"`` — ILU-based approximation
         + spline interpolation.
         ``"chebyshev"`` — Chebyshev polynomial approximation
         (:cite:p:`pace2004ChebyshevApproximation`); near-minimax
@@ -1346,8 +1585,8 @@ def make_logdet_fn(
       the cubic spline extrapolates with rapidly degrading accuracy and
       **must not** be trusted.  Set ``rho_min`` / ``rho_max`` to match
       your prior bounds.
-    * ``"spline"`` — restricted to ``rho ≥ 0`` because the
-      MATLAB ``lndetint`` routine builds its grid on
+        * ``"spline"`` — restricted to ``rho ≥ 0`` because this routine builds
+            its grid on
       ``[max(rho_min, 0), rho_max]``; passing negative ``rho`` is
       silently extrapolated, which is rarely intended.
     * ``"mc"`` — restricted to ``rho ≥ 1e-5`` for the same reason
@@ -1365,7 +1604,28 @@ def make_logdet_fn(
       where eigendecomposition is infeasible.
     """
     T = int(T)
-    W = np.asarray(W, dtype=np.float64)
+
+    if sp.issparse(W):
+        W_sparse = W.tocsr().astype(np.float64)
+        if method is None:
+            method = _auto_logdet_method(W_sparse.shape[0])
+
+        if method == "chebyshev":
+            out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max)
+            coeffs_np = out["coeffs"]
+            rmin_cb = out["rmin"]
+            rmax_cb = out["rmax"]
+
+            def _chebyshev_sparse_interp(rho):
+                val = logdet_chebyshev(rho, coeffs_np, rmin=rmin_cb, rmax=rmax_cb)
+                return val if T == 1 else T * val
+
+            return _chebyshev_sparse_interp
+
+        # Other methods expect dense/eigenvalue inputs below.
+        W = np.asarray(W_sparse.toarray(), dtype=np.float64)
+    else:
+        W = np.asarray(W, dtype=np.float64)
 
     if W.ndim == 1:
         # 1-D eigenvalue array supplied — skip O(n³) decomposition.
@@ -1417,87 +1677,15 @@ def make_logdet_fn(
         if T == 1:
             return lambda rho: logdet_exact(rho, W_dense)
         return lambda rho: T * logdet_exact(rho, W_dense)
-    elif method == "dense_grid":
-        rho_grid, logdet_grid = _build_logdet_grid(W_dense, rho_min, rho_max)
-        spline_obj = CubicSpline(rho_grid, logdet_grid)
-        breakpoints_np = spline_obj.x.astype(np.float64)
-        coefficients_np = spline_obj.c.astype(np.float64)
-        # Uniform grid step enables O(1) index lookup instead of O(n_grid) scan.
-        step = float(breakpoints_np[1] - breakpoints_np[0])
-        bp0 = float(breakpoints_np[0])
-        n_intervals = len(breakpoints_np) - 2
-
-        def _interp(rho):
-            bp = pt.as_tensor_variable(breakpoints_np)
-            c = pt.as_tensor_variable(coefficients_np)
-            idx = pt.cast(pt.floor((rho - bp0) / step), "int64")
-            idx = pt.clip(idx, 0, n_intervals)
-            dx = rho - bp[idx]
-            coefs = c[:, idx]
-            val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
-            return val if T == 1 else T * val
-
-        return _interp
-    elif method == "sparse_grid":
-        out = sparse_grid(W_dense, rho_min, rho_max)
-        spline_obj = CubicSpline(out["rho"], out["lndet"])
-
-        def _sparse_grid_interp(rho):
-            bp = pt.as_tensor_variable(spline_obj.x.astype(np.float64))
-            c = pt.as_tensor_variable(spline_obj.c.astype(np.float64))
-            idx = pt.cast(pt.floor((rho - bp[0]) / (bp[1] - bp[0])), "int64")
-            idx = pt.clip(idx, 0, len(spline_obj.x) - 2)
-            dx = rho - bp[idx]
-            coefs = c[:, idx]
-            val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
-            return val if T == 1 else T * val
-
-        return _sparse_grid_interp
-    elif method == "spline":
-        out = spline(W_dense, rho_min, rho_max)
-        spline_obj = CubicSpline(out["rho"], out["lndet"])
-
-        def _spline_interp(rho):
-            bp = pt.as_tensor_variable(spline_obj.x.astype(np.float64))
-            c = pt.as_tensor_variable(spline_obj.c.astype(np.float64))
-            idx = pt.cast(pt.floor((rho - bp[0]) / (bp[1] - bp[0])), "int64")
-            idx = pt.clip(idx, 0, len(spline_obj.x) - 2)
-            dx = rho - bp[idx]
-            coefs = c[:, idx]
-            val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
-            return val if T == 1 else T * val
-
-        return _spline_interp
-    elif method == "mc":
-        out = mc(order=50, iter=30, W=W_dense, rmin=rho_min, rmax=rho_max)
-        spline_obj = CubicSpline(out["rho"], out["lndet"])
-
-        def _mc_interp(rho):
-            bp = pt.as_tensor_variable(spline_obj.x.astype(np.float64))
-            c = pt.as_tensor_variable(spline_obj.c.astype(np.float64))
-            idx = pt.cast(pt.floor((rho - bp[0]) / (bp[1] - bp[0])), "int64")
-            idx = pt.clip(idx, 0, len(spline_obj.x) - 2)
-            dx = rho - bp[idx]
-            coefs = c[:, idx]
-            val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
-            return val if T == 1 else T * val
-
-        return _mc_interp
-    elif method == "ilu":
-        out = ilu(W_dense, rho_min, rho_max)
-        spline_obj = CubicSpline(out["rho"], out["lndet"])
-
-        def _ilu_interp(rho):
-            bp = pt.as_tensor_variable(spline_obj.x.astype(np.float64))
-            c = pt.as_tensor_variable(spline_obj.c.astype(np.float64))
-            idx = pt.cast(pt.floor((rho - bp[0]) / (bp[1] - bp[0])), "int64")
-            idx = pt.clip(idx, 0, len(spline_obj.x) - 2)
-            dx = rho - bp[idx]
-            coefs = c[:, idx]
-            val = coefs[0] * dx**3 + coefs[1] * dx**2 + coefs[2] * dx + coefs[3]
-            return val if T == 1 else T * val
-
-        return _ilu_interp
+    elif method in _GRID_SPLINE_METHODS:
+        spline_obj = _build_grid_spline(
+            W_dense,
+            method,
+            rho_min,
+            rho_max,
+            clamp_nonnegative=False,
+        )
+        return _make_pytensor_interp_fn(spline_obj, T)
     elif method == "chebyshev":
         out = chebyshev(W_dense, order=20, rmin=rho_min, rmax=rho_max)
         coeffs_np = out["coeffs"]
@@ -1522,6 +1710,93 @@ def make_logdet_fn(
         raise ValueError(
             f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu', 'chebyshev', 'mc_poly'."
         )
+
+
+def _hash_array(arr: np.ndarray) -> str:
+    """Return a stable hash for numeric numpy arrays."""
+    arr_c = np.ascontiguousarray(arr)
+    h = hashlib.blake2b(digest_size=16)
+    h.update(str(arr_c.dtype).encode("ascii"))
+    h.update(np.asarray(arr_c.shape, dtype=np.int64).tobytes())
+    h.update(arr_c.view(np.uint8))
+    return h.hexdigest()
+
+
+def _logdet_w_signature(W) -> tuple:
+    """Build a stable cache signature for dense/sparse/eigenvalue W inputs."""
+    if sp.issparse(W):
+        W_csr = W.tocsr().astype(np.float64)
+        h = hashlib.blake2b(digest_size=16)
+        h.update(np.asarray(W_csr.shape, dtype=np.int64).tobytes())
+        h.update(np.asarray([W_csr.nnz], dtype=np.int64).tobytes())
+        h.update(np.ascontiguousarray(W_csr.indptr).view(np.uint8))
+        h.update(np.ascontiguousarray(W_csr.indices).view(np.uint8))
+        h.update(np.ascontiguousarray(W_csr.data).view(np.uint8))
+        return ("sparse", W_csr.shape, int(W_csr.nnz), h.hexdigest())
+
+    W_arr = np.asarray(W, dtype=np.float64)
+    if W_arr.ndim == 1:
+        return ("eigs", W_arr.shape, _hash_array(W_arr))
+    if W_arr.ndim == 2:
+        return ("dense", W_arr.shape, _hash_array(W_arr))
+    raise ValueError(f"Unsupported W with ndim={W_arr.ndim}; expected 1D or 2D.")
+
+
+def clear_logdet_fn_cache() -> None:
+    """Clear the shared cache of precomputed PyTensor logdet callables."""
+    _LOGDET_FN_CACHE.clear()
+
+
+def get_cached_logdet_fn(
+    W,
+    method: str | None = None,
+    rho_min: float = -1.0,
+    rho_max: float = 1.0,
+    T: int = 1,
+):
+    """Return a shared cached ``make_logdet_fn`` callable.
+
+    Cache key includes a stable signature of ``W`` plus ``method``, bounds,
+    and panel multiplier ``T``. This avoids repeatedly rebuilding equivalent
+    logdet approximations across model instances.
+    """
+    T = int(T)
+    if method is None:
+        if sp.issparse(W):
+            n = int(W.shape[0])
+            resolved_method = _auto_logdet_method(n)
+        else:
+            W_arr = np.asarray(W)
+            if W_arr.ndim == 1:
+                resolved_method = "eigenvalue"
+            else:
+                resolved_method = _auto_logdet_method(int(W_arr.shape[0]))
+    else:
+        resolved_method = method
+
+    key = (
+        _logdet_w_signature(W),
+        resolved_method,
+        float(rho_min),
+        float(rho_max),
+        T,
+    )
+    fn = _LOGDET_FN_CACHE.get(key)
+    if fn is not None:
+        _LOGDET_FN_CACHE.move_to_end(key)
+        return fn
+
+    fn = make_logdet_fn(
+        W,
+        method=resolved_method,
+        rho_min=rho_min,
+        rho_max=rho_max,
+        T=T,
+    )
+    _LOGDET_FN_CACHE[key] = fn
+    if len(_LOGDET_FN_CACHE) > _LOGDET_FN_CACHE_MAXSIZE:
+        _LOGDET_FN_CACHE.popitem(last=False)
+    return fn
 
 
 def make_flow_separable_logdet(
@@ -1621,3 +1896,63 @@ def make_flow_separable_logdet(
             f"make_flow_separable_logdet: method={method!r} not recognised. "
             "Choose one of: 'eigenvalue', 'chebyshev', 'mc_poly'."
         )
+
+
+def make_flow_separable_logdet_numpy(
+    W_sparse,
+    n: int,
+    method: str | None = None,
+    miter: int = 30,
+    riter: int = 50,
+    rho_min: float = -1.0,
+    rho_max: float = 1.0,
+    cheb_order: int = 20,
+    random_state: int | None = None,
+):
+    r"""Pre-compute numeric logdet data for separable flow models.
+
+    Returns a vectorized numpy closure for post-fit Jacobian reconstruction:
+
+    .. math::
+
+        n\,\log|I_n - \rho_d W| + n\,\log|I_n - \rho_o W|
+
+    Parameters are aligned with :func:`make_flow_separable_logdet` for API
+    symmetry, though ``miter``/``riter``/``cheb_order``/``random_state`` are
+    currently controlled by the underlying method defaults.
+    """
+    if sp.issparse(W_sparse):
+        W_sp = W_sparse.tocsr().astype(np.float64)
+    else:
+        W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
+
+    if method is None:
+        method = _auto_logdet_method(n)
+    if method not in {"eigenvalue", "chebyshev", "mc_poly"}:
+        raise ValueError(
+            f"make_flow_separable_logdet_numpy: method={method!r} not recognised. "
+            "Choose one of: 'eigenvalue', 'chebyshev', 'mc_poly'."
+        )
+
+    eigs = None
+    if method == "eigenvalue":
+        eigs = np.linalg.eigvals(np.asarray(W_sp.toarray(), dtype=np.float64)).real
+
+    logdet_vec = make_logdet_numpy_vec_fn(
+        W_sp,
+        eigs,
+        method=method,
+        rho_min=rho_min,
+        rho_max=rho_max,
+    )
+
+    def _eval(rho_d, rho_o) -> np.ndarray:
+        rd = np.asarray(rho_d, dtype=np.float64).reshape(-1)
+        ro = np.asarray(rho_o, dtype=np.float64).reshape(-1)
+        if rd.shape != ro.shape:
+            raise ValueError(
+                "rho_d and rho_o must have the same shape for separable logdet evaluation."
+            )
+        return n * (logdet_vec(rd) + logdet_vec(ro))
+
+    return _eval

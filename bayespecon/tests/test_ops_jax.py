@@ -8,6 +8,8 @@ be sampled with ``nuts_sampler="blackjax"`` without falling back to PyMC.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 import scipy.sparse as sp
@@ -24,6 +26,7 @@ from bayespecon.ops import (
     KroneckerFlowSolveOp,
     SparseFlowSolveMatrixOp,
     SparseFlowSolveOp,
+    SparseSARSolveOp,
 )
 
 
@@ -184,3 +187,86 @@ def test_sampler_resolution_with_jax_present():
         enforce_c_backend("blackjax", requires_c_backend=True, model_name="ToyFlow")
         == "blackjax"
     )
+
+
+def test_klujax_backend_selected_when_installed(monkeypatch):
+    pytest.importorskip("klujax")
+    from bayespecon._jax_dispatch import _select_jax_sparse_backend
+
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "klujax")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _select_jax_sparse_backend.cache_clear()
+    assert _select_jax_sparse_backend() == "klujax"
+
+
+def test_sparse_sar_jax_klujax_path_runs(monkeypatch):
+    pytest.importorskip("klujax")
+
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "klujax")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+
+    W = _line_W(5)
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+
+    f_c = pytensor.function([rho, b], eta)
+    f_j = pytensor.function([rho, b], eta, mode="JAX")
+
+    rng = np.random.default_rng(9)
+    b_val = rng.standard_normal(5)
+
+    np.testing.assert_allclose(
+        np.asarray(f_c(0.2, b_val)),
+        np.asarray(f_j(0.2, b_val)),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+
+
+def test_jax_auto_prefers_klujax_when_available(monkeypatch):
+    from bayespecon._jax_dispatch import _select_jax_sparse_backend
+
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "auto")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "0")
+    monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: True)
+    monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: True)
+
+    _select_jax_sparse_backend.cache_clear()
+    assert _select_jax_sparse_backend() == "klujax"
+
+
+def test_jax_auto_falls_to_callback_when_only_umfpack_available(monkeypatch):
+    from bayespecon._jax_dispatch import _select_jax_sparse_backend
+
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "auto")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "0")
+    monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
+    monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: True)
+
+    _select_jax_sparse_backend.cache_clear()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        backend = _select_jax_sparse_backend()
+    assert backend == "callback"
+    msgs = [str(w.message) for w in caught]
+    assert any("callback+umfpack" in m for m in msgs)
+
+
+def test_jax_auto_falls_to_callback_scipy_when_no_optional_backends(monkeypatch):
+    from bayespecon._jax_dispatch import _select_jax_sparse_backend
+
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "auto")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "0")
+    monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
+    monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: False)
+
+    _select_jax_sparse_backend.cache_clear()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        backend = _select_jax_sparse_backend()
+    assert backend == "callback"
+    msgs = [str(w.message) for w in caught]
+    assert any("callback+scipy" in m for m in msgs)
+    assert any("scikit-umfpack" in m for m in msgs)

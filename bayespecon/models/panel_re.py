@@ -1,6 +1,6 @@
 """Bayesian spatial panel models with unit random effects.
 
-Analogues of the MATLAB ``prandom`` (non-spatial GLS random effects) and the
+Analogues of the legacy ``prandom`` (non-spatial GLS random effects) and the
 LeSage/Pace spatial panel routines, cast as hierarchical Bayesian models.
 
 Model structure for all three classes
@@ -27,6 +27,7 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ._sampler import use_jax_likelihood
 from .panel_base import SpatialPanelModel
 
 
@@ -112,45 +113,40 @@ class OLSPanelRE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_test"],
-            ).bayesian_panel_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
+            ),
             "Panel-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_test"],
-            ).bayesian_panel_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
+            ),
             "Panel-LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_sdm_joint_test"],
-            ).bayesian_panel_lm_sdm_joint_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_sdm_joint_test"
+            ),
             "Panel-LM-SDM-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_slx_error_joint_test"],
-            ).bayesian_panel_lm_slx_error_joint_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests",
+                "bayesian_panel_lm_slx_error_joint_test",
+            ),
             "Panel-LM-SLX-Error-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_lag_test"],
-            ).bayesian_panel_robust_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_lag_test"
+            ),
             "Panel-Robust-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_error_test"],
-            ).bayesian_panel_robust_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_error_test"
+            ),
             "Panel-Robust-LM-Error",
         ),
     ]
@@ -227,7 +223,7 @@ class OLSPanelRE(SpatialPanelModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         ni = self._nonintercept_indices
@@ -339,24 +335,21 @@ class SARPanelRE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_test"],
-            ).bayesian_panel_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
+            ),
             "Panel-LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_wx_test"],
-            ).bayesian_panel_lm_wx_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_test"
+            ),
             "Panel-LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_wx_test"],
-            ).bayesian_panel_robust_lm_wx_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_wx_test"
+            ),
             "Panel-Robust-LM-WX",
         ),
     ]
@@ -433,7 +426,7 @@ class SARPanelRE(SpatialPanelModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if idata_kwargs.get("log_likelihood", False):
+        if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
         return idata
 
@@ -475,7 +468,7 @@ class SARPanelRE(SpatialPanelModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         ni = self._nonintercept_indices
@@ -591,17 +584,15 @@ class SEMPanelRE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_test"],
-            ).bayesian_panel_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
+            ),
             "Panel-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_wx_sem_test"],
-            ).bayesian_panel_lm_wx_sem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_sem_test"
+            ),
             "Panel-LM-WX",
         ),
     ]
@@ -631,8 +622,6 @@ class SEMPanelRE(SpatialPanelModel):
         -------
         pymc.Model
         """
-        from ._sampler import use_jax_likelihood
-
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -765,7 +754,6 @@ class SEMPanelRE(SpatialPanelModel):
         s = c * d
         n = self._y.shape[0]
         X = self._X
-        W = self._W_dense
         unit_idx = self._unit_idx
 
         lam_f = lam.reshape(s)
@@ -775,7 +763,7 @@ class SEMPanelRE(SpatialPanelModel):
 
         # resid = y - X@beta - alpha[unit_idx]
         resid = self._y[None, :] - beta_f @ X.T - alpha_f[:, unit_idx]
-        eps = resid - lam_f[:, None] * (resid @ W.T)
+        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
 
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
@@ -836,7 +824,7 @@ class SEMPanelRE(SpatialPanelModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         ni = self._nonintercept_indices
@@ -942,10 +930,9 @@ class SDEMPanelRE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_sdem_test"],
-            ).bayesian_panel_lm_lag_sdem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
+            ),
             "Panel-LM-Lag-SDEM",
         ),
     ]
@@ -980,8 +967,6 @@ class SDEMPanelRE(SpatialPanelModel):
             ``log_likelihood`` natively; otherwise the
             :func:`pymc.Potential` formulation is used.
         """
-        from ._sampler import use_jax_likelihood
-
         Z = np.hstack([self._X, self._WX])
 
         lam_lower = self.priors.get("lam_lower", -1.0)
@@ -1108,7 +1093,6 @@ class SDEMPanelRE(SpatialPanelModel):
         c, d = lam.shape
         s = c * d
         n = self._y.shape[0]
-        W = self._W_dense
         unit_idx = self._unit_idx
 
         lam_f = lam.reshape(s)
@@ -1117,7 +1101,7 @@ class SDEMPanelRE(SpatialPanelModel):
         alpha_f = alpha.reshape(s, alpha.shape[-1])
 
         resid = self._y[None, :] - beta_f @ Z.T - alpha_f[:, unit_idx]
-        eps = resid - lam_f[:, None] * (resid @ W.T)
+        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
 
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
@@ -1173,7 +1157,7 @@ class SDEMPanelRE(SpatialPanelModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Posterior samples of direct/indirect/total effects (SDEM form)."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")

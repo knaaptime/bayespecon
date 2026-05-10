@@ -1,12 +1,13 @@
-"""Spatial panel model classes analogous to MATLAB panel_g routines."""
+"""Spatial panel model classes."""
 
 from __future__ import annotations
 
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
-import xarray as xr
 
+from ._sampler import use_jax_likelihood
+from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 
 
@@ -102,45 +103,40 @@ class OLSPanelFE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_test"],
-            ).bayesian_panel_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
+            ),
             "Panel-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_test"],
-            ).bayesian_panel_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
+            ),
             "Panel-LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_sdm_joint_test"],
-            ).bayesian_panel_lm_sdm_joint_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_sdm_joint_test"
+            ),
             "Panel-LM-SDM-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_slx_error_joint_test"],
-            ).bayesian_panel_lm_slx_error_joint_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests",
+                "bayesian_panel_lm_slx_error_joint_test",
+            ),
             "Panel-LM-SLX-Error-Joint",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_lag_test"],
-            ).bayesian_panel_robust_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_lag_test"
+            ),
             "Panel-Robust-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_error_test"],
-            ).bayesian_panel_robust_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_error_test"
+            ),
             "Panel-Robust-LM-Error",
         ),
     ]
@@ -204,7 +200,7 @@ class OLSPanelFE(SpatialPanelModel):
 
         OLS panel has no spatial structure: Direct = beta, Indirect = 0.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
@@ -307,24 +303,21 @@ class SARPanelFE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_test"],
-            ).bayesian_panel_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
+            ),
             "Panel-LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_wx_test"],
-            ).bayesian_panel_lm_wx_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_test"
+            ),
             "Panel-LM-WX",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_wx_test"],
-            ).bayesian_panel_robust_lm_wx_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_wx_test"
+            ),
             "Panel-Robust-LM-WX",
         ),
     ]
@@ -386,7 +379,7 @@ class SARPanelFE(SpatialPanelModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if idata_kwargs.get("log_likelihood", False):
+        if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
         return idata
 
@@ -434,7 +427,7 @@ class SARPanelFE(SpatialPanelModel):
         SAR panel impacts use the same eigenvalue-based formulas as
         cross-sectional SAR, applied per draw.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
@@ -547,17 +540,15 @@ class SEMPanelFE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_test"],
-            ).bayesian_panel_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
+            ),
             "Panel-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_wx_sem_test"],
-            ).bayesian_panel_lm_wx_sem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_sem_test"
+            ),
             "Panel-LM-WX",
         ),
     ]
@@ -579,8 +570,6 @@ class SEMPanelFE(SpatialPanelModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        from ._sampler import use_jax_likelihood
-
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -713,14 +702,13 @@ class SEMPanelFE(SpatialPanelModel):
         c, d = lam.shape
         s = c * d
         n = self._y.shape[0]
-        W = self._W_dense
 
         lam_f = lam.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
 
         resid = self._y[None, :] - beta_f @ X.T
-        eps = resid - lam_f[:, None] * (resid @ W.T)
+        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
 
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
@@ -746,8 +734,7 @@ class SEMPanelFE(SpatialPanelModel):
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -785,7 +772,7 @@ class SEMPanelFE(SpatialPanelModel):
 
         SEM panel has no spatial multiplier on X: Direct = beta, Indirect = 0.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
@@ -888,10 +875,9 @@ class SDMPanelFE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_sdm_test"],
-            ).bayesian_panel_lm_error_sdm_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_sdm_test"
+            ),
             "Panel-LM-Error-SDM",
         ),
     ]
@@ -958,7 +944,7 @@ class SDMPanelFE(SpatialPanelModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if idata_kwargs.get("log_likelihood", False):
+        if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
         return idata
 
@@ -1025,7 +1011,7 @@ class SDMPanelFE(SpatialPanelModel):
         SDM panel impacts use the same eigenvalue-based formulas as
         cross-sectional SDM, applied per draw.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
@@ -1149,10 +1135,9 @@ class SDEMPanelFE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_sdem_test"],
-            ).bayesian_panel_lm_lag_sdem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
+            ),
             "Panel-LM-Lag-SDEM",
         ),
     ]
@@ -1176,8 +1161,6 @@ class SDEMPanelFE(SpatialPanelModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        from ._sampler import use_jax_likelihood
-
         Z = np.hstack([self._X, self._WX])
 
         lam_lower = self.priors.get("lam_lower", -1.0)
@@ -1304,14 +1287,13 @@ class SDEMPanelFE(SpatialPanelModel):
         c, d = lam.shape
         s = c * d
         n = self._y.shape[0]
-        W = self._W_dense
 
         lam_f = lam.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
 
         resid = self._y[None, :] - beta_f @ Z.T
-        eps = resid - lam_f[:, None] * (resid @ W.T)
+        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
 
         if self.robust:
             nu_f = idata.posterior["nu"].values.reshape(s)
@@ -1337,8 +1319,7 @@ class SDEMPanelFE(SpatialPanelModel):
         ll = ll + jac[:, None] / n
 
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -1383,7 +1364,7 @@ class SDEMPanelFE(SpatialPanelModel):
 
         SDEM panel impacts match SLX form (no rho multiplier).
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
@@ -1490,31 +1471,29 @@ class SLXPanelFE(SpatialPanelModel):
 
     _spatial_diagnostics_tests = [
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_lag_test"],
-            ).bayesian_panel_lm_lag_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
+            ),
             "Panel-LM-Lag",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_lm_error_test"],
-            ).bayesian_panel_lm_error_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
+            ),
             "Panel-LM-Error",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_lag_sdm_test"],
-            ).bayesian_panel_robust_lm_lag_sdm_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests",
+                "bayesian_panel_robust_lm_lag_sdm_test",
+            ),
             "Panel-Robust-LM-Lag-SDM",
         ),
         (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_panel_robust_lm_error_sdem_test"],
-            ).bayesian_panel_robust_lm_error_sdem_test(m),
+            SpatialPanelModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests",
+                "bayesian_panel_robust_lm_error_sdem_test",
+            ),
             "Panel-Robust-LM-Error-SDEM",
         ),
     ]
@@ -1596,7 +1575,7 @@ class SLXPanelFE(SpatialPanelModel):
 
         SLX panel impacts are linear in beta (no rho multiplier).
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)

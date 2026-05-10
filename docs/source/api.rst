@@ -156,7 +156,7 @@ Panel Flow Models
 Bayesian Diagnostics
 ---------------------
 
-.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
+.. currentmodule:: bayespecon.diagnostics.lmtests
 
 .. autosummary::
    :toctree: generated/
@@ -174,7 +174,7 @@ Bayesian Diagnostics
 Panel Bayesian LM Tests
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
+.. currentmodule:: bayespecon.diagnostics.lmtests
 
 .. autosummary::
    :toctree: generated/

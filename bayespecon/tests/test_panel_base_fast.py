@@ -250,6 +250,46 @@ class TestSpatialPanelModelInit:
                 formula="y ~ x1", data=None, W=W_graph, unit_col="u", time_col="t"
             )
 
+    def test_chebyshev_init_does_not_eagerly_compute_eigs(self, W_graph, monkeypatch):
+        from bayespecon.models.panel import OLSPanelFE
+
+        rng = np.random.default_rng(0)
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("eigs should be lazy for panel chebyshev init")
+
+        monkeypatch.setattr(np.linalg, "eigvals", _boom)
+
+        model = OLSPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+            logdet_method="chebyshev",
+        )
+        assert getattr(model, "_W_eigs_cache", None) is None
+
+    def test_sparse_grid_init_does_not_eagerly_compute_eigs(self, W_graph, monkeypatch):
+        from bayespecon.models.panel import OLSPanelFE
+
+        rng = np.random.default_rng(0)
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("eigs should be lazy for panel sparse_grid init")
+
+        monkeypatch.setattr(np.linalg, "eigvals", _boom)
+
+        model = OLSPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+            logdet_method="sparse_grid",
+        )
+        assert getattr(model, "_W_eigs_cache", None) is None
+
     def test_formula_mode_requires_unit_and_time_cols(self, W_graph):
         from bayespecon.models.panel import OLSPanelFE
 
@@ -462,6 +502,11 @@ class TestPanelDiagnosticsDecision:
         )
 
     def test_ols_panel_fe_both_robust_both(self, panel_model, monkeypatch):
+        # Both naive AND both robust significant: route to the dominant
+        # single-channel panel model via the robust p-value tie-break.
+        # SARARPanel is intentionally unreachable from a panel-OLS fit;
+        # the user must escalate by fitting SARPanelFE (or SEMPanelFE)
+        # and re-running diagnostics from there.
         import pandas as pd
 
         df = pd.DataFrame(
@@ -476,7 +521,7 @@ class TestPanelDiagnosticsDecision:
         monkeypatch.setattr(panel_model, "spatial_diagnostics", lambda: df)
         assert (
             panel_model.spatial_diagnostics_decision(alpha=0.05, format="model")
-            == "SARARPanelFE"
+            == "SARPanelFE"
         )
 
     def test_sdm_panel_fe_error_sdm(self, W_graph, monkeypatch):
@@ -533,8 +578,13 @@ class TestPanelDiagnosticsDecision:
         import pandas as pd
 
         df = pd.DataFrame(
-            {"p_value": [0.001, 0.9]},
-            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+            {"p_value": [0.001, 0.001, 0.001, 0.9]},
+            index=[
+                "Panel-LM-Lag",
+                "Panel-LM-Error",
+                "Panel-Robust-LM-Lag-SDM",
+                "Panel-Robust-LM-Error-SDEM",
+            ],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
@@ -556,8 +606,13 @@ class TestPanelDiagnosticsDecision:
         import pandas as pd
 
         df = pd.DataFrame(
-            {"p_value": [0.9, 0.001]},
-            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+            {"p_value": [0.001, 0.001, 0.9, 0.001]},
+            index=[
+                "Panel-LM-Lag",
+                "Panel-LM-Error",
+                "Panel-Robust-LM-Lag-SDM",
+                "Panel-Robust-LM-Error-SDEM",
+            ],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
@@ -580,8 +635,13 @@ class TestPanelDiagnosticsDecision:
         import pandas as pd
 
         df = pd.DataFrame(
-            {"p_value": [0.0001, 0.01]},
-            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+            {"p_value": [0.001, 0.001, 0.0001, 0.01]},
+            index=[
+                "Panel-LM-Lag",
+                "Panel-LM-Error",
+                "Panel-Robust-LM-Lag-SDM",
+                "Panel-Robust-LM-Error-SDEM",
+            ],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
@@ -604,8 +664,13 @@ class TestPanelDiagnosticsDecision:
         import pandas as pd
 
         df = pd.DataFrame(
-            {"p_value": [0.01, 0.0001]},
-            index=["Panel-Robust-LM-Lag-SDM", "Panel-Robust-LM-Error-SDEM"],
+            {"p_value": [0.001, 0.001, 0.01, 0.0001]},
+            index=[
+                "Panel-LM-Lag",
+                "Panel-LM-Error",
+                "Panel-Robust-LM-Lag-SDM",
+                "Panel-Robust-LM-Error-SDEM",
+            ],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
@@ -652,8 +717,8 @@ class TestPanelDiagnosticsDecision:
         import pandas as pd
 
         df = pd.DataFrame(
-            {"p_value": [0.001, 0.001]},
-            index=["Panel-LM-Error", "Panel-Robust-LM-WX"],
+            {"p_value": [0.001, 0.001, 0.001]},
+            index=["Panel-LM-Error", "Panel-LM-WX", "Panel-Robust-LM-WX"],
         )
         monkeypatch.setattr(model, "spatial_diagnostics", lambda: df)
         assert (
@@ -684,3 +749,127 @@ class TestPanelDiagnosticsDecision:
             model.spatial_diagnostics_decision(alpha=0.05, format="model")
             == "SDEMPanelFE"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: _batch_sparse_lag parity and memory-warning tests
+# ---------------------------------------------------------------------------
+
+
+class TestBatchSparseLag:
+    """Tests that _batch_sparse_lag produces the same result as the dense path.
+
+    The expected value is computed via the full (N*T)×(N*T) Kronecker product
+    so the test directly validates the Phase-3 sparse replacement.
+    """
+
+    @pytest.fixture
+    def W_graph(self):
+        return _W_to_graph(_rook_W(4))
+
+    @pytest.fixture
+    def model(self, W_graph):
+        from bayespecon.models.panel import OLSPanelFE
+
+        rng = np.random.default_rng(7)
+        return OLSPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+
+    def _dense_lag(self, model, resid):
+        """Reference: full Kronecker dense W_NT @ resid.T then transpose."""
+        from bayespecon.models.panel_base import _as_dense_W
+
+        W_dense = _as_dense_W(model._W_sparse, model._N, model._T)
+        return (W_dense @ resid.T).T
+
+    def test_single_draw_parity(self, model):
+        rng = np.random.default_rng(0)
+        resid = rng.standard_normal((1, model._N * model._T))
+        expected = self._dense_lag(model, resid)
+        result = model._batch_sparse_lag(resid)
+        np.testing.assert_allclose(result, expected, atol=1e-12)
+
+    def test_batch_draws_parity(self, model):
+        rng = np.random.default_rng(1)
+        s = 50
+        resid = rng.standard_normal((s, model._N * model._T))
+        expected = self._dense_lag(model, resid)
+        result = model._batch_sparse_lag(resid)
+        np.testing.assert_allclose(result, expected, atol=1e-12)
+
+    def test_explicit_T_eff_matches_default(self, model):
+        rng = np.random.default_rng(2)
+        resid = rng.standard_normal((20, model._N * model._T))
+        result_default = model._batch_sparse_lag(resid)
+        result_explicit = model._batch_sparse_lag(resid, T_eff=model._T)
+        np.testing.assert_array_equal(result_default, result_explicit)
+
+    def test_dynamic_T_eff_parity(self, model):
+        """T_eff=T-1 path used in dynamic panel log-likelihoods."""
+        rng = np.random.default_rng(3)
+        T_eff = model._T - 1
+        resid = rng.standard_normal((30, model._N * T_eff))
+        W_dyn_dense = np.kron(np.eye(T_eff), model._W_sparse.toarray())
+        expected = (W_dyn_dense @ resid.T).T
+        result = model._batch_sparse_lag(resid, T_eff=T_eff)
+        np.testing.assert_allclose(result, expected, atol=1e-12)
+
+    def test_output_shape(self, model):
+        rng = np.random.default_rng(4)
+        s, n = 16, model._N * model._T
+        resid = rng.standard_normal((s, n))
+        assert model._batch_sparse_lag(resid).shape == (s, n)
+
+
+class TestWDenseMemoryWarning:
+    """_W_dense should emit a ResourceWarning for large panel matrices."""
+
+    def test_small_panel_no_warning(self):
+        """Small panels (well below 100 MB threshold) emit no warning."""
+        import warnings
+
+        W_graph = _W_to_graph(_rook_W(4))
+        from bayespecon.models.panel import OLSPanelFE
+
+        rng = np.random.default_rng(0)
+        model = OLSPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        # Access _W_dense — no warning expected for tiny N, T
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ResourceWarning)
+            _ = model._W_dense  # should not raise
+
+    def test_large_panel_triggers_warning(self):
+        """Matrices exceeding the threshold trigger ResourceWarning."""
+        import warnings
+
+        W_graph = _W_to_graph(_rook_W(4))
+        from bayespecon.models.panel import OLSPanelFE
+        from bayespecon.models.panel_base import SpatialPanelModel
+
+        rng = np.random.default_rng(0)
+        model = OLSPanelFE(
+            y=rng.standard_normal(12),
+            X=rng.standard_normal((12, 2)),
+            W=W_graph,
+            N=4,
+            T=3,
+        )
+        # Force the threshold to 0 so any materialisation triggers the warning.
+        original = SpatialPanelModel._DENSE_W_WARN_BYTES
+        try:
+            SpatialPanelModel._DENSE_W_WARN_BYTES = 0
+            with pytest.warns(ResourceWarning, match="dense panel weight matrix"):
+                _ = model._W_dense
+        finally:
+            SpatialPanelModel._DENSE_W_WARN_BYTES = original

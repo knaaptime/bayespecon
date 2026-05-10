@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from bayespecon.diagnostics.bayesian_lmtests import (
+from bayespecon.diagnostics.lmtests import (
     _flow_score_info,
     _info_matrix_blocks_sdem,
     _info_matrix_blocks_sdm,
@@ -34,7 +34,9 @@ from bayespecon.diagnostics.bayesian_lmtests import (
     bayesian_lm_slx_error_joint_test,
     bayesian_lm_wx_sem_test,
     bayesian_lm_wx_test,
+    bayesian_panel_lm_error_sdm_test,
     bayesian_panel_lm_error_test,
+    bayesian_panel_lm_lag_sdem_test,
     bayesian_panel_lm_lag_test,
     bayesian_panel_lm_wx_test,
     bayesian_robust_lm_error_sdem_test,
@@ -322,8 +324,15 @@ class TestClosedFormRobust:
         return np.linalg.lstsq(Z, y, rcond=None)[0]
 
     def test_robust_lm_lag_sdm_matches_closed_form(self):
-        # SLX-null robust LM-Lag: LM = (e_slx' Wy)^2 / (sigma^4 T_ww + sigma^2 ||M_Z W y_hat||^2)
-        # where Z = [X, WX] is the SLX design (gamma already absorbed).
+        # SLX-null robust LM-Lag with Schur correction on λ (the other
+        # spatial parameter):
+        #   g_rho_star = g_rho - (J_rl/J_ll) * g_lambda
+        #   V_rho|lambda = J_rr - J_rl^2 / J_ll
+        # where J_rr, J_ll, J_rl come from _info_matrix_blocks_slx_robust.
+        from bayespecon.diagnostics.lmtests import (
+            _info_matrix_blocks_slx_robust,
+        )
+
         y, X, WX, _Wd, W_sp, T_ww = _make_data(n=24, k_wx=2)
         Wy = np.asarray(W_sp @ y)
         beta_full = self._fit_slx_beta(X, WX, y)
@@ -333,14 +342,19 @@ class TestClosedFormRobust:
         Z = np.hstack([X, WX])
         e = y - Z @ beta_full
         g_rho = float(e @ Wy)
-        Wy_hat = np.asarray(W_sp @ (Z @ beta_full))
-        # M_Z-projected quadratic
-        ZtWyhat = Z.T @ Wy_hat
-        mz_quad = float(Wy_hat @ Wy_hat) - float(
-            ZtWyhat @ np.linalg.solve(Z.T @ Z, ZtWyhat)
+        We = np.asarray(W_sp @ e)
+        g_lam = float(e @ We)
+
+        blocks = _info_matrix_blocks_slx_robust(
+            X, WX, W_sp, sigma_hat**2, beta_full, T_ww=T_ww
         )
-        V = sigma_hat**4 * T_ww + sigma_hat**2 * mz_quad
-        expected = g_rho * g_rho / (V + 1e-12)
+        J_rr = blocks["J_rho_rho"]
+        J_ll = blocks["J_lam_lam"]
+        J_rl = blocks["J_rho_lam"]
+        coef = J_rl / (J_ll + 1e-12)
+        g_rho_star = g_rho - coef * g_lam
+        V = J_rr - (J_rl * J_rl) / (J_ll + 1e-12)
+        expected = g_rho_star * g_rho_star / (V + 1e-12)
 
         result = bayesian_robust_lm_lag_sdm_test(model)
         assert result.lm_samples[0] == pytest.approx(expected, rel=1e-10, abs=1e-12)
@@ -363,9 +377,16 @@ class TestClosedFormRobust:
         assert result.lm_samples[0] >= 0.0
 
     def test_robust_lm_error_sdem_matches_closed_form(self):
-        # SLX-null robust LM-Err: LM = (e_slx' W e_slx)^2 / (sigma^4 T_ww)
-        # (Koley-Bera 2024: J_{lambda,gamma} = 0 under spherical errors.)
+        # SLX-null robust LM-Err with Schur correction on ρ (the other
+        # spatial parameter):
+        #   g_lambda_star = g_lambda - (J_rl/J_rr) * g_rho
+        #   V_lambda|rho = J_ll - J_rl^2 / J_rr
+        from bayespecon.diagnostics.lmtests import (
+            _info_matrix_blocks_slx_robust,
+        )
+
         y, X, WX, _Wd, W_sp, T_ww = _make_data(n=24, k_wx=2)
+        Wy = np.asarray(W_sp @ y)
         beta_full = self._fit_slx_beta(X, WX, y)
         sigma_hat = 0.6  # non-unity
         model = _mock_slx(y, X, WX, W_sp, T_ww, beta_full, sigma_hat=sigma_hat)
@@ -374,8 +395,18 @@ class TestClosedFormRobust:
         e = y - Z @ beta_full
         We = np.asarray(W_sp @ e)
         g_lam = float(e @ We)
-        V = sigma_hat**4 * T_ww
-        expected = g_lam * g_lam / (V + 1e-12)
+        g_rho = float(e @ Wy)
+
+        blocks = _info_matrix_blocks_slx_robust(
+            X, WX, W_sp, sigma_hat**2, beta_full, T_ww=T_ww
+        )
+        J_rr = blocks["J_rho_rho"]
+        J_ll = blocks["J_lam_lam"]
+        J_rl = blocks["J_rho_lam"]
+        coef = J_rl / (J_rr + 1e-12)
+        g_lam_star = g_lam - coef * g_rho
+        V = J_ll - (J_rl * J_rl) / (J_rr + 1e-12)
+        expected = g_lam_star * g_lam_star / (V + 1e-12)
 
         result = bayesian_robust_lm_error_sdem_test(model)
         assert result.lm_samples[0] == pytest.approx(expected, rel=1e-10, abs=1e-12)
@@ -664,6 +695,50 @@ def _mock_panel_sar(y, X, WX, Wn_sp, T_ww, beta_hat, rho_hat, sigma_hat, N, T, d
     return model
 
 
+def _mock_panel_sdm(y, X, WX, Wn_sp, T_ww, beta_hat, rho_hat, sigma_hat, N, T, draws=1):
+    """Mock SDM panel model: beta covers [X, WX] and rho is in posterior."""
+    Wy = _panel_spatial_lag(Wn_sp, np.asarray(y), N, T)
+    model = MagicMock(spec=[])
+    model._y = y
+    model._X = X
+    model._WX = WX
+    model._Wy = np.asarray(Wy)
+    model._W_sparse = Wn_sp
+    model._W_dense = np.kron(np.eye(T), Wn_sp.toarray())
+    model._T_ww = T_ww
+    model._N = N
+    model._T = T
+    model.inference_data = _idata(
+        beta=np.tile(beta_hat, (draws, 1)),
+        rho=np.full(draws, rho_hat),
+        sigma=np.full(draws, sigma_hat),
+    )
+    return model
+
+
+def _mock_panel_sdem(
+    y, X, WX, Wn_sp, T_ww, beta_hat, lam_hat, sigma_hat, N, T, draws=1
+):
+    """Mock SDEM panel model: beta covers [X, WX] and lam is in posterior."""
+    Wy = _panel_spatial_lag(Wn_sp, np.asarray(y), N, T)
+    model = MagicMock(spec=[])
+    model._y = y
+    model._X = X
+    model._WX = WX
+    model._Wy = np.asarray(Wy)
+    model._W_sparse = Wn_sp
+    model._W_dense = np.kron(np.eye(T), Wn_sp.toarray())
+    model._T_ww = T_ww
+    model._N = N
+    model._T = T
+    model.inference_data = _idata(
+        beta=np.tile(beta_hat, (draws, 1)),
+        lam=np.full(draws, lam_hat),
+        sigma=np.full(draws, sigma_hat),
+    )
+    return model
+
+
 class TestPanelClosedForm:
     def test_panel_lm_lag_matches_closed_form(self):
         N, T_per = 5, 4
@@ -735,6 +810,192 @@ class TestPanelClosedForm:
         result = bayesian_panel_lm_wx_test(model)
         assert result.df == k_wx
         assert result.lm_samples[0] == pytest.approx(expected, rel=1e-10, abs=1e-12)
+
+    def test_panel_lm_error_sdm_matches_closed_form(self):
+        """Panel LM-Error from SDM posterior: V = sigma^4 * T * T_ww."""
+        N, T_per, k_wx = 5, 4, 2
+        y, X, WX, Wn_sp, T_ww = _make_panel_data(N=N, T=T_per, k_wx=k_wx)
+        Z = np.hstack([X, WX])
+        beta_hat = np.linalg.lstsq(Z, y, rcond=None)[0]
+        rho_hat = 0.0
+        sigma_hat = 1.234  # non-unity to catch sigma-scaling bugs
+        model = _mock_panel_sdm(
+            y, X, WX, Wn_sp, T_ww, beta_hat, rho_hat, sigma_hat, N, T_per
+        )
+
+        # Hand replicate: e = y - rho*Wy - Z@beta, S = e'W_NT e, V = sigma^4 * T * T_ww
+        Wy = _panel_spatial_lag(Wn_sp, np.asarray(y), N, T_per)
+        e = y - rho_hat * Wy - Z @ beta_hat
+        We = _panel_spatial_lag(Wn_sp, e, N, T_per)
+        S = float(e @ We)
+        V = sigma_hat**4 * T_per * T_ww
+        expected = S * S / V
+
+        result = bayesian_panel_lm_error_sdm_test(model)
+        assert result.df == 1
+        assert result.lm_samples[0] == pytest.approx(expected, rel=1e-10, abs=1e-12)
+
+    def test_panel_lm_lag_sdem_matches_closed_form(self):
+        """Panel LM-Lag from SDEM posterior with whitening.
+
+        V = sigma^4 * T * T_ww + sigma^2 * z_rho' M_{Z_tilde} z_rho
+        where z_rho = A_lam @ Wy and Z_tilde = A_lam @ Z.
+        """
+        N, T_per, k_wx = 5, 4, 2
+        y, X, WX, Wn_sp, T_ww = _make_panel_data(N=N, T=T_per, k_wx=k_wx)
+        Z = np.hstack([X, WX])
+        beta_hat = np.linalg.lstsq(Z, y, rcond=None)[0]
+        lam_hat = 0.0
+        sigma_hat = 1.234  # non-unity to catch sigma-scaling bugs
+        model = _mock_panel_sdem(
+            y, X, WX, Wn_sp, T_ww, beta_hat, lam_hat, sigma_hat, N, T_per
+        )
+
+        # Hand replicate the corrected implementation
+        n = N * T_per
+        W_dense = np.kron(np.eye(T_per), Wn_sp.toarray())
+        A_lam = np.eye(n) - lam_hat * W_dense
+        Z_tilde = A_lam @ Z
+        Wy = _panel_spatial_lag(Wn_sp, np.asarray(y), N, T_per)
+        z_rho = A_lam @ Wy
+        u = y - Z @ beta_hat
+        Wu = _panel_spatial_lag(Wn_sp, u, N, T_per)
+        eps = u - lam_hat * Wu
+        S = float(eps @ z_rho)
+
+        from bayespecon.diagnostics.lmtests import _mx_quadratic
+
+        V = sigma_hat**4 * T_per * T_ww + sigma_hat**2 * _mx_quadratic(Z_tilde, z_rho)
+        expected = S * S / V
+
+        result = bayesian_panel_lm_lag_sdem_test(model)
+        assert result.df == 1
+        assert result.lm_samples[0] == pytest.approx(expected, rel=1e-10, abs=1e-12)
+
+    def test_panel_robust_lm_lag_m_x_projection(self):
+        """M_X-projected residual kills per-draw beta-posterior noise.
+
+        With e_perp = M_X y (draw-independent), the LM samples should be
+        constant across draws regardless of beta posterior variance.
+        The information matrix J_val still depends on the posterior mean
+        beta_bar, so two models with different beta_bar will have different
+        LM values — but within each model all draws are identical.
+        """
+        N, T_per = 5, 4
+        y, X, WX, Wn_sp, T_ww = _make_panel_data(N=N, T=T_per, k_wx=0)
+        beta_hat = np.linalg.lstsq(X, y, rcond=None)[0]
+        sigma_hat = 0.8
+
+        # Low beta variance — all draws identical
+        model_low = _mock_panel_ols(
+            y,
+            X,
+            np.empty((y.size, 0)),
+            Wn_sp,
+            T_ww,
+            beta_hat,
+            sigma_hat,
+            N,
+            T_per,
+            draws=50,
+        )
+
+        # High beta variance — noisy draws, but same posterior mean
+        rng = np.random.default_rng(0)
+        beta_noisy = beta_hat + rng.normal(scale=5.0, size=(50, len(beta_hat)))
+        # Shift so mean equals beta_hat (preserves J_val)
+        beta_noisy = beta_noisy - beta_noisy.mean(axis=0) + beta_hat
+        model_high = _mock_panel_ols(
+            y,
+            X,
+            np.empty((y.size, 0)),
+            Wn_sp,
+            T_ww,
+            beta_hat,
+            sigma_hat,
+            N,
+            T_per,
+            draws=50,
+        )
+        model_high.inference_data = _idata(
+            beta=beta_noisy,
+            sigma=np.full(50, sigma_hat),
+        )
+
+        from bayespecon.diagnostics.lmtests import (
+            bayesian_panel_robust_lm_lag_test,
+        )
+
+        result_low = bayesian_panel_robust_lm_lag_test(model_low)
+        result_high = bayesian_panel_robust_lm_lag_test(model_high)
+
+        # Within each model all draws are identical (M_X projection)
+        np.testing.assert_allclose(
+            result_low.lm_samples, result_low.lm_samples[0], atol=1e-12
+        )
+        np.testing.assert_allclose(
+            result_high.lm_samples, result_high.lm_samples[0], atol=1e-12
+        )
+        # Between models: same posterior mean beta_bar and sigma → same J_val
+        np.testing.assert_allclose(
+            result_low.lm_samples, result_high.lm_samples, atol=1e-12
+        )
+
+    def test_panel_robust_lm_error_m_x_projection(self):
+        """M_X-projected residual kills per-draw beta-posterior noise (error variant)."""
+        N, T_per = 5, 4
+        y, X, WX, Wn_sp, T_ww = _make_panel_data(N=N, T=T_per, k_wx=0)
+        beta_hat = np.linalg.lstsq(X, y, rcond=None)[0]
+        sigma_hat = 0.8
+
+        model_low = _mock_panel_ols(
+            y,
+            X,
+            np.empty((y.size, 0)),
+            Wn_sp,
+            T_ww,
+            beta_hat,
+            sigma_hat,
+            N,
+            T_per,
+            draws=50,
+        )
+        rng = np.random.default_rng(0)
+        beta_noisy = beta_hat + rng.normal(scale=5.0, size=(50, len(beta_hat)))
+        beta_noisy = beta_noisy - beta_noisy.mean(axis=0) + beta_hat
+        model_high = _mock_panel_ols(
+            y,
+            X,
+            np.empty((y.size, 0)),
+            Wn_sp,
+            T_ww,
+            beta_hat,
+            sigma_hat,
+            N,
+            T_per,
+            draws=50,
+        )
+        model_high.inference_data = _idata(
+            beta=beta_noisy,
+            sigma=np.full(50, sigma_hat),
+        )
+
+        from bayespecon.diagnostics.lmtests import (
+            bayesian_panel_robust_lm_error_test,
+        )
+
+        result_low = bayesian_panel_robust_lm_error_test(model_low)
+        result_high = bayesian_panel_robust_lm_error_test(model_high)
+
+        np.testing.assert_allclose(
+            result_low.lm_samples, result_low.lm_samples[0], atol=1e-12
+        )
+        np.testing.assert_allclose(
+            result_high.lm_samples, result_high.lm_samples[0], atol=1e-12
+        )
+        np.testing.assert_allclose(
+            result_low.lm_samples, result_high.lm_samples, atol=1e-12
+        )
 
 
 # ===========================================================================

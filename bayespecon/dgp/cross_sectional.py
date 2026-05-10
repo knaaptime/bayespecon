@@ -236,6 +236,76 @@ def simulate_sar(
     )
 
 
+def simulate_sar_negbin(
+    n: int | None = None,
+    W=None,
+    gdf=None,
+    rho: float = 0.5,
+    beta: np.ndarray | None = None,
+    alpha: float = 2.0,
+    err_hetero: bool = False,
+    rng: np.random.Generator | None = None,
+    seed: int | None = None,
+    contiguity: str = "queen",
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
+) -> dict:
+    r"""Simulate data from a SAR-NB2 DGP.
+
+    The latent log-mean follows the SAR reduced form, matching the
+    :class:`SARNegativeBinomial` model specification:
+
+    .. math::
+
+        \eta = (I - \rho W)^{-1} X\beta, \quad \mu = \exp(\eta)
+
+    and counts are sampled as NB2:
+
+    .. math::
+
+        y_i \sim \mathrm{NegBin}(\mu_i, \alpha),
+        \;\;\mathrm{Var}(y_i)=\mu_i+\mu_i^2/\alpha.
+    """
+    if alpha <= 0:
+        raise ValueError("alpha must be strictly positive.")
+    if err_hetero:
+        warnings.warn(
+            "err_hetero is not implemented for simulate_sar_negbin and is ignored.",
+            stacklevel=2,
+        )
+
+    rng = ensure_rng(rng, seed)
+    Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
+    nobs = Wd.shape[0]
+
+    if beta is None:
+        beta = np.array([1.0, 0.6], dtype=float)
+    beta = np.asarray(beta, dtype=float)
+
+    X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
+    _check_rho_stability(rho, Wd, name="rho")
+    eta = np.linalg.solve(np.eye(nobs) - rho * Wd, X @ beta)
+    mu = np.exp(np.clip(eta, -30.0, 30.0))
+
+    p = alpha / (alpha + mu)
+    y = rng.negative_binomial(alpha, p).astype(np.float64)
+
+    out = {
+        "y": y,
+        "X": X,
+        "mu": mu,
+        "W_dense": Wd,
+        "W_graph": Wg,
+        "params_true": {"rho": rho, "beta": beta, "alpha": alpha},
+    }
+    return _attach_optional_gdf(
+        out,
+        source_gdf=gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )
+
+
 def simulate_ols(
     n: int | None = None,
     W=None,

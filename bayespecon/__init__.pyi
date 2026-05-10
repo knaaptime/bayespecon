@@ -17,133 +17,25 @@ from .dgp.flows import (
     generate_flow_data as generate_flow_data,
 )
 from .dgp.flows import (
-    generate_poisson_flow_data as generate_poisson_flow_data,
+    generate_negbin_flow_data as generate_negbin_flow_data,
 )
-from .diagnostics import (
-    BayesianLMTestResult as BayesianLMTestResult,
+from .dgp.flows import (
+    generate_negbin_flow_data_separable as generate_negbin_flow_data_separable,
+)
+from .dgp.flows import (
+    generate_panel_negbin_flow_data as generate_panel_negbin_flow_data,
+)
+from .dgp.flows import (
+    generate_panel_negbin_flow_data_separable as generate_panel_negbin_flow_data_separable,
+)
+from .dgp.flows import (
+    generate_poisson_flow_data as generate_poisson_flow_data,
 )
 from .diagnostics import (
     SpatialMCMCReport as SpatialMCMCReport,
 )
 from .diagnostics import (
     bayes_factor_compare_models as bayes_factor_compare_models,
-)
-from .diagnostics import (
-    bayesian_lm_error_sdm_test as bayesian_lm_error_sdm_test,
-)
-from .diagnostics import (
-    bayesian_lm_error_test as bayesian_lm_error_test,
-)
-from .diagnostics import (
-    bayesian_lm_flow_dest_test as bayesian_lm_flow_dest_test,
-)
-from .diagnostics import (
-    bayesian_lm_flow_intra_test as bayesian_lm_flow_intra_test,
-)
-from .diagnostics import (
-    bayesian_lm_flow_joint_test as bayesian_lm_flow_joint_test,
-)
-from .diagnostics import (
-    bayesian_lm_flow_network_test as bayesian_lm_flow_network_test,
-)
-from .diagnostics import (
-    bayesian_lm_flow_orig_test as bayesian_lm_flow_orig_test,
-)
-from .diagnostics import (
-    bayesian_lm_lag_sdem_test as bayesian_lm_lag_sdem_test,
-)
-from .diagnostics import (
-    bayesian_lm_lag_test as bayesian_lm_lag_test,
-)
-from .diagnostics import (
-    bayesian_lm_sdm_joint_test as bayesian_lm_sdm_joint_test,
-)
-from .diagnostics import (
-    bayesian_lm_slx_error_joint_test as bayesian_lm_slx_error_joint_test,
-)
-from .diagnostics import (
-    bayesian_lm_wx_sem_test as bayesian_lm_wx_sem_test,
-)
-from .diagnostics import (
-    bayesian_lm_wx_test as bayesian_lm_wx_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_error_sdm_test as bayesian_panel_lm_error_sdm_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_error_test as bayesian_panel_lm_error_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_flow_dest_test as bayesian_panel_lm_flow_dest_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_flow_intra_test as bayesian_panel_lm_flow_intra_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_flow_joint_test as bayesian_panel_lm_flow_joint_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_flow_network_test as bayesian_panel_lm_flow_network_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_flow_orig_test as bayesian_panel_lm_flow_orig_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_lag_sdem_test as bayesian_panel_lm_lag_sdem_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_lag_test as bayesian_panel_lm_lag_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_sdm_joint_test as bayesian_panel_lm_sdm_joint_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_slx_error_joint_test as bayesian_panel_lm_slx_error_joint_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_wx_sem_test as bayesian_panel_lm_wx_sem_test,
-)
-from .diagnostics import (
-    bayesian_panel_lm_wx_test as bayesian_panel_lm_wx_test,
-)
-from .diagnostics import (
-    bayesian_panel_robust_lm_error_sdem_test as bayesian_panel_robust_lm_error_sdem_test,
-)
-from .diagnostics import (
-    bayesian_panel_robust_lm_error_test as bayesian_panel_robust_lm_error_test,
-)
-from .diagnostics import (
-    bayesian_panel_robust_lm_lag_sdm_test as bayesian_panel_robust_lm_lag_sdm_test,
-)
-from .diagnostics import (
-    bayesian_panel_robust_lm_lag_test as bayesian_panel_robust_lm_lag_test,
-)
-from .diagnostics import (
-    bayesian_panel_robust_lm_wx_test as bayesian_panel_robust_lm_wx_test,
-)
-from .diagnostics import (
-    bayesian_robust_lm_error_sdem_test as bayesian_robust_lm_error_sdem_test,
-)
-from .diagnostics import (
-    bayesian_robust_lm_error_test as bayesian_robust_lm_error_test,
-)
-from .diagnostics import (
-    bayesian_robust_lm_flow_dest_test as bayesian_robust_lm_flow_dest_test,
-)
-from .diagnostics import (
-    bayesian_robust_lm_flow_network_test as bayesian_robust_lm_flow_network_test,
-)
-from .diagnostics import (
-    bayesian_robust_lm_flow_orig_test as bayesian_robust_lm_flow_orig_test,
-)
-from .diagnostics import (
-    bayesian_robust_lm_lag_sdm_test as bayesian_robust_lm_lag_sdm_test,
-)
-from .diagnostics import (
-    bayesian_robust_lm_lag_test as bayesian_robust_lm_lag_test,
-)
-from .diagnostics import (
-    bayesian_robust_lm_wx_test as bayesian_robust_lm_wx_test,
 )
 from .diagnostics import (
     bic_to_bf as bic_to_bf,
@@ -156,6 +48,9 @@ from .diagnostics import (
 )
 from .diagnostics import (
     spatial_mcmc_diagnostic as spatial_mcmc_diagnostic,
+)
+from .diagnostics.lmtests import (
+    BayesianLMTestResult as BayesianLMTestResult,
 )
 from .graph import (
     FlowDesignMatrix as FlowDesignMatrix,
@@ -200,6 +95,15 @@ from .models import (
     SLX as SLX,
 )
 from .models import (
+    NegativeBinomialFlowPanel as NegativeBinomialFlowPanel,
+)
+from .models import (
+    NegativeBinomialSARFlowPanel as NegativeBinomialSARFlowPanel,
+)
+from .models import (
+    NegativeBinomialSARFlowSeparablePanel as NegativeBinomialSARFlowSeparablePanel,
+)
+from .models import (
     OLSFlowPanel as OLSFlowPanel,
 )
 from .models import (
@@ -225,6 +129,9 @@ from .models import (
 )
 from .models import (
     SARFlowSeparablePanel as SARFlowSeparablePanel,
+)
+from .models import (
+    SARNegativeBinomial as SARNegativeBinomial,
 )
 from .models import (
     SARPanelDynamic as SARPanelDynamic,
@@ -291,6 +198,15 @@ from .models import (
 )
 from .models import (
     SpatialProbit as SpatialProbit,
+)
+from .models.flow import (
+    NegativeBinomialFlow as NegativeBinomialFlow,
+)
+from .models.flow import (
+    NegativeBinomialSARFlow as NegativeBinomialSARFlow,
+)
+from .models.flow import (
+    NegativeBinomialSARFlowSeparable as NegativeBinomialSARFlowSeparable,
 )
 from .models.flow import (
     OLSFlow as OLSFlow,

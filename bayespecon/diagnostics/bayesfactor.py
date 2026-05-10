@@ -1115,6 +1115,17 @@ def bayes_factor_compare_models(
         )
 
     """
+    # Backward-compatibility: older call sites may pass ``metric="bic"``.
+    # If both are supplied, they must agree.
+    metric = kwargs.pop("metric", None)
+    if metric is not None:
+        if method != "bridge" and metric != method:
+            raise ValueError(
+                "Received both `method` and `metric` with different values: "
+                f"method={method!r}, metric={metric!r}. Use only one."
+            )
+        method = metric
+
     # --- Unpack models into idata_list, log_posterior_list, and labels ---
     if isinstance(models, dict):
         items = list(models.items())
@@ -1244,6 +1255,11 @@ def bayes_factor_compare_models(
             else:
                 logmls.append(logml_fn(idata, **call_kwargs))
         except TypeError:
+            # Bridge sampling requires ``log_posterior``; retrying without
+            # kwargs would mask the original error and fail with a less useful
+            # message. Re-raise to preserve context.
+            if method == "bridge":
+                raise
             # Fallback for methods that don't support extra kwargs
             if return_diagnostics:
                 result = logml_fn(idata, return_diagnostics=True)

@@ -137,8 +137,15 @@ gradient step.  Memory: :math:`O(n^2)` vs :math:`O(N^2) = O(n^4)`.
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import itertools
 import os
+import threading
+import time
+import warnings
+from contextlib import contextmanager
+from functools import lru_cache
 
 import numpy as np
 import pytensor.tensor as pt
@@ -150,6 +157,67 @@ from pytensor.graph.basic import Apply
 # pytensor does not incorrectly merge two distinct Op instances during graph
 # optimisation (relevant when multiple flow models exist in one Python session).
 _op_id_counter = itertools.count()
+
+
+# ---------------------------------------------------------------------------
+# Callback instrumentation (Phase 2 benchmark metrics)
+# ---------------------------------------------------------------------------
+
+_callback_stats_lock = threading.Lock()
+_callback_count = 0
+_callback_seconds = 0.0
+_callback_by_op: dict[str, dict[str, float]] = {}
+
+
+def reset_callback_stats() -> None:
+    """Reset in-process callback counters used by benchmark instrumentation."""
+    global _callback_count, _callback_seconds, _callback_by_op
+    with _callback_stats_lock:
+        _callback_count = 0
+        _callback_seconds = 0.0
+        _callback_by_op = {}
+
+
+def get_callback_stats() -> dict[str, object]:
+    """Return callback counter snapshot.
+
+    Returns
+    -------
+    dict
+        Keys:
+        - ``count`` : total number of instrumented Op ``perform`` calls.
+        - ``seconds`` : total wall-clock time spent in those calls.
+        - ``by_op`` : per-op breakdown with ``count`` and ``seconds``.
+    """
+    with _callback_stats_lock:
+        by_op_copy = {
+            k: {"count": int(v["count"]), "seconds": float(v["seconds"])}
+            for k, v in _callback_by_op.items()
+        }
+        return {
+            "count": int(_callback_count),
+            "seconds": float(_callback_seconds),
+            "by_op": by_op_copy,
+        }
+
+
+def _record_callback(op_name: str, elapsed_seconds: float) -> None:
+    global _callback_count, _callback_seconds
+    with _callback_stats_lock:
+        _callback_count += 1
+        _callback_seconds += float(elapsed_seconds)
+        bucket = _callback_by_op.setdefault(op_name, {"count": 0, "seconds": 0.0})
+        bucket["count"] += 1
+        bucket["seconds"] += float(elapsed_seconds)
+
+
+@contextmanager
+def _measure_callback(op_name: str):
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        _record_callback(op_name, time.perf_counter() - t0)
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +244,145 @@ def _kron_dense_max() -> int:
         return 512
 
 
+@lru_cache(maxsize=1)
+def _umfpack_available() -> bool:
+    """Return ``True`` when optional ``scikits.umfpack`` is importable."""
+    try:
+        return importlib.util.find_spec("scikits.umfpack") is not None
+    except ModuleNotFoundError:
+        return False
+
+
+@lru_cache(maxsize=1)
+def _warn_sparse_auto_scipy_fallback_once() -> None:
+    """Emit a one-time advisory warning for auto fallback to scipy sparse solve."""
+    warnings.warn(
+        "BAYESPECON_SPARSE_BACKEND=auto selected scipy sparse solves because optional "
+        "dependency 'scikits.umfpack' is not installed. Estimation is likely faster "
+        "with the 'scikit-umfpack' package installed.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+@lru_cache(maxsize=1)
+def _select_sparse_backend() -> str:
+    """Resolve sparse solve backend from env vars with robust fallback.
+
+    Environment
+    -----------
+    BAYESPECON_SPARSE_BACKEND : {"auto", "scipy", "umfpack"}
+        Default ``auto``. ``auto`` prefers ``umfpack`` when available.
+    BAYESPECON_SPARSE_STRICT : {"0", "1", "false", "true"}
+        If truthy, missing requested optional backends raise ImportError.
+    """
+    requested = os.environ.get("BAYESPECON_SPARSE_BACKEND", "auto").strip().lower()
+    strict = os.environ.get("BAYESPECON_SPARSE_STRICT", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    if requested in {"", "auto"}:
+        if _umfpack_available():
+            return "umfpack"
+        _warn_sparse_auto_scipy_fallback_once()
+        return "scipy"
+
+    if requested in {"scipy", "superlu"}:
+        return "scipy"
+
+    if requested in {"umfpack", "scikits.umfpack"}:
+        if _umfpack_available():
+            return "umfpack"
+        msg = (
+            "BAYESPECON_SPARSE_BACKEND=umfpack requested, but optional dependency "
+            "'scikits.umfpack' is not installed. Install 'scikit-umfpack' "
+            "for this backend. Falling back to scipy backend."
+        )
+        if strict:
+            raise ImportError(msg)
+        warnings.warn(msg, RuntimeWarning)
+        return "scipy"
+
+    msg = (
+        f"Unknown BAYESPECON_SPARSE_BACKEND='{requested}'. "
+        "Valid values are: auto, scipy, umfpack. Falling back to auto."
+    )
+    if strict:
+        raise ValueError(msg)
+    warnings.warn(msg, RuntimeWarning)
+    return "umfpack" if _umfpack_available() else "scipy"
+
+
+@lru_cache(maxsize=1)
+def _get_umfpack_spsolve():
+    """Import and return UMFPACK's sparse direct solver."""
+    umfpack_mod = importlib.import_module("scikits.umfpack")
+    return umfpack_mod.spsolve
+
+
+def _solve_sparse_vector(A: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
+    """Solve ``A x = rhs`` for vector RHS using configured sparse backend."""
+    backend = _select_sparse_backend()
+    rhs64 = np.asarray(rhs, dtype=np.float64)
+    if backend == "umfpack":
+        umfpack_spsolve = _get_umfpack_spsolve()
+        return np.asarray(umfpack_spsolve(A.tocsc(), rhs64), dtype=np.float64)
+    lu = sp.linalg.splu(A.tocsc())
+    return np.asarray(lu.solve(rhs64), dtype=np.float64)
+
+
+def _solve_sparse_matrix(A: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
+    """Solve ``A X = rhs`` for matrix RHS using configured sparse backend."""
+    backend = _select_sparse_backend()
+    rhs64 = np.asarray(rhs, dtype=np.float64)
+    if backend == "umfpack":
+        umfpack_spsolve = _get_umfpack_spsolve()
+        cols = [
+            np.asarray(umfpack_spsolve(A.tocsc(), rhs64[:, j]), dtype=np.float64)
+            for j in range(rhs64.shape[1])
+        ]
+        return np.column_stack(cols)
+    lu = sp.linalg.splu(A.tocsc())
+    return np.asarray(lu.solve(rhs64), dtype=np.float64)
+
+
+class _FactorizedCallableSolver:
+    """Adapter exposing ``solve`` for callables returned by ``factorized``."""
+
+    __slots__ = ("_solve_fn",)
+
+    def __init__(self, solve_fn) -> None:
+        self._solve_fn = solve_fn
+
+    def solve(self, rhs: np.ndarray, trans: str = "N") -> np.ndarray:
+        if trans != "N":
+            raise ValueError("factorized solver adapter supports trans='N' only")
+        return np.asarray(self._solve_fn(rhs), dtype=np.float64)
+
+
+def _make_cached_umfpack_solver(A: sp.spmatrix) -> _FactorizedCallableSolver | None:
+    """Build reusable UMFPACK factorized solver when available.
+
+    Returns
+    -------
+    _FactorizedCallableSolver | None
+        Reusable solver for repeated solves with the same matrix, or ``None``
+        when a reusable UMFPACK factorization path is unavailable.
+    """
+    try:
+        # Prefer UMFPACK path when scipy exposes the selector.
+        use_solver = getattr(sp.linalg, "use_solver", None)
+        if callable(use_solver):
+            use_solver(useUmfpack=True, assumeSortedIndices=True)
+        solve_fn = sp.linalg.factorized(A.tocsc())
+        return _FactorizedCallableSolver(solve_fn)
+    except Exception:
+        return None
+
+
 class _DenseLU:
     """Lightweight wrapper exposing the same ``solve`` API as ``SuperLU``.
 
@@ -197,7 +404,11 @@ class _DenseLU:
 
 
 def _factor_kron_factor(
-    W_dense: np.ndarray, W_sparse: sp.csr_matrix, rho: float, n: int
+    W_dense: np.ndarray,
+    W_sparse: sp.csr_matrix,
+    rho: float,
+    n: int,
+    I_dense: np.ndarray | None = None,
 ):
     """Return an LU factorisation of ``I - rho * W`` using dense LAPACK when small.
 
@@ -205,7 +416,8 @@ def _factor_kron_factor(
     The returned object exposes ``.solve(rhs, trans=...)`` regardless of path.
     """
     if n <= _kron_dense_max() and W_dense is not None:
-        L = np.eye(n, dtype=np.float64) - float(rho) * W_dense
+        I_ref = I_dense if I_dense is not None else np.eye(n, dtype=np.float64)
+        L = I_ref - float(rho) * W_dense
         return _DenseLU(L)
     L_sparse = (
         sp.eye(n, format="csr", dtype=np.float64) - float(rho) * W_sparse
@@ -257,8 +469,39 @@ class _SparseFlowVJPOp(pt.Op):
         self._Wo = Wo
         self._Ww = Ww
         self._I = sp.eye(Wd.shape[0], format="csr", dtype=np.float64)
+        self._cached_rhos: tuple[float, float, float] | None = None
+        self._cached_backend: str | None = None
+        self._cached_solver = None
         self._op_id = next(_op_id_counter)
         super().__init__()
+
+    def _solve_adjoint(
+        self, rd: float, ro: float, rw: float, g: np.ndarray
+    ) -> np.ndarray:
+        """Solve ``A(rho)^T v = g`` with lightweight LU cache reuse."""
+        rhos = (float(rd), float(ro), float(rw))
+        g64 = np.asarray(g, dtype=np.float64)
+        backend = _select_sparse_backend()
+
+        if backend == "scipy":
+            if self._cached_backend != "scipy" or self._cached_rhos != rhos:
+                A = (
+                    self._I
+                    - rhos[0] * self._Wd
+                    - rhos[1] * self._Wo
+                    - rhos[2] * self._Ww
+                )
+                self._cached_solver = sp.linalg.splu(A.tocsc())
+                self._cached_backend = "scipy"
+                self._cached_rhos = rhos
+            return np.asarray(
+                self._cached_solver.solve(g64, trans="T"), dtype=np.float64
+            )
+
+        A_t = (
+            self._I - rhos[0] * self._Wd.T - rhos[1] * self._Wo.T - rhos[2] * self._Ww.T
+        )
+        return _solve_sparse_vector(A_t, g64)
 
     def make_node(self, rho_d, rho_o, rho_w, eta, g):
         rho_d = pt.as_tensor_variable(rho_d)
@@ -274,11 +517,9 @@ class _SparseFlowVJPOp(pt.Op):
 
     def perform(self, node, inputs, outputs):
         rd, ro, rw, eta, g = inputs
-        A = self._I - float(rd) * self._Wd - float(ro) * self._Wo - float(rw) * self._Ww
-        lu = sp.linalg.splu(A.tocsc())  # LU factorization
         eta = np.asarray(eta, dtype=np.float64)
-        v = np.asarray(
-            lu.solve(np.asarray(g, dtype=np.float64), trans="T"), dtype=np.float64
+        v = self._solve_adjoint(
+            float(rd), float(ro), float(rw), np.asarray(g, dtype=np.float64)
         )
         outputs[0][0] = np.asarray(float(v @ (self._Wd @ eta)), dtype=np.float64)
         outputs[1][0] = np.asarray(float(v @ (self._Wo @ eta)), dtype=np.float64)
@@ -388,9 +629,36 @@ class SparseFlowSolveOp(pt.Op):
         self._Wo = Wo.tocsr().astype(np.float64)
         self._Ww = Ww.tocsr().astype(np.float64)
         self._I = sp.eye(Wd.shape[0], format="csr", dtype=np.float64)
+        self._cached_rhos: tuple[float, float, float] | None = None
+        self._cached_backend: str | None = None
+        self._cached_solver = None
         self._vjp_op = _SparseFlowVJPOp(self._Wd, self._Wo, self._Ww)
         self._op_id = next(_op_id_counter)
         super().__init__()
+
+    def _solve_forward(
+        self, rd: float, ro: float, rw: float, b: np.ndarray
+    ) -> np.ndarray:
+        """Solve ``A(rho) eta = b`` with lightweight LU cache reuse."""
+        rhos = (float(rd), float(ro), float(rw))
+        b64 = np.asarray(b, dtype=np.float64)
+        backend = _select_sparse_backend()
+
+        if backend == "scipy":
+            if self._cached_backend != "scipy" or self._cached_rhos != rhos:
+                A = (
+                    self._I
+                    - rhos[0] * self._Wd
+                    - rhos[1] * self._Wo
+                    - rhos[2] * self._Ww
+                )
+                self._cached_solver = sp.linalg.splu(A.tocsc())
+                self._cached_backend = "scipy"
+                self._cached_rhos = rhos
+            return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
+
+        A = self._I - rhos[0] * self._Wd - rhos[1] * self._Wo - rhos[2] * self._Ww
+        return _solve_sparse_vector(A, b64)
 
     def make_node(self, rho_d, rho_o, rho_w, b):
         rho_d = pt.as_tensor_variable(rho_d)
@@ -405,10 +673,8 @@ class SparseFlowSolveOp(pt.Op):
         Uses a single SuperLU factorisation via :func:`scipy.sparse.linalg.splu`.
         """
         rd, ro, rw, b = inputs
-        A = self._I - float(rd) * self._Wd - float(ro) * self._Wo - float(rw) * self._Ww
-        lu = sp.linalg.splu(A.tocsc())  # LU factorization
-        outputs[0][0] = np.asarray(
-            lu.solve(np.asarray(b, dtype=np.float64)), dtype=np.float64
+        outputs[0][0] = self._solve_forward(
+            float(rd), float(ro), float(rw), np.asarray(b, dtype=np.float64)
         )
 
     def infer_shape(self, fgraph, node, input_shapes):
@@ -476,8 +742,39 @@ class _SparseFlowVJPMatrixOp(pt.Op):
         self._Wo = Wo
         self._Ww = Ww
         self._I = sp.eye(Wd.shape[0], format="csr", dtype=np.float64)
+        self._cached_rhos: tuple[float, float, float] | None = None
+        self._cached_backend: str | None = None
+        self._cached_solver = None
         self._op_id = next(_op_id_counter)
         super().__init__()
+
+    def _solve_adjoint_matrix(
+        self, rd: float, ro: float, rw: float, G: np.ndarray
+    ) -> np.ndarray:
+        """Solve ``A(rho)^T V = G`` for matrix RHS with cache reuse."""
+        rhos = (float(rd), float(ro), float(rw))
+        G64 = np.asarray(G, dtype=np.float64)
+        backend = _select_sparse_backend()
+
+        if backend == "scipy":
+            if self._cached_backend != "scipy" or self._cached_rhos != rhos:
+                A = (
+                    self._I
+                    - rhos[0] * self._Wd
+                    - rhos[1] * self._Wo
+                    - rhos[2] * self._Ww
+                )
+                self._cached_solver = sp.linalg.splu(A.tocsc())
+                self._cached_backend = "scipy"
+                self._cached_rhos = rhos
+            return np.asarray(
+                self._cached_solver.solve(G64, trans="T"), dtype=np.float64
+            )
+
+        A_t = (
+            self._I - rhos[0] * self._Wd.T - rhos[1] * self._Wo.T - rhos[2] * self._Ww.T
+        )
+        return _solve_sparse_matrix(A_t, G64)
 
     def make_node(self, rho_d, rho_o, rho_w, H, G):
         rho_d = pt.as_tensor_variable(rho_d)
@@ -493,11 +790,9 @@ class _SparseFlowVJPMatrixOp(pt.Op):
 
     def perform(self, node, inputs, outputs):
         rd, ro, rw, H, G = inputs
-        A = self._I - float(rd) * self._Wd - float(ro) * self._Wo - float(rw) * self._Ww
-        lu = sp.linalg.splu(A.tocsc())
         H = np.asarray(H, dtype=np.float64)
-        V = np.asarray(
-            lu.solve(np.asarray(G, dtype=np.float64), trans="T"), dtype=np.float64
+        V = self._solve_adjoint_matrix(
+            float(rd), float(ro), float(rw), np.asarray(G, dtype=np.float64)
         )
         outputs[0][0] = np.asarray(np.sum(V * (self._Wd @ H)), dtype=np.float64)
         outputs[1][0] = np.asarray(np.sum(V * (self._Wo @ H)), dtype=np.float64)
@@ -537,9 +832,36 @@ class SparseFlowSolveMatrixOp(pt.Op):
         self._Wo = Wo.tocsr().astype(np.float64)
         self._Ww = Ww.tocsr().astype(np.float64)
         self._I = sp.eye(Wd.shape[0], format="csr", dtype=np.float64)
+        self._cached_rhos: tuple[float, float, float] | None = None
+        self._cached_backend: str | None = None
+        self._cached_solver = None
         self._vjp_op = _SparseFlowVJPMatrixOp(self._Wd, self._Wo, self._Ww)
         self._op_id = next(_op_id_counter)
         super().__init__()
+
+    def _solve_forward_matrix(
+        self, rd: float, ro: float, rw: float, B: np.ndarray
+    ) -> np.ndarray:
+        """Solve ``A(rho) H = B`` for matrix RHS with cache reuse."""
+        rhos = (float(rd), float(ro), float(rw))
+        B64 = np.asarray(B, dtype=np.float64)
+        backend = _select_sparse_backend()
+
+        if backend == "scipy":
+            if self._cached_backend != "scipy" or self._cached_rhos != rhos:
+                A = (
+                    self._I
+                    - rhos[0] * self._Wd
+                    - rhos[1] * self._Wo
+                    - rhos[2] * self._Ww
+                )
+                self._cached_solver = sp.linalg.splu(A.tocsc())
+                self._cached_backend = "scipy"
+                self._cached_rhos = rhos
+            return np.asarray(self._cached_solver.solve(B64), dtype=np.float64)
+
+        A = self._I - rhos[0] * self._Wd - rhos[1] * self._Wo - rhos[2] * self._Ww
+        return _solve_sparse_matrix(A, B64)
 
     def make_node(self, rho_d, rho_o, rho_w, B):
         rho_d = pt.as_tensor_variable(rho_d)
@@ -550,10 +872,8 @@ class SparseFlowSolveMatrixOp(pt.Op):
 
     def perform(self, node, inputs, outputs):
         rd, ro, rw, B = inputs
-        A = self._I - float(rd) * self._Wd - float(ro) * self._Wo - float(rw) * self._Ww
-        lu = sp.linalg.splu(A.tocsc())
-        outputs[0][0] = np.asarray(
-            lu.solve(np.asarray(B, dtype=np.float64)), dtype=np.float64
+        outputs[0][0] = self._solve_forward_matrix(
+            float(rd), float(ro), float(rw), np.asarray(B, dtype=np.float64)
         )
 
     def infer_shape(self, fgraph, node, input_shapes):
@@ -661,6 +981,9 @@ class _KroneckerFlowVJPOp(pt.Op):
         self._I = sp.eye(n, format="csr", dtype=np.float64)
         # Cached dense view of W; ~n^2 * 8 bytes (trivial for n <= 500).
         self._W_dense = self._W.toarray() if n <= _kron_dense_max() else None
+        self._I_dense = (
+            np.eye(n, dtype=np.float64) if self._W_dense is not None else None
+        )
         self._op_id = next(_op_id_counter)
         super().__init__()
 
@@ -678,8 +1001,8 @@ class _KroneckerFlowVJPOp(pt.Op):
     def perform(self, node, inputs, outputs):
         rd, ro, eta, g = inputs
         n = self._n
-        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n)
-        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n)
+        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n, self._I_dense)
+        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n, self._I_dense)
         Ld = self._I - float(rd) * self._W  # only used for L_d @ H below
         Lo = self._I - float(ro) * self._W  # only used for L_o @ ... below
 
@@ -819,6 +1142,9 @@ class KroneckerFlowSolveOp(pt.Op):
         self._n = n
         self._I = sp.eye(n, format="csr", dtype=np.float64)
         self._W_dense = self._W.toarray() if n <= _kron_dense_max() else None
+        self._I_dense = (
+            np.eye(n, dtype=np.float64) if self._W_dense is not None else None
+        )
         self._vjp_op = _KroneckerFlowVJPOp(self._W, n)
         self._op_id = next(_op_id_counter)
         super().__init__()
@@ -841,8 +1167,8 @@ class KroneckerFlowSolveOp(pt.Op):
         """
         rd, ro, b = inputs
         n = self._n
-        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n)
-        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n)
+        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n, self._I_dense)
+        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n, self._I_dense)
 
         Hb = b.reshape(n, n, order="F")
         Hp = np.asarray(lu_d.solve(np.asarray(Hb, dtype=np.float64)), dtype=np.float64)
@@ -937,6 +1263,9 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
         self._n = n
         self._I = sp.eye(n, format="csr", dtype=np.float64)
         self._W_dense = self._W.toarray() if n <= _kron_dense_max() else None
+        self._I_dense = (
+            np.eye(n, dtype=np.float64) if self._W_dense is not None else None
+        )
         self._op_id = next(_op_id_counter)
         super().__init__()
 
@@ -1006,8 +1335,8 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
     def perform(self, node, inputs, outputs):
         rd, ro, H_eta, G = inputs
         n = self._n
-        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n)
-        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n)
+        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n, self._I_dense)
+        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n, self._I_dense)
         Ld = self._I - float(rd) * self._W  # used only for sparse matmul below
         Lo = self._I - float(ro) * self._W  # used only for sparse multiply below
 
@@ -1089,6 +1418,9 @@ class KroneckerFlowSolveMatrixOp(pt.Op):
         self._n = n
         self._I = sp.eye(n, format="csr", dtype=np.float64)
         self._W_dense = self._W.toarray() if n <= _kron_dense_max() else None
+        self._I_dense = (
+            np.eye(n, dtype=np.float64) if self._W_dense is not None else None
+        )
         self._vjp_op = _KroneckerFlowVJPMatrixOp(self._W, n)
         self._op_id = next(_op_id_counter)
         super().__init__()
@@ -1114,8 +1446,8 @@ class KroneckerFlowSolveMatrixOp(pt.Op):
         """
         rd, ro, B = inputs
         n = self._n
-        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n)
-        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n)
+        lu_d = _factor_kron_factor(self._W_dense, self._W, rd, n, self._I_dense)
+        lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n, self._I_dense)
 
         # Forward: (Lo⊗Ld) η = b  →  Ld H' Lo^T = H_b
         # Step 1: Ld H' = R;  Step 2: Lo^T Z = H'^T (batched over T)
@@ -1153,6 +1485,317 @@ class KroneckerFlowSolveMatrixOp(pt.Op):
         G = output_grads[0]
         grad_rd, grad_ro, grad_B = self._vjp_op(rd, ro, H, G)
         return [grad_rd, grad_ro, grad_B]
+
+
+# ---------------------------------------------------------------------------
+# Cross-sectional SAR sparse solve Op (single rho parameter)
+# ---------------------------------------------------------------------------
+
+
+class _SparseSARVJPOp(pt.Op):
+    r"""Vector-Jacobian product for :class:`SparseSARSolveOp`.
+
+    Computes partial derivatives of a scalar loss :math:`L` with respect to
+    the inputs :math:`(\rho, b)` of the forward Op using the adjoint method.
+
+    Algorithm
+    ---------
+    1. **Adjoint solve** :math:`v = (I - \rho W^\top)^{-1} g`.
+    2. **Sensitivity scalar** for :math:`\rho`:
+
+       .. math::
+
+           \frac{\partial L}{\partial \rho}
+           = v^\top W \eta
+
+    3. **Gradient w.r.t.** :math:`b`: :math:`v`.
+
+    Parameters
+    ----------
+    W : scipy.sparse.csr_matrix, shape (n, n)
+        Row-standardised spatial weight matrix.
+    """
+
+    __props__ = ("_op_id",)
+
+    def __init__(self, W: sp.csr_matrix) -> None:
+        self._W = W.tocsr().astype(np.float64)
+        self._n = W.shape[0]
+        self._I = sp.eye(self._n, format="csr", dtype=np.float64)
+        self._W_dense = W.toarray() if self._n <= _kron_dense_max() else None
+        self._cached_rho: float | None = None
+        self._cached_backend: str | None = None
+        self._cached_solver = None
+        self._op_id = next(_op_id_counter)
+        super().__init__()
+
+    def _solve_adjoint(self, rho_val: float, g: np.ndarray) -> np.ndarray:
+        """Solve ``(I - rho W^T) v = g`` with lightweight factor cache reuse."""
+        n = self._n
+        rho_f = float(rho_val)
+        g64 = np.asarray(g, dtype=np.float64)
+
+        if n <= _kron_dense_max() and self._W_dense is not None:
+            if self._cached_backend != "dense" or self._cached_rho != rho_f:
+                A_T_dense = np.eye(n, dtype=np.float64) - rho_f * self._W_dense.T
+                self._cached_solver = _DenseLU(A_T_dense)
+                self._cached_backend = "dense"
+                self._cached_rho = rho_f
+            return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
+
+        backend = _select_sparse_backend()
+        if backend == "scipy":
+            if self._cached_backend != "scipy" or self._cached_rho != rho_f:
+                A_T = self._I - rho_f * self._W.transpose()
+                self._cached_solver = sp.linalg.splu(A_T.tocsc())
+                self._cached_backend = "scipy"
+                self._cached_rho = rho_f
+            return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
+
+        if (
+            self._cached_backend == "umfpack"
+            and self._cached_rho == rho_f
+            and self._cached_solver is not None
+        ):
+            return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
+
+        A_T = self._I - rho_f * self._W.transpose()
+        cached_solver = _make_cached_umfpack_solver(A_T)
+        if cached_solver is not None:
+            self._cached_solver = cached_solver
+            self._cached_backend = "umfpack"
+            self._cached_rho = rho_f
+            return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
+
+        return _solve_sparse_vector(A_T, g64)
+
+    def make_node(self, rho, eta, g):
+        rho = pt.as_tensor_variable(rho)
+        eta = pt.as_tensor_variable(eta)
+        g = pt.as_tensor_variable(g)
+        return Apply(self, [rho, eta, g], [pt.dscalar(), pt.dvector()])
+
+    def perform(self, node, inputs, outputs):
+        rho_val, eta, g = inputs
+        # Adjoint solve: v = (I - rho * W^T)^{-1} g
+        # For symmetric-like W (queen contiguity), W^T ≈ W, but we use W^T for correctness.
+        v = self._solve_adjoint(float(rho_val), np.asarray(g, dtype=np.float64))
+
+        eta = np.asarray(eta, dtype=np.float64)
+        # dL/drho = v^T W eta
+        W_eta = self._W @ eta
+        outputs[0][0] = np.asarray(float(v @ W_eta), dtype=np.float64)
+        # dL/db = v
+        outputs[1][0] = np.asarray(v, dtype=np.float64)
+
+    def infer_shape(self, fgraph, node, input_shapes):
+        eta_shape = input_shapes[1]
+        return [(), eta_shape]
+
+    def grad(self, inputs, output_grads):
+        # Second-order gradients not required for NUTS.
+        return [pt.zeros_like(inp) for inp in inputs]
+
+
+class SparseSARSolveOp(pt.Op):
+    r"""Differentiable sparse solve :math:`\eta = (I - \rho W)^{-1} b`.
+
+    Wraps :func:`scipy.sparse.linalg.splu` as a pytensor
+    :class:`~pytensor.graph.op.Op` with analytically exact first-order
+    gradients derived via the adjoint method.
+
+    The system matrix is:
+
+    .. math::
+
+        A(\rho) = I_n - \rho W
+
+    where :math:`W` is a row-standardised spatial weight matrix.
+
+    This Op is used by :class:`~bayespecon.models.sar_negbin.SARNegativeBinomial`
+    to embed the SAR-in-mean reduced form on the **log-mean** of a
+    Negative Binomial observation model:
+
+    .. math::
+
+        \eta &= (I - \rho W)^{-1} X\beta \\
+        \mu_i &= \exp(\eta_i) \\
+        y_i &\sim \operatorname{NegBin}(\mu_i, \alpha)
+
+    The Jacobian log-determinant :math:`\log|I - \rho W|` is added separately
+    via the model's ``_logdet_pytensor_fn``.
+
+    Gradient derivation
+    -------------------
+    For a scalar loss :math:`L`, implicit differentiation of
+    :math:`(I - \rho W)\eta = b` gives:
+
+    .. math::
+
+        \frac{\partial L}{\partial \rho}
+        = g^\top \frac{\partial \eta}{\partial \rho}
+        = g^\top (I - \rho W)^{-1} W \eta
+        = v^\top W \eta
+
+    .. math::
+
+        \frac{\partial L}{\partial b}
+        = g^\top (I - \rho W)^{-1}
+        = v
+
+    where :math:`v = (I - \rho W^\top)^{-1} g` is the **adjoint solution**
+    and :math:`g = \partial L / \partial \eta` is the upstream gradient.
+
+    Per-gradient-evaluation cost: **2 sparse direct solves** (one forward,
+    one adjoint) + 1 sparse matrix-vector product.  For queen-contiguity
+    :math:`W` with :math:`n \leq 10{,}000` this is fast enough for NUTS
+    sampling.
+
+    Parameters
+    ----------
+    W : scipy.sparse.csr_matrix, shape (n, n)
+        Row-standardised spatial weight matrix.
+
+    Examples
+    --------
+    >>> from bayespecon.ops import SparseSARSolveOp
+    >>> import pytensor.tensor as pt, pytensor
+    >>> op = SparseSARSolveOp(W_csr)
+    >>> rho = pt.scalar("rho")
+    >>> b = pt.vector("b")
+    >>> eta = op(rho, b)
+    >>> fn = pytensor.function([rho, b], eta)
+    """
+
+    __props__ = ("_op_id",)
+
+    def __init__(self, W: sp.csr_matrix) -> None:
+        self._W = W.tocsr().astype(np.float64)
+        self._n = W.shape[0]
+        self._I = sp.eye(self._n, format="csr", dtype=np.float64)
+        self._W_dense = W.toarray() if self._n <= _kron_dense_max() else None
+        # Pre-allocate dense identity once to avoid repeated np.eye() calls
+        # during NUTS sampling when rho changes frequently.
+        self._I_dense = (
+            np.eye(self._n, dtype=np.float64) if self._W_dense is not None else None
+        )
+        self._cached_rho: float | None = None
+        self._cached_backend: str | None = None
+        self._cached_solver = None
+        self._vjp_op = _SparseSARVJPOp(self._W)
+        self._op_id = next(_op_id_counter)
+        super().__init__()
+
+    def _solve_forward(self, rho_val: float, b: np.ndarray) -> np.ndarray:
+        """Solve ``(I - rho W) eta = b`` with lightweight factor cache reuse."""
+        n = self._n
+        rho_f = float(rho_val)
+        b64 = np.asarray(b, dtype=np.float64)
+
+        if n <= _kron_dense_max() and self._W_dense is not None:
+            if self._cached_backend != "dense" or self._cached_rho != rho_f:
+                A_dense = self._I_dense - rho_f * self._W_dense
+                self._cached_solver = _DenseLU(A_dense)
+                self._cached_backend = "dense"
+                self._cached_rho = rho_f
+            return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
+
+        backend = _select_sparse_backend()
+        if backend == "scipy":
+            if self._cached_backend != "scipy" or self._cached_rho != rho_f:
+                A = self._I - rho_f * self._W
+                self._cached_solver = sp.linalg.splu(A.tocsc())
+                self._cached_backend = "scipy"
+                self._cached_rho = rho_f
+            return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
+
+        if (
+            self._cached_backend == "umfpack"
+            and self._cached_rho == rho_f
+            and self._cached_solver is not None
+        ):
+            return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
+
+        A = self._I - rho_f * self._W
+        cached_solver = _make_cached_umfpack_solver(A)
+        if cached_solver is not None:
+            self._cached_solver = cached_solver
+            self._cached_backend = "umfpack"
+            self._cached_rho = rho_f
+            return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
+
+        return _solve_sparse_vector(A, b64)
+
+    def make_node(self, rho, b):
+        rho = pt.as_tensor_variable(rho)
+        b = pt.as_tensor_variable(b)
+        return Apply(self, [rho, b], [pt.dvector()])
+
+    def perform(self, node, inputs, outputs):
+        r"""Compute :math:`\eta = (I - \rho W)^{-1} b` via a sparse direct solver."""
+        rho_val, b = inputs
+        outputs[0][0] = self._solve_forward(
+            float(rho_val), np.asarray(b, dtype=np.float64)
+        )
+
+    def infer_shape(self, fgraph, node, input_shapes):
+        return [input_shapes[1]]
+
+    def L_op(self, inputs, outputs, output_grads):
+        r"""Compute VJPs via the adjoint method.
+
+        Delegates to :class:`_SparseSARVJPOp`.
+
+        Parameters
+        ----------
+        inputs : list of TensorVariable
+            ``[rho, b]``.
+        outputs : list of TensorVariable
+            ``[eta]`` (symbolic forward output; not used directly here).
+        output_grads : list of TensorVariable
+            ``[g]`` where :math:`g = \partial L / \partial \eta`.
+
+        Returns
+        -------
+        list of TensorVariable
+            ``[grad_rho, grad_b]``.
+        """
+        rho, b = inputs
+        eta = outputs[0]
+        g = output_grads[0]
+        grad_rho, grad_b = self._vjp_op(rho, eta, g)
+        return [grad_rho, grad_b]
+
+
+def _instrument_op_perform_class(op_cls: type[pt.Op], name: str) -> None:
+    """Wrap ``perform`` to record callback timing/counters for benchmarks."""
+    original = getattr(op_cls, "perform", None)
+    if original is None or getattr(original, "_callback_instrumented", False):
+        return
+
+    def _wrapped(self, node, inputs, outputs):
+        with _measure_callback(name):
+            return original(self, node, inputs, outputs)
+
+    _wrapped._callback_instrumented = True  # type: ignore[attr-defined]
+    setattr(op_cls, "perform", _wrapped)
+
+
+for _cls_name in (
+    "_SparseFlowVJPOp",
+    "SparseFlowSolveOp",
+    "_SparseFlowVJPMatrixOp",
+    "SparseFlowSolveMatrixOp",
+    "_KroneckerFlowVJPOp",
+    "KroneckerFlowSolveOp",
+    "_KroneckerFlowVJPMatrixOp",
+    "KroneckerFlowSolveMatrixOp",
+    "_SparseSARVJPOp",
+    "SparseSARSolveOp",
+):
+    _cls = globals().get(_cls_name)
+    if _cls is not None:
+        _instrument_op_perform_class(_cls, _cls_name)
 
 
 # ---------------------------------------------------------------------------
@@ -1226,6 +1869,14 @@ def kron_solve_matrix(
     return np.asarray(
         Z3.transpose(1, 0, 2).reshape(n * n, k, order="F"), dtype=np.float64
     )
+
+
+# ---------------------------------------------------------------------------
+# Numba dispatch registration (no-op when Numba is not installed)
+# ---------------------------------------------------------------------------
+from ._numba_dispatch import register_numba_dispatch as _register_numba_dispatch
+
+_register_numba_dispatch()
 
 
 # ---------------------------------------------------------------------------

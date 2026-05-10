@@ -305,12 +305,12 @@ class TestLogdetMC:
 
 
 # ---------------------------------------------------------------------------
-# logdet.lndetint
+# logdet.spline
 # ---------------------------------------------------------------------------
 
 
 class TestLogdetSpline:
-    """Tests for logdet.spline (LU interpolation, MATLAB lndetint style)."""
+    """Tests for logdet.spline (LU interpolation style)."""
 
     def test_basic(self):
         from bayespecon.logdet import spline
