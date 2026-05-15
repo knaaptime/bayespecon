@@ -387,23 +387,6 @@ class SpatialModel(_SpatialModelBase):
         _store_eigs(self._graph, eigs)
         return eigs
 
-    @cached_property
-    def _Wy(self) -> np.ndarray:
-        """Spatial lag of the dependent variable, ``W @ y``."""
-        if self._graph is None:
-            return np.zeros(len(self._y), dtype=np.float64)
-        return np.asarray(self._W_sparse @ self._y, dtype=np.float64)
-
-    @cached_property
-    def _WX(self) -> np.ndarray:
-        """Spatial lag of the selected X columns, ``W @ X[:, wx_idx]``."""
-        if self._graph is None or not self._wx_column_indices:
-            return np.empty((self._X.shape[0], 0), dtype=np.float64)
-        return np.asarray(
-            self._W_sparse @ self._X[:, self._wx_column_indices],
-            dtype=np.float64,
-        )
-
     # ------------------------------------------------------------------
     # Lazy log-determinant evaluators.
     #

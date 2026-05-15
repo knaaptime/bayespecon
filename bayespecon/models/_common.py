@@ -649,6 +649,49 @@ class _SpatialModelBase(ABC):
     # Shared W-derived helpers
     # ------------------------------------------------------------------
 
+    def _apply_spatial_lag(self, v: np.ndarray) -> np.ndarray:
+        """Apply the model's spatial-lag operator to ``v``.
+
+        Default implementation is a plain sparse multiply
+        ``self._W_sparse @ v`` (the cross-sectional convention).  Panel
+        models override this to apply ``W_n ⊗ I_T`` blockwise via
+        :meth:`SpatialPanelModel._sparse_panel_lag` so the lag stays
+        sparse for stacked ``(N·T,)`` / ``(N·T, k)`` inputs.
+
+        Parameters
+        ----------
+        v : np.ndarray
+            Vector ``(n,)`` or matrix ``(n, k)`` to be spatially lagged,
+            where ``n`` matches the leading dimension of ``self._y``.
+
+        Returns
+        -------
+        np.ndarray
+            ``W @ v`` (or the panel block-Kronecker equivalent).
+        """
+        return np.asarray(self._W_sparse @ v, dtype=np.float64)
+
+    @cached_property
+    def _Wy(self) -> np.ndarray:
+        """Spatial lag of the dependent variable, ``W @ y``.
+
+        Returns zeros when no spatial weights matrix was supplied
+        (W-free models on the cross-sectional base).
+        """
+        if getattr(self, "_W_sparse", None) is None:
+            return np.zeros(len(self._y), dtype=np.float64)
+        return self._apply_spatial_lag(self._y)
+
+    @cached_property
+    def _WX(self) -> np.ndarray:
+        """Spatial lag of the selected X columns, ``W @ X[:, wx_idx]``."""
+        if (
+            getattr(self, "_W_sparse", None) is None
+            or not self._wx_column_indices
+        ):
+            return np.empty((self._X.shape[0], 0), dtype=np.float64)
+        return self._apply_spatial_lag(self._X[:, self._wx_column_indices])
+
     @cached_property
     def _W_pt_sparse(self):
         """PyTensor sparse variable wrapping the model's sparse W.

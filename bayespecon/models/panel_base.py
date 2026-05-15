@@ -405,14 +405,15 @@ class SpatialPanelModel(_SpatialModelBase):
             else _auto_logdet_method(self._W_sparse.shape[0])
         )
 
-        self._Wy = self._sparse_panel_lag(self._y)
-        if self._wx_column_indices:
-            # Single batched sparse multiply across all WX columns, replacing
-            # the per-column Python loop that previously paid an O(k_wx)
-            # overhead.
-            self._WX = self._sparse_panel_lag(self._X[:, self._wx_column_indices])
-        else:
-            self._WX = np.empty((self._X.shape[0], 0), dtype=float)
+    def _apply_spatial_lag(self, v: np.ndarray) -> np.ndarray:
+        """Apply ``W_n ⊗ I_T`` to a stacked panel vector or matrix.
+
+        Overrides the cross-sectional default to use the blockwise
+        sparse multiply implemented by :meth:`_sparse_panel_lag`, which
+        accepts either ``(N·T,)`` or ``(N·T, k)`` arrays and stays
+        sparse internally.
+        """
+        return self._sparse_panel_lag(v)
 
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
         """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
