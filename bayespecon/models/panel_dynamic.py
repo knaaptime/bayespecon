@@ -44,6 +44,15 @@ from ..logdet import get_cached_logdet_fn
 from ._sampler import use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
+from .priors import (
+    PanelOLSDynamicPriors,
+    PanelSARDynamicPriors,
+    PanelSDEMDynamicPriors,
+    PanelSDMRDynamicPriors,
+    PanelSDMUDynamicPriors,
+    PanelSEMDynamicPriors,
+    PanelSLXDynamicPriors,
+)
 
 
 class _DynamicPanelMixin:
@@ -282,6 +291,8 @@ class _DynamicPanelMixin:
 
 
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _priors_cls = PanelOLSDynamicPriors
+
     _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
     """Dynamic panel regression without contemporaneous spatial dependence.
 
@@ -431,6 +442,8 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _priors_cls = PanelSDMRDynamicPriors
+
     _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
     """Dynamic restricted spatial Durbin panel regression.
 
@@ -588,6 +601,8 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _priors_cls = PanelSDMUDynamicPriors
+
     _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
     """Dynamic unrestricted spatial Durbin panel regression.
 
@@ -807,6 +822,8 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _priors_cls = PanelSARDynamicPriors
+
     _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
     """Dynamic spatial-lag panel regression.
 
@@ -977,6 +994,8 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _priors_cls = PanelSEMDynamicPriors
+
     _spatial_diagnostics_tests = SEM_PANEL_DYNAMIC_SUITE.tests
     """Dynamic spatial-error panel regression.
 
@@ -1253,6 +1272,8 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _priors_cls = PanelSDEMDynamicPriors
+
     _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
     """Dynamic spatial Durbin error panel regression.
 
@@ -1551,6 +1572,8 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
+    _priors_cls = PanelSLXDynamicPriors
+
     _spatial_diagnostics_tests = SLX_PANEL_DYNAMIC_SUITE.tests
     """Dynamic SLX panel regression.
 

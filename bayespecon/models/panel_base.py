@@ -25,6 +25,7 @@ from ..logdet import (
 )
 from ._common import _SpatialModelBase
 from .base import _is_row_standardized_csr
+from .priors import PanelOLSPriors, PriorsLike, priors_as_dict, resolve_priors
 
 
 def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
@@ -293,6 +294,13 @@ class SpatialPanelModel(_SpatialModelBase):
     # not the N×N reduced weight matrix.
     _pt_sparse_attr: str = "_W_sparse_NT"
 
+    #: The default :class:`PanelOLSPriors` accepts the shared
+    #: ``beta_mu``/``beta_sigma``/``sigma_sigma`` keys. Subclasses with
+    #: extra parameters (``rho``/``lam``/``phi``/random effects/censoring)
+    #: override this with the matching :mod:`bayespecon.models.priors`
+    #: dataclass so unknown keys raise ``TypeError`` at construction.
+    _priors_cls: type = PanelOLSPriors
+
     def __init__(
         self,
         formula: Optional[str] = None,
@@ -305,7 +313,7 @@ class SpatialPanelModel(_SpatialModelBase):
         N: Optional[int] = None,
         T: Optional[int] = None,
         model: int = 0,
-        priors: Optional[dict] = None,
+        priors: PriorsLike = None,
         logdet_method: LogDetMethodName | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
@@ -314,7 +322,12 @@ class SpatialPanelModel(_SpatialModelBase):
         if W is None:
             raise ValueError("W is required.")
 
-        self.priors = priors or {}
+        # Coerce ``priors`` to the subclass's typed dataclass; unknown keys
+        # raise immediately. ``self.priors`` is kept as a plain dict view
+        # so existing ``self.priors.get(...)`` calls in subclass
+        # ``_build_pymc_model`` implementations continue to work.
+        self.priors_obj = resolve_priors(priors, self._priors_cls)
+        self.priors = priors_as_dict(self.priors_obj)
         self.backend = resolve_backend(backend)
         self.backend_name = self.backend.name
         # Validate ``logdet_method`` eagerly so invalid strings fail at

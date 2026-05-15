@@ -205,6 +205,176 @@ def priors_as_dict(priors: Any) -> dict[str, Any]:
     return asdict(priors)
 
 
+# ---------------------------------------------------------------------------
+# Panel dataclasses
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PanelBasePriors:
+    """Priors shared by every panel model.
+
+    Panel models do not currently expose Student-t robustification, so
+    ``nu_lam`` from :class:`BasePriors` is omitted.
+
+    Attributes
+    ----------
+    beta_mu, beta_sigma
+        Normal prior on regression coefficients.
+    sigma_sigma
+        Half-normal scale on the observation-noise standard deviation.
+    """
+
+    beta_mu: float = 0.0
+    beta_sigma: float = 1e6
+    sigma_sigma: float = 10.0
+
+
+@dataclass(frozen=True)
+class PanelOLSPriors(PanelBasePriors):
+    """Priors for :class:`bayespecon.models.OLSPanelFE`."""
+
+
+@dataclass(frozen=True)
+class PanelSLXPriors(PanelBasePriors):
+    """Priors for :class:`bayespecon.models.SLXPanelFE`."""
+
+
+@dataclass(frozen=True)
+class PanelSARPriors(PanelBasePriors):
+    """Priors for :class:`bayespecon.models.SARPanelFE` (adds rho bounds)."""
+
+    rho_lower: float = -1.0
+    rho_upper: float = 1.0
+
+
+@dataclass(frozen=True)
+class PanelSEMPriors(PanelBasePriors):
+    """Priors for :class:`bayespecon.models.SEMPanelFE` (adds lam bounds)."""
+
+    lam_lower: float = -1.0
+    lam_upper: float = 1.0
+
+
+@dataclass(frozen=True)
+class PanelSDMPriors(PanelSARPriors):
+    """Priors for :class:`bayespecon.models.SDMPanelFE`."""
+
+
+@dataclass(frozen=True)
+class PanelSDEMPriors(PanelSEMPriors):
+    """Priors for :class:`bayespecon.models.SDEMPanelFE`."""
+
+
+# -- Panel random-effects ----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PanelREMixinPriors:
+    """Mixin providing the random-effects scale prior."""
+
+    sigma_alpha_sigma: float = 10.0
+
+
+@dataclass(frozen=True)
+class PanelOLSREPriors(PanelOLSPriors, PanelREMixinPriors):
+    """Priors for :class:`bayespecon.models.OLSPanelRE`."""
+
+
+@dataclass(frozen=True)
+class PanelSARREPriors(PanelSARPriors, PanelREMixinPriors):
+    """Priors for :class:`bayespecon.models.SARPanelRE`."""
+
+
+@dataclass(frozen=True)
+class PanelSEMREPriors(PanelSEMPriors, PanelREMixinPriors):
+    """Priors for :class:`bayespecon.models.SEMPanelRE`."""
+
+
+@dataclass(frozen=True)
+class PanelSDEMREPriors(PanelSDEMPriors, PanelREMixinPriors):
+    """Priors for :class:`bayespecon.models.SDEMPanelRE`."""
+
+
+# -- Panel Tobit -------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PanelSARTobitPriors(PanelSARPriors):
+    """Priors for :class:`bayespecon.models.SARPanelTobit`."""
+
+    censor_sigma: float = 10.0
+
+
+@dataclass(frozen=True)
+class PanelSEMTobitPriors(PanelSEMPriors):
+    """Priors for :class:`bayespecon.models.SEMPanelTobit`."""
+
+    censor_sigma: float = 10.0
+
+
+# -- Panel dynamic (tighter [-0.95, 0.95] bounds; adds phi) -----------------
+
+
+@dataclass(frozen=True)
+class PanelDynamicBasePriors(PanelBasePriors):
+    """Priors shared by every dynamic panel model.
+
+    Adds bounds on the AR(1) coefficient ``phi`` on the lagged dependent
+    variable and tightens spatial-parameter bounds to ``[-0.95, 0.95]``.
+    """
+
+    phi_lower: float = -0.95
+    phi_upper: float = 0.95
+
+
+@dataclass(frozen=True)
+class PanelOLSDynamicPriors(PanelDynamicBasePriors):
+    """Priors for :class:`bayespecon.models.OLSPanelDynamic`."""
+
+
+@dataclass(frozen=True)
+class PanelSLXDynamicPriors(PanelDynamicBasePriors):
+    """Priors for :class:`bayespecon.models.SLXPanelDynamic`."""
+
+
+@dataclass(frozen=True)
+class PanelSARDynamicPriors(PanelDynamicBasePriors):
+    """Priors for :class:`bayespecon.models.SARPanelDynamic`."""
+
+    rho_lower: float = -0.95
+    rho_upper: float = 0.95
+
+
+@dataclass(frozen=True)
+class PanelSEMDynamicPriors(PanelDynamicBasePriors):
+    """Priors for :class:`bayespecon.models.SEMPanelDynamic`."""
+
+    lam_lower: float = -0.95
+    lam_upper: float = 0.95
+
+
+@dataclass(frozen=True)
+class PanelSDMRDynamicPriors(PanelSARDynamicPriors):
+    """Priors for :class:`bayespecon.models.SDMRPanelDynamic`."""
+
+
+@dataclass(frozen=True)
+class PanelSDMUDynamicPriors(PanelSARDynamicPriors):
+    """Priors for :class:`bayespecon.models.SDMUPanelDynamic`.
+
+    Adds bounds on the time-space cross-term coefficient ``theta``.
+    """
+
+    theta_lower: float = -0.95
+    theta_upper: float = 0.95
+
+
+@dataclass(frozen=True)
+class PanelSDEMDynamicPriors(PanelSEMDynamicPriors):
+    """Priors for :class:`bayespecon.models.SDEMPanelDynamic`."""
+
+
 __all__ = [
     "BasePriors",
     "OLSPriors",
@@ -217,6 +387,27 @@ __all__ = [
     "SEMTobitPriors",
     "SDMTobitPriors",
     "SpatialProbitPriors",
+    "PanelBasePriors",
+    "PanelOLSPriors",
+    "PanelSLXPriors",
+    "PanelSARPriors",
+    "PanelSEMPriors",
+    "PanelSDMPriors",
+    "PanelSDEMPriors",
+    "PanelOLSREPriors",
+    "PanelSARREPriors",
+    "PanelSEMREPriors",
+    "PanelSDEMREPriors",
+    "PanelSARTobitPriors",
+    "PanelSEMTobitPriors",
+    "PanelDynamicBasePriors",
+    "PanelOLSDynamicPriors",
+    "PanelSLXDynamicPriors",
+    "PanelSARDynamicPriors",
+    "PanelSEMDynamicPriors",
+    "PanelSDMRDynamicPriors",
+    "PanelSDMUDynamicPriors",
+    "PanelSDEMDynamicPriors",
     "PriorsLike",
     "resolve_priors",
     "priors_as_dict",

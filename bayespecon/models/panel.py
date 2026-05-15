@@ -17,6 +17,14 @@ from ..diagnostics.lmtests import (
 from ._sampler import use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
+from .priors import (
+    PanelOLSPriors,
+    PanelSARPriors,
+    PanelSDEMPriors,
+    PanelSDMPriors,
+    PanelSEMPriors,
+    PanelSLXPriors,
+)
 
 
 class OLSPanelFE(SpatialPanelModel):
@@ -108,6 +116,8 @@ class OLSPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _priors_cls = PanelOLSPriors
 
     _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
 
@@ -270,6 +280,8 @@ class SARPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _priors_cls = PanelSARPriors
 
     _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
 
@@ -488,6 +500,8 @@ class SEMPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _priors_cls = PanelSEMPriors
 
     _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
@@ -811,6 +825,8 @@ class SDMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
+    _priors_cls = PanelSDMPriors
+
     _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
 
     def _beta_names(self) -> list[str]:
@@ -1063,6 +1079,8 @@ class SDEMPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _priors_cls = PanelSDEMPriors
 
     _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
 
@@ -1392,6 +1410,8 @@ class SLXPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
+    _priors_cls = PanelSLXPriors
 
     _spatial_diagnostics_tests = SLX_PANEL_SUITE.tests
 

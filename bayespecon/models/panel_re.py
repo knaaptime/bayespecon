@@ -35,6 +35,12 @@ from ..diagnostics.lmtests import (
 )
 from ._sampler import use_jax_likelihood
 from .panel_base import SpatialPanelModel
+from .priors import (
+    PanelOLSREPriors,
+    PanelSARREPriors,
+    PanelSDEMREPriors,
+    PanelSEMREPriors,
+)
 
 
 class OLSPanelRE(SpatialPanelModel):
@@ -116,6 +122,8 @@ class OLSPanelRE(SpatialPanelModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _priors_cls = PanelOLSREPriors
 
     _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
 
@@ -300,6 +308,8 @@ class SARPanelRE(SpatialPanelModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _priors_cls = PanelSARREPriors
 
     _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
 
@@ -530,6 +540,8 @@ class SEMPanelRE(SpatialPanelModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
+
+    _priors_cls = PanelSEMREPriors
 
     _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
@@ -863,6 +875,8 @@ class SDEMPanelRE(SpatialPanelModel):
     structure (``model=0``) is used because unit heterogeneity is
     captured by the random effect rather than by within-unit demeaning.
     """
+
+    _priors_cls = PanelSDEMREPriors
 
     _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
 
