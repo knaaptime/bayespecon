@@ -32,22 +32,6 @@ except Exception:
 
 import bayespecon
 
-# Diagnostic: surface the underlying ImportError when sphinx autosummary fails
-# to import bayespecon submodules on CI. Remove once the docs build is green.
-import traceback as _tb
-
-for _modname in (
-    "bayespecon.models.flow",
-    "bayespecon.models.flow_panel",
-    "bayespecon.diagnostics.lmtests",
-):
-    try:
-        __import__(_modname)
-        print(f"[conf.py diagnostic] imported {_modname}")
-    except Exception:  # noqa: BLE001
-        print(f"[conf.py diagnostic] FAILED to import {_modname}:")
-        _tb.print_exc()
-
 project = "bayespecon"
 copyright = "2018-, pysal developers"  # noqa: A001 - shadowing a Python builtin
 author = "pysal developers"

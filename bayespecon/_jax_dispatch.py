@@ -46,7 +46,12 @@ def _klujax_available() -> bool:
 @lru_cache(maxsize=1)
 def _umfpack_available() -> bool:
     """Return ``True`` when optional ``scikits.umfpack`` is importable."""
-    return importlib.util.find_spec("scikits.umfpack") is not None
+    # ``find_spec`` raises ``ModuleNotFoundError`` in Python 3.14+ when the
+    # parent package (here ``scikits``) is not installed at all, so guard.
+    try:
+        return importlib.util.find_spec("scikits.umfpack") is not None
+    except (ImportError, ValueError):
+        return False
 
 
 @lru_cache(maxsize=1)
