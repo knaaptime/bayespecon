@@ -47,6 +47,18 @@ class _SpatialModelBase(ABC):
     # ``(callable, label)`` pairs.
     _spatial_diagnostics_tests: tuple = ()
 
+    # Configuration hooks for :meth:`spatial_diagnostics` /
+    # :meth:`spatial_diagnostics_decision` that differ between the
+    # cross-sectional and panel families.  Subclasses override to switch
+    # the test-name prefix used in the decision tree (``""`` vs
+    # ``"Panel-"``), the predicate-name prefix passed to
+    # :mod:`bayespecon.diagnostics._decision_trees`, and the spec
+    # accessor (``get_spec`` vs ``get_panel_spec``).
+    _decision_test_prefix: str = ""
+    _decision_predicate_prefix: str = ""
+    _decision_spec_attr: str = "get_spec"
+    _diagnostics_require_W: bool = True
+
     # ------------------------------------------------------------------
     # Abstract interface — implemented by leaf subclasses
     # ------------------------------------------------------------------
@@ -476,6 +488,155 @@ class _SpatialModelBase(ABC):
         df.attrs["_raw_results"] = raw_results
 
         return df
+
+    def spatial_diagnostics(self) -> pd.DataFrame:
+        """Run Bayesian LM specification tests and return a summary table.
+
+        Iterates over the class-level ``_spatial_diagnostics_tests``
+        registry and calls each test function on this fitted model,
+        collecting the results into a tidy DataFrame.  The set of tests
+        depends on the model type.
+
+        Requires the model to have been fit (``.fit()`` called).  For
+        cross-sectional models a spatial weights matrix ``W`` must also
+        have been supplied at construction time.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame indexed by test name with columns ``statistic``
+            (posterior mean), ``median``, ``df`` (degrees of freedom for
+            the :math:`\\chi^2` reference), ``p_value`` (Bayesian p-value
+            ``1 - chi2.cdf(mean, df)``), and ``ci_lower`` / ``ci_upper``
+            (95% credible interval).  The DataFrame carries
+            ``attrs["model_type"]`` and ``attrs["n_draws"]`` metadata.
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been fit yet.
+        ValueError
+            If a cross-sectional model was constructed without ``W``.
+
+        See Also
+        --------
+        spatial_diagnostics_decision : Model-selection decision based on
+            the test results.
+        spatial_effects : Posterior inference for direct/indirect/total
+            impacts.
+        """
+        self._require_fit()
+        if self._diagnostics_require_W:
+            self._require_W()
+        return self._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
+
+    def spatial_diagnostics_decision(
+        self, alpha: float = 0.05, format: str = "graphviz"
+    ):
+        """Return a model-selection decision from Bayesian LM test results.
+
+        Implements the decision tree from :cite:t:`koley2024UseNot`
+        (the Bayesian analogue of the classical ``stge_kb`` procedure
+        in :cite:t:`anselin1996SimpleDiagnostic`), adapted for panel
+        models following :cite:t:`elhorst2014SpatialEconometrics` when
+        invoked on a panel subclass.  See the cross-sectional /
+        panel-specific docstrings on the leaf classes for the full set
+        of branches consulted.
+
+        Parameters
+        ----------
+        alpha : float, default 0.05
+            Significance level for the Bayesian p-values.
+        format : {"graphviz", "ascii", "model"}, default "graphviz"
+            Output format. ``"model"`` returns the recommended-model
+            name string. ``"ascii"`` returns an indented box-drawing
+            rendering of the full decision tree with the chosen path
+            highlighted. ``"graphviz"`` returns a
+            :class:`graphviz.Digraph` object that renders inline in
+            Jupyter; if the optional ``graphviz`` package is not
+            installed a :class:`UserWarning` is issued and the ASCII
+            rendering is returned instead.
+
+        Returns
+        -------
+        str or graphviz.Digraph
+            Recommended model name when ``format="model"``, an ASCII
+            tree string when ``format="ascii"``, or a
+            ``graphviz.Digraph`` when ``format="graphviz"`` (with ASCII
+            fallback on missing dep).
+
+        See Also
+        --------
+        spatial_diagnostics : Compute the Bayesian LM test statistics.
+        """
+        from ..diagnostics import _decision_trees as _dt
+
+        diag = self.spatial_diagnostics()
+        model_type = self.__class__.__name__
+        tprefix = self._decision_test_prefix
+        pprefix = self._decision_predicate_prefix
+
+        def _sig(test_name: str) -> bool:
+            if test_name not in diag.index:
+                return False
+            pval = diag.loc[test_name, "p_value"]
+            return not np.isnan(pval) and pval < alpha
+
+        def _pval(label: str) -> float:
+            return diag.loc[f"{tprefix}{label}", "p_value"]
+
+        def _lag_le_error() -> bool:
+            return _pval("LM-Lag") <= _pval("LM-Error")
+
+        def _robust_lag_le_error() -> bool:
+            # OLS-tree tie-break.  When both naive AND both robust tests
+            # fire, route to the dominant single-channel model by the
+            # smaller robust p-value.
+            return _pval("Robust-LM-Lag") <= _pval("Robust-LM-Error")
+
+        def _lag_sdm_le_error_sdem() -> bool:
+            return _pval("Robust-LM-Lag-SDM") <= _pval("Robust-LM-Error-SDEM")
+
+        def _lag_sem_le_wx_sem() -> bool:
+            # SEM-tree tie-break (cross-sectional only).
+            return _pval("Robust-LM-Lag") <= _pval("Robust-LM-WX")
+
+        spec = getattr(_dt, self._decision_spec_attr)(model_type)
+        decision, path = _dt.evaluate(
+            spec,
+            sig_lookup=_sig,
+            predicate_lookup={
+                f"{pprefix}lag_pval_le_error_pval": _lag_le_error,
+                f"{pprefix}robust_lag_pval_le_error_pval": _robust_lag_le_error,
+                f"{pprefix}lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
+                f"{pprefix}lag_sem_pval_le_wx_sem_pval": _lag_sem_le_wx_sem,
+            },
+        )
+
+        p_values: dict[str, float] = {}
+        for test_name in diag.index:
+            pv = diag.loc[test_name, "p_value"]
+            if not np.isnan(pv):
+                p_values[str(test_name)] = float(pv)
+
+        return _dt.render(
+            spec,
+            path,
+            decision,
+            p_values=p_values,
+            alpha=alpha,
+            fmt=format,
+            title=f"{model_type} decision tree (alpha={alpha})",
+        )
+
+    def _require_W(self):
+        """Raise if no spatial weights matrix was supplied.
+
+        Default implementation is a no-op for subclasses (e.g. panel
+        models) that always carry a ``W``; the cross-sectional base
+        overrides this to enforce the check.
+        """
+        return None
 
     # ------------------------------------------------------------------
     # Internals

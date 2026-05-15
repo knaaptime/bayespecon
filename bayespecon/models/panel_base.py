@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 import arviz as az
 import numpy as np
@@ -277,6 +277,14 @@ class SpatialPanelModel(_SpatialModelBase):
     # Emit a ResourceWarning before materializing very large dense panel
     # weight matrices. Tests may monkeypatch this value.
     _DENSE_W_WARN_BYTES: int = 100 * 1024 * 1024
+
+    # Hooks consumed by `_SpatialModelBase.spatial_diagnostics` and
+    # `spatial_diagnostics_decision` to route panel-flavored test names,
+    # predicate keys, and decision-tree specs.
+    _decision_test_prefix: str = "Panel-"
+    _decision_predicate_prefix: str = "panel_"
+    _decision_spec_attr: str = "get_panel_spec"
+    _diagnostics_require_W: bool = False
 
     def __init__(
         self,
@@ -698,150 +706,6 @@ class SpatialPanelModel(_SpatialModelBase):
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
-
-    def spatial_diagnostics(self) -> pd.DataFrame:
-        """Run Bayesian LM specification tests and return a summary table.
-
-        Iterates over the class-level ``_spatial_diagnostics_tests`` registry
-        and calls each test function on this fitted model, collecting the
-        results into a tidy DataFrame.  The set of tests depends on the
-        model type — for example, an OLSPanelFE model runs Panel-LM-Lag,
-        Panel-LM-Error, Panel-LM-SDM-Joint, and Panel-LM-SLX-Error-Joint.
-
-        Requires the model to have been fit (``.fit()`` called) and a
-        spatial weights matrix ``W`` to have been supplied at construction
-        time.
-
-        Returns
-        -------
-        pandas.DataFrame
-            DataFrame indexed by test name with columns:
-
-            ==============  =====================================================
-            Column          Description
-            ==============  =====================================================
-            statistic       Posterior mean of the LM statistic
-            median          Posterior median of the LM statistic
-            df              Degrees of freedom for the :math:`\\chi^2` reference
-            p_value         Bayesian p-value: ``1 - chi2.cdf(mean, df)``
-            ci_lower        Lower bound of 95% credible interval (2.5%)
-            ci_upper        Upper bound of 95% credible interval (97.5%)
-            ==============  =====================================================
-
-            The DataFrame has ``attrs["model_type"]`` (class name) and
-            ``attrs["n_draws"]`` (total posterior draws) metadata.
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been fit yet.
-
-        See Also
-        --------
-        spatial_diagnostics_decision : Model-selection decision based on
-            the test results.
-        """
-        from .base import SpatialModel
-
-        self._require_fit()
-        return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
-
-    def spatial_diagnostics_decision(
-        self, alpha: float = 0.05, format: str = "graphviz"
-    ) -> Any:
-        """Return a model-selection decision from Bayesian LM test results.
-
-        Implements the decision tree from :cite:t:`koley2024UseNot`
-        (the Bayesian analogue of the classical ``stge_kb`` procedure
-        in :cite:t:`anselin1996SimpleDiagnostic`), adapted for panel models
-        following :cite:t:`elhorst2014SpatialEconometrics`.
-
-        Parameters
-        ----------
-        alpha : float, default 0.05
-            Significance level for the Bayesian p-values.
-        format : {"graphviz", "ascii", "model"}, default "graphviz"
-            Output format. ``"model"`` returns the recommended-model name
-            string. ``"ascii"`` returns an indented box-drawing rendering
-            of the full decision tree with the chosen path highlighted.
-            ``"graphviz"`` returns a :class:`graphviz.Digraph` object that
-            renders inline in Jupyter; if the optional ``graphviz`` package
-            is not installed a :class:`UserWarning` is issued and the
-            ASCII rendering is returned instead.
-
-        Returns
-        -------
-        str or graphviz.Digraph
-            Recommended model name when ``format="model"``, an ASCII tree
-            string when ``format="ascii"``, or a ``graphviz.Digraph`` when
-            ``format="graphviz"`` (with ASCII fallback on missing dep).
-
-        See Also
-        --------
-        spatial_diagnostics : Compute the Bayesian LM test statistics.
-
-        References
-        ----------
-        :cite:t:`koley2024UseNot`, :cite:t:`anselin1996SimpleDiagnostic`,
-        :cite:t:`elhorst2014SpatialEconometrics`
-        """
-        from ..diagnostics import _decision_trees as _dt
-
-        diag = self.spatial_diagnostics()
-        model_type = self.__class__.__name__
-
-        def _sig(test_name: str) -> bool:
-            if test_name not in diag.index:
-                return False
-            pval = diag.loc[test_name, "p_value"]
-            return not np.isnan(pval) and pval < alpha
-
-        def _lag_le_error() -> bool:
-            return (
-                diag.loc["Panel-LM-Lag", "p_value"]
-                <= diag.loc["Panel-LM-Error", "p_value"]
-            )
-
-        def _robust_lag_le_error() -> bool:
-            # Panel-OLS tree tie-break.  See cross-sectional analogue in
-            # ``base.SpatialModel.spatial_diagnostics_decision``.
-            return (
-                diag.loc["Panel-Robust-LM-Lag", "p_value"]
-                <= diag.loc["Panel-Robust-LM-Error", "p_value"]
-            )
-
-        def _lag_sdm_le_error_sdem() -> bool:
-            return (
-                diag.loc["Panel-Robust-LM-Lag-SDM", "p_value"]
-                <= diag.loc["Panel-Robust-LM-Error-SDEM", "p_value"]
-            )
-
-        spec = _dt.get_panel_spec(model_type)
-        decision, path = _dt.evaluate(
-            spec,
-            sig_lookup=_sig,
-            predicate_lookup={
-                "panel_lag_pval_le_error_pval": _lag_le_error,
-                "panel_robust_lag_pval_le_error_pval": _robust_lag_le_error,
-                "panel_lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
-            },
-        )
-
-        p_values: dict[str, float] = {}
-        for test_name in diag.index:
-            pv = diag.loc[test_name, "p_value"]
-            if not np.isnan(pv):
-                p_values[str(test_name)] = float(pv)
-
-        return _dt.render(
-            spec,
-            path,
-            decision,
-            p_values=p_values,
-            alpha=alpha,
-            fmt=format,
-            title=f"{model_type} decision tree (alpha={alpha})",
-        )
 
     def __repr__(self) -> str:
         n, k = self._X.shape
