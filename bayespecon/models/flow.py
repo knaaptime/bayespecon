@@ -55,7 +55,6 @@ from ._sampler import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
 )
-from .base import SpatialModel
 
 
 def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -1132,27 +1131,31 @@ class SARFlow(FlowModel):
 
     _spatial_diagnostics_tests = [
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_dest_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_flow_dest_test"],
+            ).bayesian_robust_lm_flow_dest_test(m),
             "Robust-LM-Flow-Dest",
         ),
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_orig_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_flow_orig_test"],
+            ).bayesian_robust_lm_flow_orig_test(m),
             "Robust-LM-Flow-Orig",
         ),
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_network_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_robust_lm_flow_network_test"],
+            ).bayesian_robust_lm_flow_network_test(m),
             "Robust-LM-Flow-Network",
         ),
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_intra_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_flow_intra_test"],
+            ).bayesian_lm_flow_intra_test(m),
             "LM-Flow-Intra",
         ),
     ]
@@ -1936,33 +1939,38 @@ class OLSFlow(FlowModel):
 
     _spatial_diagnostics_tests = [
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_dest_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_flow_dest_test"],
+            ).bayesian_lm_flow_dest_test(m),
             "LM-Flow-Dest",
         ),
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_orig_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_flow_orig_test"],
+            ).bayesian_lm_flow_orig_test(m),
             "LM-Flow-Orig",
         ),
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_network_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_flow_network_test"],
+            ).bayesian_lm_flow_network_test(m),
             "LM-Flow-Network",
         ),
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_joint_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_flow_joint_test"],
+            ).bayesian_lm_flow_joint_test(m),
             "LM-Flow-Joint",
         ),
         (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_intra_test"
-            ),
+            lambda m: __import__(
+                "bayespecon.diagnostics.bayesian_lmtests",
+                fromlist=["bayesian_lm_flow_intra_test"],
+            ).bayesian_lm_flow_intra_test(m),
             "LM-Flow-Intra",
         ),
     ]

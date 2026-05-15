@@ -218,6 +218,7 @@ Log-Determinant Methods
    logdet_exact
    logdet_chebyshev
    logdet_interpolated
+   logdet_mc_poly_pytensor
    mc
    chebyshev
    ilu
