@@ -10,7 +10,7 @@ import os
 from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 import numpy as np
 import pytensor.tensor as pt
@@ -45,6 +45,25 @@ class LogDetMethod(str, Enum):
 
 
 VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
+
+#: Public type alias for user-facing ``logdet_method`` parameters.  Use in
+#: constructor signatures to enable IDE autocomplete and static checking:
+#:
+#: .. code-block:: python
+#:
+#:     def __init__(self, ..., logdet_method: LogDetMethodName | None = None):
+#:         ...
+LogDetMethodName = Literal[
+    "exact",
+    "eigenvalue",
+    "grid_dense",
+    "grid_sparse",
+    "sparse_spline",
+    "grid_mc",
+    "trace_mc",
+    "grid_ilu",
+    "chebyshev",
+]
 
 
 def resolve_logdet_method(method: str | None, *, n: int) -> str:

@@ -16,10 +16,12 @@ from libpysal.graph import Graph
 
 from .._backends import resolve_backend
 from ..logdet import (
+    LogDetMethodName,
     _auto_logdet_method,
     make_logdet_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
+    resolve_logdet_method,
 )
 from ._common import _SpatialModelBase
 from .base import _is_row_standardized_csr
@@ -304,7 +306,7 @@ class SpatialPanelModel(_SpatialModelBase):
         T: Optional[int] = None,
         model: int = 0,
         priors: Optional[dict] = None,
-        logdet_method: str | None = None,
+        logdet_method: LogDetMethodName | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
         backend: str | None = None,
@@ -315,6 +317,13 @@ class SpatialPanelModel(_SpatialModelBase):
         self.priors = priors or {}
         self.backend = resolve_backend(backend)
         self.backend_name = self.backend.name
+        # Validate ``logdet_method`` eagerly so invalid strings fail at
+        # construction time rather than at first logdet access (which is
+        # lazy via @cached_property).  ``resolve_logdet_method`` with
+        # ``n=1`` only validates the string; auto-selection for ``None``
+        # happens later once W is known.
+        if logdet_method is not None:
+            resolve_logdet_method(logdet_method, n=1)
         self.logdet_method = logdet_method
         self.model = int(model)
         self.robust = robust
