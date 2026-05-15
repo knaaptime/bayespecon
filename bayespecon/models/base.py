@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import warnings
+import weakref
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import Any, Optional, Union
 
 import arviz as az
@@ -23,6 +25,27 @@ from ..logdet import (
 )
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 
+# Global eigenvalue cache keyed by ``id(graph)``.  We cannot use
+# ``WeakKeyDictionary`` because :class:`libpysal.graph.Graph` is intentionally
+# unhashable (different graphs with identical contents must still be treated as
+# distinct keys).  Instead we register a :func:`weakref.finalize` callback on
+# each Graph that drops the entry once the Graph is garbage-collected.
+_EIG_CACHE: dict[int, np.ndarray] = {}
+
+
+def _store_eigs(graph: Graph, eigs: np.ndarray) -> None:
+    """Insert ``eigs`` into :data:`_EIG_CACHE` with a finalize-based eviction."""
+    key = id(graph)
+    if key in _EIG_CACHE:
+        return
+    _EIG_CACHE[key] = eigs
+    try:
+        weakref.finalize(graph, _EIG_CACHE.pop, key, None)
+    except TypeError:
+        # Graph not weakref-able for some reason; fall back to a leaky cache
+        # entry rather than failing the model construction.
+        pass
+
 
 def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
     """Return True when each row sum is numerically close to one."""
@@ -33,21 +56,20 @@ def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
 def _parse_W(
     W: Union[Graph, sp.spmatrix],
     n: int,
-) -> sp.csr_matrix:
-    """Validate and normalise a spatial weights argument to CSR.
+) -> Graph:
+    """Validate and normalise a spatial weights argument to a libpysal.graph.Graph.
 
     Parameters
     ----------
     W :
-        Either a :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
-        matrix.
+        Either a :class:`libpysal.graph.Graph` or any :class:`scipy.sparse` matrix.
     n :
         Expected number of spatial units (must match both dimensions of W).
 
     Returns
     -------
-    scipy.sparse.csr_matrix
-        Row-compressed version of W.
+    Graph
+        Row-standardised libpysal.graph.Graph object.
 
     Raises
     ------
@@ -62,12 +84,13 @@ def _parse_W(
         If *W* does not appear to be row-standardised.
     """
     if isinstance(W, Graph):
-        W_csr = W.sparse.tocsr().astype(np.float64)
-        transform = getattr(W, "transformation", None)
-        row_std = transform in ("r", "R") or _is_row_standardized_csr(W_csr)
+        G = W
     elif sp.issparse(W):
-        W_csr = W.tocsr().astype(np.float64)
-        row_std = _is_row_standardized_csr(W_csr)
+        # Convert sparse matrix to Graph. Validate shape up-front so that
+        # ``Graph.from_sparse`` only sees square inputs.
+        if W.ndim != 2 or W.shape[0] != W.shape[1]:
+            raise ValueError(f"W must be a square matrix, got shape {W.shape}.")
+        G = Graph.from_sparse(W)
     elif hasattr(W, "sparse") and hasattr(W, "transform"):
         # Legacy libpysal.weights.W object — not accepted directly.
         raise TypeError(
@@ -81,6 +104,7 @@ def _parse_W(
             f"got {type(W).__name__}."
         )
 
+    W_csr = G.sparse.tocsr().astype(np.float64)
     if W_csr.ndim != 2 or W_csr.shape[0] != W_csr.shape[1]:
         raise ValueError(f"W must be a square matrix, got shape {W_csr.shape}.")
     if W_csr.shape[0] != n:
@@ -88,6 +112,8 @@ def _parse_W(
             f"W has shape {W_csr.shape} but data has {n} observations. "
             "W must be an n\u00d7n matrix."
         )
+    transform = getattr(G, "transformation", None)
+    row_std = transform in ("r", "R") or _is_row_standardized_csr(W_csr)
     if not row_std:
         warnings.warn(
             "W does not appear to be row-standardised (row sums \u2260 1). "
@@ -99,8 +125,7 @@ def _parse_W(
             UserWarning,
             stacklevel=3,
         )
-    return W_csr, row_std
-
+    return G
 
 def _pointwise_gaussian_loglik(
     eps: np.ndarray,
@@ -254,7 +279,6 @@ class SpatialModel(ABC):
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
-        self._W_dense_cache: Optional[np.ndarray] = None
 
         if formula is not None:
             if data is None:
@@ -266,13 +290,13 @@ class SpatialModel(ABC):
             raise ValueError("Provide either (formula, data) or (y, X).")
 
         if W is not None:
-            # Validate W and store as CSR sparse matrix.
-            # Dense conversion is deferred to _W_dense (lazy property).
-            self._W_sparse, self._is_row_std = _parse_W(W, len(self._y))
-            # Pre-compute eigenvalues of the N×N matrix once (O(n³)) so that
-            # logdet and effect calculations can use O(n) eigenvalue formulas.
-            self._W_eigs: np.ndarray = np.linalg.eigvals(
-                self._W_sparse.toarray().astype(np.float64)
+            # Validate W and store as a libpysal.graph.Graph.  All matrix
+            # representations (_W_sparse, _W_dense, _W_eigs, _Wy, _WX) are
+            # derived lazily via @cached_property on first access.
+            self._graph: Optional[Graph] = _parse_W(W, len(self._y))
+            transform = getattr(self._graph, "transformation", None)
+            self._is_row_std = transform in ("r", "R") or _is_row_standardized_csr(
+                self._graph.sparse.tocsr().astype(np.float64)
             )
             self._wx_column_indices = self._spatial_lag_column_indices(
                 self._X, self._feature_names
@@ -292,8 +316,7 @@ class SpatialModel(ABC):
             self._wx_feature_names = [
                 self._feature_names[i] for i in self._wx_column_indices
             ]
-            # Pre-compute spatial lags using sparse matmul (no dense materialisation).
-            # Store a numpy logdet callable for post-sampling LL Jacobians.
+            # Build numpy logdet callables (these trigger lazy _W_sparse/_W_eigs).
             self._logdet_numpy_fn = make_logdet_numpy_fn(
                 self._W_sparse, self._W_eigs.real, method=self.logdet_method
             )
@@ -313,40 +336,70 @@ class SpatialModel(ABC):
             self._W_for_logdet: np.ndarray = (
                 self._W_eigs.real.astype(np.float64)
                 if _resolved_logdet in ("eigenvalue", "chebyshev")
-                else self._W_sparse.toarray().astype(np.float64)
+                else self._W_dense
             )
             # Store a pytensor logdet callable for use in _build_pymc_model.
             self._logdet_pytensor_fn = make_logdet_fn(
                 self._W_for_logdet, method=self.logdet_method
             )
-            self._Wy: np.ndarray = np.asarray(
-                self._W_sparse @ self._y, dtype=np.float64
-            )
-            if self._wx_column_indices:
-                self._WX = np.asarray(
-                    self._W_sparse @ self._X[:, self._wx_column_indices],
-                    dtype=np.float64,
-                )
-            else:
-                self._WX = np.empty((self._X.shape[0], 0), dtype=np.float64)
         else:
             # W-free mode: no spatial structure; spec tests require W to be supplied.
-            self._W_sparse = None
+            self._graph = None
             self._is_row_std = False
-            self._W_eigs = None
             self._wx_column_indices: list[int] = []
             self._wx_feature_names: list[str] = []
-            self._Wy = np.zeros(len(self._y), dtype=np.float64)
-            self._WX = np.empty((self._X.shape[0], 0), dtype=np.float64)
             if w_vars is not None:
                 raise ValueError("w_vars requires a spatial weights matrix W.")
 
-    @property
-    def _W_dense(self) -> np.ndarray:
+    # -----------------------------------------------------------------
+    # Lazy matrix representations of self._graph.  All keyed off the
+    # underlying Graph object; eigenvalues are shared across model
+    # instances that point at the same Graph via the module-level
+    # _EIG_CACHE WeakKeyDictionary.
+    # -----------------------------------------------------------------
+
+    @cached_property
+    def _W_sparse(self) -> Optional[sp.csr_matrix]:
+        """CSR sparse representation of the row-standardised W."""
+        if self._graph is None:
+            return None
+        return self._graph.sparse.tocsr().astype(np.float64)
+
+    @cached_property
+    def _W_dense(self) -> Optional[np.ndarray]:
         """Dense weight matrix, materialised lazily on first access."""
-        if self._W_dense_cache is None:
-            self._W_dense_cache = np.asarray(self._W_sparse.toarray(), dtype=np.float64)
-        return self._W_dense_cache
+        if self._graph is None:
+            return None
+        return np.asarray(self._W_sparse.toarray(), dtype=np.float64)
+
+    @cached_property
+    def _W_eigs(self) -> Optional[np.ndarray]:
+        """Eigenvalues of W, cached per Graph in :data:`_EIG_CACHE`."""
+        if self._graph is None:
+            return None
+        cached = _EIG_CACHE.get(id(self._graph))
+        if cached is not None:
+            return cached
+        eigs = np.linalg.eigvals(self._W_dense)
+        _store_eigs(self._graph, eigs)
+        return eigs
+
+    @cached_property
+    def _Wy(self) -> np.ndarray:
+        """Spatial lag of the dependent variable, ``W @ y``."""
+        if self._graph is None:
+            return np.zeros(len(self._y), dtype=np.float64)
+        return np.asarray(self._W_sparse @ self._y, dtype=np.float64)
+
+    @cached_property
+    def _WX(self) -> np.ndarray:
+        """Spatial lag of the selected X columns, ``W @ X[:, wx_idx]``."""
+        if self._graph is None or not self._wx_column_indices:
+            return np.empty((self._X.shape[0], 0), dtype=np.float64)
+        return np.asarray(
+            self._W_sparse @ self._X[:, self._wx_column_indices],
+            dtype=np.float64,
+        )
 
     @property
     def _W_pt_sparse(self):
