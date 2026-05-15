@@ -334,31 +334,16 @@ class SpatialModel(_SpatialModelBase):
             self._wx_feature_names = [
                 self._feature_names[i] for i in self._wx_column_indices
             ]
-            # Build numpy logdet callables (these trigger lazy _W_sparse/_W_eigs).
-            self._logdet_numpy_fn = make_logdet_numpy_fn(
-                self._W_sparse, self._W_eigs.real, method=self.logdet_method
-            )
-            # Vectorized version: evaluates logdet over an array of rho draws in one call.
-            self._logdet_numpy_vec_fn = make_logdet_numpy_vec_fn(
-                self._W_sparse, self._W_eigs.real, method=self.logdet_method
-            )
-            # Store the correct W argument for logdet calls.
-            # For eigenvalue method (explicit or auto-selected for n ≤ 2000),
-            # pass 1-D eigenvalues to avoid O(n²) dense materialisation.
-            # For other methods, pass the 2-D dense matrix.
-            _resolved_logdet = (
+            # Resolve the logdet method up-front so the lazy property
+            # accessors know whether eigenvalues are required.  The numpy
+            # / pytensor logdet callables themselves and their W argument
+            # are deferred to ``@cached_property`` so init never forces an
+            # eigendecomposition for chebyshev / sparse-grid methods that
+            # do not require it.
+            self._resolved_logdet_method = (
                 self.logdet_method
                 if self.logdet_method is not None
                 else _auto_logdet_method(self._W_sparse.shape[0])
-            )
-            self._W_for_logdet: np.ndarray = (
-                self._W_eigs.real.astype(np.float64)
-                if _resolved_logdet in ("eigenvalue", "chebyshev")
-                else self._W_dense
-            )
-            # Store a pytensor logdet callable for use in _build_pymc_model.
-            self._logdet_pytensor_fn = make_logdet_fn(
-                self._W_for_logdet, method=self.logdet_method
             )
         else:
             # W-free mode: no spatial structure; spec tests require W to be supplied.
@@ -418,6 +403,49 @@ class SpatialModel(_SpatialModelBase):
             self._W_sparse @ self._X[:, self._wx_column_indices],
             dtype=np.float64,
         )
+
+    # ------------------------------------------------------------------
+    # Lazy log-determinant evaluators.
+    #
+    # Built on first access so that constructing a model with a
+    # chebyshev or sparse-grid logdet method never forces the O(n³)
+    # eigendecomposition that the eigenvalue method needs.  Mirrors the
+    # caching style used by ``SpatialPanelModel``.
+    # ------------------------------------------------------------------
+
+    @cached_property
+    def _W_for_logdet(self):
+        """Argument passed to :func:`make_logdet_fn` — eigenvalues or dense W."""
+        if self._resolved_logdet_method in ("eigenvalue", "chebyshev"):
+            return self._W_eigs.real.astype(np.float64)
+        return self._W_dense
+
+    @cached_property
+    def _logdet_numpy_fn(self):
+        """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
+        eigs = (
+            self._W_eigs.real
+            if self._resolved_logdet_method == "eigenvalue"
+            else None
+        )
+        return make_logdet_numpy_fn(self._W_sparse, eigs, method=self.logdet_method)
+
+    @cached_property
+    def _logdet_numpy_vec_fn(self):
+        """Vectorised pure-numpy logdet evaluator (lazy)."""
+        eigs = (
+            self._W_eigs.real
+            if self._resolved_logdet_method == "eigenvalue"
+            else None
+        )
+        return make_logdet_numpy_vec_fn(
+            self._W_sparse, eigs, method=self.logdet_method
+        )
+
+    @cached_property
+    def _logdet_pytensor_fn(self):
+        """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
+        return make_logdet_fn(self._W_for_logdet, method=self.logdet_method)
 
     # ------------------------------------------------------------------
     # Input parsing helpers
