@@ -152,10 +152,18 @@ def resolve_logdet_bounds(
             hi = 1.0
 
     if resolved_method in {"sparse_spline", "grid_mc"} and lo < 0.0:
-        raise ValueError(
-            f"method='{resolved_method}' requires a nonnegative rho range; "
-            "use priors/overrides with rho_min >= 0, or choose a different method."
-        )
+        if source == "override":
+            raise ValueError(
+                f"method='{resolved_method}' requires a nonnegative rho range; "
+                "use rho_min >= 0, or choose a different method."
+            )
+        # Auto-restrict to the supported positive sub-interval. Methods that
+        # only handle nonnegative rho (sparse_spline, grid_mc) silently
+        # clamp the lower bound when the prior/default would otherwise be
+        # negative; explicit overrides still raise above.
+        lo = 1e-5
+        if hi <= lo:
+            hi = 1.0
 
     if eigs is not None:
         eigs_r = np.asarray(eigs, dtype=np.float64).real

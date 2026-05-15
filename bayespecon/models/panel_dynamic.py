@@ -695,8 +695,9 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     def _build_pymc_model(self) -> pm.Model:
         self._prepare_dynamic_design()
 
-        rho_lower = self.priors.get("rho_lower", -0.95)
-        rho_upper = self.priors.get("rho_upper", 0.95)
+        bounds = self._logdet_bounds
+        rho_lower = bounds.rho_min
+        rho_upper = bounds.rho_max
         phi_lower = self.priors.get("phi_lower", -0.95)
         phi_upper = self.priors.get("phi_upper", 0.95)
         theta_lower = self.priors.get("theta_lower", -0.95)

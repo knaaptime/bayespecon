@@ -722,7 +722,7 @@ class FlowModel(ABC):
         return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
 
     def spatial_diagnostics_decision(
-        self, alpha: float = 0.05, format: str = "graphviz"
+        self, alpha: float = 0.05, format: str = "graphviz", theme: Any = "default"
     ) -> Any:
         """Return a model-selection decision from Bayesian LM test results.
 
@@ -773,6 +773,7 @@ class FlowModel(ABC):
             alpha=alpha,
             fmt=format,
             title=f"{model_type} decision tree (alpha={alpha})",
+            theme=theme,
         )
 
     def _model_coords(self, extra: Optional[dict] = None) -> dict:

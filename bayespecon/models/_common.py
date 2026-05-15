@@ -25,7 +25,7 @@ from __future__ import annotations
 import importlib
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import Optional
+from typing import Any, Optional
 
 import arviz as az
 import numpy as np
@@ -538,7 +538,7 @@ class _SpatialModelBase(ABC):
         return self._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
 
     def spatial_diagnostics_decision(
-        self, alpha: float = 0.05, format: str = "graphviz"
+        self, alpha: float = 0.05, format: str = "graphviz", theme: Any = "default"
     ):
         """Return a model-selection decision from Bayesian LM test results.
 
@@ -634,6 +634,7 @@ class _SpatialModelBase(ABC):
             alpha=alpha,
             fmt=format,
             title=f"{model_type} decision tree (alpha={alpha})",
+            theme=theme,
         )
 
     def _require_W(self):

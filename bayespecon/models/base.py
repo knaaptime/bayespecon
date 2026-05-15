@@ -17,11 +17,13 @@ from libpysal.graph import Graph
 
 from .._backends import resolve_backend
 from ..logdet import (
+    LogdetBounds,
     LogDetMethodName,
     _auto_logdet_method,
     make_logdet_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
+    resolve_logdet_bounds,
     resolve_logdet_method,
 )
 from ._common import _SpatialModelBase
@@ -413,6 +415,29 @@ class SpatialModel(_SpatialModelBase):
         return self._W_dense
 
     @cached_property
+    def _logdet_bounds(self) -> LogdetBounds:
+        """Resolved rho/lambda bounds for the logdet builder and prior.
+
+        Combines the user's ``priors`` (``rho_lower/upper`` or
+        ``lam_lower/upper``) with method-aware defaults so that
+        positive-only methods (``sparse_spline``, ``grid_mc``)
+        automatically restrict the support to ``[1e-5, 1.0]`` unless the
+        user supplies an explicit override.
+        """
+        eigs = (
+            self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            and self._W_eigs is not None
+            else None
+        )
+        return resolve_logdet_bounds(
+            self.logdet_method,
+            n=int(self._W_sparse.shape[0]),
+            eigs=eigs,
+            priors=self.priors,
+        )
+
+    @cached_property
     def _logdet_numpy_fn(self):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
         eigs = (
@@ -420,7 +445,14 @@ class SpatialModel(_SpatialModelBase):
             if self._resolved_logdet_method == "eigenvalue"
             else None
         )
-        return make_logdet_numpy_fn(self._W_sparse, eigs, method=self.logdet_method)
+        b = self._logdet_bounds
+        return make_logdet_numpy_fn(
+            self._W_sparse,
+            eigs,
+            method=self.logdet_method,
+            rho_min=b.rho_min,
+            rho_max=b.rho_max,
+        )
 
     @cached_property
     def _logdet_numpy_vec_fn(self):
@@ -430,14 +462,25 @@ class SpatialModel(_SpatialModelBase):
             if self._resolved_logdet_method == "eigenvalue"
             else None
         )
+        b = self._logdet_bounds
         return make_logdet_numpy_vec_fn(
-            self._W_sparse, eigs, method=self.logdet_method
+            self._W_sparse,
+            eigs,
+            method=self.logdet_method,
+            rho_min=b.rho_min,
+            rho_max=b.rho_max,
         )
 
     @cached_property
     def _logdet_pytensor_fn(self):
         """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
-        return make_logdet_fn(self._W_for_logdet, method=self.logdet_method)
+        b = self._logdet_bounds
+        return make_logdet_fn(
+            self._W_for_logdet,
+            method=self.logdet_method,
+            rho_min=b.rho_min,
+            rho_max=b.rho_max,
+        )
 
     # ------------------------------------------------------------------
     # Input parsing helpers

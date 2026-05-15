@@ -229,8 +229,9 @@ class SEM(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        lam_lower = self.priors.get("lam_lower", -1.0)
-        lam_upper = self.priors.get("lam_upper", 1.0)
+        bounds = self._logdet_bounds
+        lam_lower = bounds.rho_min
+        lam_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)

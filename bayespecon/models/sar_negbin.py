@@ -71,8 +71,9 @@ class SARNegativeBinomial(SpatialModel):
         self._Wy = np.asarray(self._W_sparse @ self._y, dtype=np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
-        rho_lower = self.priors.get("rho_lower", -1.0)
-        rho_upper = self.priors.get("rho_upper", 1.0)
+        bounds = self._logdet_bounds
+        rho_lower = bounds.rho_min
+        rho_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         alpha_sigma = self.priors.get("alpha_sigma", 10.0)

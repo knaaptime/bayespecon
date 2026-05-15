@@ -127,8 +127,9 @@ class SAR(SpatialModel):
         """
         assert self._X.shape[1] > 0, "Design matrix must have at least one column"
 
-        rho_lower = self.priors.get("rho_lower", -1.0)
-        rho_upper = self.priors.get("rho_upper", 1.0)
+        bounds = self._logdet_bounds
+        rho_lower = bounds.rho_min
+        rho_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
