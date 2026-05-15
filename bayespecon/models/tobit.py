@@ -17,6 +17,7 @@ import pytensor.tensor as pt
 from pytensor import sparse as pts
 
 from .base import SpatialModel
+from .priors import SARTobitPriors, SDMTobitPriors, SEMTobitPriors
 
 
 class _SpatialTobitBase(SpatialModel):
@@ -140,6 +141,8 @@ class SARTobit(_SpatialTobitBase):
     freedom, and :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30.
     """
+
+    _priors_cls = SARTobitPriors
 
     _spatial_diagnostics_tests = [
         (
@@ -471,6 +474,8 @@ class SEMTobit(_SpatialTobitBase):
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
 
+    _priors_cls = SEMTobitPriors
+
     _spatial_diagnostics_tests = [
         (
             SpatialModel._lazy_lm_test(
@@ -777,6 +782,8 @@ class SDMTobit(_SpatialTobitBase):
     where :math:`T_\\nu` is the Student-t CDF and
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
+
+    _priors_cls = SDMTobitPriors
 
     _spatial_diagnostics_tests = [
         (

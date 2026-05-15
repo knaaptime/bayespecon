@@ -24,6 +24,7 @@ from ..logdet import (
     make_logdet_numpy_vec_fn,
 )
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from .priors import OLSPriors, PriorsLike, priors_as_dict, resolve_priors
 
 # Global eigenvalue cache keyed by ``id(graph)``.  We cannot use
 # ``WeakKeyDictionary`` because :class:`libpysal.graph.Graph` is intentionally
@@ -262,6 +263,12 @@ class SpatialModel(ABC):
         ``w_vars=["income", "density"]``.
     """
 
+    #: Subclasses override this to declare their typed priors dataclass.
+    #: The default :class:`OLSPriors` accepts the shared
+    #: ``beta_mu / beta_sigma / sigma_sigma / nu_lam`` keys used by every
+    #: cross-sectional Gaussian model.
+    _priors_cls: type = OLSPriors
+
     def __init__(
         self,
         formula: Optional[str] = None,
@@ -269,12 +276,17 @@ class SpatialModel(ABC):
         y: Optional[Union[np.ndarray, pd.Series]] = None,
         X: Optional[Union[np.ndarray, pd.DataFrame]] = None,
         W: Optional[Union[Graph, sp.spmatrix]] = None,
-        priors: Optional[dict] = None,
+        priors: PriorsLike = None,
         logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
     ):
-        self.priors = priors or {}
+        # Coerce ``priors`` to the subclass's typed dataclass; unknown keys
+        # raise immediately.  ``self.priors`` is kept as a plain dict view
+        # so existing ``self.priors.get(...)`` calls in subclass
+        # ``_build_pymc_model`` implementations continue to work.
+        self.priors_obj = resolve_priors(priors, self._priors_cls)
+        self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None

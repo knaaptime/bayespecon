@@ -26,6 +26,12 @@ from formulaic import model_matrix
 from libpysal.graph import Graph
 
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from .priors import (
+    PriorsLike,
+    SpatialProbitPriors,
+    priors_as_dict,
+    resolve_priors,
+)
 
 
 class SpatialProbit:
@@ -120,13 +126,14 @@ class SpatialProbit:
         region_col: Optional[str] = None,
         region_ids: Optional[Union[np.ndarray, pd.Series]] = None,
         mobs: Optional[Union[np.ndarray, list[int]]] = None,
-        priors: Optional[dict] = None,
+        priors: PriorsLike = None,
         robust: bool = False,
     ):
         if W is None:
             raise ValueError("W is required.")
 
-        self.priors = priors or {}
+        self.priors_obj = resolve_priors(priors, SpatialProbitPriors)
+        self.priors = priors_as_dict(self.priors_obj)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None

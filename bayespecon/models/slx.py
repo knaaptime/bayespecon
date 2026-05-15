@@ -13,6 +13,7 @@ import pymc as pm
 import pytensor.tensor as pt
 
 from .base import SpatialModel
+from .priors import SLXPriors
 
 
 class SLX(SpatialModel):
@@ -92,6 +93,8 @@ class SLX(SpatialModel):
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`
     with rate ``nu_lam`` (default 1/30, mean ≈ 30).
     """
+
+    _priors_cls = SLXPriors
 
     _spatial_diagnostics_tests = [
         (

@@ -15,6 +15,7 @@ import pymc as pm
 import pytensor.tensor as pt
 
 from .base import SpatialModel
+from .priors import OLSPriors
 
 
 class OLS(SpatialModel):
@@ -72,6 +73,8 @@ class OLS(SpatialModel):
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal.
     """
+
+    _priors_cls = OLSPriors
 
     _spatial_diagnostics_tests = [
         (
