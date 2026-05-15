@@ -6,10 +6,13 @@ exposes a small set of validated strings (``"pymc"``, ``"numpyro"``,
 ``"blackjax"``); internally those strings resolve to objects implementing the
 :class:`ProbabilisticBackend` protocol.
 
-For now only the PyMC backend is wired up; the others are explicit stubs that
-raise :class:`NotImplementedError`.  Their presence in the registry lets us
-validate user input up front (rather than at sampling time) and gives future
-phases a stable seam to hang real implementations off of.
+All three backends construct the model in PyMC.  The PyMC backend runs PyMC's
+own C/PyTensor NUTS sampler, while the NumPyro and BlackJAX backends route the
+NUTS step through PyMC's JAX-sampling adapter (``pm.sample(nuts_sampler=...)``)
+backed by the requested JAX library.  Selecting a JAX backend forces the
+JAX-likelihood code path in ``_build_pymc_model`` and validates that the
+required runtime packages are importable, so misconfiguration fails at
+construction time instead of mid-sample.
 
 This module is intentionally internal — model classes import it directly
 rather than re-exporting backend objects through :mod:`bayespecon.models`.
@@ -19,6 +22,10 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+from ..models._sampler import (
+    _has_module,
+    _jax_dispatches_available,
+)
 from ..models._sampler import (
     enforce_c_backend as _enforce_c_backend,
 )
@@ -35,15 +42,18 @@ from ..models._sampler import (
 
 @runtime_checkable
 class ProbabilisticBackend(Protocol):
-    """Minimal protocol for the MCMC backend layer.
-
-    The protocol intentionally mirrors the helpers in
-    :mod:`bayespecon.models._sampler` so that the existing ``fit()`` paths
-    can be migrated incrementally (Phase 6) without changing call sites.
-    Implementations should be cheap to construct and stateless.
-    """
+    """Minimal protocol for the MCMC backend layer."""
 
     name: str
+
+    def resolve_nuts_sampler(self, nuts_sampler: str | None) -> str:
+        """Resolve the effective ``nuts_sampler`` string for ``pm.sample``.
+
+        Implementations may override the user-provided value to force a
+        particular runtime (e.g. the NumPyro backend always returns
+        ``"numpyro"``).
+        """
+        ...
 
     def use_jax_likelihood(self, nuts_sampler: str) -> bool:
         """Return ``True`` when ``nuts_sampler`` requires a JAX likelihood path."""
@@ -81,11 +91,15 @@ class PyMCBackend:
     """PyMC implementation of :class:`ProbabilisticBackend`.
 
     Thin façade over the existing helpers in
-    :mod:`bayespecon.models._sampler`; it changes no behaviour.  The
-    methods exist purely so that future phases can swap implementations.
+    :mod:`bayespecon.models._sampler`.  Honors the user's ``nuts_sampler``
+    keyword (defaulting to ``"pymc"``) so existing call sites that expose
+    ``nuts_sampler="numpyro"`` etc. via ``sample_kwargs`` continue to work.
     """
 
     name = "pymc"
+
+    def resolve_nuts_sampler(self, nuts_sampler: str | None) -> str:
+        return nuts_sampler or "pymc"
 
     def use_jax_likelihood(self, nuts_sampler: str) -> bool:
         return _use_jax_likelihood(nuts_sampler)
@@ -119,20 +133,41 @@ class PyMCBackend:
         return _prepare_idata_kwargs(idata_kwargs, pymc_model, nuts_sampler)
 
 
-class _NotImplementedBackend:
-    """Base for backend stubs that are recognised but not yet implemented."""
+class _JaxBackend(PyMCBackend):
+    """Base for JAX-backed PyMC sampling backends.
 
-    name = ""
+    JAX backends build the model in PyMC and call ``pm.sample`` with
+    ``nuts_sampler=<self.name>``; PyMC's JAX adapter then drives NUTS via the
+    chosen JAX library.  This subclass:
 
-    def _raise(self) -> None:
-        raise NotImplementedError(
-            f"The {self.name!r} backend is recognised but not yet implemented. "
-            f"Use backend='pymc'."
-        )
+    * fails fast at construction time if the JAX runtime or backend package
+      is not importable;
+    * forces the resolved ``nuts_sampler`` to match the backend name,
+      raising :class:`ValueError` if the caller passed a conflicting
+      ``nuts_sampler`` keyword in ``sample_kwargs``;
+    * upgrades :func:`enforce_c_backend` from a silent downgrade to a hard
+      :class:`NotImplementedError` — the user explicitly asked for a JAX
+      runtime, so masking that with a PyMC fallback would be surprising.
+    """
 
-    def use_jax_likelihood(self, nuts_sampler: str) -> bool:  # pragma: no cover - stub
-        self._raise()
-        return False  # unreachable
+    _required_packages: tuple[str, ...] = ()
+
+    def __init__(self) -> None:
+        missing = [pkg for pkg in self._required_packages if not _has_module(pkg)]
+        if missing:
+            joined = ", ".join(missing)
+            raise ImportError(
+                f"backend={self.name!r} requires {joined} to be installed."
+            )
+
+    def resolve_nuts_sampler(self, nuts_sampler: str | None) -> str:
+        if nuts_sampler not in (None, self.name):
+            raise ValueError(
+                f"backend={self.name!r} fixes nuts_sampler to {self.name!r}, "
+                f"but received nuts_sampler={nuts_sampler!r}. Either drop the "
+                f"nuts_sampler keyword or switch backend."
+            )
+        return self.name
 
     def enforce_c_backend(
         self,
@@ -140,38 +175,29 @@ class _NotImplementedBackend:
         *,
         requires_c_backend: bool,
         model_name: str,
-    ) -> str:  # pragma: no cover - stub
-        self._raise()
-        return nuts_sampler  # unreachable
-
-    def prepare_sample_kwargs(
-        self,
-        sample_kwargs: dict | None,
-        nuts_sampler: str,
-    ) -> dict:  # pragma: no cover - stub
-        self._raise()
-        return {}  # unreachable
-
-    def prepare_idata_kwargs(
-        self,
-        idata_kwargs: dict | None,
-        pymc_model: Any,
-        nuts_sampler: str,
-    ) -> dict:  # pragma: no cover - stub
-        self._raise()
-        return {}  # unreachable
+    ) -> str:
+        if not requires_c_backend:
+            return nuts_sampler
+        if _jax_dispatches_available():
+            return nuts_sampler
+        raise NotImplementedError(
+            f"{model_name} uses a custom PyTensor Op without a JAX dispatch, "
+            f"so it cannot run under backend={self.name!r}. Use backend='pymc'."
+        )
 
 
-class NumPyroBackend(_NotImplementedBackend):
-    """Placeholder for a future NumPyro-native backend."""
+class NumPyroBackend(_JaxBackend):
+    """Run NUTS via NumPyro through PyMC's JAX sampling adapter."""
 
     name = "numpyro"
+    _required_packages = ("jax", "numpyro")
 
 
-class BlackjaxBackend(_NotImplementedBackend):
-    """Placeholder for a future BlackJAX-native backend."""
+class BlackjaxBackend(_JaxBackend):
+    """Run NUTS via BlackJAX through PyMC's JAX sampling adapter."""
 
     name = "blackjax"
+    _required_packages = ("jax", "blackjax")
 
 
 _BACKENDS: dict[str, type[ProbabilisticBackend]] = {
@@ -206,6 +232,9 @@ def resolve_backend(name: str | ProbabilisticBackend | None) -> ProbabilisticBac
         If ``name`` is not a string, ``None``, or a backend instance.
     ValueError
         If ``name`` is a string not in :func:`available_backends`.
+    ImportError
+        If a JAX backend is requested but its required runtime packages are
+        not importable.
     """
     if name is None:
         return PyMCBackend()

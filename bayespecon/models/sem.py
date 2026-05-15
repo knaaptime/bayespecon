@@ -16,11 +16,6 @@ import pymc as pm
 import pytensor.tensor as pt
 
 from ..diagnostics.lmtests import SEM_SUITE
-from ._sampler import (
-    prepare_compile_kwargs,
-    prepare_idata_kwargs,
-    use_jax_likelihood,
-)
 from .base import (
     SpatialModel,
     _pointwise_gaussian_loglik,
@@ -157,12 +152,15 @@ class SEM(SpatialModel):
         """
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
+        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
 
         model = self._build_pymc_model(nuts_sampler=nuts_sampler)
         self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+        idata_kwargs = self.backend.prepare_idata_kwargs(
+            idata_kwargs, model, nuts_sampler
+        )
+        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -181,8 +179,8 @@ class SEM(SpatialModel):
         # we recompute from posterior draws here.  On JAX backends the model
         # uses pm.CustomDist with an observed RV, so PyMC has already
         # populated ``log_likelihood`` natively — skip the manual block.
-        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
-            nuts_sampler
+        needs_manual_loglik = (
+            compute_log_likelihood and not self.backend.use_jax_likelihood(nuts_sampler)
         )
         if needs_manual_loglik:
             idata = self._idata
@@ -249,7 +247,7 @@ class SEM(SpatialModel):
         WX_all = self._WX_all_cache
 
         n_obs = int(self._y.shape[0])
-        jax_logp = use_jax_likelihood(nuts_sampler)
+        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)

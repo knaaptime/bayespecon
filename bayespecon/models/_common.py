@@ -32,8 +32,6 @@ import numpy as np
 import pandas as pd
 import pymc as pm
 
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
-
 
 class _SpatialModelBase(ABC):
     """Common ABC for cross-sectional and panel spatial models.
@@ -212,7 +210,8 @@ class _SpatialModelBase(ABC):
         -------
         arviz.InferenceData
         """
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
+        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
         try:
             model = self._build_pymc_model(nuts_sampler=nuts_sampler)
         except TypeError:
@@ -221,10 +220,10 @@ class _SpatialModelBase(ABC):
             model = self._build_pymc_model()
         self._pymc_model = model
         if "idata_kwargs" in sample_kwargs:
-            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
+            sample_kwargs["idata_kwargs"] = self.backend.prepare_idata_kwargs(
                 sample_kwargs["idata_kwargs"], model, nuts_sampler
             )
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,

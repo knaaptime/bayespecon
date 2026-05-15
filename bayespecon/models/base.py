@@ -293,9 +293,10 @@ class SpatialModel(_SpatialModelBase):
         self.priors_obj = resolve_priors(priors, self._priors_cls)
         self.priors = priors_as_dict(self.priors_obj)
         # Resolve the probabilistic-programming backend up-front so invalid
-        # names fail at construction time rather than during ``fit()``.  The
-        # backend object itself is currently advisory; the existing PyMC fit
-        # paths still call the helpers in ``_sampler`` directly.
+        # names fail at construction time rather than during ``fit()``.
+        # ``fit()`` and ``_build_pymc_model`` route every sampler-related
+        # call through ``self.backend.*`` so non-PyMC stubs raise
+        # ``NotImplementedError`` when actually exercised.
         self.backend = resolve_backend(backend)
         self.backend_name = self.backend.name
         # Validate ``logdet_method`` eagerly so invalid strings fail at

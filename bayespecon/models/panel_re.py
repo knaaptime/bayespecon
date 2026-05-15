@@ -33,7 +33,6 @@ from ..diagnostics.lmtests import (
     SDEM_PANEL_SUITE,
     SEM_PANEL_SUITE,
 )
-from ._sampler import use_jax_likelihood
 from .panel_base import SpatialPanelModel
 from .priors import (
     PanelOLSREPriors,
@@ -583,7 +582,7 @@ class SEMPanelRE(SpatialPanelModel):
 
         n_obs = int(self._y.shape[0])
         inv_n = 1.0 / n_obs  # _logdet_pytensor_fn already includes T multiplier
-        jax_logp = use_jax_likelihood(nuts_sampler)
+        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -925,7 +924,7 @@ class SDEMPanelRE(SpatialPanelModel):
 
         n_obs = int(self._y.shape[0])
         inv_n = 1.0 / n_obs  # _logdet_pytensor_fn already includes T multiplier
-        jax_logp = use_jax_likelihood(nuts_sampler)
+        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)

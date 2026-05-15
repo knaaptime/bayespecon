@@ -16,6 +16,7 @@ from bayespecon._backends import (
     resolve_backend,
 )
 from bayespecon.models import OLS, SAR
+from bayespecon.models._sampler import _has_module
 
 
 def _make_w(n: int = 5) -> Graph:
@@ -44,14 +45,18 @@ def test_resolve_backend_pymc_case_insensitive(name):
     assert isinstance(resolve_backend(name), PyMCBackend)
 
 
-def test_resolve_backend_numpyro_returns_stub():
+def test_resolve_backend_numpyro():
+    pytest.importorskip("numpyro")
     backend = resolve_backend("numpyro")
     assert isinstance(backend, NumPyroBackend)
+    assert backend.name == "numpyro"
 
 
-def test_resolve_backend_blackjax_returns_stub():
+def test_resolve_backend_blackjax():
+    pytest.importorskip("blackjax")
     backend = resolve_backend("blackjax")
     assert isinstance(backend, BlackjaxBackend)
+    assert backend.name == "blackjax"
 
 
 def test_resolve_backend_unknown_raises():
@@ -75,24 +80,53 @@ def test_available_backends_lists_all():
 
 def test_backend_implements_protocol():
     assert isinstance(PyMCBackend(), ProbabilisticBackend)
-    assert isinstance(NumPyroBackend(), ProbabilisticBackend)
-    assert isinstance(BlackjaxBackend(), ProbabilisticBackend)
+    if all(_has_module(p) for p in NumPyroBackend._required_packages):
+        assert isinstance(NumPyroBackend(), ProbabilisticBackend)
+    if all(_has_module(p) for p in BlackjaxBackend._required_packages):
+        assert isinstance(BlackjaxBackend(), ProbabilisticBackend)
 
 
 # ---------------------------------------------------------------------------
-# Stubs raise on use
+# JAX backends force nuts_sampler and validate runtime
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("cls", [NumPyroBackend, BlackjaxBackend])
-def test_stub_backend_methods_raise(cls):
+@pytest.mark.parametrize(
+    "cls,expected",
+    [(NumPyroBackend, "numpyro"), (BlackjaxBackend, "blackjax")],
+)
+def test_jax_backend_forces_nuts_sampler(cls, expected):
+    pytest.importorskip(expected)
     b = cls()
-    with pytest.raises(NotImplementedError):
-        b.use_jax_likelihood("pymc")
-    with pytest.raises(NotImplementedError):
-        b.prepare_sample_kwargs(None, "pymc")
-    with pytest.raises(NotImplementedError):
-        b.prepare_idata_kwargs(None, None, "pymc")
+    assert b.resolve_nuts_sampler(None) == expected
+    assert b.resolve_nuts_sampler(expected) == expected
+
+
+@pytest.mark.parametrize(
+    "cls,name",
+    [(NumPyroBackend, "numpyro"), (BlackjaxBackend, "blackjax")],
+)
+def test_jax_backend_rejects_conflicting_nuts_sampler(cls, name):
+    pytest.importorskip(name)
+    b = cls()
+    with pytest.raises(ValueError, match="fixes nuts_sampler"):
+        b.resolve_nuts_sampler("pymc")
+
+
+@pytest.mark.parametrize(
+    "cls,name",
+    [(NumPyroBackend, "numpyro"), (BlackjaxBackend, "blackjax")],
+)
+def test_jax_backend_use_jax_likelihood_true(cls, name):
+    pytest.importorskip(name)
+    b = cls()
+    assert b.use_jax_likelihood(name) is True
+
+
+def test_pymc_backend_resolve_nuts_sampler_default():
+    b = PyMCBackend()
+    assert b.resolve_nuts_sampler(None) == "pymc"
+    assert b.resolve_nuts_sampler("numpyro") == "numpyro"
 
 
 # ---------------------------------------------------------------------------

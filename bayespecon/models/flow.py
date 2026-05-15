@@ -40,6 +40,7 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
+from .._backends import resolve_backend
 from ..diagnostics.lmtests import FLOW_INTRA_SUITE, FLOW_SUITE
 from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from ..logdet import (
@@ -51,11 +52,6 @@ from ..logdet import (
     make_flow_separable_logdet_numpy,
 )
 from ..ops import kron_solve_matrix, kron_solve_vec
-from ._sampler import (
-    enforce_c_backend,
-    prepare_compile_kwargs,
-    prepare_idata_kwargs,
-)
 
 
 def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -301,6 +297,7 @@ class FlowModel(ABC):
         trace_riter: int = 50,
         trace_seed: Optional[int] = None,
         symmetric_xo_xd: Optional[bool] = None,
+        backend: Optional[str] = None,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
@@ -310,6 +307,11 @@ class FlowModel(ABC):
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._approximation = None
+        # Resolve probabilistic-programming backend up-front so invalid
+        # names fail at construction time; ``fit()`` routes sampler calls
+        # through ``self.backend.*``.
+        self.backend = resolve_backend(backend)
+        self.backend_name = self.backend.name
 
         # Validate and extract the n×n weight matrix
         self._W_sparse: sp.csr_matrix = _validate_graph(G)
@@ -557,8 +559,9 @@ class FlowModel(ABC):
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        nuts_sampler = enforce_c_backend(
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
+        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
+        nuts_sampler = self.backend.enforce_c_backend(
             nuts_sampler,
             requires_c_backend=getattr(self, "_requires_c_backend", False),
             model_name=type(self).__name__,
@@ -572,8 +575,10 @@ class FlowModel(ABC):
                 model,
                 store_lambda=False,
             )
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+        idata_kwargs = self.backend.prepare_idata_kwargs(
+            idata_kwargs, model, nuts_sampler
+        )
+        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,

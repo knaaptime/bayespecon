@@ -26,7 +26,6 @@ from formulaic import model_matrix
 from libpysal.graph import Graph
 
 from .._backends import resolve_backend
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 from .priors import (
     PriorsLike,
     SpatialProbitPriors,
@@ -322,14 +321,15 @@ class SpatialProbit:
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
+        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
         model = self._build_pymc_model()
         self._pymc_model = model
         if "idata_kwargs" in sample_kwargs:
-            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
+            sample_kwargs["idata_kwargs"] = self.backend.prepare_idata_kwargs(
                 sample_kwargs["idata_kwargs"], model, nuts_sampler
             )
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,

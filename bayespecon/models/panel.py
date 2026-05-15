@@ -14,7 +14,6 @@ from ..diagnostics.lmtests import (
     SEM_PANEL_SUITE,
     SLX_PANEL_SUITE,
 )
-from ._sampler import use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 from .priors import (
@@ -547,7 +546,7 @@ class SEMPanelFE(SpatialPanelModel):
         # scalar over the ``N*T`` observations so the sum reproduces the
         # joint log-density (matches the manual NumPy fallback).
         inv_n = 1.0 / n_obs
-        jax_logp = use_jax_likelihood(nuts_sampler)
+        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -1122,7 +1121,7 @@ class SDEMPanelFE(SpatialPanelModel):
 
         n_obs = int(self._y.shape[0])
         inv_n = 1.0 / n_obs  # see SEMPanelFE for derivation
-        jax_logp = use_jax_likelihood(nuts_sampler)
+        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
