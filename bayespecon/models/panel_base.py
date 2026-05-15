@@ -286,6 +286,10 @@ class SpatialPanelModel(_SpatialModelBase):
     _decision_spec_attr: str = "get_panel_spec"
     _diagnostics_require_W: bool = False
 
+    # Panel models wrap the full (N·T)×(N·T) Kronecker form for PyTensor,
+    # not the N×N reduced weight matrix.
+    _pt_sparse_attr: str = "_W_sparse_NT"
+
     def __init__(
         self,
         formula: Optional[str] = None,
@@ -606,106 +610,6 @@ class SpatialPanelModel(_SpatialModelBase):
                 # Caller already supplied a full (N*T)×(N*T) matrix.
                 self._W_sparse_NT_cache = sp.csr_matrix(W)
         return self._W_sparse_NT_cache
-
-    @property
-    def _W_pt_sparse(self):
-        """PyTensor sparse variable wrapping :attr:`_W_sparse_NT`.
-
-        Cached so that repeated PyMC model builds reuse the same symbolic
-        sparse weight operator, avoiding redundant ``as_sparse_variable`` calls.
-        """
-        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
-            from pytensor import sparse as pts
-
-            self._W_pt_sparse_cache = pts.as_sparse_variable(
-                sp.csc_matrix(self._W_sparse_NT)
-            )
-        return self._W_pt_sparse_cache
-
-    @property
-    def _T_ww(self) -> float:
-        """Trace of W'W + W², cached on first access.
-
-        Computed as ``||W||_F² + sum(W * W')`` using sparse operations,
-        which is O(nnz) rather than O(n²).
-        """
-        if not hasattr(self, "_T_ww_cache"):
-            from ..graph import sparse_trace_WtW_plus_WW
-
-            self._T_ww_cache = sparse_trace_WtW_plus_WW(self._W_sparse)
-        return self._T_ww_cache
-
-    def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
-        """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
-
-        For row-standardised W this is the scalar ``1/(1 - rho)``.
-        For non-row-standardised W the eigenvalue decomposition is used:
-        ``mean_row_sum = (1/n) * ones' V diag(1/(1-rho*omega)) V^{-1} ones``,
-        where the vector ``c = V^{-1} ones`` is pre-computed once.
-
-        Parameters
-        ----------
-        rho_draws : np.ndarray, shape (G,)
-            Spatial autoregressive parameter draws.
-
-        Returns
-        -------
-        np.ndarray, shape (G,)
-            Mean row sum for each draw.
-        """
-        if self._is_row_std:
-            return 1.0 / (1.0 - rho_draws)
-
-        # Eigenvalue-based computation: precompute c = V^{-1} @ ones once.
-        if not hasattr(self, "_eig_inv_ones"):
-            W_dense = self._W_dense
-            eigs, V = np.linalg.eig(W_dense)
-            self._W_eigs_full = eigs.real.astype(np.float64)
-            self._V_full = V.real.astype(np.float64)
-            self._eig_inv_ones = np.linalg.solve(
-                self._V_full, np.ones(W_dense.shape[0])
-            )
-
-        c = self._eig_inv_ones
-        eigs = self._W_eigs_full
-        V_col_sums = self._V_full.sum(axis=0)  # (n,)
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        return _chunked_eig_means(rho_draws, eigs, weights=V_col_sums * c)
-
-    def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
-        """Compute mean row sum of (I - rho*W)^{-1} W for each posterior draw.
-
-        For row-standardised W this equals ``1/(1 - rho)`` (same as
-        ``_batch_mean_row_sum``) because row sums of M@W = row sums of M
-        when W is row-standardised.
-
-        For non-row-standardised W the eigenvalue decomposition is used:
-        ``mean_row_sum_MW = (1/n) * ones' V diag(omega/(1-rho*omega)) V^{-1} ones``.
-
-        Parameters
-        ----------
-        rho_draws : np.ndarray, shape (G,)
-            Spatial autoregressive parameter draws.
-
-        Returns
-        -------
-        np.ndarray, shape (G,)
-            Mean row sum of M@W for each draw.
-        """
-        if self._is_row_std:
-            return 1.0 / (1.0 - rho_draws)
-
-        # Ensure eigenvalue decomposition is available
-        if not hasattr(self, "_eig_inv_ones"):
-            _ = self._batch_mean_row_sum(rho_draws[:1])
-
-        c = self._eig_inv_ones
-        eigs = self._W_eigs_full
-        V_col_sums = self._V_full.sum(axis=0)  # (n,)
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
 
     def __repr__(self) -> str:
         n, k = self._X.shape
