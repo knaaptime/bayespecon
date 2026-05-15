@@ -25,6 +25,7 @@ import pytensor.tensor as pt
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
+from .._backends import resolve_backend
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 from .priors import (
     PriorsLike,
@@ -128,12 +129,15 @@ class SpatialProbit:
         mobs: Optional[Union[np.ndarray, list[int]]] = None,
         priors: PriorsLike = None,
         robust: bool = False,
+        backend: str | None = None,
     ):
         if W is None:
             raise ValueError("W is required.")
 
         self.priors_obj = resolve_priors(priors, SpatialProbitPriors)
         self.priors = priors_as_dict(self.priors_obj)
+        self.backend = resolve_backend(backend)
+        self.backend_name = self.backend.name
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None

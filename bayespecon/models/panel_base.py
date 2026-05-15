@@ -14,6 +14,7 @@ import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
+from .._backends import resolve_backend
 from ..logdet import (
     _auto_logdet_method,
     make_logdet_fn,
@@ -294,11 +295,14 @@ class SpatialPanelModel(ABC):
         logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
+        backend: str | None = None,
     ):
         if W is None:
             raise ValueError("W is required.")
 
         self.priors = priors or {}
+        self.backend = resolve_backend(backend)
+        self.backend_name = self.backend.name
         self.logdet_method = logdet_method
         self.model = int(model)
         self.robust = robust

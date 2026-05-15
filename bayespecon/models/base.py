@@ -17,6 +17,7 @@ import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
+from .._backends import resolve_backend
 from ..logdet import (
     _auto_logdet_method,
     make_logdet_fn,
@@ -280,6 +281,7 @@ class SpatialModel(ABC):
         logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
+        backend: str | None = None,
     ):
         # Coerce ``priors`` to the subclass's typed dataclass; unknown keys
         # raise immediately.  ``self.priors`` is kept as a plain dict view
@@ -287,6 +289,12 @@ class SpatialModel(ABC):
         # ``_build_pymc_model`` implementations continue to work.
         self.priors_obj = resolve_priors(priors, self._priors_cls)
         self.priors = priors_as_dict(self.priors_obj)
+        # Resolve the probabilistic-programming backend up-front so invalid
+        # names fail at construction time rather than during ``fit()``.  The
+        # backend object itself is currently advisory; the existing PyMC fit
+        # paths still call the helpers in ``_sampler`` directly.
+        self.backend = resolve_backend(backend)
+        self.backend_name = self.backend.name
         self.logdet_method = logdet_method
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
