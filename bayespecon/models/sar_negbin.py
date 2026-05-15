@@ -23,6 +23,7 @@ import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
+from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
 from .base import SpatialModel
 
 
@@ -45,29 +46,7 @@ class SARNegativeBinomial(SpatialModel):
     Overdispersion is captured by the NB2 parameter ``alpha``.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_error_test"],
-            ).bayesian_lm_error_test(m),
-            "LM-Error",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_wx_test"],
-            ).bayesian_lm_wx_test(m),
-            "LM-WX",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_wx_test"],
-            ).bayesian_robust_lm_wx_test(m),
-            "Robust-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_NEGBIN_SUITE.tests
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -164,7 +143,7 @@ class SARNegativeBinomial(SpatialModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior impacts on the log-mean scale for each draw."""
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
@@ -213,7 +192,7 @@ class SARNegativeBinomial(SpatialModel):
         factorisation, reducing complexity from :math:`O(n^3)` per draw to
         :math:`O(n^2)` per draw.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")

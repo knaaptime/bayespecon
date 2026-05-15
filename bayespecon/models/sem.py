@@ -15,6 +15,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
+from ..diagnostics.lmtests import SEM_SUITE
 from ._sampler import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
@@ -108,37 +109,10 @@ class SEM(SpatialModel):
 
     _priors_cls = SEMPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_test"
-            ),
-            "LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_sem_test"
-            ),
-            # Note: this label is "LM-WX" for backwards compatibility, but
-            # the underlying score is the SEM-null variant
-            # (``bayesian_lm_wx_sem_test``) — i.e. it tests H₀: γ = 0
-            # *given* SEM residuals, not the OLS/SAR-null LM-WX with the
-            # same display name reported by SAR.diagnostics().
-            "LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_sem_test"
-            ),
-            "Robust-LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_sem_test"
-            ),
-            "Robust-LM-WX",
-        ),
-    ]
+    # The "LM-WX" label below corresponds to ``bayesian_lm_wx_sem_test``
+    # (SEM-null score) — distinct from the OLS/SAR-null LM-WX with the
+    # same display name reported by SAR.diagnostics().
+    _spatial_diagnostics_tests = SEM_SUITE.tests
 
     def fit(
         self,

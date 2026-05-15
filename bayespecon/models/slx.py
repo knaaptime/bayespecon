@@ -12,6 +12,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
+from ..diagnostics.lmtests import SLX_SUITE
 from .base import SpatialModel
 from .priors import SLXPriors
 
@@ -96,32 +97,7 @@ class SLX(SpatialModel):
 
     _priors_cls = SLXPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_test"
-            ),
-            "LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_test"
-            ),
-            "LM-Error",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_sdm_test"
-            ),
-            "Robust-LM-Lag-SDM",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sdem_test"
-            ),
-            "Robust-LM-Error-SDEM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SLX_SUITE.tests
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]

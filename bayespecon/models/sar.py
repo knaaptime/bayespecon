@@ -15,6 +15,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
+from ..diagnostics.lmtests import SAR_SUITE
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 from .base import (
     SpatialModel,
@@ -108,36 +109,7 @@ class SAR(SpatialModel):
 
     _priors_cls = SARPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_error_from_sar_test"],
-            ).bayesian_lm_error_from_sar_test(m),
-            "LM-Error",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_wx_test"],
-            ).bayesian_lm_wx_test(m),
-            "LM-WX",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_wx_test"],
-            ).bayesian_robust_lm_wx_test(m),
-            "Robust-LM-WX",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_error_sar_test"],
-            ).bayesian_robust_lm_error_sar_test(m),
-            "Robust-LM-Error",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_SUITE.tests
 
     def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
         """Construct the PyMC model for SAR regression.
@@ -349,7 +321,7 @@ class SAR(SpatialModel):
         the impact decomposition above and motivate the trace-based
         scalar summaries used here.
         """
-        from ..diagnostics.bayesian_lmtests import _get_posterior_draws
+        from ..diagnostics.lmtests import _get_posterior_draws
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data

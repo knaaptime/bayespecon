@@ -16,6 +16,11 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..diagnostics.lmtests import (
+    SAR_TOBIT_SUITE,
+    SDM_TOBIT_SUITE,
+    SEM_SUITE,
+)
 from .base import SpatialModel
 from .priors import SARTobitPriors, SDMTobitPriors, SEMTobitPriors
 
@@ -144,32 +149,7 @@ class SARTobit(_SpatialTobitBase):
 
     _priors_cls = SARTobitPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_test"
-            ),
-            "LM-Error",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_test"
-            ),
-            "LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_test"
-            ),
-            "Robust-LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sar_test"
-            ),
-            "Robust-LM-Error",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_TOBIT_SUITE.tests
 
     def _build_pymc_model(self) -> pm.Model:
         rho_lower = self.priors.get("rho_lower", -1.0)
@@ -476,32 +456,7 @@ class SEMTobit(_SpatialTobitBase):
 
     _priors_cls = SEMTobitPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_test"
-            ),
-            "LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_sem_test"
-            ),
-            "LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_sem_test"
-            ),
-            "Robust-LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_sem_test"
-            ),
-            "Robust-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SEM_SUITE.tests
 
     def _build_pymc_model(self) -> pm.Model:
         lam_lower = self.priors.get("lam_lower", -1.0)
@@ -785,20 +740,7 @@ class SDMTobit(_SpatialTobitBase):
 
     _priors_cls = SDMTobitPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_test"
-            ),
-            "LM-Error",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sdm_test"
-            ),
-            "Robust-LM-Error",
-        ),
-    ]
+    _spatial_diagnostics_tests = SDM_TOBIT_SUITE.tests
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]

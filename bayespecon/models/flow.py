@@ -40,6 +40,7 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
+from ..diagnostics.lmtests import FLOW_INTRA_SUITE, FLOW_SUITE
 from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from ..logdet import (
     _flow_logdet_poly_coeffs,
@@ -1129,36 +1130,7 @@ class SARFlow(FlowModel):
         - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_flow_dest_test"],
-            ).bayesian_robust_lm_flow_dest_test(m),
-            "Robust-LM-Flow-Dest",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_flow_orig_test"],
-            ).bayesian_robust_lm_flow_orig_test(m),
-            "Robust-LM-Flow-Orig",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_robust_lm_flow_network_test"],
-            ).bayesian_robust_lm_flow_network_test(m),
-            "Robust-LM-Flow-Network",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_flow_intra_test"],
-            ).bayesian_lm_flow_intra_test(m),
-            "LM-Flow-Intra",
-        ),
-    ]
+    _spatial_diagnostics_tests = FLOW_SUITE.tests
 
     def _build_pymc_model(self) -> pm.Model:
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -1937,43 +1909,7 @@ class OLSFlow(FlowModel):
     is required and ``logdet_method`` is ignored if passed.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_flow_dest_test"],
-            ).bayesian_lm_flow_dest_test(m),
-            "LM-Flow-Dest",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_flow_orig_test"],
-            ).bayesian_lm_flow_orig_test(m),
-            "LM-Flow-Orig",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_flow_network_test"],
-            ).bayesian_lm_flow_network_test(m),
-            "LM-Flow-Network",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_flow_joint_test"],
-            ).bayesian_lm_flow_joint_test(m),
-            "LM-Flow-Joint",
-        ),
-        (
-            lambda m: __import__(
-                "bayespecon.diagnostics.bayesian_lmtests",
-                fromlist=["bayesian_lm_flow_intra_test"],
-            ).bayesian_lm_flow_intra_test(m),
-            "LM-Flow-Intra",
-        ),
-    ]
+    _spatial_diagnostics_tests = FLOW_INTRA_SUITE.tests
 
     def __init__(self, y, G, X, **kwargs):
         # Skip log-determinant precomputation: A = I_N has |A| = 1.

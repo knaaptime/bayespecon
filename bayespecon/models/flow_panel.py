@@ -21,6 +21,7 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
+from ..diagnostics.lmtests import FLOW_PANEL_SUITE
 from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from ..logdet import (
     _flow_logdet_poly_coeffs,
@@ -463,7 +464,6 @@ class FlowPanelModel(ABC):
         RuntimeError
             If the model has not been fit yet.
         """
-        from .base import SpatialModel
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1741,38 +1741,7 @@ class OLSFlowPanel(FlowPanelModel):
     :math:`|A| = 1`).
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_dest_test"
-            ),
-            "Panel-LM-Flow-Dest",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_orig_test"
-            ),
-            "Panel-LM-Flow-Orig",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_network_test"
-            ),
-            "Panel-LM-Flow-Network",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_joint_test"
-            ),
-            "Panel-LM-Flow-Joint",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_intra_test"
-            ),
-            "Panel-LM-Flow-Intra",
-        ),
-    ]
+    _spatial_diagnostics_tests = FLOW_PANEL_SUITE.tests
 
     def __init__(self, y, G, X, T, **kwargs):
         # Skip log-determinant precomputation: A = I_N has |A| = 1.

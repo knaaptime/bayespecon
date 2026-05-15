@@ -43,6 +43,7 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..diagnostics.lmtests import SAR_PANEL_SUITE, SEM_PANEL_DYNAMIC_SUITE
 from ._sampler import use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
@@ -81,26 +82,7 @@ class _PanelTobitBase(SpatialPanelModel):
 
 
 class SARPanelTobit(_PanelTobitBase):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_test"
-            ),
-            "Panel-LM-WX",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_wx_test"
-            ),
-            "Panel-Robust-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
     """Bayesian spatial lag panel Tobit model.
 
     .. math::
@@ -372,21 +354,7 @@ class SARPanelTobit(_PanelTobitBase):
 
 
 class SEMPanelTobit(_PanelTobitBase):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
-            ),
-            "Panel-LM-Lag-SDEM",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_robust_lm_lag_sdem_test",
-            ),
-            "Panel-Robust-LM-Lag-SDEM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SEM_PANEL_DYNAMIC_SUITE.tests
     """Bayesian spatial error panel Tobit model.
 
     .. math::

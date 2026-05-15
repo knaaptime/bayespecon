@@ -15,6 +15,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
+from ..diagnostics.lmtests import SDM_SUITE
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 from .base import (
     SpatialModel,
@@ -112,20 +113,7 @@ class SDM(SpatialModel):
 
     _priors_cls = SDMPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_sdm_test"
-            ),
-            "LM-Error-SDM",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sdm_test"
-            ),
-            "Robust-LM-Error-SDM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SDM_SUITE.tests
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]

@@ -27,6 +27,12 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..diagnostics.lmtests import (
+    OLS_PANEL_SUITE,
+    SAR_PANEL_SUITE,
+    SDEM_PANEL_SUITE,
+    SEM_PANEL_SUITE,
+)
 from ._sampler import use_jax_likelihood
 from .panel_base import SpatialPanelModel
 
@@ -111,45 +117,7 @@ class OLSPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
-            ),
-            "Panel-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_sdm_joint_test"
-            ),
-            "Panel-LM-SDM-Joint",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_lm_slx_error_joint_test",
-            ),
-            "Panel-LM-SLX-Error-Joint",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_lag_test"
-            ),
-            "Panel-Robust-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_error_test"
-            ),
-            "Panel-Robust-LM-Error",
-        ),
-    ]
+    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)  # RE always uses raw (pooled) data
@@ -333,26 +301,7 @@ class SARPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_test"
-            ),
-            "Panel-LM-WX",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_wx_test"
-            ),
-            "Panel-Robust-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -582,20 +531,7 @@ class SEMPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
-            ),
-            "Panel-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_sem_test"
-            ),
-            "Panel-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -928,14 +864,7 @@ class SDEMPanelRE(SpatialPanelModel):
     captured by the random effect rather than by within-unit demeaning.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
-            ),
-            "Panel-LM-Lag-SDEM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
