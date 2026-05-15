@@ -15,16 +15,13 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ._sampler import (
-    prepare_compile_kwargs,
-    prepare_idata_kwargs,
-    use_jax_likelihood,
-)
+from ..diagnostics.lmtests import SEM_SUITE
 from .base import (
     SpatialModel,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
 )
+from .priors import SEMPriors
 
 
 class SEM(SpatialModel):
@@ -80,8 +77,8 @@ class SEM(SpatialModel):
     logdet_method : str, optional
         How to compute :math:`\\log|I - \\lambda W|`. ``None`` (default)
         auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
-        ``"chebyshev"``. Other options: ``"exact"``, ``"dense_grid"``,
-        ``"sparse_grid"``, ``"spline"``, ``"mc"``, ``"ilu"``.
+        ``"chebyshev"``. Other options: ``"exact"``, ``"grid_dense"``,
+        ``"grid_sparse"``, ``"sparse_spline"``, ``"grid_mc"``, ``"grid_ilu"``.
     robust : bool, default False
         If True, replace the Normal disturbance with Student-t. See
         *Robust regression* below.
@@ -105,37 +102,12 @@ class SEM(SpatialModel):
     ensures the variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_test"
-            ),
-            "LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_sem_test"
-            ),
-            # Note: this label is "LM-WX" for backwards compatibility, but
-            # the underlying score is the SEM-null variant
-            # (``bayesian_lm_wx_sem_test``) — i.e. it tests H₀: γ = 0
-            # *given* SEM residuals, not the OLS/SAR-null LM-WX with the
-            # same display name reported by SAR.diagnostics().
-            "LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_sem_test"
-            ),
-            "Robust-LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_sem_test"
-            ),
-            "Robust-LM-WX",
-        ),
-    ]
+    _priors_cls = SEMPriors
+
+    # The "LM-WX" label below corresponds to ``bayesian_lm_wx_sem_test``
+    # (SEM-null score) — distinct from the OLS/SAR-null LM-WX with the
+    # same display name reported by SAR.diagnostics().
+    _spatial_diagnostics_tests = SEM_SUITE.tests
 
     def fit(
         self,
@@ -180,12 +152,15 @@ class SEM(SpatialModel):
         """
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
+        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
 
         model = self._build_pymc_model(nuts_sampler=nuts_sampler)
         self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+        idata_kwargs = self.backend.prepare_idata_kwargs(
+            idata_kwargs, model, nuts_sampler
+        )
+        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -204,8 +179,8 @@ class SEM(SpatialModel):
         # we recompute from posterior draws here.  On JAX backends the model
         # uses pm.CustomDist with an observed RV, so PyMC has already
         # populated ``log_likelihood`` natively — skip the manual block.
-        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
-            nuts_sampler
+        needs_manual_loglik = (
+            compute_log_likelihood and not self.backend.use_jax_likelihood(nuts_sampler)
         )
         if needs_manual_loglik:
             idata = self._idata
@@ -252,8 +227,9 @@ class SEM(SpatialModel):
         pymc.Model
             Compiled probabilistic model object.
         """
-        lam_lower = self.priors.get("lam_lower", -1.0)
-        lam_upper = self.priors.get("lam_upper", 1.0)
+        bounds = self._logdet_bounds
+        lam_lower = bounds.rho_min
+        lam_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
@@ -271,7 +247,7 @@ class SEM(SpatialModel):
         WX_all = self._WX_all_cache
 
         n_obs = int(self._y.shape[0])
-        jax_logp = use_jax_likelihood(nuts_sampler)
+        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)

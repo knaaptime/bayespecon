@@ -1347,3 +1347,191 @@ def post_prob(
     probs = probs / probs.sum()
 
     return pd.Series(probs, index=model_names, name="post_prob")
+
+
+# ---------------------------------------------------------------------------
+# Object-oriented wrapper
+# ---------------------------------------------------------------------------
+
+
+class ModelComparison:
+    """Compare a collection of fitted Bayesian models.
+
+    Object-oriented wrapper around :func:`bayes_factor_compare_models`,
+    :func:`post_prob`, and :func:`arviz.compare`.  Marginal likelihoods are
+    computed once on first access and cached, so repeated calls to
+    :meth:`bayes_factors`, :meth:`posterior_probabilities`, etc. reuse the
+    same estimates.
+
+    Parameters
+    ----------
+    models : list, tuple, or dict
+        Fitted model objects (each with ``inference_data`` and, for bridge
+        sampling, ``pymc_model``).  A ``dict`` is interpreted as
+        ``{label: model}``; otherwise pass ``labels`` explicitly.
+    labels : list of str, optional
+        Display labels.  Required when ``models`` is a list/tuple and no
+        ``__name__``-style label is available; auto-generated when omitted.
+    method : {"bridge", "bic"}, default "bridge"
+        Marginal-likelihood estimator.  See
+        :func:`bayes_factor_compare_models`.
+    **kwargs
+        Forwarded to :func:`bayes_factor_compare_models` (e.g.
+        ``repetitions``, ``maxiter`` for bridge sampling).
+
+    Examples
+    --------
+    >>> cmp = ModelComparison({"OLS": ols, "SAR": sar, "SDM": sdm})
+    >>> cmp.log_marginal_likelihoods
+    OLS   -123.4
+    SAR   -120.1
+    SDM   -119.8
+    Name: log_ml, dtype: float64
+    >>> cmp.bayes_factors        # pairwise BF matrix
+    >>> cmp.posterior_probabilities()
+    >>> cmp.loo_comparison()     # arviz.compare on LOO
+    """
+
+    def __init__(
+        self,
+        models,
+        labels: Optional[list[str]] = None,
+        method: str = "bridge",
+        **kwargs,
+    ):
+        if isinstance(models, dict):
+            if labels is not None:
+                raise ValueError(
+                    "Pass `labels` either via dict keys or the `labels` "
+                    "argument, not both."
+                )
+            self._labels = list(models.keys())
+            self._models = list(models.values())
+        elif isinstance(models, (list, tuple)):
+            self._models = list(models)
+            if labels is None:
+                self._labels = [f"model_{i}" for i in range(len(self._models))]
+            else:
+                if len(labels) != len(self._models):
+                    raise ValueError(
+                        "labels must match length of models "
+                        f"({len(labels)} vs {len(self._models)})."
+                    )
+                self._labels = list(labels)
+        else:
+            raise TypeError(
+                f"models must be a list, tuple, or dict; got {type(models).__name__}."
+            )
+
+        self.method = method
+        self._kwargs = dict(kwargs)
+        self._bf_df: Optional[pd.DataFrame] = None
+        self._diagnostics: Optional[dict] = None
+
+    # -- core: compute once, cache -----------------------------------------
+
+    def _compute(self) -> None:
+        if self._bf_df is not None:
+            return
+        bf_df, diag = bayes_factor_compare_models(
+            self._models,
+            model_labels=self._labels,
+            method=self.method,
+            return_diagnostics=True,
+            **self._kwargs,
+        )
+        self._bf_df = bf_df
+        self._diagnostics = diag
+
+    # -- properties --------------------------------------------------------
+
+    @property
+    def labels(self) -> list[str]:
+        """Model labels in the order supplied."""
+        return list(self._labels)
+
+    @property
+    def log_marginal_likelihoods(self) -> pd.Series:
+        """Estimated :math:`\\log p(y \\mid M_k)` for each model."""
+        self._compute()
+        # bayes_factor_compare_models returns a square BF matrix; we
+        # recover logmls from the first row of log(BF) plus an arbitrary
+        # zero baseline by reading them out of the diagnostics dict when
+        # available, otherwise from the BF matrix directly.
+        if self._diagnostics and all(
+            isinstance(self._diagnostics.get(lbl), dict)
+            and "logml" in self._diagnostics[lbl]
+            for lbl in self._labels
+        ):
+            logmls = [self._diagnostics[lbl]["logml"] for lbl in self._labels]
+        else:
+            # Reconstruct relative log-ML from the BF matrix.  Anchor on
+            # the first model: log(BF[i, 0]) = logml[i] - logml[0].
+            log_bf = np.log(self._bf_df.to_numpy())
+            logmls = log_bf[:, 0]
+        return pd.Series(logmls, index=self._labels, name="log_ml")
+
+    @property
+    def bayes_factors(self) -> pd.DataFrame:
+        """Pairwise Bayes factors :math:`BF_{ij} = ML_i / ML_j`."""
+        self._compute()
+        return self._bf_df.copy()
+
+    @property
+    def diagnostics(self) -> Optional[dict]:
+        """Per-model diagnostics from the marginal-likelihood estimator."""
+        self._compute()
+        return self._diagnostics
+
+    # -- methods -----------------------------------------------------------
+
+    def posterior_probabilities(
+        self, prior_prob: Optional[np.ndarray] = None
+    ) -> pd.Series:
+        """Posterior model probabilities given the estimated marginal
+        likelihoods.
+
+        Parameters
+        ----------
+        prior_prob : array-like, optional
+            Prior model probabilities.  Defaults to uniform.
+
+        Returns
+        -------
+        pandas.Series
+            Posterior probabilities, summing to 1, indexed by label.
+        """
+        logmls = self.log_marginal_likelihoods.to_numpy()
+        return post_prob(logmls, model_names=self._labels, prior_prob=prior_prob)
+
+    def loo_comparison(self, **kwargs) -> pd.DataFrame:
+        """Compare models by LOO via :func:`arviz.compare`.
+
+        Each model must have a ``log_likelihood`` group in its
+        ``inference_data``.  Extra keyword arguments are forwarded to
+        :func:`arviz.compare`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Output of ``arviz.compare`` (one row per model).
+        """
+        import arviz as az
+
+        idata_dict = {}
+        for lbl, m in zip(self._labels, self._models):
+            idata = getattr(m, "inference_data", m)
+            if idata is None:
+                raise ValueError(
+                    f"Model '{lbl}' has no inference_data; call .fit() first."
+                )
+            idata_dict[lbl] = idata
+        return az.compare(idata_dict, **kwargs)
+
+    # -- repr --------------------------------------------------------------
+
+    def __repr__(self) -> str:
+        return (
+            f"ModelComparison(n_models={len(self._labels)}, "
+            f"method='{self.method}', labels={self._labels!r})"
+        )

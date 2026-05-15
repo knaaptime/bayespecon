@@ -32,10 +32,26 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..diagnostics.lmtests import (
+    OLS_PANEL_SUITE,
+    SAR_PANEL_SUITE,
+    SDEM_PANEL_SUITE,
+    SDM_PANEL_SUITE,
+    SEM_PANEL_DYNAMIC_SUITE,
+    SLX_PANEL_DYNAMIC_SUITE,
+)
 from ..logdet import get_cached_logdet_fn
-from ._sampler import use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
+from .priors import (
+    PanelOLSDynamicPriors,
+    PanelSARDynamicPriors,
+    PanelSDEMDynamicPriors,
+    PanelSDMRDynamicPriors,
+    PanelSDMUDynamicPriors,
+    PanelSEMDynamicPriors,
+    PanelSLXDynamicPriors,
+)
 
 
 class _DynamicPanelMixin:
@@ -274,45 +290,9 @@ class _DynamicPanelMixin:
 
 
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
-            ),
-            "Panel-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_sdm_joint_test"
-            ),
-            "Panel-LM-SDM-Joint",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_lm_slx_error_joint_test",
-            ),
-            "Panel-LM-SLX-Error-Joint",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_lag_test"
-            ),
-            "Panel-Robust-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_error_test"
-            ),
-            "Panel-Robust-LM-Error",
-        ),
-    ]
+    _priors_cls = PanelOLSDynamicPriors
+
+    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
     """Dynamic panel regression without contemporaneous spatial dependence.
 
     Implements
@@ -461,14 +441,9 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_sdm_test"
-            ),
-            "Panel-LM-Error-SDM",
-        ),
-    ]
+    _priors_cls = PanelSDMRDynamicPriors
+
+    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
     """Dynamic restricted spatial Durbin panel regression.
 
     Implements
@@ -625,14 +600,9 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_sdm_test"
-            ),
-            "Panel-LM-Error-SDM",
-        ),
-    ]
+    _priors_cls = PanelSDMUDynamicPriors
+
+    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
     """Dynamic unrestricted spatial Durbin panel regression.
 
     Implements
@@ -724,8 +694,9 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     def _build_pymc_model(self) -> pm.Model:
         self._prepare_dynamic_design()
 
-        rho_lower = self.priors.get("rho_lower", -0.95)
-        rho_upper = self.priors.get("rho_upper", 0.95)
+        bounds = self._logdet_bounds
+        rho_lower = bounds.rho_min
+        rho_upper = bounds.rho_max
         phi_lower = self.priors.get("phi_lower", -0.95)
         phi_upper = self.priors.get("phi_upper", 0.95)
         theta_lower = self.priors.get("theta_lower", -0.95)
@@ -851,26 +822,9 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_test"
-            ),
-            "Panel-LM-WX",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_wx_test"
-            ),
-            "Panel-Robust-LM-WX",
-        ),
-    ]
+    _priors_cls = PanelSARDynamicPriors
+
+    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
     """Dynamic spatial-lag panel regression.
 
     Implements
@@ -1040,21 +994,9 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
-            ),
-            "Panel-LM-Lag-SDEM",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_robust_lm_lag_sdem_test",
-            ),
-            "Panel-Robust-LM-Lag-SDEM",
-        ),
-    ]
+    _priors_cls = PanelSEMDynamicPriors
+
+    _spatial_diagnostics_tests = SEM_PANEL_DYNAMIC_SUITE.tests
     """Dynamic spatial-error panel regression.
 
     Implements
@@ -1158,7 +1100,7 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         # ``logdet_fn`` already includes the T_eff multiplier; distribute the
         # full panel Jacobian uniformly across the n_obs entries.
         inv_n = 1.0 / n_obs
-        jax_logp = use_jax_likelihood(nuts_sampler)
+        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -1330,14 +1272,9 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
-            ),
-            "Panel-LM-Lag-SDEM",
-        ),
-    ]
+    _priors_cls = PanelSDEMDynamicPriors
+
+    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
     """Dynamic spatial Durbin error panel regression.
 
     Implements
@@ -1448,7 +1385,7 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         W_pt = self._W_pt_sparse_dyn
         n_obs = int(self._y_dyn.shape[0])
         inv_n = 1.0 / n_obs
-        jax_logp = use_jax_likelihood(nuts_sampler)
+        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -1635,22 +1572,9 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
 
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_robust_lm_lag_sdm_test",
-            ),
-            "Panel-Robust-LM-Lag-SDM",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_robust_lm_error_sdem_test",
-            ),
-            "Panel-Robust-LM-Error-SDEM",
-        ),
-    ]
+    _priors_cls = PanelSLXDynamicPriors
+
+    _spatial_diagnostics_tests = SLX_PANEL_DYNAMIC_SUITE.tests
     """Dynamic SLX panel regression.
 
     Implements

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import warnings
-from abc import ABC, abstractmethod
-from typing import Any, Optional, Union
+from functools import cached_property
+from typing import Optional, Union
 
 import arviz as az
 import numpy as np
@@ -14,14 +14,20 @@ import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
+from .._backends import resolve_backend
 from ..logdet import (
+    LogdetBounds,
+    LogDetMethodName,
     _auto_logdet_method,
     make_logdet_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
+    resolve_logdet_bounds,
+    resolve_logdet_method,
 )
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from ._common import _SpatialModelBase
 from .base import _is_row_standardized_csr
+from .priors import PanelOLSPriors, PriorsLike, priors_as_dict, resolve_priors
 
 
 def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
@@ -209,7 +215,7 @@ def _parse_panel_W(
     return W_csr, row_std
 
 
-class SpatialPanelModel(ABC):
+class SpatialPanelModel(_SpatialModelBase):
     """Base class for static spatial panel models with FE transforms.
 
     Holds the within-transformation, panel-aware sorting, and weights
@@ -278,6 +284,25 @@ class SpatialPanelModel(ABC):
     # weight matrices. Tests may monkeypatch this value.
     _DENSE_W_WARN_BYTES: int = 100 * 1024 * 1024
 
+    # Hooks consumed by `_SpatialModelBase.spatial_diagnostics` and
+    # `spatial_diagnostics_decision` to route panel-flavored test names,
+    # predicate keys, and decision-tree specs.
+    _decision_test_prefix: str = "Panel-"
+    _decision_predicate_prefix: str = "panel_"
+    _decision_spec_attr: str = "get_panel_spec"
+    _diagnostics_require_W: bool = False
+
+    # Panel models wrap the full (N·T)×(N·T) Kronecker form for PyTensor,
+    # not the N×N reduced weight matrix.
+    _pt_sparse_attr: str = "_W_sparse_NT"
+
+    #: The default :class:`PanelOLSPriors` accepts the shared
+    #: ``beta_mu``/``beta_sigma``/``sigma_sigma`` keys. Subclasses with
+    #: extra parameters (``rho``/``lam``/``phi``/random effects/censoring)
+    #: override this with the matching :mod:`bayespecon.models.priors`
+    #: dataclass so unknown keys raise ``TypeError`` at construction.
+    _priors_cls: type = PanelOLSPriors
+
     def __init__(
         self,
         formula: Optional[str] = None,
@@ -290,56 +315,47 @@ class SpatialPanelModel(ABC):
         N: Optional[int] = None,
         T: Optional[int] = None,
         model: int = 0,
-        priors: Optional[dict] = None,
-        logdet_method: str | None = None,
+        priors: PriorsLike = None,
+        logdet_method: LogDetMethodName | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
+        backend: str | None = None,
     ):
         if W is None:
             raise ValueError("W is required.")
 
-        self.priors = priors or {}
+        # Coerce ``priors`` to the subclass's typed dataclass; unknown keys
+        # raise immediately. ``self.priors`` is kept as a plain dict view
+        # so existing ``self.priors.get(...)`` calls in subclass
+        # ``_build_pymc_model`` implementations continue to work.
+        self.priors_obj = resolve_priors(priors, self._priors_cls)
+        self.priors = priors_as_dict(self.priors_obj)
+        self.backend = resolve_backend(backend)
+        self.backend_name = self.backend.name
+        # Validate ``logdet_method`` eagerly so invalid strings fail at
+        # construction time rather than at first logdet access (which is
+        # lazy via @cached_property).  ``resolve_logdet_method`` with
+        # ``n=1`` only validates the string; auto-selection for ``None``
+        # happens later once W is known.
+        if logdet_method is not None:
+            resolve_logdet_method(logdet_method, n=1)
         self.logdet_method = logdet_method
         self.model = int(model)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
-        self._W_dense_cache: Optional[np.ndarray] = None
 
         if formula is not None:
-            if data is None:
-                raise ValueError("data is required with formula mode.")
-            if unit_col is None or time_col is None:
-                raise ValueError("unit_col and time_col are required in formula mode.")
-
-            d = data.sort_values([time_col, unit_col]).reset_index(drop=True)
-            lhs, rhs = formula.split("~", 1)
-            lhs = lhs.strip()
-            rhs = rhs.strip()
-
-            X_mm = model_matrix(rhs, d)
-            self._feature_names = list(X_mm.columns)
-            y_arr = np.asarray(d[lhs], dtype=float)
-            X_arr = np.asarray(X_mm, dtype=float)
-
-            units = d[unit_col].nunique()
-            times = d[time_col].nunique()
-            if units * times != len(d):
-                raise ValueError(
-                    "Data are not a balanced panel after sorting by time/unit."
-                )
-            self._N = units
-            self._T = times
-            self._panel_index = d[[time_col, unit_col]].copy()
+            (
+                y_arr,
+                X_arr,
+                self._feature_names,
+                self._N,
+                self._T,
+                self._panel_index,
+            ) = self._parse_panel_formula(formula, data, unit_col, time_col)
         elif y is not None and X is not None:
-            y_arr = np.asarray(y, dtype=float).reshape(-1)
-            if isinstance(X, pd.DataFrame):
-                self._feature_names = list(X.columns)
-                X_arr = X.to_numpy(dtype=float)
-            else:
-                X_arr = np.asarray(X, dtype=float)
-                self._feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
-
+            y_arr, X_arr, self._feature_names = self._parse_panel_matrices(y, X)
             if N is None or T is None:
                 raise ValueError("N and T are required in matrix mode.")
             self._N = int(N)
@@ -372,10 +388,11 @@ class SpatialPanelModel(ABC):
             self._feature_names[i] for i in self._wx_column_indices
         ]
 
-        # Validate W and store as N×N CSR. Dense expansion is deferred.
+        # Validate W and store as N×N CSR. Dense expansion, eigenvalues,
+        # and logdet builders are all derived lazily via @cached_property
+        # so init stays O(nnz) for chebyshev / sparse-grid methods that do
+        # not require the eigendecomposition.
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
-        # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
-        self._W_eigs_cache: np.ndarray | None = None
 
         self._y, self._X = _demean_panel(
             self._y_raw, self._X_raw, self._N, self._T, self.model
@@ -388,24 +405,83 @@ class SpatialPanelModel(ABC):
             if self.logdet_method is not None
             else _auto_logdet_method(self._W_sparse.shape[0])
         )
-        # Logdet builders are constructed lazily on first access — see the
-        # ``_logdet_numpy_fn``, ``_logdet_numpy_vec_fn`` and
-        # ``_logdet_pytensor_fn`` properties.  Caches are seeded as None so
-        # that init never triggers the underlying eigendecomposition for
-        # methods that do not need it (chebyshev, sparse_grid, etc.).
-        self._logdet_numpy_fn_cache = None
-        self._logdet_numpy_vec_fn_cache = None
-        self._logdet_pytensor_fn_cache = None
-        self._W_for_logdet_cache = None
 
-        self._Wy = self._sparse_panel_lag(self._y)
-        if self._wx_column_indices:
-            # Single batched sparse multiply across all WX columns, replacing
-            # the per-column Python loop that previously paid an O(k_wx)
-            # overhead.
-            self._WX = self._sparse_panel_lag(self._X[:, self._wx_column_indices])
+    def _apply_spatial_lag(self, v: np.ndarray) -> np.ndarray:
+        """Apply ``W_n ⊗ I_T`` to a stacked panel vector or matrix.
+
+        Overrides the cross-sectional default to use the blockwise
+        sparse multiply implemented by :meth:`_sparse_panel_lag`, which
+        accepts either ``(N·T,)`` or ``(N·T, k)`` arrays and stays
+        sparse internally.
+        """
+        return self._sparse_panel_lag(v)
+
+    # ------------------------------------------------------------------
+    # Input parsing helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_panel_formula(
+        formula: str,
+        data: Optional[pd.DataFrame],
+        unit_col: Optional[str],
+        time_col: Optional[str],
+    ):
+        """Parse formula/data inputs into stacked panel arrays.
+
+        Sorts ``data`` by ``(time_col, unit_col)`` to produce the
+        time-major stacked layout the panel base assumes (so the
+        ``T``-th block of ``N`` rows corresponds to time period ``T``).
+
+        Returns
+        -------
+        tuple
+            ``(y, X, feature_names, N, T, panel_index)`` where
+            ``panel_index`` is the sorted ``[time_col, unit_col]``
+            DataFrame.
+        """
+        if data is None:
+            raise ValueError("data is required with formula mode.")
+        if unit_col is None or time_col is None:
+            raise ValueError("unit_col and time_col are required in formula mode.")
+
+        d = data.sort_values([time_col, unit_col]).reset_index(drop=True)
+        lhs, rhs = formula.split("~", 1)
+        lhs = lhs.strip()
+        rhs = rhs.strip()
+
+        X_mm = model_matrix(rhs, d)
+        feature_names = list(X_mm.columns)
+        y_arr = np.asarray(d[lhs], dtype=float)
+        X_arr = np.asarray(X_mm, dtype=float)
+
+        units = d[unit_col].nunique()
+        times = d[time_col].nunique()
+        if units * times != len(d):
+            raise ValueError(
+                "Data are not a balanced panel after sorting by time/unit."
+            )
+        panel_index = d[[time_col, unit_col]].copy()
+        return y_arr, X_arr, feature_names, units, times, panel_index
+
+    @staticmethod
+    def _parse_panel_matrices(y, X):
+        """Parse matrix-mode inputs and infer feature names.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, list[str]]
+            Stacked dependent variable, design matrix, and feature names.
+            The caller is responsible for validating ``N * T == len(y)``.
+        """
+        y_arr = np.asarray(y, dtype=float).reshape(-1)
+        if isinstance(X, pd.DataFrame):
+            feature_names = list(X.columns)
+            X_arr = X.to_numpy(dtype=float)
         else:
-            self._WX = np.empty((self._X.shape[0], 0), dtype=float)
+            X_arr = np.asarray(X, dtype=float)
+            feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
+        return y_arr, X_arr, feature_names
 
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
         """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
@@ -486,94 +562,112 @@ class SpatialPanelModel(ABC):
             )
         return np.asarray(W @ R.T, dtype=np.float64).T
 
-    @property
+    @cached_property
     def _W_eigs(self) -> np.ndarray:
         """Eigenvalues of the N×N spatial weights matrix, computed lazily.
 
-        Cached on first access to keep init O(n²) when chebyshev / sparse-grid
+        Cached on first access to keep init O(nnz) when chebyshev / sparse-grid
         log-determinants are used (those methods do not need the full
         eigendecomposition).
         """
-        if self._W_eigs_cache is None:
-            self._W_eigs_cache = np.linalg.eigvals(
-                self._W_sparse.toarray().astype(np.float64)
-            )
-        return self._W_eigs_cache
+        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
-    @property
+    @cached_property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or sparse W.
 
         Computed lazily so that init never forces an eigendecomposition for
         chebyshev / sparse-grid methods.
         """
-        if self._W_for_logdet_cache is None:
-            if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs.real.astype(np.float64)
-            else:
-                self._W_for_logdet_cache = self._W_sparse
-        return self._W_for_logdet_cache
+        if self._resolved_logdet_method == "eigenvalue":
+            return self._W_eigs.real.astype(np.float64)
+        return self._W_sparse
 
-    @property
+    @cached_property
+    def _logdet_bounds(self) -> LogdetBounds:
+        """Resolved rho/lambda bounds for the logdet builder and prior.
+
+        Combines the user's ``priors`` (``rho_lower/upper`` or
+        ``lam_lower/upper``) with method-aware defaults so that
+        positive-only methods (``sparse_spline``, ``grid_mc``)
+        automatically restrict the support to ``[1e-5, 1.0]`` unless the
+        user supplies an explicit override.
+        """
+        eigs = (
+            self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue" and self._W_eigs is not None
+            else None
+        )
+        return resolve_logdet_bounds(
+            self.logdet_method,
+            n=int(self._W_sparse.shape[0]),
+            eigs=eigs,
+            priors=self.priors,
+        )
+
+    @cached_property
     def _logdet_numpy_fn(self):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
-        if self._logdet_numpy_fn_cache is None:
-            eigs = (
-                self._W_eigs.real
-                if self._resolved_logdet_method == "eigenvalue"
-                else None
-            )
-            self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
-                self._W_sparse, eigs, method=self.logdet_method
-            )
-        return self._logdet_numpy_fn_cache
+        eigs = (
+            self._W_eigs.real if self._resolved_logdet_method == "eigenvalue" else None
+        )
+        b = self._logdet_bounds
+        return make_logdet_numpy_fn(
+            self._W_sparse,
+            eigs,
+            method=self.logdet_method,
+            rho_min=b.rho_min,
+            rho_max=b.rho_max,
+        )
 
-    @property
+    @cached_property
     def _logdet_numpy_vec_fn(self):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
-        if self._logdet_numpy_vec_fn_cache is None:
-            eigs = (
-                self._W_eigs.real
-                if self._resolved_logdet_method == "eigenvalue"
-                else None
-            )
-            self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
-                self._W_sparse, eigs, method=self.logdet_method
-            )
-        return self._logdet_numpy_vec_fn_cache
+        eigs = (
+            self._W_eigs.real if self._resolved_logdet_method == "eigenvalue" else None
+        )
+        b = self._logdet_bounds
+        return make_logdet_numpy_vec_fn(
+            self._W_sparse,
+            eigs,
+            method=self.logdet_method,
+            rho_min=b.rho_min,
+            rho_max=b.rho_max,
+        )
 
-    @property
+    @cached_property
     def _logdet_pytensor_fn(self):
         """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
-        if self._logdet_pytensor_fn_cache is None:
-            self._logdet_pytensor_fn_cache = make_logdet_fn(
-                self._W_for_logdet, method=self.logdet_method, T=self._T
-            )
-        return self._logdet_pytensor_fn_cache
+        b = self._logdet_bounds
+        return make_logdet_fn(
+            self._W_for_logdet,
+            method=self.logdet_method,
+            rho_min=b.rho_min,
+            rho_max=b.rho_max,
+            T=self._T,
+        )
 
-    @property
+    @cached_property
     def _W_dense(self) -> np.ndarray:
         """Dense (N*T)×(N*T) weight matrix, materialised lazily on first access."""
-        if self._W_dense_cache is None:
-            # If W is N x N, dense panel matrix is (N*T) x (N*T); otherwise
-            # caller supplied full panel matrix already.
-            n_nt = (
-                self._N * self._T
-                if self._W_sparse.shape[0] == self._N
-                else int(self._W_sparse.shape[0])
+        # If W is N x N, dense panel matrix is (N*T) x (N*T); otherwise
+        # caller supplied full panel matrix already.
+        n_nt = (
+            self._N * self._T
+            if self._W_sparse.shape[0] == self._N
+            else int(self._W_sparse.shape[0])
+        )
+        nbytes = n_nt * n_nt * 8
+        if nbytes > int(self._DENSE_W_WARN_BYTES):
+            warnings.warn(
+                f"Materialising a dense panel weight matrix of size {n_nt}x{n_nt} "
+                f"(~{nbytes / 1024**2:.0f} MB).",
+                ResourceWarning,
+                stacklevel=2,
             )
-            nbytes = n_nt * n_nt * 8
-            if nbytes > int(self._DENSE_W_WARN_BYTES):
-                warnings.warn(
-                    f"Materialising a dense panel weight matrix of size {n_nt}x{n_nt} "
-                    f"(~{nbytes / 1024**2:.0f} MB).",
-                    ResourceWarning,
-                    stacklevel=2,
-                )
-            self._W_dense_cache = _as_dense_W(self._W_sparse, self._N, self._T)
-        return self._W_dense_cache
+        return _as_dense_W(self._W_sparse, self._N, self._T)
 
-    @property
+    @cached_property
     def _W_sparse_NT(self) -> "sp.csr_matrix":
         """Sparse (N*T)×(N*T) Kronecker-block weight matrix ``I_T ⊗ W_n``.
 
@@ -582,711 +676,16 @@ class SpatialPanelModel(ABC):
         still exposing a single linear operator that can be applied to a
         stacked panel residual vector.
         """
-        if not hasattr(self, "_W_sparse_NT_cache") or self._W_sparse_NT_cache is None:
-            W = self._W_sparse
-            if W.shape[0] == self._N:
-                # Force ``csr_matrix`` (not ``csr_array``) so the result is
-                # accepted by :mod:`pytensor.sparse`, which currently only
-                # supports the legacy ``scipy.sparse`` matrix API.
-                self._W_sparse_NT_cache = sp.csr_matrix(
-                    sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
-                )
-            else:
-                # Caller already supplied a full (N*T)×(N*T) matrix.
-                self._W_sparse_NT_cache = sp.csr_matrix(W)
-        return self._W_sparse_NT_cache
-
-    @property
-    def _W_pt_sparse(self):
-        """PyTensor sparse variable wrapping :attr:`_W_sparse_NT`.
-
-        Cached so that repeated PyMC model builds reuse the same symbolic
-        sparse weight operator, avoiding redundant ``as_sparse_variable`` calls.
-        """
-        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
-            from pytensor import sparse as pts
-
-            self._W_pt_sparse_cache = pts.as_sparse_variable(
-                sp.csc_matrix(self._W_sparse_NT)
+        W = self._W_sparse
+        if W.shape[0] == self._N:
+            # Force ``csr_matrix`` (not ``csr_array``) so the result is
+            # accepted by :mod:`pytensor.sparse`, which currently only
+            # supports the legacy ``scipy.sparse`` matrix API.
+            return sp.csr_matrix(
+                sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
             )
-        return self._W_pt_sparse_cache
-
-    @property
-    def _T_ww(self) -> float:
-        """Trace of W'W + W², cached on first access.
-
-        Computed as ``||W||_F² + sum(W * W')`` using sparse operations,
-        which is O(nnz) rather than O(n²).
-        """
-        if not hasattr(self, "_T_ww_cache"):
-            from ..graph import sparse_trace_WtW_plus_WW
-
-            self._T_ww_cache = sparse_trace_WtW_plus_WW(self._W_sparse)
-        return self._T_ww_cache
-
-    def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
-        """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
-
-        For row-standardised W this is the scalar ``1/(1 - rho)``.
-        For non-row-standardised W the eigenvalue decomposition is used:
-        ``mean_row_sum = (1/n) * ones' V diag(1/(1-rho*omega)) V^{-1} ones``,
-        where the vector ``c = V^{-1} ones`` is pre-computed once.
-
-        Parameters
-        ----------
-        rho_draws : np.ndarray, shape (G,)
-            Spatial autoregressive parameter draws.
-
-        Returns
-        -------
-        np.ndarray, shape (G,)
-            Mean row sum for each draw.
-        """
-        if self._is_row_std:
-            return 1.0 / (1.0 - rho_draws)
-
-        # Eigenvalue-based computation: precompute c = V^{-1} @ ones once.
-        if not hasattr(self, "_eig_inv_ones"):
-            W_dense = self._W_dense
-            eigs, V = np.linalg.eig(W_dense)
-            self._W_eigs_full = eigs.real.astype(np.float64)
-            self._V_full = V.real.astype(np.float64)
-            self._eig_inv_ones = np.linalg.solve(
-                self._V_full, np.ones(W_dense.shape[0])
-            )
-
-        c = self._eig_inv_ones
-        eigs = self._W_eigs_full
-        V_col_sums = self._V_full.sum(axis=0)  # (n,)
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        return _chunked_eig_means(rho_draws, eigs, weights=V_col_sums * c)
-
-    def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
-        """Compute mean row sum of (I - rho*W)^{-1} W for each posterior draw.
-
-        For row-standardised W this equals ``1/(1 - rho)`` (same as
-        ``_batch_mean_row_sum``) because row sums of M@W = row sums of M
-        when W is row-standardised.
-
-        For non-row-standardised W the eigenvalue decomposition is used:
-        ``mean_row_sum_MW = (1/n) * ones' V diag(omega/(1-rho*omega)) V^{-1} ones``.
-
-        Parameters
-        ----------
-        rho_draws : np.ndarray, shape (G,)
-            Spatial autoregressive parameter draws.
-
-        Returns
-        -------
-        np.ndarray, shape (G,)
-            Mean row sum of M@W for each draw.
-        """
-        if self._is_row_std:
-            return 1.0 / (1.0 - rho_draws)
-
-        # Ensure eigenvalue decomposition is available
-        if not hasattr(self, "_eig_inv_ones"):
-            _ = self._batch_mean_row_sum(rho_draws[:1])
-
-        c = self._eig_inv_ones
-        eigs = self._W_eigs_full
-        V_col_sums = self._V_full.sum(axis=0)  # (n,)
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
-
-    @property
-    def _nonintercept_indices(self) -> list[int]:
-        """Return indices of non-constant (non-intercept) columns in X.
-
-        This is used to exclude the intercept from impact measures, since
-        the intercept has no meaningful spatial effect interpretation.
-
-        Returns
-        -------
-        list[int]
-            Column indices of X that are not constant/intercept columns.
-        """
-        indices: list[int] = []
-        for j, name in enumerate(self._feature_names):
-            column = self._X[:, j]
-            is_named_intercept = name.lower() == "intercept"
-            is_constant = np.allclose(column, column[0])
-            if not (is_named_intercept or is_constant):
-                indices.append(j)
-        return indices
-
-    @property
-    def _nonintercept_feature_names(self) -> list[str]:
-        """Return feature names for non-intercept columns.
-
-        Returns
-        -------
-        list[str]
-            Feature names excluding intercept/constant columns.
-        """
-        return [self._feature_names[i] for i in self._nonintercept_indices]
-
-    @staticmethod
-    def _spatial_lag_column_indices(
-        X: np.ndarray, feature_names: list[str]
-    ) -> list[int]:
-        """Return indices of regressors that should receive spatial lags.
-
-        Constant columns are treated as intercept-like and excluded, which
-        avoids adding redundant ``W * intercept`` terms to SLX/Durbin models.
-
-        Parameters
-        ----------
-        X : np.ndarray
-            Raw panel design matrix before FE transformation.
-        feature_names : list[str]
-            Column labels aligned with ``X``.
-
-        Returns
-        -------
-        list[int]
-            Column indices eligible for spatial lags.
-        """
-        indices: list[int] = []
-        for j, name in enumerate(feature_names):
-            column = X[:, j]
-            is_named_intercept = name.lower() == "intercept"
-            is_constant = np.allclose(column, column[0])
-            if not (is_named_intercept or is_constant):
-                indices.append(j)
-        return indices
-
-    def _add_nu_prior(self, model: pm.Model) -> pm.Model:
-        """Add the degrees-of-freedom prior for robust (Student-t) models.
-
-        Called inside ``_build_pymc_model`` when ``self.robust`` is True.
-        Uses an :math:`\\mathrm{Exp}(\\lambda_\\nu)` prior on ``nu`` with rate ``nu_lam`` (default
-        1/30, giving mean ≈ 30, favouring near-Normal tails). A lower
-        bound of 2 is enforced so that the variance exists.
-
-        Parameters
-        ----------
-        model : pymc.Model
-            The model context in which to add the ``nu`` prior.
-
-        Returns
-        -------
-        pymc.Model
-            The same model context (``nu`` is added as a side effect).
-        """
-        nu_lam = self.priors.get("nu_lam", 1.0 / 30.0)
-        pm.Truncated("nu", pm.Exponential.dist(lam=nu_lam), lower=2.0)
-        return model
-
-    @abstractmethod
-    def _build_pymc_model(self) -> pm.Model:
-        """Construct and return a pm.Model."""
-
-    @abstractmethod
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects at posterior mean."""
-
-    @abstractmethod
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute direct, indirect, and total effects for each posterior draw.
-
-        Returns
-        -------
-        tuple of np.ndarray
-            ``(direct_samples, indirect_samples, total_samples)`` where each
-            array has shape ``(G, k)`` or ``(G, k_wx)``.
-        """
-
-    @abstractmethod
-    def _fitted_mean_from_posterior(self) -> np.ndarray:
-        """Posterior-mean fitted values on transformed scale."""
-
-    def _beta_names(self) -> list[str]:
-        """Return coefficient labels used for posterior summaries.
-
-        Returns
-        -------
-        list[str]
-            Coefficient labels aligned with the ``beta`` parameter.
-        """
-        return list(self._feature_names)
-
-    def _model_coords(self) -> dict[str, list[str]]:
-        """Return PyMC coordinate labels for named dimensions.
-
-        Returns
-        -------
-        dict[str, list[str]]
-            Coordinates passed to :class:`pymc.Model`.
-        """
-        return {"coefficient": self._beta_names()}
-
-    @staticmethod
-    def _rename_summary_index(summary_df: pd.DataFrame) -> pd.DataFrame:
-        """Strip the ``beta[...]`` wrapper from coefficient row labels.
-
-        Parameters
-        ----------
-        summary_df : pandas.DataFrame
-            ArviZ summary output.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Summary with human-readable coefficient row labels.
-        """
-        renamed = []
-        for label in summary_df.index.astype(str):
-            if label.startswith("beta[") and label.endswith("]"):
-                renamed.append(label[5:-1])
-            else:
-                renamed.append(label)
-        out = summary_df.copy()
-        out.index = renamed
-        return out
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: Optional[int] = None,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Sample the posterior for the panel model.
-
-        Parameters
-        ----------
-        draws : int, default=2000
-            Number of post-tuning draws per chain.
-        tune : int, default=1000
-            Number of tuning draws per chain.
-        chains : int, default=4
-            Number of chains.
-        target_accept : float, default=0.9
-            NUTS target acceptance probability.
-        random_seed : int, optional
-            Random seed used by PyMC.
-        **sample_kwargs
-            Extra keyword arguments forwarded to :func:`pymc.sample`.  Pass
-            ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
-            select an alternative NUTS backend; defaults to PyMC's built-in
-            sampler.
-
-        Returns
-        -------
-        arviz.InferenceData
-            Posterior samples and diagnostics.
-        """
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        try:
-            model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        except TypeError:
-            # Subclasses that don't accept ``nuts_sampler`` build the same
-            # model on every backend.
-            model = self._build_pymc_model()
-        self._pymc_model = model
-        if "idata_kwargs" in sample_kwargs:
-            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
-                sample_kwargs["idata_kwargs"], model, nuts_sampler
-            )
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                nuts_sampler=nuts_sampler,
-                **sample_kwargs,
-            )
-        return self._idata
-
-    def _attach_jacobian_corrected_log_likelihood(
-        self,
-        idata: az.InferenceData,
-        spatial_param: str,
-        T: int = 1,
-    ) -> None:
-        """Add Jacobian correction to the auto-captured log-likelihood group.
-
-        For models that use ``pm.Normal("obs", observed=y)`` plus
-        ``pm.Potential("jacobian", logdet_fn(rho))``, PyMC auto-captures
-        the Gaussian part in the ``log_likelihood`` group but the Jacobian
-        term is absent.  This method adds the per-observation Jacobian
-        contribution ``log|I - ρW| * T / n`` to each pointwise LL value.
-
-        Notes
-        -----
-        The full panel log-determinant of the spatial filter is
-        :math:`T \\log|I_N - \\rho W|` because the stacked
-        :math:`(N T) \\times (N T)` filter is
-        :math:`I_T \\otimes (I_N - \\rho W)`, whose determinant is
-        :math:`|I_N - \\rho W|^T` by the Kronecker product rule.  Dividing
-        by :math:`n = N T` distributes that scalar Jacobian uniformly
-        over the per-observation pointwise log-likelihood entries that
-        ArviZ expects, so quantities like LOO and WAIC are computed on a
-        per-observation log density.  For dynamic panels the time
-        dimension is ``T - 1`` (one period is consumed by the lag), so
-        callers pass ``T = T - 1`` here.
-
-        Parameters
-        ----------
-        idata : arviz.InferenceData
-            InferenceData with an existing ``log_likelihood`` group.
-        spatial_param : str
-            Name of the spatial autoregressive parameter (``"rho"`` or
-            ``"lam"``) in the posterior.
-        T : int, default 1
-            Panel time-period multiplier for the Jacobian.
-        """
-        import xarray as xr
-
-        if "log_likelihood" not in idata.groups():
-            return
-
-        n = self._y.shape[0]
-        param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
-
-        # Jacobian: log|I - param*W| * T (pure numpy, respects logdet_method)
-        jacobian = self._logdet_numpy_vec_fn(param_draws) * T  # (n_draws,)
-        ll_jac = jacobian[:, None] / n  # (n_draws, 1)
-
-        # Add Jacobian to each variable in the log_likelihood group
-        n_chains = idata.posterior.sizes["chain"]
-        n_draws_per_chain = idata.posterior.sizes["draw"]
-        ll_jac_3d = ll_jac.reshape(n_chains, n_draws_per_chain, 1)  # broadcast over obs
-
-        new_vars = {}
-        for var_name in list(idata.log_likelihood.data_vars):
-            da = idata.log_likelihood[var_name]
-            # Use numpy addition + broadcast to avoid xarray alignment issues
-            # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
-            new_vals = da.values + ll_jac_3d
-            new_vars[var_name] = xr.DataArray(
-                new_vals,
-                dims=da.dims,
-                coords={k: v for k, v in da.coords.items() if k != da.dims[-1]},
-            )
-
-        idata["log_likelihood"] = xr.Dataset(new_vars)
-
-    @property
-    def inference_data(self) -> Optional[az.InferenceData]:
-        """Return the ArviZ InferenceData from the most recent fit.
-
-        Returns
-        -------
-        arviz.InferenceData or None
-            The inference data object, or ``None`` if the model has not
-            been fit yet.
-        """
-        return self._idata
-
-    @property
-    def pymc_model(self) -> Optional[pm.Model]:
-        """Return the PyMC model object built for the most recent fit.
-
-        Returns
-        -------
-        pymc.Model or None
-            The model object used by :meth:`fit`, or ``None`` if the instance
-            has not been fit yet.
-        """
-        return self._pymc_model
-
-    def _require_fit(self):
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet. Call .fit() first.")
-
-    def _posterior_mean(self, var: str) -> np.ndarray:
-        return self._idata.posterior[var].mean(("chain", "draw")).to_numpy()
-
-    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
-        """Return posterior summary table.
-
-        Parameters
-        ----------
-        var_names : list, optional
-            Variable names to include.
-        **kwargs
-            Additional arguments passed to :func:`arviz.summary`.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Posterior summary table.
-        """
-        self._require_fit()
-        summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
-        return self._rename_summary_index(summary_df)
-
-    def fitted_values(self) -> np.ndarray:
-        """Return fitted values at posterior mean parameters.
-
-        Returns
-        -------
-        np.ndarray
-            Fitted values on transformed panel scale.
-        """
-        self._require_fit()
-        return self._fitted_mean_from_posterior()
-
-    def residuals(self) -> np.ndarray:
-        """Return transformed residuals ``y - fitted``.
-
-        Returns
-        -------
-        np.ndarray
-            Residual vector on transformed panel scale.
-        """
-        self._require_fit()
-        return self._y - self.fitted_values()
-
-    # ------------------------------------------------------------------
-    # Class-level registry of applicable Bayesian LM specification tests.
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _lazy_lm_test(module: str, name: str):
-        """Return a callable that lazily imports ``name`` from ``module``.
-
-        Used in ``_spatial_diagnostics_tests`` registries to avoid
-        circular imports at module-load time.
-        """
-        import importlib
-
-        def _fn(model):
-            mod = importlib.import_module(module)
-            return getattr(mod, name)(model)
-
-        return _fn
-
-    _spatial_diagnostics_tests: list[tuple] = []
-
-    def spatial_diagnostics(self) -> pd.DataFrame:
-        """Run Bayesian LM specification tests and return a summary table.
-
-        Iterates over the class-level ``_spatial_diagnostics_tests`` registry
-        and calls each test function on this fitted model, collecting the
-        results into a tidy DataFrame.  The set of tests depends on the
-        model type — for example, an OLSPanelFE model runs Panel-LM-Lag,
-        Panel-LM-Error, Panel-LM-SDM-Joint, and Panel-LM-SLX-Error-Joint.
-
-        Requires the model to have been fit (``.fit()`` called) and a
-        spatial weights matrix ``W`` to have been supplied at construction
-        time.
-
-        Returns
-        -------
-        pandas.DataFrame
-            DataFrame indexed by test name with columns:
-
-            ==============  =====================================================
-            Column          Description
-            ==============  =====================================================
-            statistic       Posterior mean of the LM statistic
-            median          Posterior median of the LM statistic
-            df              Degrees of freedom for the :math:`\\chi^2` reference
-            p_value         Bayesian p-value: ``1 - chi2.cdf(mean, df)``
-            ci_lower        Lower bound of 95% credible interval (2.5%)
-            ci_upper        Upper bound of 95% credible interval (97.5%)
-            ==============  =====================================================
-
-            The DataFrame has ``attrs["model_type"]`` (class name) and
-            ``attrs["n_draws"]`` (total posterior draws) metadata.
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been fit yet.
-
-        See Also
-        --------
-        spatial_diagnostics_decision : Model-selection decision based on
-            the test results.
-        """
-        from .base import SpatialModel
-
-        self._require_fit()
-        return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
-
-    def spatial_diagnostics_decision(
-        self, alpha: float = 0.05, format: str = "graphviz"
-    ) -> Any:
-        """Return a model-selection decision from Bayesian LM test results.
-
-        Implements the decision tree from :cite:t:`koley2024UseNot`
-        (the Bayesian analogue of the classical ``stge_kb`` procedure
-        in :cite:t:`anselin1996SimpleDiagnostic`), adapted for panel models
-        following :cite:t:`elhorst2014SpatialEconometrics`.
-
-        Parameters
-        ----------
-        alpha : float, default 0.05
-            Significance level for the Bayesian p-values.
-        format : {"graphviz", "ascii", "model"}, default "graphviz"
-            Output format. ``"model"`` returns the recommended-model name
-            string. ``"ascii"`` returns an indented box-drawing rendering
-            of the full decision tree with the chosen path highlighted.
-            ``"graphviz"`` returns a :class:`graphviz.Digraph` object that
-            renders inline in Jupyter; if the optional ``graphviz`` package
-            is not installed a :class:`UserWarning` is issued and the
-            ASCII rendering is returned instead.
-
-        Returns
-        -------
-        str or graphviz.Digraph
-            Recommended model name when ``format="model"``, an ASCII tree
-            string when ``format="ascii"``, or a ``graphviz.Digraph`` when
-            ``format="graphviz"`` (with ASCII fallback on missing dep).
-
-        See Also
-        --------
-        spatial_diagnostics : Compute the Bayesian LM test statistics.
-
-        References
-        ----------
-        :cite:t:`koley2024UseNot`, :cite:t:`anselin1996SimpleDiagnostic`,
-        :cite:t:`elhorst2014SpatialEconometrics`
-        """
-        from ..diagnostics import _decision_trees as _dt
-
-        diag = self.spatial_diagnostics()
-        model_type = self.__class__.__name__
-
-        def _sig(test_name: str) -> bool:
-            if test_name not in diag.index:
-                return False
-            pval = diag.loc[test_name, "p_value"]
-            return not np.isnan(pval) and pval < alpha
-
-        def _lag_le_error() -> bool:
-            return (
-                diag.loc["Panel-LM-Lag", "p_value"]
-                <= diag.loc["Panel-LM-Error", "p_value"]
-            )
-
-        def _robust_lag_le_error() -> bool:
-            # Panel-OLS tree tie-break.  See cross-sectional analogue in
-            # ``base.SpatialModel.spatial_diagnostics_decision``.
-            return (
-                diag.loc["Panel-Robust-LM-Lag", "p_value"]
-                <= diag.loc["Panel-Robust-LM-Error", "p_value"]
-            )
-
-        def _lag_sdm_le_error_sdem() -> bool:
-            return (
-                diag.loc["Panel-Robust-LM-Lag-SDM", "p_value"]
-                <= diag.loc["Panel-Robust-LM-Error-SDEM", "p_value"]
-            )
-
-        spec = _dt.get_panel_spec(model_type)
-        decision, path = _dt.evaluate(
-            spec,
-            sig_lookup=_sig,
-            predicate_lookup={
-                "panel_lag_pval_le_error_pval": _lag_le_error,
-                "panel_robust_lag_pval_le_error_pval": _robust_lag_le_error,
-                "panel_lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
-            },
-        )
-
-        p_values: dict[str, float] = {}
-        for test_name in diag.index:
-            pv = diag.loc[test_name, "p_value"]
-            if not np.isnan(pv):
-                p_values[str(test_name)] = float(pv)
-
-        return _dt.render(
-            spec,
-            path,
-            decision,
-            p_values=p_values,
-            alpha=alpha,
-            fmt=format,
-            title=f"{model_type} decision tree (alpha={alpha})",
-        )
-
-    def spatial_effects(
-        self, return_posterior_samples: bool = False
-    ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
-        """Compute Bayesian inference for direct, indirect, and total impacts.
-
-        Computes impact measures for each posterior draw, then summarises
-        the posterior distribution with means, 95% credible intervals, and
-        Bayesian p-values.
-
-        Parameters
-        ----------
-        return_posterior_samples : bool, optional
-            If ``True``, return a ``(DataFrame, dict)`` tuple where the
-            dict contains the full posterior draws under keys
-            ``"direct"``, ``"indirect"``, and ``"total"``.  Default
-            ``False``.
-
-        Returns
-        -------
-        pd.DataFrame or tuple of (pd.DataFrame, dict)
-            If *return_posterior_samples* is ``False`` (default), returns
-            a DataFrame indexed by feature names with columns for posterior
-            means, credible-interval bounds, and Bayesian p-values.
-
-            If *return_posterior_samples* is ``True``, returns
-            ``(DataFrame, dict)`` where the dict has keys
-            ``"direct"``, ``"indirect"``, ``"total"``, each mapping
-            to a ``(G, k)`` array of posterior draws.
-        """
-        from ..diagnostics.spatial_effects import _build_effects_dataframe
-
-        self._require_fit()
-        direct_samples, indirect_samples, total_samples = (
-            self._compute_spatial_effects_posterior()
-        )
-
-        # Determine feature names based on the shape of the posterior samples.
-        # Models with WX terms (SDM, SLX, SDEM) report effects only for
-        # lagged covariates (k_wx columns), while models without WX terms
-        # (SAR, SEM) report effects for non-intercept covariates.
-        k_effects = direct_samples.shape[1]
-        if (
-            hasattr(self, "_wx_feature_names")
-            and len(self._wx_feature_names) == k_effects
-        ):
-            feature_names = list(self._wx_feature_names)
-        elif (
-            hasattr(self, "_nonintercept_feature_names")
-            and len(self._nonintercept_feature_names) == k_effects
-        ):
-            feature_names = list(self._nonintercept_feature_names)
-        else:
-            feature_names = list(self._feature_names[:k_effects])
-
-        # Determine model type label
-        model_type = self.__class__.__name__
-
-        df = _build_effects_dataframe(
-            direct_samples=direct_samples,
-            indirect_samples=indirect_samples,
-            total_samples=total_samples,
-            feature_names=feature_names,
-            model_type=model_type,
-        )
-
-        if return_posterior_samples:
-            posterior_samples = {
-                "direct": direct_samples,
-                "indirect": indirect_samples,
-                "total": total_samples,
-            }
-            return df, posterior_samples
-        return df
+        # Caller already supplied a full (N*T)×(N*T) matrix.
+        return sp.csr_matrix(W)
 
     def __repr__(self) -> str:
         n, k = self._X.shape

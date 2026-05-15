@@ -1,4 +1,7 @@
 from .bayesfactor import (
+    ModelComparison as ModelComparison,
+)
+from .bayesfactor import (
     bayes_factor_compare_models as bayes_factor_compare_models,
 )
 from .bayesfactor import (

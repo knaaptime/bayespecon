@@ -23,6 +23,7 @@ import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
+from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
 from .base import SpatialModel
 
 
@@ -45,26 +46,7 @@ class SARNegativeBinomial(SpatialModel):
     Overdispersion is captured by the NB2 parameter ``alpha``.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_test"
-            ),
-            "LM-Error",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_test"
-            ),
-            "LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_test"
-            ),
-            "Robust-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_NEGBIN_SUITE.tests
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -89,8 +71,9 @@ class SARNegativeBinomial(SpatialModel):
         self._Wy = np.asarray(self._W_sparse @ self._y, dtype=np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
-        rho_lower = self.priors.get("rho_lower", -1.0)
-        rho_upper = self.priors.get("rho_upper", 1.0)
+        bounds = self._logdet_bounds
+        rho_lower = bounds.rho_min
+        rho_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         alpha_sigma = self.priors.get("alpha_sigma", 10.0)

@@ -123,7 +123,7 @@ class GraphTheme:
     leaf_chosen: NodeStyle = field(default_factory=lambda: NodeStyle())
     leaf_other: NodeStyle = field(default_factory=lambda: NodeStyle())
 
-    node_on_path: dict[str, str] | None = None
+    node_on_path: NodeStyle | None = None
     edge_on_path: EdgeStyle = field(default_factory=lambda: EdgeStyle())
     edge_off_path: EdgeStyle = field(default_factory=lambda: EdgeStyle())
 

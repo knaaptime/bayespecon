@@ -15,12 +15,13 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from ..diagnostics.lmtests import SAR_SUITE
 from .base import (
     SpatialModel,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
 )
+from .priors import SARPriors
 
 
 class SAR(SpatialModel):
@@ -75,8 +76,8 @@ class SAR(SpatialModel):
         How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
         auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
         ``"chebyshev"``. Other options: ``"exact"`` (symbolic det,
-        slow for ``n > 500``), ``"dense_grid"``, ``"sparse_grid"``,
-        ``"spline"``, ``"mc"``, ``"ilu"``.
+        slow for ``n > 500``), ``"grid_dense"``, ``"grid_sparse"``,
+        ``"sparse_spline"``, ``"grid_mc"``, ``"grid_ilu"``.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
         to heavy-tailed outliers. See *Robust regression* below.
@@ -105,32 +106,9 @@ class SAR(SpatialModel):
     tails). The lower bound of 2 ensures the variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_from_sar_test"
-            ),
-            "LM-Error",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_test"
-            ),
-            "LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_test"
-            ),
-            "Robust-LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sar_test"
-            ),
-            "Robust-LM-Error",
-        ),
-    ]
+    _priors_cls = SARPriors
+
+    _spatial_diagnostics_tests = SAR_SUITE.tests
 
     def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
         """Construct the PyMC model for SAR regression.
@@ -148,8 +126,9 @@ class SAR(SpatialModel):
         """
         assert self._X.shape[1] > 0, "Design matrix must have at least one column"
 
-        rho_lower = self.priors.get("rho_lower", -1.0)
-        rho_upper = self.priors.get("rho_upper", 1.0)
+        bounds = self._logdet_bounds
+        rho_lower = bounds.rho_min
+        rho_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
@@ -225,14 +204,17 @@ class SAR(SpatialModel):
 
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
+        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
 
         # Build model with log_likelihood computation if requested
         model = self._build_pymc_model(compute_log_likelihood=compute_log_likelihood)
         self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        idata_kwargs = self.backend.prepare_idata_kwargs(
+            idata_kwargs, model, nuts_sampler
+        )
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
 
         with model:
             self._idata = pm.sample(

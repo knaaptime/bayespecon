@@ -14,7 +14,9 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
+from ..diagnostics.lmtests import OLS_SUITE
 from .base import SpatialModel
+from .priors import OLSPriors
 
 
 class OLS(SpatialModel):
@@ -73,44 +75,9 @@ class OLS(SpatialModel):
         If True, use a Student-t error distribution instead of Normal.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_test"
-            ),
-            "LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_test"
-            ),
-            "LM-Error",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_sdm_joint_test"
-            ),
-            "LM-SDM-Joint",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_slx_error_joint_test"
-            ),
-            "LM-SLX-Error-Joint",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_test"
-            ),
-            "Robust-LM-Lag",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_test"
-            ),
-            "Robust-LM-Error",
-        ),
-    ]
+    _priors_cls = OLSPriors
+
+    _spatial_diagnostics_tests = OLS_SUITE.tests
 
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for Bayesian OLS regression.

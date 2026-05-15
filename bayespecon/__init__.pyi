@@ -32,6 +32,9 @@ from .dgp.flows import (
     generate_poisson_flow_data as generate_poisson_flow_data,
 )
 from .diagnostics import (
+    ModelComparison as ModelComparison,
+)
+from .diagnostics import (
     SpatialMCMCReport as SpatialMCMCReport,
 )
 from .diagnostics import (
