@@ -9,6 +9,7 @@ import hashlib
 import os
 from collections import OrderedDict
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Mapping
 
 import numpy as np
@@ -23,6 +24,57 @@ from scipy.interpolate import CubicSpline
 _LOGDET_GRID_EIG_MAX = 4000
 _LOGDET_FN_CACHE_MAXSIZE = 64
 _LOGDET_FN_CACHE: OrderedDict[tuple, Any] = OrderedDict()
+
+
+class LogDetMethod(str, Enum):
+    """Canonical names for the log-determinant approximation methods.
+
+    Each member is a string so the enum members can be used interchangeably
+    with their string values (e.g. ``LogDetMethod.EIGENVALUE == "eigenvalue"``).
+    """
+
+    EXACT = "exact"
+    EIGENVALUE = "eigenvalue"
+    GRID_DENSE = "grid_dense"
+    GRID_SPARSE = "grid_sparse"
+    SPARSE_SPLINE = "sparse_spline"
+    GRID_MC = "grid_mc"
+    TRACE_MC = "trace_mc"
+    GRID_ILU = "grid_ilu"
+    CHEBYSHEV = "chebyshev"
+
+
+VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
+
+
+def resolve_logdet_method(method: str | None, *, n: int) -> str:
+    """Validate ``method`` and auto-select when ``None``.
+
+    Parameters
+    ----------
+    method
+        User-supplied method name, or ``None`` for auto-selection.
+    n
+        Spatial dimension; used by auto-selection.
+
+    Returns
+    -------
+    str
+        Canonical method name (always one of :data:`VALID_LOGDET_METHODS`).
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not a recognised method name.
+    """
+    if method is None:
+        return _auto_logdet_method(int(n))
+    if method not in VALID_LOGDET_METHODS:
+        valid = ", ".join(sorted(VALID_LOGDET_METHODS))
+        raise ValueError(
+            f"Unknown logdet method: {method!r}. Valid options: {valid}."
+        )
+    return method
 
 
 @dataclass(frozen=True)
@@ -73,14 +125,14 @@ def resolve_logdet_bounds(
             lo = lo_prior
             hi = hi_prior
             source = "prior"
-        elif resolved_method in {"spline", "mc"}:
+        elif resolved_method in {"sparse_spline", "grid_mc"}:
             lo = 1e-5
             hi = 1.0
         else:
             lo = -1.0
             hi = 1.0
 
-    if resolved_method in {"spline", "mc"} and lo < 0.0:
+    if resolved_method in {"sparse_spline", "grid_mc"} and lo < 0.0:
         raise ValueError(
             f"method='{resolved_method}' requires a nonnegative rho range; "
             "use priors/overrides with rho_min >= 0, or choose a different method."
@@ -515,7 +567,7 @@ def chebyshev(
         - ``coeffs`` : Chebyshev coefficients ``c_0, c_1, …, c_{m-1}``.
         - ``rmin``, ``rmax`` : interval bounds (echoed back).
         - ``order`` : polynomial degree used.
-        - ``method`` : ``'eigenvalue'`` or ``'mc'`` indicating how
+        - ``method`` : ``'eigenvalue'`` or ``'grid_mc'`` indicating how
           coefficients were computed.
 
     Notes
@@ -617,7 +669,7 @@ def chebyshev(
         for idx, r in enumerate(rho_nodes):
             powers = np.power(r, np.arange(1, order + 1, dtype=np.float64))
             logdet_at_nodes[idx] = -powers @ td
-        method_used = "mc"
+        method_used = "grid_mc"
 
     # Compute Chebyshev coefficients via DCT-I
     # c_j = (2 - δ_{j,0}) / m * Σ_{k=1}^{m} f(ρ_k*) cos(j(2k-1)π / (2m))
@@ -1231,7 +1283,7 @@ def _auto_logdet_method(n: int) -> str:
     return "eigenvalue" if n <= cutoff else "chebyshev"
 
 
-_GRID_SPLINE_METHODS = ("dense_grid", "sparse_grid", "spline", "mc", "ilu")
+_GRID_SPLINE_METHODS = ("grid_dense", "grid_sparse", "sparse_spline", "grid_mc", "grid_ilu")
 
 
 def _build_grid_spline(
@@ -1243,21 +1295,21 @@ def _build_grid_spline(
     clamp_nonnegative: bool,
 ) -> CubicSpline:
     """Build a CubicSpline approximation for grid/interpolation methods."""
-    if method == "dense_grid":
+    if method == "grid_dense":
         rho_grid, logdet_grid = _build_logdet_grid(W_dense, rho_min, rho_max)
         return CubicSpline(rho_grid, logdet_grid)
-    if method == "sparse_grid":
+    if method == "grid_sparse":
         out = sparse_grid(W_dense, rho_min, rho_max)
         return CubicSpline(out["rho"], out["lndet"])
-    if method == "spline":
+    if method == "sparse_spline":
         rmin = max(rho_min, 0.0) if clamp_nonnegative else rho_min
         out = spline(W_dense, rmin, rho_max)
         return CubicSpline(out["rho"], out["lndet"])
-    if method == "mc":
+    if method == "grid_mc":
         rmin = max(rho_min, 1e-5) if clamp_nonnegative else rho_min
         out = mc(order=50, iter=30, W=W_dense, rmin=rmin, rmax=rho_max)
         return CubicSpline(out["rho"], out["lndet"])
-    if method == "ilu":
+    if method == "grid_ilu":
         out = ilu(W_dense, rho_min, rho_max)
         return CubicSpline(out["rho"], out["lndet"])
     raise ValueError(
@@ -1320,8 +1372,7 @@ def make_logdet_numpy_fn(
         Function ``(rho: float) -> float`` computing log|I - rho*W|.
     """
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
-    if method is None:
-        method = _auto_logdet_method(n)
+    method = resolve_logdet_method(method, n=n)
 
     if method == "eigenvalue":
         if eigs is None:
@@ -1356,7 +1407,7 @@ def make_logdet_numpy_fn(
 
         return _cheb_numpy
 
-    elif method == "mc_poly":
+    elif method == "trace_mc":
         if sp.issparse(W_sparse):
             W_sp = W_sparse.tocsr().astype(np.float64)
         else:
@@ -1425,8 +1476,7 @@ def make_logdet_numpy_vec_fn(
         Function ``(rho_arr: np.ndarray) -> np.ndarray`` of shape ``(G,)``.
     """
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
-    if method is None:
-        method = _auto_logdet_method(n)
+    method = resolve_logdet_method(method, n=n)
 
     if method == "eigenvalue":
         if eigs is None:
@@ -1469,7 +1519,7 @@ def make_logdet_numpy_vec_fn(
 
         return _vec_chebyshev
 
-    if method == "mc_poly":
+    if method == "trace_mc":
         if sp.issparse(W_sparse):
             W_sp = W_sparse.tocsr().astype(np.float64)
         else:
@@ -1533,7 +1583,7 @@ def make_logdet_fn(
     W : np.ndarray or scipy.sparse matrix
         Either a 2-D dense ``(n, n)`` spatial weights matrix **or** a 1-D
         array of pre-computed real eigenvalues.  Passing eigenvalues skips the
-        O(n³) decomposition inside this function; the ``'dense_grid'`` and
+        O(n³) decomposition inside this function; the ``'grid_dense'`` and
         ``'exact'`` methods are not available in that case and fall back to
         ``'eigenvalue'``.
     method : str
@@ -1543,20 +1593,20 @@ def make_logdet_fn(
         ``"eigenvalue"`` — pre-compute W's eigenvalues once (O(n³)); every
         subsequent evaluation costs O(n) and is exact.
         ``"exact"`` — exact O(n³) symbolic det via pytensor (slow for n > 500).
-        ``"dense_grid"`` — dense eigenvalue grid + cubic-spline interpolation.
-        ``"sparse_grid"`` — sparse-LU grid + cubic-spline interpolation
+        ``"grid_dense"`` — dense eigenvalue grid + cubic-spline interpolation.
+        ``"grid_sparse"`` — sparse-LU grid + cubic-spline interpolation
         for large sparse W.
-        ``"spline"`` — sparse-LU + cubic-spline interpolation on
+        ``"sparse_spline"`` — sparse-LU + cubic-spline interpolation on
         ``[max(rho_min, 0), rho_max]``.
-        ``"mc"`` — Monte Carlo trace approximation
+        ``"grid_mc"`` — Monte Carlo trace approximation
         (:cite:p:`barry1999MonteCarlo`) + spline interpolation.
-        ``"ilu"`` — ILU-based approximation
+        ``"grid_ilu"`` — ILU-based approximation
         + spline interpolation.
         ``"chebyshev"`` — Chebyshev polynomial approximation
         (:cite:p:`pace2004ChebyshevApproximation`); near-minimax
         polynomial evaluated via Clenshaw's algorithm.
         O(m) per evaluation after O(n³) or O(R·n·m) pre-computation.
-        ``"mc_poly"`` — Hutchinson stochastic trace estimator with a
+        ``"trace_mc"`` — Hutchinson stochastic trace estimator with a
         truncated polynomial expansion (used by the flow models).
     rho_min : float, default=-1.0
         Lower bound for the grid method.
@@ -1580,26 +1630,26 @@ def make_logdet_fn(
     * ``"eigenvalue"`` and ``"exact"`` — accept the full numerical
       stability domain ``rho ∈ (1/min(eigs), 1/max(eigs))``; for
       row-standardised W this reduces to ``rho ∈ (-1, 1)``.
-    * ``"dense_grid"`` and ``"sparse_grid"`` — accept any
+    * ``"grid_dense"`` and ``"grid_sparse"`` — accept any
       ``rho ∈ (rho_min + 1e-6, rho_max - 1e-6)``; outside this interval
       the cubic spline extrapolates with rapidly degrading accuracy and
       **must not** be trusted.  Set ``rho_min`` / ``rho_max`` to match
       your prior bounds.
-        * ``"spline"`` — restricted to ``rho ≥ 0`` because this routine builds
+        * ``"sparse_spline"`` — restricted to ``rho ≥ 0`` because this routine builds
             its grid on
       ``[max(rho_min, 0), rho_max]``; passing negative ``rho`` is
       silently extrapolated, which is rarely intended.
-    * ``"mc"`` — restricted to ``rho ≥ 1e-5`` for the same reason
+    * ``"grid_mc"`` — restricted to ``rho ≥ 1e-5`` for the same reason
       (``mc`` builds the grid on ``[max(rho_min, 1e-5), rho_max]``);
       negative ρ is supported only via separate calls with reversed
       sign on a row-standardised W.
-    * ``"ilu"`` — accepts any ``rho`` inside the supplied grid bounds,
+    * ``"grid_ilu"`` — accepts any ``rho`` inside the supplied grid bounds,
       but the ILU factorisation degrades with ``|rho|`` approaching the
       spectral boundary and should be paired with a tight prior.
     * ``"chebyshev"`` — exact within ``[rmin, rmax] = [rho_min, rho_max]``
       up to the polynomial order (default 20); evaluation outside the
       Chebyshev interval diverges rapidly and should never be attempted.
-    * ``"mc_poly"`` — accuracy controlled by the polynomial order and
+    * ``"trace_mc"`` — accuracy controlled by the polynomial order and
       number of Hutchinson probes; intended for very large sparse W
       where eigendecomposition is infeasible.
     """
@@ -1607,8 +1657,7 @@ def make_logdet_fn(
 
     if sp.issparse(W):
         W_sparse = W.tocsr().astype(np.float64)
-        if method is None:
-            method = _auto_logdet_method(W_sparse.shape[0])
+        method = resolve_logdet_method(method, n=W_sparse.shape[0])
 
         if method == "chebyshev":
             out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max)
@@ -1630,8 +1679,7 @@ def make_logdet_fn(
     if W.ndim == 1:
         # 1-D eigenvalue array supplied — skip O(n³) decomposition.
         eigs = W
-        if method is None:
-            method = "eigenvalue"
+        method = resolve_logdet_method(method, n=eigs.shape[0])
         if method == "eigenvalue":
             if T == 1:
                 return lambda rho: logdet_eigenvalue(rho, eigs)
@@ -1649,24 +1697,23 @@ def make_logdet_fn(
                 return val if T == 1 else T * val
 
             return _chebyshev_eig_interp
-        # Other methods (dense_grid, exact, sparse_grid, spline, mc, ilu)
+        # Other methods (grid_dense, exact, grid_sparse, sparse_spline, grid_mc, grid_ilu)
         # require the full matrix; fall back to eigenvalue with a note.
-        if method in ("dense_grid", "exact", "sparse_grid", "spline", "mc", "ilu"):
+        if method in ("grid_dense", "exact", "grid_sparse", "sparse_spline", "grid_mc", "grid_ilu"):
             if T == 1:
                 return lambda rho: logdet_eigenvalue(rho, eigs)
             return lambda rho: T * logdet_eigenvalue(rho, eigs)
         raise ValueError(
-            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'chebyshev', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu'."
+            f"Unsupported logdet method for eigenvalue input: {method!r}."
         )
 
     # 2-D dense matrix path.
     W_dense = W
-    if method is None:
-        method = _auto_logdet_method(W_dense.shape[0])
-    if method in ("spline", "mc") and rho_min < 0.0:
+    method = resolve_logdet_method(method, n=W_dense.shape[0])
+    if method in ("sparse_spline", "grid_mc") and rho_min < 0.0:
         raise ValueError(
             f"method='{method}' is defined for nonnegative rho ranges; "
-            "use rho_min >= 0 or choose 'eigenvalue'/'exact'/'dense_grid'/'sparse_grid'/'ilu'/'chebyshev'."
+            "use rho_min >= 0 or choose 'eigenvalue'/'exact'/'grid_dense'/'grid_sparse'/'grid_ilu'/'chebyshev'."
         )
     if method == "eigenvalue":
         eigs = np.linalg.eigvals(W_dense).real
@@ -1697,7 +1744,7 @@ def make_logdet_fn(
             return val if T == 1 else T * val
 
         return _chebyshev_interp
-    elif method == "mc_poly":
+    elif method == "trace_mc":
         W_sp = sp.csr_matrix(W_dense.astype(np.float64))
         traces = compute_flow_traces(W_sp, miter=30, riter=50)
 
@@ -1708,7 +1755,7 @@ def make_logdet_fn(
         return _mc_poly_eval
     else:
         raise ValueError(
-            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'dense_grid', 'sparse_grid', 'spline', 'mc', 'ilu', 'chebyshev', 'mc_poly'."
+            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'grid_dense', 'grid_sparse', 'sparse_spline', 'grid_mc', 'grid_ilu', 'chebyshev', 'trace_mc'."
         )
 
 
@@ -1761,18 +1808,15 @@ def get_cached_logdet_fn(
     logdet approximations across model instances.
     """
     T = int(T)
-    if method is None:
-        if sp.issparse(W):
-            n = int(W.shape[0])
-            resolved_method = _auto_logdet_method(n)
-        else:
-            W_arr = np.asarray(W)
-            if W_arr.ndim == 1:
-                resolved_method = "eigenvalue"
-            else:
-                resolved_method = _auto_logdet_method(int(W_arr.shape[0]))
+    if sp.issparse(W):
+        n_w = int(W.shape[0])
     else:
-        resolved_method = method
+        W_arr = np.asarray(W)
+        n_w = int(W_arr.shape[0])
+    if method is None and not sp.issparse(W) and W_arr.ndim == 1:
+        resolved_method = "eigenvalue"
+    else:
+        resolved_method = resolve_logdet_method(method, n=n_w)
 
     key = (
         _logdet_w_signature(W),
@@ -1835,14 +1879,14 @@ def make_flow_separable_logdet(
         eigendecomposition.  Exact for any rho.
         ``"chebyshev"`` — near-minimax Chebyshev polynomial; O(m) per step
         after O(n³) or O(R·n·m) precomputation via :func:`chebyshev`.
-        ``"mc_poly"`` — Barry-Pace trace polynomial evaluated via Horner's
+        ``"trace_mc"`` — Barry-Pace trace polynomial evaluated via Horner's
         method; O(miter) per step after O(riter·n·miter) stochastic
         precomputation via :func:`compute_flow_traces`.  Valid for
         :math:`\rho \in [-1, 1]`, unlike the grid-based :func:`mc`.
     miter : int, default 30
-        Trace orders to estimate (``"mc_poly"`` only).
+        Trace orders to estimate (``"trace_mc"`` only).
     riter : int, default 50
-        Monte Carlo probe count (``"mc_poly"`` only).
+        Monte Carlo probe count (``"trace_mc"`` only).
     rho_min : float, default -1.0
         Lower bound of the rho domain (``"chebyshev"`` only).
     rho_max : float, default 1.0
@@ -1850,7 +1894,7 @@ def make_flow_separable_logdet(
     cheb_order : int, default 20
         Chebyshev polynomial order (``"chebyshev"`` only).
     random_state : int, optional
-        Seed for MC trace estimation (``"mc_poly"`` only).
+        Seed for MC trace estimation (``"trace_mc"`` only).
 
     Returns
     -------
@@ -1883,7 +1927,7 @@ def make_flow_separable_logdet(
             n * logdet_chebyshev(rho_d, coeffs, rmin=rmin_cb, rmax=rmax_cb)
             + n * logdet_chebyshev(rho_o, coeffs, rmin=rmin_cb, rmax=rmax_cb)
         )
-    elif method == "mc_poly":
+    elif method == "trace_mc":
         traces = compute_flow_traces(
             W_sp, miter=miter, riter=riter, random_state=random_state
         )
@@ -1894,7 +1938,7 @@ def make_flow_separable_logdet(
     else:
         raise ValueError(
             f"make_flow_separable_logdet: method={method!r} not recognised. "
-            "Choose one of: 'eigenvalue', 'chebyshev', 'mc_poly'."
+            "Choose one of: 'eigenvalue', 'chebyshev', 'trace_mc'."
         )
 
 
@@ -1928,10 +1972,10 @@ def make_flow_separable_logdet_numpy(
 
     if method is None:
         method = _auto_logdet_method(n)
-    if method not in {"eigenvalue", "chebyshev", "mc_poly"}:
+    if method not in {"eigenvalue", "chebyshev", "trace_mc"}:
         raise ValueError(
             f"make_flow_separable_logdet_numpy: method={method!r} not recognised. "
-            "Choose one of: 'eigenvalue', 'chebyshev', 'mc_poly'."
+            "Choose one of: 'eigenvalue', 'chebyshev', 'trace_mc'."
         )
 
     eigs = None

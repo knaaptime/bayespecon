@@ -258,7 +258,7 @@ class FlowModel(ABC):
         How to compute :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`.
         ``"traces"`` uses Barry-Pace stochastic traces with the multinomial
         Kronecker identity (the default and recommended method).
-        ``"eigenvalue"``, ``"chebyshev"``, ``"mc_poly"`` (separable
+        ``"eigenvalue"``, ``"chebyshev"``, ``"trace_mc"`` (separable
         flow models only) use the Kronecker eigenvalue factorisation.
     restrict_positive : bool, default True
         If True, use a ``pm.Dirichlet`` prior that restricts :math:`\\rho_d,
@@ -417,7 +417,7 @@ class FlowModel(ABC):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
+        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "trace_mc"}
         if logdet_method in _SEPARABLE_METHODS:
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
@@ -1382,18 +1382,18 @@ class SARFlowSeparable(FlowModel):
         Number of regional attribute columns (destination/origin variable
         pairs). Inferred from ``dest_*``/``orig_*`` column names when the
         standard LeSage layout is used.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant
         :math:`\\log|I_n - \\rho_d W| + \\log|I_n - \\rho_o W|`.
-        ``"eigenvalue"`` is exact; ``"chebyshev"`` and ``"mc_poly"`` are
+        ``"eigenvalue"`` is exact; ``"chebyshev"`` and ``"trace_mc"`` are
         polynomial approximations for large *n*.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"`` methods).
+        ``"trace_mc"`` methods).
     titer : int, default 800
         Geometric tail cutoff for series-based log-determinant variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by ``"trace_mc"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1418,7 +1418,7 @@ class SARFlowSeparable(FlowModel):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
         if method not in _VALID:
             raise ValueError(
                 f"SARFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
@@ -1437,7 +1437,7 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -1472,7 +1472,7 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         return self._separable_logdet_numpy_fn(rho_d, rho_o)
 
@@ -1773,15 +1773,15 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         Number of regional attribute columns. Inferred from
         ``dest_*``/``orig_*`` column names when the standard LeSage
         layout is used.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        ``"trace_mc"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by ``"trace_mc"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1853,7 +1853,7 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "PoissonSARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
@@ -2374,7 +2374,7 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "NegativeBinomialSARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
@@ -2789,15 +2789,15 @@ class SEMFlowSeparable(SEMFlow):
         Number of regional attribute columns. Inferred from
         ``dest_*``/``orig_*`` column names when the standard LeSage
         layout is used.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        ``"trace_mc"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by ``"trace_mc"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -2821,7 +2821,7 @@ class SEMFlowSeparable(SEMFlow):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
         if method not in _VALID:
             raise ValueError(
                 f"SEMFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
@@ -2840,7 +2840,7 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -2883,6 +2883,6 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         return self._separable_logdet_numpy_fn(lam_d, lam_o)

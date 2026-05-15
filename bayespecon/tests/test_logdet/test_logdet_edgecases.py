@@ -46,7 +46,7 @@ def test_spline_validation():
 
 def test_make_logdet_fn_unknown_method_raises():
     W = _toy_w(4)
-    with pytest.raises(ValueError, match="Unknown method"):
+    with pytest.raises(ValueError, match="Unknown logdet method"):
         logdet.make_logdet_fn(W, method="not-a-method")
 
 
@@ -63,16 +63,16 @@ def test_chebyshev_parameter_validation():
 def test_make_logdet_fn_1d_eigs_falls_back_to_eigenvalue_for_grid_like_methods():
     W = _toy_w(4)
     eigs = np.linalg.eigvals(W).real
-    fn = logdet.make_logdet_fn(eigs, method="dense_grid")
+    fn = logdet.make_logdet_fn(eigs, method="grid_dense")
     assert callable(fn)
 
 
 def test_make_logdet_fn_int_mc_reject_negative_rho_min_for_matrix_input():
     W = _toy_w(4)
     with pytest.raises(ValueError, match="nonnegative rho"):
-        logdet.make_logdet_fn(W, method="spline", rho_min=-0.5, rho_max=0.5)
+        logdet.make_logdet_fn(W, method="sparse_spline", rho_min=-0.5, rho_max=0.5)
     with pytest.raises(ValueError, match="nonnegative rho"):
-        logdet.make_logdet_fn(W, method="mc", rho_min=-0.5, rho_max=0.5)
+        logdet.make_logdet_fn(W, method="grid_mc", rho_min=-0.5, rho_max=0.5)
 
 
 def test_resolve_logdet_bounds_uses_prior_by_default():
@@ -95,14 +95,14 @@ def test_resolve_logdet_bounds_requires_nonnegative_for_spline_mc():
     eigs = np.linalg.eigvals(W).real
     with pytest.raises(ValueError, match="nonnegative rho"):
         logdet.resolve_logdet_bounds(
-            "spline",
+            "sparse_spline",
             n=W.shape[0],
             eigs=eigs,
             priors={"rho_lower": -0.5, "rho_upper": 0.8},
         )
     with pytest.raises(ValueError, match="nonnegative rho"):
         logdet.resolve_logdet_bounds(
-            "mc",
+            "grid_mc",
             n=W.shape[0],
             eigs=eigs,
             priors={"rho_lower": -0.5, "rho_upper": 0.8},

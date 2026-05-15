@@ -261,7 +261,7 @@ class FlowPanelModel(ABC):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
+        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "trace_mc"}
         if self.logdet_method in _SEPARABLE_METHODS:
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
@@ -1163,7 +1163,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -1172,11 +1172,11 @@ class SARFlowSeparablePanel(FlowPanelModel):
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        ``"trace_mc"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by ``"trace_mc"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1201,7 +1201,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
         if method not in _VALID:
             raise ValueError(
                 f"SARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -1220,7 +1220,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -1257,7 +1257,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         return self._T * self._separable_logdet_numpy_fn(rho_d, rho_o)
 
@@ -1526,15 +1526,15 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         inferred from columns prefixed ``dest_`` if omitted.
     model : int, default 0
         Fixed-effects transform. **Only** ``0`` (pooled) is supported.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        ``"trace_mc"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by ``"trace_mc"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1580,7 +1580,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
             )
 
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
         if method not in _VALID:
             raise ValueError(
                 f"PoissonSARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -1601,7 +1601,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "PoissonSARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         n = self._n
         N = self._N_flow  # n²
@@ -2135,7 +2135,7 @@ class NegativeBinomialSARFlowSeparablePanel(PoissonSARFlowSeparablePanel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "NegativeBinomialSARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         n = self._n
         N = self._N_flow
@@ -2477,7 +2477,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -2486,11 +2486,11 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        ``"trace_mc"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by ``"trace_mc"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -2515,7 +2515,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
 
     def __init__(self, y, G, X, T, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
         if method not in _VALID:
             raise ValueError(
                 f"SEMFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -2535,7 +2535,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -2583,7 +2583,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
             )
         return self._T * self._separable_logdet_numpy_fn(lam_d, lam_o)
 

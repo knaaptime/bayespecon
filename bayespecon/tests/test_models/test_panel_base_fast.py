@@ -286,7 +286,7 @@ class TestSpatialPanelModelInit:
             W=W_graph,
             N=4,
             T=3,
-            logdet_method="sparse_grid",
+            logdet_method="grid_sparse",
         )
         assert getattr(model, "_W_eigs_cache", None) is None
 

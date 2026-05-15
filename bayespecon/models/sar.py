@@ -75,8 +75,8 @@ class SAR(SpatialModel):
         How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
         auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
         ``"chebyshev"``. Other options: ``"exact"`` (symbolic det,
-        slow for ``n > 500``), ``"dense_grid"``, ``"sparse_grid"``,
-        ``"spline"``, ``"mc"``, ``"ilu"``.
+        slow for ``n > 500``), ``"grid_dense"``, ``"grid_sparse"``,
+        ``"sparse_spline"``, ``"grid_mc"``, ``"grid_ilu"``.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
         to heavy-tailed outliers. See *Robust regression* below.

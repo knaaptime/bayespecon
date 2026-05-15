@@ -869,7 +869,7 @@ class TestPoissonFlowConstruction:
         built = model._build_pymc_model()
         assert built is not None
 
-    @pytest.mark.parametrize("logdet_method", ["eigenvalue", "chebyshev", "mc_poly"])
+    @pytest.mark.parametrize("logdet_method", ["eigenvalue", "chebyshev", "trace_mc"])
     def test_separable_construction_supports_logdet_methods(
         self, small_data, logdet_method
     ):
@@ -898,7 +898,7 @@ class TestPoissonFlowConstruction:
                 G,
                 small_data["X"],
                 col_names=small_data["col_names"],
-                logdet_method="spline",
+                logdet_method="sparse_spline",
                 trace_seed=0,
             )
 
@@ -1191,7 +1191,7 @@ ABS_TOL_SIGMA = 0.35
 class TestSARFlowSeparableLogdetMethods:
     """SARFlowSeparable fits without error for each logdet method."""
 
-    @pytest.fixture(params=["eigenvalue", "chebyshev", "mc_poly"], scope="class")
+    @pytest.fixture(params=["eigenvalue", "chebyshev", "trace_mc"], scope="class")
     def fitted_model(self, request):
         from bayespecon.dgp.flows import generate_flow_data
         from bayespecon.models.flow import SARFlowSeparable

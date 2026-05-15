@@ -76,8 +76,8 @@ class SDM(SpatialModel):
     logdet_method : str, optional
         How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
         auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
-        ``"chebyshev"``. Other options: ``"exact"``, ``"dense_grid"``,
-        ``"sparse_grid"``, ``"spline"``, ``"mc"``, ``"ilu"``.
+        ``"chebyshev"``. Other options: ``"exact"``, ``"grid_dense"``,
+        ``"grid_sparse"``, ``"sparse_spline"``, ``"grid_mc"``, ``"grid_ilu"``.
     robust : bool, default False
         If True, replace the Normal error with Student-t. See *Robust
         regression* below.

@@ -212,13 +212,13 @@ class SpatialModel(ABC):
         How to compute ``log|I - rho*W|``. ``"eigenvalue"`` (default for
         ``n <= 2000``) pre-computes W's eigenvalues once and evaluates
         O(n) per step; ``"exact"`` uses symbolic pytensor det (slow for
-        ``n > 500``); ``"dense_grid"`` uses dense eigenvalue grid +
+        ``n > 500``); ``"grid_dense"`` uses dense eigenvalue grid +
         cubic-spline interpolation (MATLAB-style ``lndetfull`` for dense
-        W); ``"sparse_grid"`` uses sparse-LU grid + cubic-spline
+        W); ``"grid_sparse"`` uses sparse-LU grid + cubic-spline
         interpolation (``lndetfull`` style for large sparse W);
-        ``"spline"`` uses sparse-LU + spline on ``[max(rho_min, 0),
-        rho_max]`` (``lndetint`` style); ``"mc"`` uses Monte Carlo
-        trace approximation (``lndetmc``); ``"ilu"`` uses ILU-based
+        ``"sparse_spline"`` uses sparse-LU + spline on ``[max(rho_min, 0),
+        rho_max]`` (``lndetint`` style); ``"grid_mc"`` uses Monte Carlo
+        trace approximation (``lndetmc``); ``"grid_ilu"`` uses ILU-based
         approximation (``lndetichol`` analog); ``"chebyshev"`` (default
         for ``n > 2000``) uses a Chebyshev polynomial approximation
         evaluated via Clenshaw's algorithm.

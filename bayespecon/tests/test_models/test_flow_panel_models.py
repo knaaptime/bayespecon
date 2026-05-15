@@ -241,7 +241,7 @@ class TestPoissonPanelModelBuild:
         assert pm_model is not None
         assert "rho_w" in pm_model.named_vars
 
-    @pytest.mark.parametrize("logdet_method", ["eigenvalue", "chebyshev", "mc_poly"])
+    @pytest.mark.parametrize("logdet_method", ["eigenvalue", "chebyshev", "trace_mc"])
     def test_poisson_separable_panel_supports_logdet_methods(self, logdet_method):
         n = 4
         T = 3
@@ -279,7 +279,7 @@ class TestPoissonPanelModelBuild:
                 T=T,
                 col_names=col_names,
                 model=0,
-                logdet_method="spline",
+                logdet_method="sparse_spline",
                 trace_seed=0,
             )
 

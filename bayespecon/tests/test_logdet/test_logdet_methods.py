@@ -70,7 +70,7 @@ def test_ilu_returns_expected_keys_and_lengths() -> None:
 def test_make_logdet_fn_accepts_new_method_names() -> None:
     W = _toy_w()
 
-    for method in ("sparse_grid", "spline", "mc", "ilu"):
+    for method in ("grid_sparse", "sparse_spline", "grid_mc", "grid_ilu"):
         fn = make_logdet_fn(W, method=method, rho_min=1e-5, rho_max=0.5)
         assert callable(fn)
 
@@ -240,12 +240,12 @@ def test_logdet_mc_poly_pytensor_empty_traces() -> None:
 
 
 def test_make_logdet_fn_mc_poly() -> None:
-    """make_logdet_fn with method='mc_poly' produces a valid callable."""
+    """make_logdet_fn with method='trace_mc' produces a valid callable."""
     import pytensor
     import pytensor.tensor as pt
 
     W = _toy_w()
-    fn = make_logdet_fn(W, method="mc_poly")
+    fn = make_logdet_fn(W, method="trace_mc")
     assert callable(fn)
 
     rho_sym = pt.dscalar("rho")
@@ -325,7 +325,7 @@ class TestMakeFlowSeparableLogdet:
         from bayespecon.logdet import make_flow_separable_logdet
 
         fn = make_flow_separable_logdet(
-            self.W_sp, self.n, method="mc_poly", miter=50, riter=100, random_state=0
+            self.W_sp, self.n, method="trace_mc", miter=50, riter=100, random_state=0
         )
         compiled = self._compile(fn)
         val = float(compiled(self.rho_d, self.rho_o))
@@ -335,4 +335,4 @@ class TestMakeFlowSeparableLogdet:
         from bayespecon.logdet import make_flow_separable_logdet
 
         with pytest.raises(ValueError, match="not recognised"):
-            make_flow_separable_logdet(self.W_sp, self.n, method="spline")
+            make_flow_separable_logdet(self.W_sp, self.n, method="sparse_spline")
