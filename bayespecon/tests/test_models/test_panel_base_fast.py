@@ -268,7 +268,7 @@ class TestSpatialPanelModelInit:
             T=3,
             logdet_method="chebyshev",
         )
-        assert getattr(model, "_W_eigs_cache", None) is None
+        assert "_W_eigs" not in model.__dict__
 
     def test_sparse_grid_init_does_not_eagerly_compute_eigs(self, W_graph, monkeypatch):
         from bayespecon.models.panel import OLSPanelFE
@@ -288,7 +288,7 @@ class TestSpatialPanelModelInit:
             T=3,
             logdet_method="grid_sparse",
         )
-        assert getattr(model, "_W_eigs_cache", None) is None
+        assert "_W_eigs" not in model.__dict__
 
     def test_formula_mode_requires_unit_and_time_cols(self, W_graph):
         from bayespecon.models.panel import OLSPanelFE

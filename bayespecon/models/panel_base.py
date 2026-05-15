@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from functools import cached_property
 from typing import Optional, Union
 
 import arviz as az
@@ -319,7 +320,6 @@ class SpatialPanelModel(_SpatialModelBase):
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
-        self._W_dense_cache: Optional[np.ndarray] = None
 
         if formula is not None:
             if data is None:
@@ -387,10 +387,11 @@ class SpatialPanelModel(_SpatialModelBase):
             self._feature_names[i] for i in self._wx_column_indices
         ]
 
-        # Validate W and store as N×N CSR. Dense expansion is deferred.
+        # Validate W and store as N×N CSR. Dense expansion, eigenvalues,
+        # and logdet builders are all derived lazily via @cached_property
+        # so init stays O(nnz) for chebyshev / sparse-grid methods that do
+        # not require the eigendecomposition.
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
-        # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
-        self._W_eigs_cache: np.ndarray | None = None
 
         self._y, self._X = _demean_panel(
             self._y_raw, self._X_raw, self._N, self._T, self.model
@@ -403,15 +404,6 @@ class SpatialPanelModel(_SpatialModelBase):
             if self.logdet_method is not None
             else _auto_logdet_method(self._W_sparse.shape[0])
         )
-        # Logdet builders are constructed lazily on first access — see the
-        # ``_logdet_numpy_fn``, ``_logdet_numpy_vec_fn`` and
-        # ``_logdet_pytensor_fn`` properties.  Caches are seeded as None so
-        # that init never triggers the underlying eigendecomposition for
-        # methods that do not need it (chebyshev, sparse_grid, etc.).
-        self._logdet_numpy_fn_cache = None
-        self._logdet_numpy_vec_fn_cache = None
-        self._logdet_pytensor_fn_cache = None
-        self._W_for_logdet_cache = None
 
         self._Wy = self._sparse_panel_lag(self._y)
         if self._wx_column_indices:
@@ -501,94 +493,77 @@ class SpatialPanelModel(_SpatialModelBase):
             )
         return np.asarray(W @ R.T, dtype=np.float64).T
 
-    @property
+    @cached_property
     def _W_eigs(self) -> np.ndarray:
         """Eigenvalues of the N×N spatial weights matrix, computed lazily.
 
-        Cached on first access to keep init O(n²) when chebyshev / sparse-grid
+        Cached on first access to keep init O(nnz) when chebyshev / sparse-grid
         log-determinants are used (those methods do not need the full
         eigendecomposition).
         """
-        if self._W_eigs_cache is None:
-            self._W_eigs_cache = np.linalg.eigvals(
-                self._W_sparse.toarray().astype(np.float64)
-            )
-        return self._W_eigs_cache
+        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
-    @property
+    @cached_property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or sparse W.
 
         Computed lazily so that init never forces an eigendecomposition for
         chebyshev / sparse-grid methods.
         """
-        if self._W_for_logdet_cache is None:
-            if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs.real.astype(np.float64)
-            else:
-                self._W_for_logdet_cache = self._W_sparse
-        return self._W_for_logdet_cache
+        if self._resolved_logdet_method == "eigenvalue":
+            return self._W_eigs.real.astype(np.float64)
+        return self._W_sparse
 
-    @property
+    @cached_property
     def _logdet_numpy_fn(self):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
-        if self._logdet_numpy_fn_cache is None:
-            eigs = (
-                self._W_eigs.real
-                if self._resolved_logdet_method == "eigenvalue"
-                else None
-            )
-            self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
-                self._W_sparse, eigs, method=self.logdet_method
-            )
-        return self._logdet_numpy_fn_cache
+        eigs = (
+            self._W_eigs.real
+            if self._resolved_logdet_method == "eigenvalue"
+            else None
+        )
+        return make_logdet_numpy_fn(self._W_sparse, eigs, method=self.logdet_method)
 
-    @property
+    @cached_property
     def _logdet_numpy_vec_fn(self):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
-        if self._logdet_numpy_vec_fn_cache is None:
-            eigs = (
-                self._W_eigs.real
-                if self._resolved_logdet_method == "eigenvalue"
-                else None
-            )
-            self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
-                self._W_sparse, eigs, method=self.logdet_method
-            )
-        return self._logdet_numpy_vec_fn_cache
+        eigs = (
+            self._W_eigs.real
+            if self._resolved_logdet_method == "eigenvalue"
+            else None
+        )
+        return make_logdet_numpy_vec_fn(
+            self._W_sparse, eigs, method=self.logdet_method
+        )
 
-    @property
+    @cached_property
     def _logdet_pytensor_fn(self):
         """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
-        if self._logdet_pytensor_fn_cache is None:
-            self._logdet_pytensor_fn_cache = make_logdet_fn(
-                self._W_for_logdet, method=self.logdet_method, T=self._T
-            )
-        return self._logdet_pytensor_fn_cache
+        return make_logdet_fn(
+            self._W_for_logdet, method=self.logdet_method, T=self._T
+        )
 
-    @property
+    @cached_property
     def _W_dense(self) -> np.ndarray:
         """Dense (N*T)×(N*T) weight matrix, materialised lazily on first access."""
-        if self._W_dense_cache is None:
-            # If W is N x N, dense panel matrix is (N*T) x (N*T); otherwise
-            # caller supplied full panel matrix already.
-            n_nt = (
-                self._N * self._T
-                if self._W_sparse.shape[0] == self._N
-                else int(self._W_sparse.shape[0])
+        # If W is N x N, dense panel matrix is (N*T) x (N*T); otherwise
+        # caller supplied full panel matrix already.
+        n_nt = (
+            self._N * self._T
+            if self._W_sparse.shape[0] == self._N
+            else int(self._W_sparse.shape[0])
+        )
+        nbytes = n_nt * n_nt * 8
+        if nbytes > int(self._DENSE_W_WARN_BYTES):
+            warnings.warn(
+                f"Materialising a dense panel weight matrix of size {n_nt}x{n_nt} "
+                f"(~{nbytes / 1024**2:.0f} MB).",
+                ResourceWarning,
+                stacklevel=2,
             )
-            nbytes = n_nt * n_nt * 8
-            if nbytes > int(self._DENSE_W_WARN_BYTES):
-                warnings.warn(
-                    f"Materialising a dense panel weight matrix of size {n_nt}x{n_nt} "
-                    f"(~{nbytes / 1024**2:.0f} MB).",
-                    ResourceWarning,
-                    stacklevel=2,
-                )
-            self._W_dense_cache = _as_dense_W(self._W_sparse, self._N, self._T)
-        return self._W_dense_cache
+        return _as_dense_W(self._W_sparse, self._N, self._T)
 
-    @property
+    @cached_property
     def _W_sparse_NT(self) -> "sp.csr_matrix":
         """Sparse (N*T)×(N*T) Kronecker-block weight matrix ``I_T ⊗ W_n``.
 
@@ -597,19 +572,16 @@ class SpatialPanelModel(_SpatialModelBase):
         still exposing a single linear operator that can be applied to a
         stacked panel residual vector.
         """
-        if not hasattr(self, "_W_sparse_NT_cache") or self._W_sparse_NT_cache is None:
-            W = self._W_sparse
-            if W.shape[0] == self._N:
-                # Force ``csr_matrix`` (not ``csr_array``) so the result is
-                # accepted by :mod:`pytensor.sparse`, which currently only
-                # supports the legacy ``scipy.sparse`` matrix API.
-                self._W_sparse_NT_cache = sp.csr_matrix(
-                    sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
-                )
-            else:
-                # Caller already supplied a full (N*T)×(N*T) matrix.
-                self._W_sparse_NT_cache = sp.csr_matrix(W)
-        return self._W_sparse_NT_cache
+        W = self._W_sparse
+        if W.shape[0] == self._N:
+            # Force ``csr_matrix`` (not ``csr_array``) so the result is
+            # accepted by :mod:`pytensor.sparse`, which currently only
+            # supports the legacy ``scipy.sparse`` matrix API.
+            return sp.csr_matrix(
+                sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
+            )
+        # Caller already supplied a full (N*T)×(N*T) matrix.
+        return sp.csr_matrix(W)
 
     def __repr__(self) -> str:
         n, k = self._X.shape

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import importlib
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import Optional
 
 import arviz as az
@@ -648,7 +649,7 @@ class _SpatialModelBase(ABC):
     # Shared W-derived helpers
     # ------------------------------------------------------------------
 
-    @property
+    @cached_property
     def _W_pt_sparse(self):
         """PyTensor sparse variable wrapping the model's sparse W.
 
@@ -663,26 +664,22 @@ class _SpatialModelBase(ABC):
         must first be reshaped to ``(n, 1)`` because the vector
         overload's backward pass is broken in PyTensor).
         """
-        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
-            import scipy.sparse as _sp
-            from pytensor import sparse as _pts
+        import scipy.sparse as _sp
+        from pytensor import sparse as _pts
 
-            W_attr = getattr(self, self._pt_sparse_attr)
-            self._W_pt_sparse_cache = _pts.as_sparse_variable(_sp.csc_matrix(W_attr))
-        return self._W_pt_sparse_cache
+        W_attr = getattr(self, self._pt_sparse_attr)
+        return _pts.as_sparse_variable(_sp.csc_matrix(W_attr))
 
-    @property
+    @cached_property
     def _T_ww(self) -> float:
         """Trace of W'W + W², cached on first access.
 
         Computed as ``||W||_F² + sum(W * W')`` using sparse operations,
         which is O(nnz) rather than O(n²).
         """
-        if not hasattr(self, "_T_ww_cache"):
-            from ..graph import sparse_trace_WtW_plus_WW
+        from ..graph import sparse_trace_WtW_plus_WW
 
-            self._T_ww_cache = sparse_trace_WtW_plus_WW(self._W_sparse)
-        return self._T_ww_cache
+        return sparse_trace_WtW_plus_WW(self._W_sparse)
 
     def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of ``(I - ρW)^{-1}`` for each posterior draw.
