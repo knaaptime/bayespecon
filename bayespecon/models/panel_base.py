@@ -322,39 +322,16 @@ class SpatialPanelModel(_SpatialModelBase):
         self._pymc_model: Optional[pm.Model] = None
 
         if formula is not None:
-            if data is None:
-                raise ValueError("data is required with formula mode.")
-            if unit_col is None or time_col is None:
-                raise ValueError("unit_col and time_col are required in formula mode.")
-
-            d = data.sort_values([time_col, unit_col]).reset_index(drop=True)
-            lhs, rhs = formula.split("~", 1)
-            lhs = lhs.strip()
-            rhs = rhs.strip()
-
-            X_mm = model_matrix(rhs, d)
-            self._feature_names = list(X_mm.columns)
-            y_arr = np.asarray(d[lhs], dtype=float)
-            X_arr = np.asarray(X_mm, dtype=float)
-
-            units = d[unit_col].nunique()
-            times = d[time_col].nunique()
-            if units * times != len(d):
-                raise ValueError(
-                    "Data are not a balanced panel after sorting by time/unit."
-                )
-            self._N = units
-            self._T = times
-            self._panel_index = d[[time_col, unit_col]].copy()
+            (
+                y_arr,
+                X_arr,
+                self._feature_names,
+                self._N,
+                self._T,
+                self._panel_index,
+            ) = self._parse_panel_formula(formula, data, unit_col, time_col)
         elif y is not None and X is not None:
-            y_arr = np.asarray(y, dtype=float).reshape(-1)
-            if isinstance(X, pd.DataFrame):
-                self._feature_names = list(X.columns)
-                X_arr = X.to_numpy(dtype=float)
-            else:
-                X_arr = np.asarray(X, dtype=float)
-                self._feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
-
+            y_arr, X_arr, self._feature_names = self._parse_panel_matrices(y, X)
             if N is None or T is None:
                 raise ValueError("N and T are required in matrix mode.")
             self._N = int(N)
@@ -414,6 +391,73 @@ class SpatialPanelModel(_SpatialModelBase):
         sparse internally.
         """
         return self._sparse_panel_lag(v)
+
+    # ------------------------------------------------------------------
+    # Input parsing helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_panel_formula(
+        formula: str,
+        data: Optional[pd.DataFrame],
+        unit_col: Optional[str],
+        time_col: Optional[str],
+    ):
+        """Parse formula/data inputs into stacked panel arrays.
+
+        Sorts ``data`` by ``(time_col, unit_col)`` to produce the
+        time-major stacked layout the panel base assumes (so the
+        ``T``-th block of ``N`` rows corresponds to time period ``T``).
+
+        Returns
+        -------
+        tuple
+            ``(y, X, feature_names, N, T, panel_index)`` where
+            ``panel_index`` is the sorted ``[time_col, unit_col]``
+            DataFrame.
+        """
+        if data is None:
+            raise ValueError("data is required with formula mode.")
+        if unit_col is None or time_col is None:
+            raise ValueError("unit_col and time_col are required in formula mode.")
+
+        d = data.sort_values([time_col, unit_col]).reset_index(drop=True)
+        lhs, rhs = formula.split("~", 1)
+        lhs = lhs.strip()
+        rhs = rhs.strip()
+
+        X_mm = model_matrix(rhs, d)
+        feature_names = list(X_mm.columns)
+        y_arr = np.asarray(d[lhs], dtype=float)
+        X_arr = np.asarray(X_mm, dtype=float)
+
+        units = d[unit_col].nunique()
+        times = d[time_col].nunique()
+        if units * times != len(d):
+            raise ValueError(
+                "Data are not a balanced panel after sorting by time/unit."
+            )
+        panel_index = d[[time_col, unit_col]].copy()
+        return y_arr, X_arr, feature_names, units, times, panel_index
+
+    @staticmethod
+    def _parse_panel_matrices(y, X):
+        """Parse matrix-mode inputs and infer feature names.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, list[str]]
+            Stacked dependent variable, design matrix, and feature names.
+            The caller is responsible for validating ``N * T == len(y)``.
+        """
+        y_arr = np.asarray(y, dtype=float).reshape(-1)
+        if isinstance(X, pd.DataFrame):
+            feature_names = list(X.columns)
+            X_arr = X.to_numpy(dtype=float)
+        else:
+            X_arr = np.asarray(X, dtype=float)
+            feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
+        return y_arr, X_arr, feature_names
 
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
         """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
