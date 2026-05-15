@@ -18,6 +18,7 @@
       ~SEMFlowSeparable.fit_approx
       ~SEMFlowSeparable.posterior_predictive
       ~SEMFlowSeparable.spatial_diagnostics
+      ~SEMFlowSeparable.spatial_diagnostics_decision
       ~SEMFlowSeparable.spatial_effects
       ~SEMFlowSeparable.summary
    

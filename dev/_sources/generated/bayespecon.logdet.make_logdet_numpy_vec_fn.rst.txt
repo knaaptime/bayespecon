@@ -1,0 +1,6 @@
+﻿bayespecon.logdet.make\_logdet\_numpy\_vec\_fn
+==============================================
+
+.. currentmodule:: bayespecon.logdet
+
+.. autofunction:: make_logdet_numpy_vec_fn

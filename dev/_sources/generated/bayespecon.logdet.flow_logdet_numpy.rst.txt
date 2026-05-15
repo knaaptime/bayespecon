@@ -1,0 +1,6 @@
+﻿bayespecon.logdet.flow\_logdet\_numpy
+=====================================
+
+.. currentmodule:: bayespecon.logdet
+
+.. autofunction:: flow_logdet_numpy

@@ -1,0 +1,29 @@
+﻿bayespecon.diagnostics.lmtests.DiagnosticSuite
+==============================================
+
+.. currentmodule:: bayespecon.diagnostics.lmtests
+
+.. autoclass:: DiagnosticSuite
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~DiagnosticSuite.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~DiagnosticSuite.name
+      ~DiagnosticSuite.tests
+   
+   

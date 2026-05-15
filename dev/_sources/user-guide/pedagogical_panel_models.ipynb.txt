@@ -617,7 +617,7 @@
    },
    "outputs": [],
    "source": [
-    "from bayespecon.diagnostics.bayesian_lmtests import (\n",
+    "from bayespecon.diagnostics.lmtests import (\n",
     "    bayesian_panel_lm_error_test,\n",
     "    bayesian_panel_lm_lag_test,\n",
     "    bayesian_panel_lm_sdm_joint_test,\n",

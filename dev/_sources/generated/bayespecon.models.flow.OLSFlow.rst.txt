@@ -18,6 +18,7 @@
       ~OLSFlow.fit_approx
       ~OLSFlow.posterior_predictive
       ~OLSFlow.spatial_diagnostics
+      ~OLSFlow.spatial_diagnostics_decision
       ~OLSFlow.spatial_effects
       ~OLSFlow.summary
    

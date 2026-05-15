@@ -18,6 +18,7 @@
       ~PoissonSARFlowSeparable.fit_approx
       ~PoissonSARFlowSeparable.posterior_predictive
       ~PoissonSARFlowSeparable.spatial_diagnostics
+      ~PoissonSARFlowSeparable.spatial_diagnostics_decision
       ~PoissonSARFlowSeparable.spatial_effects
       ~PoissonSARFlowSeparable.summary
    

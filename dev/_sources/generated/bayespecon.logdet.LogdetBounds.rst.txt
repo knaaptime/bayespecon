@@ -1,0 +1,31 @@
+﻿bayespecon.logdet.LogdetBounds
+==============================
+
+.. currentmodule:: bayespecon.logdet
+
+.. autoclass:: LogdetBounds
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~LogdetBounds.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~LogdetBounds.method
+      ~LogdetBounds.rho_min
+      ~LogdetBounds.rho_max
+      ~LogdetBounds.source
+   
+   

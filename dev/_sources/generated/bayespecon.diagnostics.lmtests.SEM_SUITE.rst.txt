@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.lmtests.SEM\_SUITE
+=========================================
+
+.. currentmodule:: bayespecon.diagnostics.lmtests
+
+.. autodata:: SEM_SUITE

@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.lmtests.SDEM\_SUITE
+==========================================
+
+.. currentmodule:: bayespecon.diagnostics.lmtests
+
+.. autodata:: SDEM_SUITE

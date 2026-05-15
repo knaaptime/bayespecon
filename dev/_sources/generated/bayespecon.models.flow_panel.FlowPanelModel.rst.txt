@@ -18,6 +18,7 @@
       ~FlowPanelModel.fit_approx
       ~FlowPanelModel.posterior_predictive
       ~FlowPanelModel.spatial_diagnostics
+      ~FlowPanelModel.spatial_diagnostics_decision
       ~FlowPanelModel.spatial_effects
       ~FlowPanelModel.summary
    

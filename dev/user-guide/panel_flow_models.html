@@ -1126,6 +1126,10 @@
 <div class="cell_output docutils container">
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
   from .autonotebook import tqdm as notebook_tqdm
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/_jax_dispatch.py:150: RuntimeWarning: BAYESPECON_JAX_SPARSE_BACKEND=auto selected fallback backend &#39;callback+scipy&#39; because optional dependency &#39;klujax&#39; is not installed. Estimation is likely faster when the optional sparse backend is installed. Install &#39;klujax&#39; to enable the faster JAX-native sparse path.
+  sparse_backend = _select_jax_sparse_backend()
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/_jax_dispatch.py:150: RuntimeWarning: BAYESPECON_JAX_SPARSE_BACKEND=auto selected fallback backend &#39;callback+scipy&#39; because optional dependency &#39;scikits.umfpack&#39; is not installed. Estimation is likely faster when the optional sparse backend is installed. Install &#39;scikit-umfpack&#39; to enable the UMFPACK callback path.
+  sparse_backend = _select_jax_sparse_backend()
 </code></pre></div>
 </div>
 </div>
@@ -1560,7 +1564,9 @@ arviz - WARNING - Shape validation failed: input_shape: (1, 80), minimum_shape: 
 False
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Finished [100%]: Average Loss = 2.717e+16
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/ops.py:848: RuntimeWarning: BAYESPECON_SPARSE_BACKEND=auto selected scipy sparse solves because optional dependency &#39;scikits.umfpack&#39; is not installed. Estimation is likely faster with the &#39;scikit-umfpack&#39; package installed.
+  backend = _select_sparse_backend()
+Finished [100%]: Average Loss = 2.717e+16
 arviz - WARNING - Shape validation failed: input_shape: (1, 80), minimum_shape: (chains=2, draws=4)
 </code></pre></div>
 </div>

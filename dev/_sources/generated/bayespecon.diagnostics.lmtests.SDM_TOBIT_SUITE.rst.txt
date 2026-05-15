@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.lmtests.SDM\_TOBIT\_SUITE
+================================================
+
+.. currentmodule:: bayespecon.diagnostics.lmtests
+
+.. autodata:: SDM_TOBIT_SUITE

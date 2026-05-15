@@ -1,0 +1,6 @@
+﻿bayespecon.logdet.flow\_logdet\_pytensor
+========================================
+
+.. currentmodule:: bayespecon.logdet
+
+.. autofunction:: flow_logdet_pytensor

@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.lmtests.SAR\_TOBIT\_SUITE
+================================================
+
+.. currentmodule:: bayespecon.diagnostics.lmtests
+
+.. autodata:: SAR_TOBIT_SUITE

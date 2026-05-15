@@ -737,6 +737,16 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#method-selection-policy" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Method selection policy</span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1064,6 +1074,16 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#method-selection-policy" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Method selection policy</span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1095,11 +1115,11 @@
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">exact</span></code>: symbolic determinant route</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">eigenvalue</span></code>: spectral precompute route</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">dense_grid</span></code>: spline interpolation over a precomputed grid (was <code class="docutils literal notranslate"><span class="pre">grid</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">sparse_grid</span></code>: exact sparse-LU grid (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetfull</span></code>, was <code class="docutils literal notranslate"><span class="pre">full</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">spline</span></code>: sparse-LU + spline interpolation (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetint</span></code>, was <code class="docutils literal notranslate"><span class="pre">int</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mc</span></code>: Monte Carlo trace approximation (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetmc</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ilu</span></code>: ILU-based approximation (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetichol</span></code> analog, was <code class="docutils literal notranslate"><span class="pre">ichol</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grid_dense</span></code>: dense-grid + spline interpolation (was <code class="docutils literal notranslate"><span class="pre">dense_grid</span></code>/<code class="docutils literal notranslate"><span class="pre">grid</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grid_sparse</span></code>: exact sparse-LU grid (legacy-style sparse-LU, was <code class="docutils literal notranslate"><span class="pre">sparse_grid</span></code>/<code class="docutils literal notranslate"><span class="pre">full</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sparse_spline</span></code>: sparse-LU + spline interpolation (was <code class="docutils literal notranslate"><span class="pre">spline</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">trace_mc</span></code>: Monte Carlo trace approximation (was <code class="docutils literal notranslate"><span class="pre">mc</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grid_ilu</span></code>: ILU-based approximate grid (was <code class="docutils literal notranslate"><span class="pre">ilu</span></code>/<code class="docutils literal notranslate"><span class="pre">ichol</span></code>)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">chebyshev</span></code>: Chebyshev polynomial approximation via Clenshaw’s algorithm (Pace &amp; LeSage 2004)</p></li>
 </ul>
 <p>For each matrix size, we report:</p>
@@ -1176,12 +1196,12 @@
     <span class="n">methods</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
         <span class="s2">&quot;exact&quot;</span><span class="p">,</span>
         <span class="s2">&quot;eigenvalue&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;dense_grid&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;sparse_grid&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;spline&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;mc&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;mc_poly&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;ilu&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;grid_dense&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;grid_sparse&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;sparse_spline&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;trace_mc&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;grid_mc&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;grid_ilu&quot;</span><span class="p">,</span>
         <span class="s2">&quot;chebyshev&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">method_max_n</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span>
@@ -1194,13 +1214,13 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">method_max_n</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="s2">&quot;exact&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
                 <span class="s2">&quot;eigenvalue&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
-                <span class="s2">&quot;dense_grid&quot;</span><span class="p">:</span> <span class="mi">40</span><span class="p">,</span>
-                <span class="s2">&quot;sparse_grid&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
-                <span class="s2">&quot;spline&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
-                <span class="s2">&quot;mc&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
-                <span class="s2">&quot;ilu&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
+                <span class="s2">&quot;grid_dense&quot;</span><span class="p">:</span> <span class="mi">40</span><span class="p">,</span>
+                <span class="s2">&quot;grid_sparse&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
+                <span class="s2">&quot;sparse_spline&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
+                <span class="s2">&quot;trace_mc&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
+                <span class="s2">&quot;grid_ilu&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
                 <span class="s2">&quot;chebyshev&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
-                <span class="s2">&quot;mc_poly&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
+                <span class="s2">&quot;grid_mc&quot;</span><span class="p">:</span> <span class="mi">75</span><span class="p">,</span>
             <span class="p">}</span>
 
 
@@ -1210,13 +1230,13 @@
 <span class="n">method_rho_bounds</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;exact&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
     <span class="s2">&quot;eigenvalue&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
-    <span class="s2">&quot;dense_grid&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
-    <span class="s2">&quot;sparse_grid&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
-    <span class="s2">&quot;ilu&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
-    <span class="s2">&quot;spline&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
-    <span class="s2">&quot;mc&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
+    <span class="s2">&quot;grid_dense&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
+    <span class="s2">&quot;grid_sparse&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
+    <span class="s2">&quot;grid_ilu&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
+    <span class="s2">&quot;sparse_spline&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
+    <span class="s2">&quot;trace_mc&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
     <span class="s2">&quot;chebyshev&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
-    <span class="s2">&quot;mc_poly&quot;</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
+    <span class="s2">&quot;grid_mc&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-5</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">),</span>
 <span class="p">}</span>
 
 <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1318,9 +1338,9 @@ Profiling n_side=75 (5625 obs)...
       <td>chebyshev</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>661.735938</td>
-      <td>4.143100</td>
-      <td>662.067386</td>
+      <td>658.873352</td>
+      <td>3.614662</td>
+      <td>659.162525</td>
     </tr>
     <tr>
       <th>1</th>
@@ -1329,9 +1349,9 @@ Profiling n_side=75 (5625 obs)...
       <td>chebyshev</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>698.305428</td>
-      <td>4.143350</td>
-      <td>698.636896</td>
+      <td>699.604662</td>
+      <td>3.769913</td>
+      <td>699.906255</td>
     </tr>
     <tr>
       <th>2</th>
@@ -1340,9 +1360,9 @@ Profiling n_side=75 (5625 obs)...
       <td>chebyshev</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>836.192760</td>
-      <td>4.171763</td>
-      <td>836.526501</td>
+      <td>869.255486</td>
+      <td>3.866525</td>
+      <td>869.564808</td>
     </tr>
     <tr>
       <th>3</th>
@@ -1351,9 +1371,9 @@ Profiling n_side=75 (5625 obs)...
       <td>chebyshev</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>1611.801896</td>
-      <td>3.815600</td>
-      <td>1612.107144</td>
+      <td>1663.638455</td>
+      <td>3.676313</td>
+      <td>1663.932560</td>
     </tr>
     <tr>
       <th>4</th>
@@ -1362,9 +1382,9 @@ Profiling n_side=75 (5625 obs)...
       <td>chebyshev</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>689.632668</td>
-      <td>3.883212</td>
-      <td>689.943325</td>
+      <td>691.980417</td>
+      <td>3.611162</td>
+      <td>692.269310</td>
     </tr>
     <tr>
       <th>5</th>
@@ -1373,471 +1393,471 @@ Profiling n_side=75 (5625 obs)...
       <td>chebyshev</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>855.855942</td>
-      <td>3.756750</td>
-      <td>856.156482</td>
+      <td>870.953099</td>
+      <td>4.043100</td>
+      <td>871.276547</td>
     </tr>
     <tr>
       <th>6</th>
       <td>10</td>
       <td>100</td>
-      <td>dense_grid</td>
+      <td>eigenvalue</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>2768.607365</td>
-      <td>5.691662</td>
-      <td>2769.062698</td>
+      <td>1153.255987</td>
+      <td>5.379963</td>
+      <td>1153.686384</td>
     </tr>
     <tr>
       <th>7</th>
       <td>20</td>
       <td>400</td>
-      <td>dense_grid</td>
+      <td>eigenvalue</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>81.340258</td>
-      <td>6.137463</td>
-      <td>81.831255</td>
+      <td>55.759664</td>
+      <td>7.514163</td>
+      <td>56.360797</td>
     </tr>
     <tr>
       <th>8</th>
       <td>25</td>
       <td>625</td>
-      <td>dense_grid</td>
+      <td>eigenvalue</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>168.732888</td>
-      <td>5.656237</td>
-      <td>169.185387</td>
+      <td>141.804230</td>
+      <td>9.493825</td>
+      <td>142.563736</td>
     </tr>
     <tr>
       <th>9</th>
       <td>40</td>
       <td>1600</td>
-      <td>dense_grid</td>
+      <td>eigenvalue</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>970.601484</td>
-      <td>5.480100</td>
-      <td>971.039892</td>
+      <td>994.732756</td>
+      <td>15.938825</td>
+      <td>996.007862</td>
     </tr>
     <tr>
       <th>10</th>
-      <td>10</td>
-      <td>100</td>
-      <td>eigenvalue</td>
-      <td>-0.95000</td>
-      <td>0.95</td>
-      <td>1151.636759</td>
-      <td>5.272163</td>
-      <td>1152.058532</td>
-    </tr>
-    <tr>
-      <th>11</th>
-      <td>20</td>
-      <td>400</td>
-      <td>eigenvalue</td>
-      <td>-0.95000</td>
-      <td>0.95</td>
-      <td>57.607056</td>
-      <td>7.656237</td>
-      <td>58.219555</td>
-    </tr>
-    <tr>
-      <th>12</th>
-      <td>25</td>
-      <td>625</td>
-      <td>eigenvalue</td>
-      <td>-0.95000</td>
-      <td>0.95</td>
-      <td>145.237676</td>
-      <td>9.281800</td>
-      <td>145.980220</td>
-    </tr>
-    <tr>
-      <th>13</th>
-      <td>40</td>
-      <td>1600</td>
-      <td>eigenvalue</td>
-      <td>-0.95000</td>
-      <td>0.95</td>
-      <td>965.333952</td>
-      <td>16.209188</td>
-      <td>966.630687</td>
-    </tr>
-    <tr>
-      <th>14</th>
       <td>50</td>
       <td>2500</td>
       <td>eigenvalue</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>3011.321992</td>
-      <td>21.692663</td>
-      <td>3013.057405</td>
+      <td>3117.832368</td>
+      <td>22.865425</td>
+      <td>3119.661602</td>
     </tr>
     <tr>
-      <th>15</th>
+      <th>11</th>
       <td>75</td>
       <td>5625</td>
       <td>eigenvalue</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>30384.495655</td>
-      <td>44.377337</td>
-      <td>30388.045842</td>
+      <td>33310.119799</td>
+      <td>46.241562</td>
+      <td>33313.819124</td>
     </tr>
     <tr>
-      <th>16</th>
+      <th>12</th>
       <td>10</td>
       <td>100</td>
       <td>exact</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>2401.512109</td>
-      <td>79.708950</td>
-      <td>2407.888825</td>
+      <td>2398.232099</td>
+      <td>80.175450</td>
+      <td>2404.646135</td>
     </tr>
     <tr>
-      <th>17</th>
+      <th>13</th>
       <td>20</td>
       <td>400</td>
       <td>exact</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>17.289020</td>
-      <td>1261.337337</td>
-      <td>118.196007</td>
+      <td>18.692847</td>
+      <td>1090.384450</td>
+      <td>105.923603</td>
+    </tr>
+    <tr>
+      <th>14</th>
+      <td>10</td>
+      <td>100</td>
+      <td>grid_dense</td>
+      <td>-0.95000</td>
+      <td>0.95</td>
+      <td>2692.494726</td>
+      <td>5.475013</td>
+      <td>2692.932727</td>
+    </tr>
+    <tr>
+      <th>15</th>
+      <td>20</td>
+      <td>400</td>
+      <td>grid_dense</td>
+      <td>-0.95000</td>
+      <td>0.95</td>
+      <td>83.208266</td>
+      <td>5.234787</td>
+      <td>83.627049</td>
+    </tr>
+    <tr>
+      <th>16</th>
+      <td>25</td>
+      <td>625</td>
+      <td>grid_dense</td>
+      <td>-0.95000</td>
+      <td>0.95</td>
+      <td>173.092964</td>
+      <td>5.285825</td>
+      <td>173.515830</td>
+    </tr>
+    <tr>
+      <th>17</th>
+      <td>40</td>
+      <td>1600</td>
+      <td>grid_dense</td>
+      <td>-0.95000</td>
+      <td>0.95</td>
+      <td>1024.147880</td>
+      <td>5.258850</td>
+      <td>1024.568588</td>
     </tr>
     <tr>
       <th>18</th>
       <td>10</td>
       <td>100</td>
-      <td>ilu</td>
+      <td>grid_ilu</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>93.265658</td>
-      <td>5.543200</td>
-      <td>93.709114</td>
+      <td>121.664676</td>
+      <td>5.224925</td>
+      <td>122.082670</td>
     </tr>
     <tr>
       <th>19</th>
       <td>20</td>
       <td>400</td>
-      <td>ilu</td>
+      <td>grid_ilu</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>225.494037</td>
-      <td>5.522912</td>
-      <td>225.935870</td>
+      <td>279.307610</td>
+      <td>5.231388</td>
+      <td>279.726121</td>
     </tr>
     <tr>
       <th>20</th>
       <td>25</td>
       <td>625</td>
-      <td>ilu</td>
+      <td>grid_ilu</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>327.822698</td>
-      <td>5.511762</td>
-      <td>328.263639</td>
+      <td>397.650175</td>
+      <td>5.122975</td>
+      <td>398.060013</td>
     </tr>
     <tr>
       <th>21</th>
       <td>40</td>
       <td>1600</td>
-      <td>ilu</td>
+      <td>grid_ilu</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>750.771232</td>
-      <td>5.796438</td>
-      <td>751.234947</td>
+      <td>857.052043</td>
+      <td>5.194237</td>
+      <td>857.467582</td>
     </tr>
     <tr>
       <th>22</th>
       <td>50</td>
       <td>2500</td>
-      <td>ilu</td>
+      <td>grid_ilu</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>1173.821165</td>
-      <td>5.351412</td>
-      <td>1174.249278</td>
+      <td>1315.917313</td>
+      <td>5.040612</td>
+      <td>1316.320562</td>
     </tr>
     <tr>
       <th>23</th>
       <td>75</td>
       <td>5625</td>
-      <td>ilu</td>
+      <td>grid_ilu</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>2746.516014</td>
-      <td>5.886825</td>
-      <td>2746.986960</td>
+      <td>3112.803620</td>
+      <td>5.443050</td>
+      <td>3113.239064</td>
     </tr>
     <tr>
       <th>24</th>
       <td>10</td>
       <td>100</td>
-      <td>mc</td>
+      <td>grid_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>578.643389</td>
-      <td>5.621562</td>
-      <td>579.093114</td>
+      <td>566.927816</td>
+      <td>5.743750</td>
+      <td>567.387316</td>
     </tr>
     <tr>
       <th>25</th>
       <td>20</td>
       <td>400</td>
-      <td>mc</td>
+      <td>grid_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>41.621542</td>
-      <td>5.789938</td>
-      <td>42.084737</td>
+      <td>51.177394</td>
+      <td>5.216900</td>
+      <td>51.594746</td>
     </tr>
     <tr>
       <th>26</th>
       <td>25</td>
       <td>625</td>
-      <td>mc</td>
+      <td>grid_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>45.079016</td>
-      <td>5.507637</td>
-      <td>45.519627</td>
+      <td>46.581685</td>
+      <td>5.370375</td>
+      <td>47.011315</td>
     </tr>
     <tr>
       <th>27</th>
       <td>40</td>
       <td>1600</td>
-      <td>mc</td>
+      <td>grid_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>64.868658</td>
-      <td>5.660250</td>
-      <td>65.321478</td>
+      <td>146.133491</td>
+      <td>5.915700</td>
+      <td>146.606747</td>
     </tr>
     <tr>
       <th>28</th>
       <td>50</td>
       <td>2500</td>
-      <td>mc</td>
+      <td>grid_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>81.353853</td>
-      <td>5.487988</td>
-      <td>81.792892</td>
+      <td>81.995105</td>
+      <td>5.356325</td>
+      <td>82.423611</td>
     </tr>
     <tr>
       <th>29</th>
       <td>75</td>
       <td>5625</td>
-      <td>mc</td>
+      <td>grid_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>205.708939</td>
-      <td>5.652862</td>
-      <td>206.161168</td>
+      <td>225.254899</td>
+      <td>5.258663</td>
+      <td>225.675592</td>
     </tr>
     <tr>
       <th>30</th>
       <td>10</td>
       <td>100</td>
-      <td>mc_poly</td>
+      <td>grid_sparse</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>620.951933</td>
-      <td>4.270913</td>
-      <td>621.293606</td>
+      <td>639.186343</td>
+      <td>5.343037</td>
+      <td>639.613786</td>
     </tr>
     <tr>
       <th>31</th>
       <td>20</td>
       <td>400</td>
-      <td>mc_poly</td>
+      <td>grid_sparse</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>621.787868</td>
-      <td>4.014650</td>
-      <td>622.109040</td>
+      <td>242.798959</td>
+      <td>5.540750</td>
+      <td>243.242219</td>
     </tr>
     <tr>
       <th>32</th>
       <td>25</td>
       <td>625</td>
-      <td>mc_poly</td>
+      <td>grid_sparse</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>623.321636</td>
-      <td>3.766912</td>
-      <td>623.622989</td>
+      <td>348.995307</td>
+      <td>5.157325</td>
+      <td>349.407893</td>
     </tr>
     <tr>
       <th>33</th>
       <td>40</td>
       <td>1600</td>
-      <td>mc_poly</td>
+      <td>grid_sparse</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>695.948995</td>
-      <td>4.065600</td>
-      <td>696.274243</td>
+      <td>790.304603</td>
+      <td>5.595287</td>
+      <td>790.752226</td>
     </tr>
     <tr>
       <th>34</th>
       <td>50</td>
       <td>2500</td>
-      <td>mc_poly</td>
+      <td>grid_sparse</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>677.216688</td>
-      <td>3.697425</td>
-      <td>677.512482</td>
+      <td>1141.210694</td>
+      <td>5.199500</td>
+      <td>1141.626654</td>
     </tr>
     <tr>
       <th>35</th>
       <td>75</td>
       <td>5625</td>
-      <td>mc_poly</td>
+      <td>grid_sparse</td>
       <td>-0.95000</td>
       <td>0.95</td>
-      <td>813.006274</td>
-      <td>3.779288</td>
-      <td>813.308617</td>
+      <td>2751.953861</td>
+      <td>5.568800</td>
+      <td>2752.399365</td>
     </tr>
     <tr>
       <th>36</th>
       <td>10</td>
       <td>100</td>
-      <td>sparse_grid</td>
-      <td>-0.95000</td>
+      <td>sparse_spline</td>
+      <td>0.00001</td>
       <td>0.95</td>
-      <td>622.681114</td>
-      <td>5.826612</td>
-      <td>623.147243</td>
+      <td>575.043694</td>
+      <td>5.374575</td>
+      <td>575.473660</td>
     </tr>
     <tr>
       <th>37</th>
       <td>20</td>
       <td>400</td>
-      <td>sparse_grid</td>
-      <td>-0.95000</td>
+      <td>sparse_spline</td>
+      <td>0.00001</td>
       <td>0.95</td>
-      <td>203.572133</td>
-      <td>5.793950</td>
-      <td>204.035649</td>
+      <td>54.074496</td>
+      <td>5.249750</td>
+      <td>54.494476</td>
     </tr>
     <tr>
       <th>38</th>
       <td>25</td>
       <td>625</td>
-      <td>sparse_grid</td>
-      <td>-0.95000</td>
+      <td>sparse_spline</td>
+      <td>0.00001</td>
       <td>0.95</td>
-      <td>295.167720</td>
-      <td>5.562962</td>
-      <td>295.612757</td>
+      <td>67.456750</td>
+      <td>5.516987</td>
+      <td>67.898109</td>
     </tr>
     <tr>
       <th>39</th>
       <td>40</td>
       <td>1600</td>
-      <td>sparse_grid</td>
-      <td>-0.95000</td>
+      <td>sparse_spline</td>
+      <td>0.00001</td>
       <td>0.95</td>
-      <td>676.866159</td>
-      <td>5.476962</td>
-      <td>677.304316</td>
+      <td>120.388180</td>
+      <td>5.237362</td>
+      <td>120.807169</td>
     </tr>
     <tr>
       <th>40</th>
       <td>50</td>
       <td>2500</td>
-      <td>sparse_grid</td>
-      <td>-0.95000</td>
+      <td>sparse_spline</td>
+      <td>0.00001</td>
       <td>0.95</td>
-      <td>1064.217163</td>
-      <td>5.626563</td>
-      <td>1064.667288</td>
+      <td>154.306750</td>
+      <td>5.164088</td>
+      <td>154.719877</td>
     </tr>
     <tr>
       <th>41</th>
       <td>75</td>
       <td>5625</td>
-      <td>sparse_grid</td>
-      <td>-0.95000</td>
+      <td>sparse_spline</td>
+      <td>0.00001</td>
       <td>0.95</td>
-      <td>2585.377534</td>
-      <td>5.596775</td>
-      <td>2585.825276</td>
+      <td>452.157244</td>
+      <td>5.404150</td>
+      <td>452.589576</td>
     </tr>
     <tr>
       <th>42</th>
       <td>10</td>
       <td>100</td>
-      <td>spline</td>
+      <td>trace_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>582.947110</td>
-      <td>5.464325</td>
-      <td>583.384256</td>
+      <td>625.470990</td>
+      <td>4.046312</td>
+      <td>625.794695</td>
     </tr>
     <tr>
       <th>43</th>
       <td>20</td>
       <td>400</td>
-      <td>spline</td>
+      <td>trace_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>52.203475</td>
-      <td>5.803200</td>
-      <td>52.667731</td>
+      <td>629.455983</td>
+      <td>4.231525</td>
+      <td>629.794505</td>
     </tr>
     <tr>
       <th>44</th>
       <td>25</td>
       <td>625</td>
-      <td>spline</td>
+      <td>trace_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>61.962534</td>
-      <td>5.712063</td>
-      <td>62.419499</td>
+      <td>626.658491</td>
+      <td>3.550075</td>
+      <td>626.942497</td>
     </tr>
     <tr>
       <th>45</th>
       <td>40</td>
       <td>1600</td>
-      <td>spline</td>
+      <td>trace_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>111.322211</td>
-      <td>5.710188</td>
-      <td>111.779026</td>
+      <td>649.584792</td>
+      <td>3.635463</td>
+      <td>649.875629</td>
     </tr>
     <tr>
       <th>46</th>
       <td>50</td>
       <td>2500</td>
-      <td>spline</td>
+      <td>trace_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>150.286358</td>
-      <td>5.583637</td>
-      <td>150.733049</td>
+      <td>673.672101</td>
+      <td>3.822225</td>
+      <td>673.977879</td>
     </tr>
     <tr>
       <th>47</th>
       <td>75</td>
       <td>5625</td>
-      <td>spline</td>
+      <td>trace_mc</td>
       <td>0.00001</td>
       <td>0.95</td>
-      <td>379.283044</td>
-      <td>5.576737</td>
-      <td>379.729183</td>
+      <td>840.845153</td>
+      <td>4.123300</td>
+      <td>841.175017</td>
     </tr>
   </tbody>
 </table>
@@ -1882,7 +1902,7 @@ Profiling n_side=75 (5625 obs)...
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/bba8f473aeece74b955467f075f4bd6bf2865fd2ca1357095a3fcce5c59e63e9.png" src="../_images/bba8f473aeece74b955467f075f4bd6bf2865fd2ca1357095a3fcce5c59e63e9.png" />
+<img alt="../_images/0b4139b25fa1311600bfdf892c8fa09202d54425fb63d9f13eaa473d74462cbb.png" src="../_images/0b4139b25fa1311600bfdf892c8fa09202d54425fb63d9f13eaa473d74462cbb.png" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -1931,26 +1951,26 @@ Profiling n_side=75 (5625 obs)...
     <tr>
       <th>method</th>
       <th>chebyshev</th>
-      <th>dense_grid</th>
       <th>eigenvalue</th>
       <th>exact</th>
-      <th>ilu</th>
-      <th>mc</th>
-      <th>mc_poly</th>
-      <th>sparse_grid</th>
-      <th>spline</th>
+      <th>grid_dense</th>
+      <th>grid_ilu</th>
+      <th>grid_mc</th>
+      <th>grid_sparse</th>
+      <th>sparse_spline</th>
+      <th>trace_mc</th>
       <th>chebyshev</th>
       <th>...</th>
-      <th>spline</th>
+      <th>trace_mc</th>
       <th>chebyshev</th>
-      <th>dense_grid</th>
       <th>eigenvalue</th>
       <th>exact</th>
-      <th>ilu</th>
-      <th>mc</th>
-      <th>mc_poly</th>
-      <th>sparse_grid</th>
-      <th>spline</th>
+      <th>grid_dense</th>
+      <th>grid_ilu</th>
+      <th>grid_mc</th>
+      <th>grid_sparse</th>
+      <th>sparse_spline</th>
+      <th>trace_mc</th>
     </tr>
     <tr>
       <th>n_obs</th>
@@ -1980,147 +2000,147 @@ Profiling n_side=75 (5625 obs)...
   <tbody>
     <tr>
       <th>100</th>
-      <td>4.143100</td>
-      <td>5.691662</td>
-      <td>5.272163</td>
-      <td>79.708950</td>
-      <td>5.543200</td>
-      <td>5.621562</td>
-      <td>4.270913</td>
-      <td>5.826612</td>
-      <td>5.464325</td>
-      <td>661.735938</td>
+      <td>3.614662</td>
+      <td>5.379963</td>
+      <td>80.17545</td>
+      <td>5.475013</td>
+      <td>5.224925</td>
+      <td>5.743750</td>
+      <td>5.343037</td>
+      <td>5.374575</td>
+      <td>4.046312</td>
+      <td>658.873352</td>
       <td>...</td>
-      <td>582.947110</td>
-      <td>662.067386</td>
-      <td>2769.062698</td>
-      <td>1152.058532</td>
-      <td>2407.888825</td>
-      <td>93.709114</td>
-      <td>579.093114</td>
-      <td>621.293606</td>
-      <td>623.147243</td>
-      <td>583.384256</td>
+      <td>625.470990</td>
+      <td>659.162525</td>
+      <td>1153.686384</td>
+      <td>2404.646135</td>
+      <td>2692.932727</td>
+      <td>122.082670</td>
+      <td>567.387316</td>
+      <td>639.613786</td>
+      <td>575.473660</td>
+      <td>625.794695</td>
     </tr>
     <tr>
       <th>400</th>
-      <td>4.143350</td>
-      <td>6.137463</td>
-      <td>7.656237</td>
-      <td>1261.337337</td>
-      <td>5.522912</td>
-      <td>5.789938</td>
-      <td>4.014650</td>
-      <td>5.793950</td>
-      <td>5.803200</td>
-      <td>698.305428</td>
+      <td>3.769913</td>
+      <td>7.514163</td>
+      <td>1090.38445</td>
+      <td>5.234787</td>
+      <td>5.231388</td>
+      <td>5.216900</td>
+      <td>5.540750</td>
+      <td>5.249750</td>
+      <td>4.231525</td>
+      <td>699.604662</td>
       <td>...</td>
-      <td>52.203475</td>
-      <td>698.636896</td>
-      <td>81.831255</td>
-      <td>58.219555</td>
-      <td>118.196007</td>
-      <td>225.935870</td>
-      <td>42.084737</td>
-      <td>622.109040</td>
-      <td>204.035649</td>
-      <td>52.667731</td>
+      <td>629.455983</td>
+      <td>699.906255</td>
+      <td>56.360797</td>
+      <td>105.923603</td>
+      <td>83.627049</td>
+      <td>279.726121</td>
+      <td>51.594746</td>
+      <td>243.242219</td>
+      <td>54.494476</td>
+      <td>629.794505</td>
     </tr>
     <tr>
       <th>625</th>
-      <td>4.171763</td>
-      <td>5.656237</td>
-      <td>9.281800</td>
+      <td>3.866525</td>
+      <td>9.493825</td>
       <td>NaN</td>
-      <td>5.511762</td>
-      <td>5.507637</td>
-      <td>3.766912</td>
-      <td>5.562962</td>
-      <td>5.712063</td>
-      <td>836.192760</td>
+      <td>5.285825</td>
+      <td>5.122975</td>
+      <td>5.370375</td>
+      <td>5.157325</td>
+      <td>5.516987</td>
+      <td>3.550075</td>
+      <td>869.255486</td>
       <td>...</td>
-      <td>61.962534</td>
-      <td>836.526501</td>
-      <td>169.185387</td>
-      <td>145.980220</td>
+      <td>626.658491</td>
+      <td>869.564808</td>
+      <td>142.563736</td>
       <td>NaN</td>
-      <td>328.263639</td>
-      <td>45.519627</td>
-      <td>623.622989</td>
-      <td>295.612757</td>
-      <td>62.419499</td>
+      <td>173.515830</td>
+      <td>398.060013</td>
+      <td>47.011315</td>
+      <td>349.407893</td>
+      <td>67.898109</td>
+      <td>626.942497</td>
     </tr>
     <tr>
       <th>1600</th>
-      <td>3.815600</td>
-      <td>5.480100</td>
-      <td>16.209188</td>
+      <td>3.676313</td>
+      <td>15.938825</td>
       <td>NaN</td>
-      <td>5.796438</td>
-      <td>5.660250</td>
-      <td>4.065600</td>
-      <td>5.476962</td>
-      <td>5.710188</td>
-      <td>1611.801896</td>
+      <td>5.258850</td>
+      <td>5.194237</td>
+      <td>5.915700</td>
+      <td>5.595287</td>
+      <td>5.237362</td>
+      <td>3.635463</td>
+      <td>1663.638455</td>
       <td>...</td>
-      <td>111.322211</td>
-      <td>1612.107144</td>
-      <td>971.039892</td>
-      <td>966.630687</td>
+      <td>649.584792</td>
+      <td>1663.932560</td>
+      <td>996.007862</td>
       <td>NaN</td>
-      <td>751.234947</td>
-      <td>65.321478</td>
-      <td>696.274243</td>
-      <td>677.304316</td>
-      <td>111.779026</td>
+      <td>1024.568588</td>
+      <td>857.467582</td>
+      <td>146.606747</td>
+      <td>790.752226</td>
+      <td>120.807169</td>
+      <td>649.875629</td>
     </tr>
     <tr>
       <th>2500</th>
-      <td>3.883212</td>
+      <td>3.611162</td>
+      <td>22.865425</td>
       <td>NaN</td>
-      <td>21.692663</td>
       <td>NaN</td>
-      <td>5.351412</td>
-      <td>5.487988</td>
-      <td>3.697425</td>
-      <td>5.626563</td>
-      <td>5.583637</td>
-      <td>689.632668</td>
+      <td>5.040612</td>
+      <td>5.356325</td>
+      <td>5.199500</td>
+      <td>5.164088</td>
+      <td>3.822225</td>
+      <td>691.980417</td>
       <td>...</td>
-      <td>150.286358</td>
-      <td>689.943325</td>
+      <td>673.672101</td>
+      <td>692.269310</td>
+      <td>3119.661602</td>
       <td>NaN</td>
-      <td>3013.057405</td>
       <td>NaN</td>
-      <td>1174.249278</td>
-      <td>81.792892</td>
-      <td>677.512482</td>
-      <td>1064.667288</td>
-      <td>150.733049</td>
+      <td>1316.320562</td>
+      <td>82.423611</td>
+      <td>1141.626654</td>
+      <td>154.719877</td>
+      <td>673.977879</td>
     </tr>
     <tr>
       <th>5625</th>
-      <td>3.756750</td>
+      <td>4.043100</td>
+      <td>46.241562</td>
       <td>NaN</td>
-      <td>44.377337</td>
       <td>NaN</td>
-      <td>5.886825</td>
-      <td>5.652862</td>
-      <td>3.779288</td>
-      <td>5.596775</td>
-      <td>5.576737</td>
-      <td>855.855942</td>
+      <td>5.443050</td>
+      <td>5.258663</td>
+      <td>5.568800</td>
+      <td>5.404150</td>
+      <td>4.123300</td>
+      <td>870.953099</td>
       <td>...</td>
-      <td>379.283044</td>
-      <td>856.156482</td>
+      <td>840.845153</td>
+      <td>871.276547</td>
+      <td>33313.819124</td>
       <td>NaN</td>
-      <td>30388.045842</td>
       <td>NaN</td>
-      <td>2746.986960</td>
-      <td>206.161168</td>
-      <td>813.308617</td>
-      <td>2585.825276</td>
-      <td>379.729183</td>
+      <td>3113.239064</td>
+      <td>225.675592</td>
+      <td>2752.399365</td>
+      <td>452.589576</td>
+      <td>841.175017</td>
     </tr>
   </tbody>
 </table>
@@ -2171,28 +2191,28 @@ Profiling n_side=75 (5625 obs)...
       <th>2</th>
       <td>50</td>
       <td>2500</td>
-      <td>dense_grid</td>
+      <td>exact</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
       <th>3</th>
       <td>50</td>
       <td>2500</td>
-      <td>exact</td>
+      <td>grid_dense</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
       <th>4</th>
       <td>75</td>
       <td>5625</td>
-      <td>dense_grid</td>
+      <td>exact</td>
       <td>above method_max_n cap</td>
     </tr>
     <tr>
       <th>5</th>
       <td>75</td>
       <td>5625</td>
-      <td>exact</td>
+      <td>grid_dense</td>
       <td>above method_max_n cap</td>
     </tr>
   </tbody>
@@ -2243,7 +2263,7 @@ Profiling n_side=75 (5625 obs)...
     <span class="n">draws</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">400</span><span class="p">,</span>
     <span class="n">tune</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">400</span><span class="p">,</span>
     <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2026</span><span class="p">,</span>
-    <span class="n">rho_lower</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-5</span><span class="p">,</span>
+    <span class="n">rho_lower</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.000001</span><span class="p">,</span>
     <span class="n">rho_upper</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span><span class="p">,</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Fit SAR with a specific logdet method and return posterior means + runtime.&quot;&quot;&quot;</span>
@@ -2283,10 +2303,10 @@ Profiling n_side=75 (5625 obs)...
 
 <span class="n">methods_for_model</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;eigenvalue&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;dense_grid&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;sparse_grid&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;mc_poly&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;ilu&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;sparse_spline&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;trace_mc&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;grid_mc&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;grid_ilu&quot;</span><span class="p">,</span>
     <span class="s2">&quot;chebyshev&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 <span class="n">gdf_model</span><span class="p">,</span> <span class="n">y_model</span><span class="p">,</span> <span class="n">X_model</span><span class="p">,</span> <span class="n">W_model</span><span class="p">,</span> <span class="n">rho_true</span><span class="p">,</span> <span class="n">beta_true</span> <span class="o">=</span> <span class="n">simulate_sar_data</span><span class="p">(</span><span class="n">n_side</span><span class="o">=</span><span class="mi">25</span><span class="p">)</span>
@@ -2342,10 +2362,10 @@ Profiling n_side=75 (5625 obs)...
 <div class="cell_output docutils container">
 <img alt="../_images/7423a913d5ac047bc4c9b538d77a43c72586f2be136e1f40b0a1cc235afd97ec.png" src="../_images/7423a913d5ac047bc4c9b538d77a43c72586f2be136e1f40b0a1cc235afd97ec.png" />
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Estimating SAR with method=eigenvalue...
-Estimating SAR with method=dense_grid...
-Estimating SAR with method=sparse_grid...
-Estimating SAR with method=mc_poly...
-Estimating SAR with method=ilu...
+Estimating SAR with method=sparse_spline...
+Estimating SAR with method=trace_mc...
+Estimating SAR with method=grid_mc...
+Estimating SAR with method=grid_ilu...
 Estimating SAR with method=chebyshev...
 </code></pre></div>
 </div>
@@ -2416,8 +2436,29 @@ Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) t
   <tbody>
     <tr>
       <th>0</th>
-      <td>ilu</td>
-      <td>3.822637</td>
+      <td>grid_mc</td>
+      <td>3.081301</td>
+      <td>0.381594</td>
+      <td>0.884317</td>
+      <td>0.808520</td>
+      <td>-0.518250</td>
+      <td>0.35</td>
+      <td>0.031594</td>
+      <td>1.0</td>
+      <td>0.115683</td>
+      <td>0.8</td>
+      <td>0.008520</td>
+      <td>-0.5</td>
+      <td>0.018250</td>
+      <td>1.369894e-04</td>
+      <td>-2.028509e-04</td>
+      <td>-1.197915e-05</td>
+      <td>3.294427e-06</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>grid_ilu</td>
+      <td>3.174953</td>
       <td>0.382076</td>
       <td>0.882487</td>
       <td>0.807844</td>
@@ -2430,57 +2471,36 @@ Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) t
       <td>0.007844</td>
       <td>-0.5</td>
       <td>0.020888</td>
-      <td>6.188231e-04</td>
-      <td>-2.032757e-03</td>
-      <td>-6.876075e-04</td>
-      <td>-2.634322e-03</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>sparse_grid</td>
-      <td>3.892413</td>
-      <td>0.381457</td>
-      <td>0.884519</td>
-      <td>0.808531</td>
-      <td>-0.518253</td>
-      <td>0.35</td>
-      <td>0.031457</td>
-      <td>1.0</td>
-      <td>0.115481</td>
-      <td>0.8</td>
-      <td>0.008531</td>
-      <td>-0.5</td>
-      <td>0.018253</td>
-      <td>1.312607e-10</td>
-      <td>-2.506766e-10</td>
-      <td>-3.051648e-11</td>
-      <td>2.516265e-10</td>
+      <td>6.188300e-04</td>
+      <td>-2.032753e-03</td>
+      <td>-6.876095e-04</td>
+      <td>-2.634321e-03</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>eigenvalue</td>
-      <td>3.967998</td>
-      <td>0.381457</td>
-      <td>0.884519</td>
-      <td>0.808531</td>
-      <td>-0.518253</td>
+      <td>sparse_spline</td>
+      <td>3.729487</td>
+      <td>0.382676</td>
+      <td>0.882155</td>
+      <td>0.808407</td>
+      <td>-0.518637</td>
       <td>0.35</td>
-      <td>0.031457</td>
+      <td>0.032676</td>
       <td>1.0</td>
-      <td>0.115481</td>
+      <td>0.117845</td>
       <td>0.8</td>
-      <td>0.008531</td>
+      <td>0.008407</td>
       <td>-0.5</td>
-      <td>0.018253</td>
-      <td>0.000000e+00</td>
-      <td>0.000000e+00</td>
-      <td>0.000000e+00</td>
-      <td>0.000000e+00</td>
+      <td>0.018637</td>
+      <td>1.219458e-03</td>
+      <td>-2.364459e-03</td>
+      <td>-1.241932e-04</td>
+      <td>-3.838977e-04</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>dense_grid</td>
-      <td>4.036040</td>
+      <td>eigenvalue</td>
+      <td>4.134808</td>
       <td>0.381457</td>
       <td>0.884519</td>
       <td>0.808531</td>
@@ -2493,52 +2513,52 @@ Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) t
       <td>0.008531</td>
       <td>-0.5</td>
       <td>0.018253</td>
-      <td>-8.043248e-10</td>
-      <td>5.792309e-10</td>
-      <td>5.364942e-11</td>
-      <td>-1.770362e-10</td>
+      <td>0.000000e+00</td>
+      <td>0.000000e+00</td>
+      <td>0.000000e+00</td>
+      <td>0.000000e+00</td>
     </tr>
     <tr>
       <th>4</th>
       <td>chebyshev</td>
-      <td>7.737650</td>
-      <td>0.380549</td>
-      <td>0.885094</td>
-      <td>0.811359</td>
-      <td>-0.519605</td>
+      <td>7.600185</td>
+      <td>0.381457</td>
+      <td>0.884520</td>
+      <td>0.808532</td>
+      <td>-0.518253</td>
       <td>0.35</td>
-      <td>0.030549</td>
+      <td>0.031457</td>
       <td>1.0</td>
-      <td>0.114906</td>
+      <td>0.115480</td>
       <td>0.8</td>
-      <td>0.011359</td>
+      <td>0.008532</td>
       <td>-0.5</td>
-      <td>0.019605</td>
-      <td>-9.080499e-04</td>
-      <td>5.745152e-04</td>
-      <td>2.827230e-03</td>
-      <td>-1.351804e-03</td>
+      <td>0.018253</td>
+      <td>-2.763719e-07</td>
+      <td>4.041846e-07</td>
+      <td>2.492285e-08</td>
+      <td>-1.546428e-08</td>
     </tr>
     <tr>
       <th>5</th>
-      <td>mc_poly</td>
-      <td>8.219381</td>
-      <td>0.381867</td>
-      <td>0.881519</td>
-      <td>0.809932</td>
-      <td>-0.519029</td>
+      <td>trace_mc</td>
+      <td>9.429843</td>
+      <td>0.382100</td>
+      <td>0.882182</td>
+      <td>0.809493</td>
+      <td>-0.519951</td>
       <td>0.35</td>
-      <td>0.031867</td>
+      <td>0.032100</td>
       <td>1.0</td>
-      <td>0.118481</td>
+      <td>0.117818</td>
       <td>0.8</td>
-      <td>0.009932</td>
+      <td>0.009493</td>
       <td>-0.5</td>
-      <td>0.019029</td>
-      <td>4.100455e-04</td>
-      <td>-3.000650e-03</td>
-      <td>1.400533e-03</td>
-      <td>-7.760596e-04</td>
+      <td>0.019951</td>
+      <td>6.426990e-04</td>
+      <td>-2.337247e-03</td>
+      <td>9.612559e-04</td>
+      <td>-1.697443e-03</td>
     </tr>
   </tbody>
 </table>
@@ -2548,12 +2568,12 @@ Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) t
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">exact</span></code> is expected to scale poorly and is intentionally capped at smaller n in this notebook.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">eigenvalue</span></code> usually has moderate setup cost and very fast repeated evaluations.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">dense_grid</span></code> has an upfront grid-construction cost but can be competitive for repeated evaluation scenarios (was <code class="docutils literal notranslate"><span class="pre">grid</span></code>).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">sparse_grid</span></code> and <code class="docutils literal notranslate"><span class="pre">spline</span></code> are sparse-LU variants inspired by the MATLAB toolbox routines (were <code class="docutils literal notranslate"><span class="pre">full</span></code> and <code class="docutils literal notranslate"><span class="pre">int</span></code>).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mc</span></code> is stochastic and may vary slightly run-to-run unless random seeds are fixed.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ilu</span></code> uses an ILU approximation that can trade precision for speed depending on sparsity (was <code class="docutils literal notranslate"><span class="pre">ichol</span></code>).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">chebyshev</span></code> uses Chebyshev polynomial approximation via Clenshaw’s algorithm (Pace &amp; LeSage 2004). It pre-computes coefficients at Chebyshev nodes (O(n³) for eigenvalue path, O(R·n·m) for MC path) and then evaluates in O(m) per call. It supports negative rho ranges, unlike <code class="docutils literal notranslate"><span class="pre">spline</span></code> and <code class="docutils literal notranslate"><span class="pre">mc</span></code>.</p></li>
-<li><p><strong>Parameter ranges:</strong> <code class="docutils literal notranslate"><span class="pre">spline</span></code> and <code class="docutils literal notranslate"><span class="pre">mc</span></code> are profiled on a nonnegative range (<code class="docutils literal notranslate"><span class="pre">rho</span> <span class="pre">in</span> <span class="pre">[1e-5,</span> <span class="pre">0.95]</span></code>), while <code class="docutils literal notranslate"><span class="pre">exact</span></code>, <code class="docutils literal notranslate"><span class="pre">eigenvalue</span></code>, <code class="docutils literal notranslate"><span class="pre">dense_grid</span></code>, <code class="docutils literal notranslate"><span class="pre">sparse_grid</span></code>, <code class="docutils literal notranslate"><span class="pre">ilu</span></code>, and <code class="docutils literal notranslate"><span class="pre">chebyshev</span></code> are profiled on a symmetric range (<code class="docutils literal notranslate"><span class="pre">rho</span> <span class="pre">in</span> <span class="pre">[-0.95,</span> <span class="pre">0.95]</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grid_dense</span></code> has an upfront grid-construction cost but can be competitive for repeated evaluation scenarios (was <code class="docutils literal notranslate"><span class="pre">dense_grid</span></code>/<code class="docutils literal notranslate"><span class="pre">grid</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grid_sparse</span></code> and <code class="docutils literal notranslate"><span class="pre">sparse_spline</span></code> are sparse-LU variants inspired by the legacy toolbox routines (were <code class="docutils literal notranslate"><span class="pre">full</span></code> and <code class="docutils literal notranslate"><span class="pre">int</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">trace_mc</span></code> is stochastic and may vary slightly run-to-run unless random seeds are fixed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grid_ilu</span></code> uses an ILU approximation that can trade precision for speed depending on sparsity (was <code class="docutils literal notranslate"><span class="pre">ilu</span></code>/<code class="docutils literal notranslate"><span class="pre">ichol</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">chebyshev</span></code> uses Chebyshev polynomial approximation via Clenshaw’s algorithm (Pace &amp; LeSage 2004). It pre-computes coefficients at Chebyshev nodes (O(n³) for eigenvalue path, O(R·n·m) for MC path) and then evaluates in O(m) per call. It supports negative rho ranges, unlike <code class="docutils literal notranslate"><span class="pre">sparse_spline</span></code> and <code class="docutils literal notranslate"><span class="pre">trace_mc</span></code>.</p></li>
+<li><p><strong>Parameter ranges:</strong> <code class="docutils literal notranslate"><span class="pre">sparse_spline</span></code> and <code class="docutils literal notranslate"><span class="pre">trace_mc</span></code> are profiled on a nonnegative range (<code class="docutils literal notranslate"><span class="pre">rho</span> <span class="pre">in</span> <span class="pre">[1e-5,</span> <span class="pre">0.95]</span></code>), while <code class="docutils literal notranslate"><span class="pre">exact</span></code>, <code class="docutils literal notranslate"><span class="pre">eigenvalue</span></code>, <code class="docutils literal notranslate"><span class="pre">grid_dense</span></code>, <code class="docutils literal notranslate"><span class="pre">grid_sparse</span></code>, <code class="docutils literal notranslate"><span class="pre">grid_ilu</span></code>, and <code class="docutils literal notranslate"><span class="pre">chebyshev</span></code> are profiled on a symmetric range (<code class="docutils literal notranslate"><span class="pre">rho</span> <span class="pre">in</span> <span class="pre">[-0.95,</span> <span class="pre">0.95]</span></code>).</p></li>
 <li><p>Adjust <code class="docutils literal notranslate"><span class="pre">ProfileConfig.sizes</span></code> and <code class="docutils literal notranslate"><span class="pre">method_max_n</span></code> for deeper stress tests.</p></li>
 </ul>
 <div class="cell docutils container">
@@ -2656,28 +2676,28 @@ Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) t
     </tr>
     <tr>
       <th>1</th>
-      <td>dense_grid</td>
-      <td>585.0</td>
+      <td>sparse_spline</td>
+      <td>580.0</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>sparse_grid</td>
-      <td>585.0</td>
+      <td>trace_mc</td>
+      <td>657.0</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>mc_poly</td>
+      <td>grid_mc</td>
       <td>579.0</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>ilu</td>
+      <td>grid_ilu</td>
       <td>591.0</td>
     </tr>
     <tr>
       <th>5</th>
       <td>chebyshev</td>
-      <td>494.0</td>
+      <td>585.0</td>
     </tr>
   </tbody>
 </table>
@@ -2685,13 +2705,52 @@ Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) t
 </code></pre></div>
 </div>
 <img alt="../_images/69fc0d58d684857829505531531cf3c3f9fc9bf6506f87d77b924cfdd4435b49.png" src="../_images/69fc0d58d684857829505531531cf3c3f9fc9bf6506f87d77b924cfdd4435b49.png" />
-<img alt="../_images/552f7ba23dc67531e2510875303e20fdbc4ab42ddc9cde0ffecd70e115755da0.png" src="../_images/552f7ba23dc67531e2510875303e20fdbc4ab42ddc9cde0ffecd70e115755da0.png" />
-<img alt="../_images/c3f15b02b580188832192f0fba8123c3d21f63e46d18d1d8d1f9c4cd9dace8ad.png" src="../_images/c3f15b02b580188832192f0fba8123c3d21f63e46d18d1d8d1f9c4cd9dace8ad.png" />
-<img alt="../_images/aa25e584b60846e530a427531084a0eb5125d4635199815fafeb022a009c850c.png" src="../_images/aa25e584b60846e530a427531084a0eb5125d4635199815fafeb022a009c850c.png" />
-<img alt="../_images/9b0c9a6635d13177f52cdaf562486c35af6a09913ce4f7b3155e0811a5c0e587.png" src="../_images/9b0c9a6635d13177f52cdaf562486c35af6a09913ce4f7b3155e0811a5c0e587.png" />
-<img alt="../_images/12dff3a82fb8ecc1dc4201c378d681b22fad4711bcded40c78b43c0b02025f85.png" src="../_images/12dff3a82fb8ecc1dc4201c378d681b22fad4711bcded40c78b43c0b02025f85.png" />
+<img alt="../_images/c29e8421e191719391974d856fc14b979fb06e679798f8c9d28f2fa79948f1b8.png" src="../_images/c29e8421e191719391974d856fc14b979fb06e679798f8c9d28f2fa79948f1b8.png" />
+<img alt="../_images/0a3b61a490198ff0133bc23e89a16d9d5bf758eee70961543f6b10b44260aa27.png" src="../_images/0a3b61a490198ff0133bc23e89a16d9d5bf758eee70961543f6b10b44260aa27.png" />
+<img alt="../_images/7b57faf247735b8ce00924c9ea1b605d76c33a5043a2beb7beed6d8b91aa2523.png" src="../_images/7b57faf247735b8ce00924c9ea1b605d76c33a5043a2beb7beed6d8b91aa2523.png" />
+<img alt="../_images/c8244b597ec97866c8d01b44fa529b639eaf3b1a4c4cbbf3f36e1a0023b1d306.png" src="../_images/c8244b597ec97866c8d01b44fa529b639eaf3b1a4c4cbbf3f36e1a0023b1d306.png" />
+<img alt="../_images/c3b42a1c7e1f74e8fb57ce2a3487ab85330eb88f4d5083028f476eb07e022a7b.png" src="../_images/c3b42a1c7e1f74e8fb57ce2a3487ab85330eb88f4d5083028f476eb07e022a7b.png" />
 </div>
 </div>
+<h2 id="method-selection-policy">Method selection policy<a class="headerlink" href="#method-selection-policy" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Default for most work</p></li>
+</ol>
+<ul class="simple">
+<li><p>Use chebyshev.</p></li>
+<li><p>Reason: good speed, stable behavior, and supports both negative and positive rho ranges.</p></li>
+</ul>
+<p>2.Exploratory runs where speed is most important</p>
+<ul class="simple">
+<li><p>If rho is constrained to nonnegative values, use mc.</p></li>
+<li><p>Keep this for quick iteration, model search, and early diagnostics.</p></li>
+</ul>
+<ol class="arabic simple" start="3">
+<li><p>Deterministic interpolation alternative</p></li>
+</ol>
+<ul class="simple">
+<li><p>If rho is nonnegative and you want deterministic behavior, use spline.</p></li>
+<li><p>Only use when prior bounds are fully inside the interpolation interval.</p></li>
+</ul>
+<ol class="arabic simple" start="4">
+<li><p>Final reporting and publication runs</p></li>
+</ol>
+<ul class="simple">
+<li><p>Prefer chebyshev.</p></li>
+<li><p>If using mc or spline, validate against chebyshev on the same data and priors.</p></li>
+</ul>
+<ol class="arabic simple" start="5">
+<li><p>Guardrails</p></li>
+</ol>
+<ul class="simple">
+<li><p>If prior includes negative rho, do not use mc or spline.</p></li>
+<li><p>Avoid switching methods mid-comparison unless you explicitly document it.</p></li>
+<li><p>Record method choice and rho bounds in every benchmark or model report.</p></li>
+</ul>
+<p>Suggested defaults by stage</p>
+<p>Development: mc (nonnegative rho only), otherwise chebyshev.
+Pre-final validation: chebyshev.
+Final results: chebyshev, or mc/spline with chebyshev cross-check.</p>
 
 
 

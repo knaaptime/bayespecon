@@ -18,6 +18,7 @@
       ~SARFlowSeparablePanel.fit_approx
       ~SARFlowSeparablePanel.posterior_predictive
       ~SARFlowSeparablePanel.spatial_diagnostics
+      ~SARFlowSeparablePanel.spatial_diagnostics_decision
       ~SARFlowSeparablePanel.spatial_effects
       ~SARFlowSeparablePanel.summary
    

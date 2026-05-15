@@ -1,0 +1,6 @@
+﻿bayespecon.logdet.resolve\_logdet\_method
+=========================================
+
+.. currentmodule:: bayespecon.logdet
+
+.. autofunction:: resolve_logdet_method

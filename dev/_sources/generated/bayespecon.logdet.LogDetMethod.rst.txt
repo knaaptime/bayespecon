@@ -1,0 +1,83 @@
+﻿bayespecon.logdet.LogDetMethod
+==============================
+
+.. currentmodule:: bayespecon.logdet
+
+.. autoclass:: LogDetMethod
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~LogDetMethod.encode
+      ~LogDetMethod.replace
+      ~LogDetMethod.split
+      ~LogDetMethod.rsplit
+      ~LogDetMethod.join
+      ~LogDetMethod.capitalize
+      ~LogDetMethod.casefold
+      ~LogDetMethod.title
+      ~LogDetMethod.center
+      ~LogDetMethod.count
+      ~LogDetMethod.expandtabs
+      ~LogDetMethod.find
+      ~LogDetMethod.partition
+      ~LogDetMethod.index
+      ~LogDetMethod.ljust
+      ~LogDetMethod.lower
+      ~LogDetMethod.lstrip
+      ~LogDetMethod.rfind
+      ~LogDetMethod.rindex
+      ~LogDetMethod.rjust
+      ~LogDetMethod.rstrip
+      ~LogDetMethod.rpartition
+      ~LogDetMethod.splitlines
+      ~LogDetMethod.strip
+      ~LogDetMethod.swapcase
+      ~LogDetMethod.translate
+      ~LogDetMethod.upper
+      ~LogDetMethod.startswith
+      ~LogDetMethod.endswith
+      ~LogDetMethod.removeprefix
+      ~LogDetMethod.removesuffix
+      ~LogDetMethod.isascii
+      ~LogDetMethod.islower
+      ~LogDetMethod.isupper
+      ~LogDetMethod.istitle
+      ~LogDetMethod.isspace
+      ~LogDetMethod.isdecimal
+      ~LogDetMethod.isdigit
+      ~LogDetMethod.isnumeric
+      ~LogDetMethod.isalpha
+      ~LogDetMethod.isalnum
+      ~LogDetMethod.isidentifier
+      ~LogDetMethod.isprintable
+      ~LogDetMethod.zfill
+      ~LogDetMethod.format
+      ~LogDetMethod.format_map
+      ~LogDetMethod.maketrans
+      ~LogDetMethod.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~LogDetMethod.EXACT
+      ~LogDetMethod.EIGENVALUE
+      ~LogDetMethod.GRID_DENSE
+      ~LogDetMethod.GRID_SPARSE
+      ~LogDetMethod.SPARSE_SPLINE
+      ~LogDetMethod.GRID_MC
+      ~LogDetMethod.TRACE_MC
+      ~LogDetMethod.GRID_ILU
+      ~LogDetMethod.CHEBYSHEV
+   
+   

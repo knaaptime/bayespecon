@@ -18,6 +18,7 @@
       ~SEMFlow.fit_approx
       ~SEMFlow.posterior_predictive
       ~SEMFlow.spatial_diagnostics
+      ~SEMFlow.spatial_diagnostics_decision
       ~SEMFlow.spatial_effects
       ~SEMFlow.summary
    

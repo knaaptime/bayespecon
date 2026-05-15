@@ -1,6 +1,0 @@
-﻿bayespecon.diagnostics.bayesian\_lmtests.bayesian\_panel\_lm\_error\_test
-=========================================================================
-
-.. currentmodule:: bayespecon.diagnostics.bayesian_lmtests
-
-.. autofunction:: bayesian_panel_lm_error_test

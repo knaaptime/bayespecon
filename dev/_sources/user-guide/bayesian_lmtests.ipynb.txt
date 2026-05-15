@@ -68,13 +68,8 @@
     "from spreg import OLS as SpregOLS\n",
     "from spreg import LMtests as SpregLMtests\n",
     "\n",
-    "from bayespecon import (\n",
-    "    OLS,\n",
-    "    SAR,\n",
-    "    SDEM,\n",
-    "    SDM,\n",
-    "    SEM,\n",
-    "    SLX,\n",
+    "from bayespecon import OLS, SAR, SDEM, SDM, SEM, SLX\n",
+    "from bayespecon.diagnostics.lmtests import (\n",
     "    bayesian_lm_error_sdm_test,\n",
     "    bayesian_lm_error_test,\n",
     "    bayesian_lm_lag_sdem_test,\n",
@@ -643,50 +638,24 @@
    "id": "70453c59",
    "metadata": {},
    "source": [
-    "**Recovery findings.** All eight (DGP, starting-model) scenarios are\n",
-    "recovered correctly.  The redesigned decision trees make every spatial\n",
-    "econometric model in `bayespecon` reachable from at least one starting\n",
-    "point:\n",
-    "\n",
-    "| Starting model | Reachable terminals |\n",
-    "|---|---|\n",
-    "| OLS | OLS, SAR, SEM, SARAR |\n",
-    "| SAR | SAR, SDM, SARAR |\n",
-    "| SEM | SEM, SDEM, SARAR |\n",
-    "| SLX | SLX, SDM, SDEM |\n",
-    "| SDM | SDM, MANSAR |\n",
-    "| SDEM | SDEM, MANSAR |\n",
-    "\n",
-    "The three fixes that closed the SDM / SDEM gaps:\n",
-    "\n",
-    "- **SAR start → SDM.** A significant `LM-Error` from a SAR fit used to\n",
-    "  route straight to `SARAR`.  The redesigned `_sar_spec` consults\n",
-    "  `Robust-LM-WX` first: if the WX signal survives the\n",
-    "  $\\rho$-orthogonalisation the omitted channel is the WX block\n",
-    "  ($\\rightarrow$ `SDM`); otherwise the residual autocorrelation is\n",
-    "  genuine ($\\rightarrow$ `SARAR`).\n",
-    "- **SEM start → SDEM.** The analogous `LM-WX` check after `LM-Lag`\n",
-    "  redirects DGPs with omitted WX from `SARAR` to `SDEM`.\n",
-    "- **SLX start → SDM or SDEM.** When both `Robust-LM-Lag-SDM` and\n",
-    "  `Robust-LM-Error-SDEM` fire, the tree breaks the tie with the\n",
-    "  `lag_sdm_pval_le_error_sdem_pval` predicate — whichever channel has\n",
-    "  the smaller p-value (larger statistic) wins, routing to `SDM` or\n",
-    "  `SDEM` rather than escalating to `MANSAR`.\n",
+    "**Recovery findings.** OLS, SAR, SEM, and SLX scenarios are recovered cleanly\n",
+    "from their natural starting models.  The SDM and SDEM scenarios are *not*\n",
+    "recovered when starting from SAR/SEM/SLX: the tree escalates to `SARAR` (from\n",
+    "SAR/SEM) or `MANSAR` (from SLX) because both the lag and the error / WX\n",
+    "channels register significant simultaneously.  This is the *expected* behaviour\n",
+    "of the Koley & Bera tree — treat `SARAR`/`MANSAR` as a flag to fit both `SDM`\n",
+    "and `SDEM` and compare with `bayes_factor_compare_models`.\n",
     "\n",
     "Other things to keep in mind:\n",
     "\n",
-    "- These experiments use **strong-signal** parameters; weaker spatial\n",
-    "  dependence ($\\rho \\approx 0.1$) leads the tree toward simpler models,\n",
-    "  which is the correct small-sample behaviour.\n",
-    "- The OLS starting tree cannot reach SDM / SDEM / SLX terminals — it\n",
-    "  can only flag SAR / SEM / SARAR / OLS.  Use `SAR`, `SEM`, or `SLX`\n",
-    "  starting points to diagnose Durbin-style alternatives.\n",
-    "- `MANSAR` remains a valid model in `bayespecon`, but it is\n",
-    "  intentionally not a terminal of the SLX tree.  Users wanting to\n",
-    "  compare against `MANSAR` should fit it explicitly and use\n",
-    "  `bayes_factor_compare_models`.\n",
-    "- The decision tree thresholds at a single `alpha`; for borderline\n",
-    "  cases inspect `spatial_diagnostics()` directly.\n"
+    "- These experiments use **strong-signal** parameters; weaker spatial dependence\n",
+    "  ($\\rho \\approx 0.1$) leads the tree toward simpler models, which is the\n",
+    "  correct small-sample behaviour.\n",
+    "- The `OLS` starting tree cannot reach SDM/SDEM/SLX terminals — it can only\n",
+    "  flag SAR/SEM/SARAR/OLS.  Use `SAR`, `SEM`, or `SLX` starting points to\n",
+    "  diagnose Durbin-style alternatives.\n",
+    "- The decision tree thresholds at a single `alpha`; for borderline cases\n",
+    "  inspect `spatial_diagnostics()` directly."
    ]
   },
   {
@@ -766,13 +735,13 @@
    "outputs": [],
    "source": [
     "panel_model.spatial_diagnostics_decision(\n",
-    "    alpha=0.05,\n",
+    "    alpha=0.01,\n",
     ")"
    ]
   },
   {
    "cell_type": "markdown",
-   "id": "ab1d56d6",
+   "id": "1b047a71",
    "metadata": {},
    "source": [
     "## 10. Panel DGP-Recovery Stress Test\n",
@@ -788,7 +757,7 @@
   {
    "cell_type": "code",
    "execution_count": null,
-   "id": "43b5a530",
+   "id": "46a7bb9a",
    "metadata": {},
    "outputs": [],
    "source": [
@@ -827,7 +796,7 @@
   {
    "cell_type": "code",
    "execution_count": null,
-   "id": "f14f0cbb",
+   "id": "0123edbe",
    "metadata": {},
    "outputs": [],
    "source": [
@@ -881,7 +850,7 @@
   {
    "cell_type": "code",
    "execution_count": null,
-   "id": "69124a12",
+   "id": "76de9602",
    "metadata": {},
    "outputs": [],
    "source": [
@@ -898,7 +867,7 @@
   },
   {
    "cell_type": "markdown",
-   "id": "5423c3ca",
+   "id": "5ad85e5e",
    "metadata": {},
    "source": [
     "**Recovery findings (panel).** All six panel DGPs are recovered correctly.\n",
@@ -1018,9 +987,9 @@
  ],
  "metadata": {
   "kernelspec": {
-   "display_name": "Python [conda env:bayespreg]",
+   "display_name": "bayespreg",
    "language": "python",
-   "name": "conda-env-bayespreg-py"
+   "name": "python3"
   },
   "language_info": {
    "codemirror_mode": {

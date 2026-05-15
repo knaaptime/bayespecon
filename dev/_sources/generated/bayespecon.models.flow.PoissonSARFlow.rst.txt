@@ -18,6 +18,7 @@
       ~PoissonSARFlow.fit_approx
       ~PoissonSARFlow.posterior_predictive
       ~PoissonSARFlow.spatial_diagnostics
+      ~PoissonSARFlow.spatial_diagnostics_decision
       ~PoissonSARFlow.spatial_effects
       ~PoissonSARFlow.summary
    

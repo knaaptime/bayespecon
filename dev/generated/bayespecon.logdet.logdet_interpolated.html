@@ -14,7 +14,7 @@
         <link rel="prev" href="bayespecon.logdet.logdet_chebyshev.html">
       
       
-        <link rel="next" href="bayespecon.logdet.mc.html">
+        <link rel="next" href="bayespecon.logdet.logdet_mc_poly_pytensor.html">
       
       
       <link rel="icon" href="../_static/pysal_favicon.ico">
@@ -1078,12 +1078,12 @@
   
   
     <li class="md-nav__item">
-      <a href="bayespecon.logdet.make_logdet_fn.html" class="md-nav__link">
+      <a href="../api.html#method-resolution-and-bound-handling" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>bayespecon.<wbr>logdet.<wbr>make_<wbr>logdet_<wbr>fn</span>
+    <span>Method resolution and bound handling</span>
     
   </span>
   
@@ -1093,6 +1093,77 @@
   
 
               
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#builders" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Builders</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1_10_3" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../api.html#kernel-evaluators-and-approximations" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    <span>Kernel evaluators and approximations</span>
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5_1_10_3" id="__nav_5_1_10_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_5_1_10_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5_1_10_3">
+            <span class="md-nav__icon md-icon"></span>
+            <span>Kernel evaluators and approximations</span>
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1351,6 +1422,30 @@
   
   
     <li class="md-nav__item">
+      <a href="bayespecon.logdet.logdet_mc_poly_pytensor.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>bayespecon.<wbr>logdet.<wbr>logdet_<wbr>mc_<wbr>poly_<wbr>pytensor</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="bayespecon.logdet.mc.html" class="md-nav__link">
         
   
@@ -1453,6 +1548,39 @@
   
   <span class="md-ellipsis">
     <span>bayespecon.<wbr>logdet.<wbr>spline</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#flow-log-determinants" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Flow log-<wbr>determinants</span>
     
   </span>
   
@@ -1871,7 +1999,7 @@
 <h1 id="bayespecon-logdet-logdet-interpolated">bayespecon.logdet.logdet_interpolated<a class="headerlink" href="#bayespecon-logdet-logdet-interpolated" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
 <dt class="sig sig-object highlight sig-wrap py" id="bayespecon.logdet.logdet_interpolated">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">logdet_interpolated</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.rho" title="bayespecon.logdet.logdet_interpolated.rho (Python parameter) — Spatial autoregressive parameter symbol."><span class="n"><span class="pre">rho</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.W_dense" title="bayespecon.logdet.logdet_interpolated.W_dense (Python parameter) — Dense spatial weights matrix."><span class="n"><span class="pre">W_dense</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.rho_min" title="bayespecon.logdet.logdet_interpolated.rho_min (Python parameter) — Lower bound for rho grid."><span class="n"><span class="pre">rho_min</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="o">-</span><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.rho_max" title="bayespecon.logdet.logdet_interpolated.rho_max (Python parameter) — Upper bound for rho grid."><span class="n"><span class="pre">rho_max</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.n_grid" title="bayespecon.logdet.logdet_interpolated.n_grid (Python parameter) — Number of grid points."><span class="n"><span class="pre">n_grid</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">200</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L672-L721"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.logdet_interpolated" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">logdet_interpolated</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.rho" title="bayespecon.logdet.logdet_interpolated.rho (Python parameter) — Spatial autoregressive parameter symbol."><span class="n"><span class="pre">rho</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.W_dense" title="bayespecon.logdet.logdet_interpolated.W_dense (Python parameter) — Dense spatial weights matrix."><span class="n"><span class="pre">W_dense</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.rho_min" title="bayespecon.logdet.logdet_interpolated.rho_min (Python parameter) — Lower bound for rho grid."><span class="n"><span class="pre">rho_min</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="o">-</span><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.rho_max" title="bayespecon.logdet.logdet_interpolated.rho_max (Python parameter) — Upper bound for rho grid."><span class="n"><span class="pre">rho_max</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_interpolated.n_grid" title="bayespecon.logdet.logdet_interpolated.n_grid (Python parameter) — Number of grid points."><span class="n"><span class="pre">n_grid</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">200</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L855-L904"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.logdet_interpolated" title="Link to this definition">¶</a></dt>
 <dd><p>Cubic spline interpolation of log|I - rho*W|.</p>
 <p>Pre-computes values on a rho grid at construction time and evaluates
 a cubic-spline piecewise polynomial symbolically.</p>
@@ -1894,7 +2022,7 @@ a cubic-spline piecewise polynomial symbolically.</p>
 <dd class="field-even"><p>Interpolated symbolic log-determinant value.</p>
 </dd>
 <dt class="field-odd" id="bayespecon.logdet.logdet_interpolated-return-type">Return type<span class="colon">:</span><a class="headerlink" href="#bayespecon.logdet.logdet_interpolated-return-type" title="Permalink to this headline">¶</a></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://pytensor.readthedocs.io/en/stable/library/tensor/basic.html#pytensor.tensor.TensorVariable" title="(in PyTensor v2.38.3)">pytensor.tensor.TensorVariable</a></p>
+<dd class="field-odd"><p><a class="reference external" href="https://pytensor.readthedocs.io/en/stable/library/tensor/basic.html#pytensor.tensor.TensorVariable" title="(in PyTensor v0)">pytensor.tensor.TensorVariable</a></p>
 </dd>
 </dl>
 </dd></dl>

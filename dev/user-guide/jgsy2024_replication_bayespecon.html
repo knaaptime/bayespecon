@@ -1069,7 +1069,7 @@
   
 
 <h1 id="jgsy2024-replication-with-bayespecon">JGSY2024 Replication with bayespecon<a class="headerlink" href="#jgsy2024-replication-with-bayespecon" title="Link to this heading">¶</a></h1>
-<p>This notebook replicates the core panel-SDM analysis in <a class="reference external" href="https://link.springer.com/article/10.1007/s10109-024-00440-5">Elhorst, J. P., Tziolas, I., Tan, C., &amp; Milionis, P. (2024)</a> using the replication files from <a class="reference external" href="https://spatial-panels.com/?page_id=2#1731681827580-52fa338b-6069">spatial-panels</a>, then compares the original outputs with <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> and provides a detailed side-by-side comparison to the published MATLAB outputs (Table 1, columns [1] and [2] from <code class="docutils literal notranslate"><span class="pre">JGSY2024_MainResults.m</span></code>).</p>
+<p>This notebook replicates the core panel-SDM analysis in <a class="reference external" href="https://link.springer.com/article/10.1007/s10109-024-00440-5">Elhorst, J. P., Tziolas, I., Tan, C., &amp; Milionis, P. (2024)</a> using the replication files from <a class="reference external" href="https://spatial-panels.com/?page_id=2#1731681827580-52fa338b-6069">spatial-panels</a>, then compares the original outputs with <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> and provides a detailed side-by-side comparison to the published legacy outputs (Table 1, columns [1] and [2] from <code class="docutils literal notranslate"><span class="pre">JGSY2024_MainResults.m</span></code>).</p>
 <p>Replication targets in this notebook:</p>
 <ul class="simple">
 <li><p><strong>Spec A</strong>: 6-nearest-neighbor row-normalized weights</p></li>
@@ -1077,7 +1077,7 @@
 </ul>
 <p>Important scope notes:</p>
 <ul class="simple">
-<li><p>JGSY2024 original estimation uses MATLAB routines (<code class="docutils literal notranslate"><span class="pre">sar_panelE_FE</span></code>) with classical asymptotics.</p></li>
+<li><p>JGSY2024 original estimation uses legacy routines (<code class="docutils literal notranslate"><span class="pre">sar_panelE_FE</span></code>) with classical asymptotics.</p></li>
 <li><p>This notebook uses <strong>Bayesian</strong> estimation (<code class="docutils literal notranslate"><span class="pre">bayespecon.SDMPanelFE</span></code>) with posterior means for comparison.</p></li>
 <li><p>We mirror two-way FE behavior via <code class="docutils literal notranslate"><span class="pre">model=3</span></code> (unit and time demeaning), which is equivalent to including unit FE and time dummies in balanced panels.</p></li>
 <li><p>Parameterized-weight robustness specifications from <code class="docutils literal notranslate"><span class="pre">parameterized_W</span></code> are not estimated here because those routines are not currently part of <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code>.</p></li>
@@ -1139,7 +1139,7 @@ Loaded distance shape: (266, 266)
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Reproduce data construction from JGSY2024_MainResults.m</span>
-<span class="c1"># MATLAB indices are 1-based; Python is 0-based.</span>
+<span class="c1"># legacy indices are 1-based; Python is 0-based.</span>
 <span class="n">A_work</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 
 <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">NT</span><span class="p">)</span>
@@ -1486,7 +1486,7 @@ Effects comparison: ED
       <td>0.002401</td>
       <td>-0.000021</td>
       <td>0.000021</td>
-      <td>0.871485</td>
+      <td>0.871499</td>
     </tr>
     <tr>
       <th>pop</th>
@@ -1494,7 +1494,7 @@ Effects comparison: ED
       <td>-0.008100</td>
       <td>-0.000026</td>
       <td>0.000026</td>
-      <td>0.326475</td>
+      <td>0.326473</td>
     </tr>
     <tr>
       <th>initial_gdp</th>
@@ -1502,7 +1502,7 @@ Effects comparison: ED
       <td>-0.093623</td>
       <td>0.000209</td>
       <td>0.000209</td>
-      <td>0.222785</td>
+      <td>0.222786</td>
     </tr>
     <tr>
       <th>lagged_growth</th>
@@ -1510,7 +1510,7 @@ Effects comparison: ED
       <td>0.014822</td>
       <td>0.000943</td>
       <td>0.000943</td>
-      <td>6.797672</td>
+      <td>6.797644</td>
     </tr>
     <tr>
       <th>W*inv</th>
@@ -1518,7 +1518,7 @@ Effects comparison: ED
       <td>0.009203</td>
       <td>0.000270</td>
       <td>0.000270</td>
-      <td>3.021487</td>
+      <td>3.021474</td>
     </tr>
     <tr>
       <th>W*pop</th>
@@ -1526,7 +1526,7 @@ Effects comparison: ED
       <td>-0.002227</td>
       <td>0.000090</td>
       <td>0.000090</td>
-      <td>3.892028</td>
+      <td>3.892017</td>
     </tr>
     <tr>
       <th>W*initial_gdp</th>
@@ -1534,7 +1534,7 @@ Effects comparison: ED
       <td>0.065425</td>
       <td>-0.000326</td>
       <td>0.000326</td>
-      <td>0.496474</td>
+      <td>0.496476</td>
     </tr>
     <tr>
       <th>W*lagged_growth</th>
@@ -1542,7 +1542,7 @@ Effects comparison: ED
       <td>0.189651</td>
       <td>-0.001370</td>
       <td>0.001370</td>
-      <td>0.717257</td>
+      <td>0.717252</td>
     </tr>
     <tr>
       <th>rho</th>
@@ -1583,74 +1583,74 @@ Effects comparison: ED
     <tr>
       <th>inv</th>
       <td>0.001616</td>
-      <td>0.001563</td>
-      <td>-0.000053</td>
-      <td>0.000053</td>
-      <td>3.279578</td>
+      <td>0.001583</td>
+      <td>-0.000033</td>
+      <td>0.000033</td>
+      <td>2.050718</td>
     </tr>
     <tr>
       <th>pop</th>
       <td>-0.007904</td>
-      <td>-0.007963</td>
-      <td>-0.000059</td>
-      <td>0.000059</td>
-      <td>0.747733</td>
+      <td>-0.007939</td>
+      <td>-0.000035</td>
+      <td>0.000035</td>
+      <td>0.446294</td>
     </tr>
     <tr>
       <th>initial_gdp</th>
       <td>-0.088731</td>
-      <td>-0.088650</td>
-      <td>0.000081</td>
-      <td>0.000081</td>
-      <td>0.091122</td>
+      <td>-0.088865</td>
+      <td>-0.000134</td>
+      <td>0.000134</td>
+      <td>0.151002</td>
     </tr>
     <tr>
       <th>lagged_growth</th>
       <td>0.011519</td>
-      <td>0.010933</td>
-      <td>-0.000586</td>
-      <td>0.000586</td>
-      <td>5.087972</td>
+      <td>0.012657</td>
+      <td>0.001138</td>
+      <td>0.001138</td>
+      <td>9.878124</td>
     </tr>
     <tr>
       <th>W*inv</th>
       <td>0.009081</td>
-      <td>0.009061</td>
-      <td>-0.000020</td>
-      <td>0.000020</td>
-      <td>0.216536</td>
+      <td>0.009244</td>
+      <td>0.000163</td>
+      <td>0.000163</td>
+      <td>1.794130</td>
     </tr>
     <tr>
       <th>W*pop</th>
       <td>-0.004958</td>
-      <td>-0.004751</td>
-      <td>0.000207</td>
-      <td>0.000207</td>
-      <td>4.169315</td>
+      <td>-0.004834</td>
+      <td>0.000124</td>
+      <td>0.000124</td>
+      <td>2.498505</td>
     </tr>
     <tr>
       <th>W*initial_gdp</th>
       <td>0.070415</td>
-      <td>0.070092</td>
-      <td>-0.000323</td>
-      <td>0.000323</td>
-      <td>0.458834</td>
+      <td>0.070509</td>
+      <td>0.000094</td>
+      <td>0.000094</td>
+      <td>0.133791</td>
     </tr>
     <tr>
       <th>W*lagged_growth</th>
       <td>0.194065</td>
-      <td>0.194667</td>
-      <td>0.000602</td>
-      <td>0.000602</td>
-      <td>0.310172</td>
+      <td>0.191898</td>
+      <td>-0.002167</td>
+      <td>0.002167</td>
+      <td>1.116839</td>
     </tr>
     <tr>
       <th>rho</th>
       <td>0.650187</td>
-      <td>0.649596</td>
-      <td>-0.000591</td>
-      <td>0.000591</td>
-      <td>0.090829</td>
+      <td>0.649236</td>
+      <td>-0.000951</td>
+      <td>0.000951</td>
+      <td>0.146242</td>
     </tr>
   </tbody>
 </table>
@@ -1794,15 +1794,15 @@ Effects comparison: ED
       <td>0.002600</td>
       <td>0.028100</td>
       <td>0.030700</td>
-      <td>0.002476</td>
-      <td>0.027849</td>
-      <td>0.030325</td>
-      <td>-0.000124</td>
-      <td>0.000124</td>
-      <td>-0.000251</td>
-      <td>0.000251</td>
-      <td>-0.000375</td>
-      <td>0.000375</td>
+      <td>0.002511</td>
+      <td>0.028337</td>
+      <td>0.030849</td>
+      <td>-0.000089</td>
+      <td>0.000089</td>
+      <td>0.000237</td>
+      <td>0.000237</td>
+      <td>0.000149</td>
+      <td>0.000149</td>
     </tr>
     <tr>
       <th>1</th>
@@ -1810,15 +1810,15 @@ Effects comparison: ED
       <td>-0.008900</td>
       <td>-0.028200</td>
       <td>-0.037100</td>
-      <td>-0.008863</td>
-      <td>-0.027443</td>
-      <td>-0.036305</td>
-      <td>0.000037</td>
-      <td>0.000037</td>
-      <td>0.000757</td>
-      <td>0.000757</td>
-      <td>0.000795</td>
-      <td>0.000795</td>
+      <td>-0.008845</td>
+      <td>-0.027620</td>
+      <td>-0.036464</td>
+      <td>0.000055</td>
+      <td>0.000055</td>
+      <td>0.000580</td>
+      <td>0.000580</td>
+      <td>0.000636</td>
+      <td>0.000636</td>
     </tr>
     <tr>
       <th>2</th>
@@ -1826,15 +1826,15 @@ Effects comparison: ED
       <td>-0.087600</td>
       <td>0.035200</td>
       <td>-0.052300</td>
-      <td>-0.087519</td>
-      <td>0.034515</td>
-      <td>-0.053004</td>
-      <td>0.000081</td>
-      <td>0.000081</td>
-      <td>-0.000685</td>
-      <td>0.000685</td>
-      <td>-0.000704</td>
-      <td>0.000704</td>
+      <td>-0.087707</td>
+      <td>0.035352</td>
+      <td>-0.052355</td>
+      <td>-0.000107</td>
+      <td>0.000107</td>
+      <td>0.000152</td>
+      <td>0.000152</td>
+      <td>-0.000055</td>
+      <td>0.000055</td>
     </tr>
     <tr>
       <th>3</th>
@@ -1842,15 +1842,15 @@ Effects comparison: ED
       <td>0.029100</td>
       <td>0.556600</td>
       <td>0.585700</td>
-      <td>0.029223</td>
-      <td>0.557976</td>
-      <td>0.587199</td>
-      <td>0.000123</td>
-      <td>0.000123</td>
-      <td>0.001376</td>
-      <td>0.001376</td>
-      <td>0.001499</td>
-      <td>0.001499</td>
+      <td>0.030780</td>
+      <td>0.552965</td>
+      <td>0.583745</td>
+      <td>0.001680</td>
+      <td>0.001680</td>
+      <td>-0.003635</td>
+      <td>0.003635</td>
+      <td>-0.001955</td>
+      <td>0.001955</td>
     </tr>
   </tbody>
 </table>
@@ -1922,7 +1922,7 @@ Effects comparison: ED
       <th>0</th>
       <td>Table 1 col[1] 6NN</td>
       <td>0.000505</td>
-      <td>0.717257</td>
+      <td>0.717252</td>
       <td>0.000265</td>
       <td>0.000464</td>
       <td>0.000211</td>
@@ -1930,11 +1930,11 @@ Effects comparison: ED
     <tr>
       <th>1</th>
       <td>Table 1 col[2] ED</td>
-      <td>0.000280</td>
-      <td>0.458834</td>
-      <td>0.000091</td>
-      <td>0.000767</td>
-      <td>0.000843</td>
+      <td>0.000538</td>
+      <td>1.116839</td>
+      <td>0.000483</td>
+      <td>0.001151</td>
+      <td>0.000699</td>
     </tr>
   </tbody>
 </table>
@@ -1974,7 +1974,7 @@ Top absolute coefficient gaps (ED):
       <td>0.189651</td>
       <td>-0.001370</td>
       <td>0.001370</td>
-      <td>0.717257</td>
+      <td>0.717252</td>
     </tr>
     <tr>
       <th>rho</th>
@@ -1990,7 +1990,7 @@ Top absolute coefficient gaps (ED):
       <td>0.014822</td>
       <td>0.000943</td>
       <td>0.000943</td>
-      <td>6.797672</td>
+      <td>6.797644</td>
     </tr>
     <tr>
       <th>W*initial_gdp</th>
@@ -1998,7 +1998,7 @@ Top absolute coefficient gaps (ED):
       <td>0.065425</td>
       <td>-0.000326</td>
       <td>0.000326</td>
-      <td>0.496474</td>
+      <td>0.496476</td>
     </tr>
     <tr>
       <th>W*inv</th>
@@ -2006,7 +2006,7 @@ Top absolute coefficient gaps (ED):
       <td>0.009203</td>
       <td>0.000270</td>
       <td>0.000270</td>
-      <td>3.021487</td>
+      <td>3.021474</td>
     </tr>
   </tbody>
 </table>
@@ -2039,49 +2039,49 @@ Top absolute coefficient gaps (ED):
     <tr>
       <th>W*lagged_growth</th>
       <td>0.194065</td>
-      <td>0.194667</td>
-      <td>0.000602</td>
-      <td>0.000602</td>
-      <td>0.310172</td>
-    </tr>
-    <tr>
-      <th>rho</th>
-      <td>0.650187</td>
-      <td>0.649596</td>
-      <td>-0.000591</td>
-      <td>0.000591</td>
-      <td>0.090829</td>
+      <td>0.191898</td>
+      <td>-0.002167</td>
+      <td>0.002167</td>
+      <td>1.116839</td>
     </tr>
     <tr>
       <th>lagged_growth</th>
       <td>0.011519</td>
-      <td>0.010933</td>
-      <td>-0.000586</td>
-      <td>0.000586</td>
-      <td>5.087972</td>
+      <td>0.012657</td>
+      <td>0.001138</td>
+      <td>0.001138</td>
+      <td>9.878124</td>
     </tr>
     <tr>
-      <th>W*initial_gdp</th>
-      <td>0.070415</td>
-      <td>0.070092</td>
-      <td>-0.000323</td>
-      <td>0.000323</td>
-      <td>0.458834</td>
+      <th>rho</th>
+      <td>0.650187</td>
+      <td>0.649236</td>
+      <td>-0.000951</td>
+      <td>0.000951</td>
+      <td>0.146242</td>
     </tr>
     <tr>
-      <th>W*pop</th>
-      <td>-0.004958</td>
-      <td>-0.004751</td>
-      <td>0.000207</td>
-      <td>0.000207</td>
-      <td>4.169315</td>
+      <th>W*inv</th>
+      <td>0.009081</td>
+      <td>0.009244</td>
+      <td>0.000163</td>
+      <td>0.000163</td>
+      <td>1.794130</td>
+    </tr>
+    <tr>
+      <th>initial_gdp</th>
+      <td>-0.088731</td>
+      <td>-0.088865</td>
+      <td>-0.000134</td>
+      <td>0.000134</td>
+      <td>0.151002</td>
     </tr>
   </tbody>
 </table>
 </div></div></div>
 </div>
 <h2 id="detailed-comparison-notes">Detailed Comparison Notes<a class="headerlink" href="#detailed-comparison-notes" title="Link to this heading">¶</a></h2>
-<p>How to interpret discrepancies between <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> and JGSY2024 MATLAB output:</p>
+<p>How to interpret discrepancies between <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> and JGSY2024 legacy output:</p>
 <ol class="arabic simple">
 <li><p><strong>Estimation paradigm</strong></p>
 <ul class="simple">
@@ -2115,7 +2115,7 @@ Top absolute coefficient gaps (ED):
 </ul>
 </li>
 </ol>
-<p>This notebook provides a reproducible bridge from the original MATLAB replication package to a <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> workflow while preserving the key specification choices in Table 1 columns [1]-[2].</p>
+<p>This notebook provides a reproducible bridge from the original legacy replication package to a <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> workflow while preserving the key specification choices in Table 1 columns [1]-[2].</p>
 
 
 

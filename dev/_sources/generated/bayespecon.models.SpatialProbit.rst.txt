@@ -17,6 +17,7 @@
       ~SpatialProbit.fit
       ~SpatialProbit.fitted_probabilities
       ~SpatialProbit.random_effects_mean
+      ~SpatialProbit.spatial_effects
       ~SpatialProbit.summary
    
    
