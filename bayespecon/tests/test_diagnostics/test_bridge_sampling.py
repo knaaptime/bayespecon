@@ -606,3 +606,101 @@ class TestCompileLogPosterior:
         beta_from_transform = unconstrained[:, :2]
         beta_expected = beta_samples.reshape(-1, 2)
         np.testing.assert_allclose(beta_from_transform, beta_expected, rtol=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# Test: ModelComparison
+# ---------------------------------------------------------------------------
+
+
+class TestModelComparison:
+    def _make_fake_model(self, idata):
+        class _FakeModel:
+            inference_data = None
+            pymc_model = None
+            _y = np.zeros(30)
+
+        m = _FakeModel()
+        m.inference_data = idata
+        return m
+
+    def test_dict_input_and_repr(self):
+        from bayespecon import ModelComparison
+
+        idata = _make_simple_linear_idata()
+        m = self._make_fake_model(idata)
+        cmp = ModelComparison({"OLS": m, "OLS2": m}, method="bic")
+        assert cmp.labels == ["OLS", "OLS2"]
+        assert "n_models=2" in repr(cmp)
+
+    def test_list_with_labels(self):
+        from bayespecon import ModelComparison
+
+        idata = _make_simple_linear_idata()
+        m = self._make_fake_model(idata)
+        cmp = ModelComparison([m, m], labels=["A", "B"], method="bic")
+        assert cmp.labels == ["A", "B"]
+
+    def test_list_without_labels_autogen(self):
+        from bayespecon import ModelComparison
+
+        idata = _make_simple_linear_idata()
+        m = self._make_fake_model(idata)
+        cmp = ModelComparison([m], method="bic")
+        assert cmp.labels == ["model_0"]
+
+    def test_dict_with_labels_raises(self):
+        from bayespecon import ModelComparison
+
+        idata = _make_simple_linear_idata()
+        m = self._make_fake_model(idata)
+        with pytest.raises(ValueError, match="dict keys or the `labels`"):
+            ModelComparison({"A": m}, labels=["B"])
+
+    def test_label_length_mismatch_raises(self):
+        from bayespecon import ModelComparison
+
+        idata = _make_simple_linear_idata()
+        m = self._make_fake_model(idata)
+        with pytest.raises(ValueError, match="must match length"):
+            ModelComparison([m, m], labels=["only_one"])
+
+    def test_bad_type_raises(self):
+        from bayespecon import ModelComparison
+
+        with pytest.raises(TypeError, match="must be a list"):
+            ModelComparison(42)
+
+    def test_bic_workflow(self):
+        from bayespecon import ModelComparison
+
+        idata = _make_simple_linear_idata()
+        m1 = self._make_fake_model(idata)
+        m2 = self._make_fake_model(idata)
+        cmp = ModelComparison({"M1": m1, "M2": m2}, method="bic")
+
+        bf = cmp.bayes_factors
+        assert bf.shape == (2, 2)
+        assert list(bf.index) == ["M1", "M2"]
+        # Identical models => BF ~ 1
+        np.testing.assert_allclose(bf.to_numpy(), np.ones((2, 2)), atol=1e-6)
+
+        logmls = cmp.log_marginal_likelihoods
+        assert isinstance(logmls, pd.Series)
+        assert list(logmls.index) == ["M1", "M2"]
+
+        probs = cmp.posterior_probabilities()
+        assert isinstance(probs, pd.Series)
+        np.testing.assert_allclose(probs.sum(), 1.0)
+        np.testing.assert_allclose(probs.to_numpy(), [0.5, 0.5], atol=1e-6)
+
+    def test_compute_is_cached(self):
+        from bayespecon import ModelComparison
+
+        idata = _make_simple_linear_idata()
+        m = self._make_fake_model(idata)
+        cmp = ModelComparison({"M1": m}, method="bic")
+        _ = cmp.bayes_factors
+        cached = cmp._bf_df
+        _ = cmp.posterior_probabilities()
+        assert cmp._bf_df is cached
