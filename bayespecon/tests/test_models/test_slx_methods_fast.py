@@ -8,7 +8,6 @@ import pymc as pm
 import pytest
 
 from bayespecon import SLX
-
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

@@ -120,9 +120,7 @@ def test_spatial_probit_priors_defaults():
     X = rng.normal(size=(n, 2))
     y = (rng.normal(size=n) > 0).astype(int)
     W = _make_w(n)
-    m = SpatialProbit(
-        y=y, X=X, W=W, region_ids=np.arange(n)
-    )
+    m = SpatialProbit(y=y, X=X, W=W, region_ids=np.arange(n))
     assert isinstance(m.priors_obj, SpatialProbitPriors)
     assert m.priors["rho_lower"] == -0.95
     assert m.priors["rho_upper"] == 0.95

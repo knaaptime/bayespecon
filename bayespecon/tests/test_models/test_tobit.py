@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 
 from bayespecon import SARTobit, SDMTobit, SEMTobit
-
 from bayespecon.tests.helpers import (
     SAMPLE_KWARGS,
     make_sar_tobit_data,

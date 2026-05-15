@@ -22,7 +22,6 @@ from bayespecon import (
     SEMPanelFE,
     SLXPanelFE,
 )
-
 from bayespecon.tests.helpers import (
     PANEL_N,
     PANEL_T,

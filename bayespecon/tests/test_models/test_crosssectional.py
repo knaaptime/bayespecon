@@ -15,7 +15,6 @@ import numpy as np
 import pytest
 
 from bayespecon import SAR, SDEM, SDM, SEM, SLX
-
 from bayespecon.tests.helpers import (
     SAMPLE_KWARGS,
     make_sar_data,

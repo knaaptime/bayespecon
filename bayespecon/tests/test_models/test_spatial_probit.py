@@ -14,7 +14,6 @@ import numpy as np
 import pytest
 
 from bayespecon import SpatialProbit
-
 from bayespecon.tests.helpers import (
     SAMPLE_KWARGS,
     W_to_graph,

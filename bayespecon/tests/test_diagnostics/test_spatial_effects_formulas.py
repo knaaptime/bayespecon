@@ -9,7 +9,6 @@ from __future__ import annotations
 import numpy as np
 
 from bayespecon import SAR, SDEM, SDM, SLX
-
 from bayespecon.tests.helpers import (
     W_to_graph,
     make_line_W,

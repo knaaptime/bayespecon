@@ -595,8 +595,7 @@ class SpatialPanelModel(_SpatialModelBase):
         """
         eigs = (
             self._W_eigs.real.astype(np.float64)
-            if self._resolved_logdet_method == "eigenvalue"
-            and self._W_eigs is not None
+            if self._resolved_logdet_method == "eigenvalue" and self._W_eigs is not None
             else None
         )
         return resolve_logdet_bounds(
@@ -610,9 +609,7 @@ class SpatialPanelModel(_SpatialModelBase):
     def _logdet_numpy_fn(self):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
         eigs = (
-            self._W_eigs.real
-            if self._resolved_logdet_method == "eigenvalue"
-            else None
+            self._W_eigs.real if self._resolved_logdet_method == "eigenvalue" else None
         )
         b = self._logdet_bounds
         return make_logdet_numpy_fn(
@@ -627,9 +624,7 @@ class SpatialPanelModel(_SpatialModelBase):
     def _logdet_numpy_vec_fn(self):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
         eigs = (
-            self._W_eigs.real
-            if self._resolved_logdet_method == "eigenvalue"
-            else None
+            self._W_eigs.real if self._resolved_logdet_method == "eigenvalue" else None
         )
         b = self._logdet_bounds
         return make_logdet_numpy_vec_fn(

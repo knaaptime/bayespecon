@@ -16,7 +16,6 @@ from bayespecon import (
     SEMPanelDynamic,
     SLXPanelDynamic,
 )
-
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

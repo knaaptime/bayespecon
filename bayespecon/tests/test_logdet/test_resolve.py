@@ -8,7 +8,6 @@ from bayespecon.logdet import (
     resolve_logdet_method,
 )
 
-
 CANONICAL_METHODS = {
     "exact",
     "eigenvalue",

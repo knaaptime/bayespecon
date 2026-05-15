@@ -90,9 +90,7 @@ def resolve_logdet_method(method: str | None, *, n: int) -> str:
         return _auto_logdet_method(int(n))
     if method not in VALID_LOGDET_METHODS:
         valid = ", ".join(sorted(VALID_LOGDET_METHODS))
-        raise ValueError(
-            f"Unknown logdet method: {method!r}. Valid options: {valid}."
-        )
+        raise ValueError(f"Unknown logdet method: {method!r}. Valid options: {valid}.")
     return method
 
 
@@ -1310,7 +1308,13 @@ def _auto_logdet_method(n: int) -> str:
     return "eigenvalue" if n <= cutoff else "chebyshev"
 
 
-_GRID_SPLINE_METHODS = ("grid_dense", "grid_sparse", "sparse_spline", "grid_mc", "grid_ilu")
+_GRID_SPLINE_METHODS = (
+    "grid_dense",
+    "grid_sparse",
+    "sparse_spline",
+    "grid_mc",
+    "grid_ilu",
+)
 
 
 def _build_grid_spline(
@@ -1726,13 +1730,18 @@ def make_logdet_fn(
             return _chebyshev_eig_interp
         # Other methods (grid_dense, exact, grid_sparse, sparse_spline, grid_mc, grid_ilu)
         # require the full matrix; fall back to eigenvalue with a note.
-        if method in ("grid_dense", "exact", "grid_sparse", "sparse_spline", "grid_mc", "grid_ilu"):
+        if method in (
+            "grid_dense",
+            "exact",
+            "grid_sparse",
+            "sparse_spline",
+            "grid_mc",
+            "grid_ilu",
+        ):
             if T == 1:
                 return lambda rho: logdet_eigenvalue(rho, eigs)
             return lambda rho: T * logdet_eigenvalue(rho, eigs)
-        raise ValueError(
-            f"Unsupported logdet method for eigenvalue input: {method!r}."
-        )
+        raise ValueError(f"Unsupported logdet method for eigenvalue input: {method!r}.")
 
     # 2-D dense matrix path.
     W_dense = W

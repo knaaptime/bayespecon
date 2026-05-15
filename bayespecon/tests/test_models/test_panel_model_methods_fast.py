@@ -19,7 +19,6 @@ from bayespecon import (
     SLXPanelFE,
 )
 from bayespecon.models.panel_base import SpatialPanelModel
-
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

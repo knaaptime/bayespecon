@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 from bayespecon import dgp
-
 from bayespecon.tests.helpers import W_to_graph, make_rook_W
 
 

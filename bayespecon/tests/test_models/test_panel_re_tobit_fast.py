@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 
 from bayespecon import OLSPanelRE, SARPanelRE, SARPanelTobit, SEMPanelRE, SEMPanelTobit
-
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

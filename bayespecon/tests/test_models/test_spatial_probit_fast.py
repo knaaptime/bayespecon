@@ -10,7 +10,6 @@ import pytest
 import scipy.sparse as sp
 
 from bayespecon import SpatialProbit
-
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

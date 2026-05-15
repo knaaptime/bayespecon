@@ -40,7 +40,6 @@ from bayespecon import (
     SpatialProbit,
 )
 from bayespecon.dgp import simulate_sar, simulate_sem
-
 from bayespecon.tests.helpers import (
     PANEL_N,
     PANEL_T,

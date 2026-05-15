@@ -31,7 +31,6 @@ from bayespecon import (
     SEMPanelDynamic,
     SLXPanelDynamic,
 )
-
 from bayespecon.tests.helpers import (
     PANEL_N,
     PANEL_T,

@@ -6,7 +6,6 @@ import arviz as az
 import numpy as np
 
 from bayespecon import SARTobit, SDMTobit, SEMTobit
-
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

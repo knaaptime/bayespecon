@@ -21,7 +21,6 @@ from libpysal.graph import Graph
 from bayespecon.models._sampler import use_jax_likelihood
 from bayespecon.models.base import SpatialModel
 from bayespecon.models.panel_base import SpatialPanelModel
-
 from bayespecon.tests.helpers import W_to_graph, make_line_W, make_rook_W
 
 # ---------------------------------------------------------------------------

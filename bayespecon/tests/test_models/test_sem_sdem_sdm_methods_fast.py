@@ -7,7 +7,6 @@ import numpy as np
 import pymc as pm
 
 from bayespecon import SDEM, SDM, SEM
-
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

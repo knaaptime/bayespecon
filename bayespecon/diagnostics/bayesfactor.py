@@ -1420,8 +1420,7 @@ class ModelComparison:
                 self._labels = list(labels)
         else:
             raise TypeError(
-                "models must be a list, tuple, or dict; got "
-                f"{type(models).__name__}."
+                f"models must be a list, tuple, or dict; got {type(models).__name__}."
             )
 
         self.method = method

@@ -14,8 +14,8 @@ import pytest
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from bayespecon.models import OLS, base as base_mod
-
+from bayespecon.models import OLS
+from bayespecon.models import base as base_mod
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -63,9 +63,7 @@ class TestWeightsLifecycle:
     def test_W_dense_matches_sparse(self, graph, fitted_inputs):
         y, X = fitted_inputs
         model = OLS(y=y, X=X, W=graph)
-        np.testing.assert_allclose(
-            model._W_dense, model._W_sparse.toarray()
-        )
+        np.testing.assert_allclose(model._W_dense, model._W_sparse.toarray())
 
     def test_Wy_and_WX_match_manual(self, graph, fitted_inputs):
         y, X = fitted_inputs

@@ -686,10 +686,7 @@ class _SpatialModelBase(ABC):
     @cached_property
     def _WX(self) -> np.ndarray:
         """Spatial lag of the selected X columns, ``W @ X[:, wx_idx]``."""
-        if (
-            getattr(self, "_W_sparse", None) is None
-            or not self._wx_column_indices
-        ):
+        if getattr(self, "_W_sparse", None) is None or not self._wx_column_indices:
             return np.empty((self._X.shape[0], 0), dtype=np.float64)
         return self._apply_spatial_lag(self._X[:, self._wx_column_indices])
 
