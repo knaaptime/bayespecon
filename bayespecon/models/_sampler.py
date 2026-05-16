@@ -151,15 +151,22 @@ def prepare_compile_kwargs(
     leaving JAX-backed (``"blackjax"``, ``"numpyro"``) and Rust-backed
     (``"nutpie"``) samplers untouched — they ignore ``compile_kwargs``.
 
+    For JAX-backed samplers (``"blackjax"``, ``"numpyro"``), this helper
+    also defaults ``nuts_sampler_kwargs["chain_method"] = "vectorized"``
+    so that multiple chains run in a single XLA-compiled batched call
+    rather than serially.  Caller overrides (including an explicit
+    ``None`` or any other ``chain_method`` value) are preserved.
+
     Behaviour:
 
-    * Non-``"pymc"`` sampler → returns ``sample_kwargs`` unchanged.
-    * ``"compile_kwargs"`` already present (caller override, including the
-      empty dict ``{}``) → returns ``sample_kwargs`` unchanged.
-    * ``numba`` importable → returns a copy with
-      ``compile_kwargs={"mode": "NUMBA"}`` inserted.
-    * ``numba`` missing → returns ``sample_kwargs`` unchanged and emits a
-      one-time ``UserWarning``.
+    * ``"pymc"`` sampler:
+        - ``"compile_kwargs"`` already present → unchanged.
+        - ``numba`` importable → adds ``compile_kwargs={"mode": "NUMBA"}``.
+        - ``numba`` missing → unchanged + one-time ``UserWarning``.
+    * ``"blackjax"`` / ``"numpyro"`` sampler:
+        - ``nuts_sampler_kwargs["chain_method"]`` already present → unchanged.
+        - Otherwise → inserts ``"chain_method": "vectorized"``.
+    * Any other sampler → returns ``sample_kwargs`` unchanged.
 
     Parameters
     ----------
@@ -172,10 +179,16 @@ def prepare_compile_kwargs(
     Returns
     -------
     dict
-        A new dict that may have ``compile_kwargs`` added; never mutates
-        the input.
+        A new dict that may have ``compile_kwargs`` and/or
+        ``nuts_sampler_kwargs`` added; never mutates the input.
     """
     out = dict(sample_kwargs or {})
+    if nuts_sampler in ("blackjax", "numpyro"):
+        nsk = dict(out.get("nuts_sampler_kwargs") or {})
+        if "chain_method" not in nsk:
+            nsk["chain_method"] = "vectorized"
+            out["nuts_sampler_kwargs"] = nsk
+        return out
     if nuts_sampler != "pymc":
         return out
     if "compile_kwargs" in out:

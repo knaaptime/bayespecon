@@ -44,6 +44,12 @@ def _klujax_available() -> bool:
 
 
 @lru_cache(maxsize=1)
+def _lineax_available() -> bool:
+    """Return ``True`` when optional ``lineax`` is importable."""
+    return importlib.util.find_spec("lineax") is not None
+
+
+@lru_cache(maxsize=1)
 def _umfpack_available() -> bool:
     """Return ``True`` when optional ``scikits.umfpack`` is importable."""
     # ``find_spec`` raises ``ModuleNotFoundError`` in Python 3.14+ when the
@@ -130,6 +136,97 @@ def _select_jax_sparse_backend() -> str:
     return "klujax" if _klujax_available() else "callback"
 
 
+def _strict_env() -> bool:
+    return os.environ.get("BAYESPECON_JAX_SPARSE_STRICT", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+@lru_cache(maxsize=1)
+def _select_jax_sar_solver() -> str:
+    """Resolve the JAX SAR solver from env vars.
+
+    Returns one of ``"callback"``, ``"klujax"``, ``"lineax"``.
+
+    Environment
+    -----------
+    BAYESPECON_JAX_SAR_SOLVER : {"auto", "callback", "klujax", "lineax"}
+        Default ``auto``. ``auto`` preserves today's behavior: prefer
+        ``klujax`` when available, otherwise ``callback``. ``auto`` never
+        selects ``lineax``; that path is opt-in only.
+    BAYESPECON_JAX_SPARSE_STRICT : truthy
+        If set, missing requested optional dependencies raise ImportError
+        instead of falling back.
+    """
+    requested = os.environ.get("BAYESPECON_JAX_SAR_SOLVER", "auto").strip().lower()
+    strict = _strict_env()
+
+    if requested in {"", "auto"}:
+        # Defer to the existing global sparse-backend selector so that
+        # behavior is unchanged when the SAR-specific knob is not set.
+        backend = _select_jax_sparse_backend()
+        return backend if backend in {"callback", "klujax"} else "callback"
+
+    if requested in {"callback", "scipy", "pure_callback"}:
+        return "callback"
+
+    if requested in {"klu", "klujax"}:
+        if _klujax_available():
+            return "klujax"
+        msg = (
+            "BAYESPECON_JAX_SAR_SOLVER=klujax requested, but optional "
+            "dependency 'klujax' is not installed. Falling back to callback."
+        )
+        if strict:
+            raise ImportError(msg)
+        warnings.warn(msg, RuntimeWarning)
+        return "callback"
+
+    if requested == "lineax":
+        if _lineax_available():
+            return "lineax"
+        msg = (
+            "BAYESPECON_JAX_SAR_SOLVER=lineax requested, but optional "
+            "dependency 'lineax' is not installed. Falling back to callback."
+        )
+        if strict:
+            raise ImportError(msg)
+        warnings.warn(msg, RuntimeWarning)
+        return "callback"
+
+    msg = (
+        f"Unknown BAYESPECON_JAX_SAR_SOLVER='{requested}'. "
+        "Valid values are: auto, callback, klujax, lineax. Falling back to auto."
+    )
+    if strict:
+        raise ValueError(msg)
+    warnings.warn(msg, RuntimeWarning)
+    return "klujax" if _klujax_available() else "callback"
+
+
+@lru_cache(maxsize=1)
+def _select_jax_sar_lineax_solver() -> str:
+    """Resolve the Lineax iterative solver (``bicgstab`` or ``gmres``)."""
+    requested = os.environ.get(
+        "BAYESPECON_JAX_SAR_LINEAX_SOLVER", "bicgstab"
+    ).strip().lower()
+    if requested in {"", "bicgstab"}:
+        return "bicgstab"
+    if requested == "gmres":
+        return "gmres"
+    msg = (
+        f"Unknown BAYESPECON_JAX_SAR_LINEAX_SOLVER='{requested}'. "
+        "Valid values are: bicgstab, gmres. Falling back to bicgstab."
+    )
+    if _strict_env():
+        raise ValueError(msg)
+    warnings.warn(msg, RuntimeWarning)
+    return "bicgstab"
+
+
 @lru_cache(maxsize=1)
 def register_jax_dispatch() -> bool:
     """Register JAX dispatches for all Ops in :mod:`bayespecon.ops`.
@@ -151,6 +248,16 @@ def register_jax_dispatch() -> bool:
     klujax = None
     if sparse_backend == "klujax":
         import klujax
+
+    sar_solver = _select_jax_sar_solver()
+    lineax_solver_name = (
+        _select_jax_sar_lineax_solver() if sar_solver == "lineax" else "bicgstab"
+    )
+    lx = None
+    jsparse = None
+    if sar_solver == "lineax":
+        import lineax as lx  # noqa: F401
+        from jax.experimental import sparse as jsparse  # noqa: F401
 
     from .ops import (
         KroneckerFlowSolveMatrixOp,
@@ -533,8 +640,64 @@ def register_jax_dispatch() -> bool:
         solve.defvjp(solve_fwd, solve_bwd)
         return solve
 
+    # ------------------------------------------------------------------
+    # Cross-sectional SAR sparse Op — Lineax matrix-free iterative solve
+    # ------------------------------------------------------------------
+
+    def _build_lineax_sar_paths(op):
+        """Return ``(forward_fn, vjp_fn)`` for the Lineax SAR path.
+
+        Both functions are pure-JAX and tracer-compatible. The forward solves
+        :math:`(I - \\rho W) \\eta = b` and the VJP solves the adjoint system
+        :math:`(I - \\rho W^\\top) v = g` matrix-free over a BCOO ``W``.
+        """
+        n = op._n
+        W_bcoo = jsparse.BCOO.from_scipy_sparse(op._W)
+        W_T_bcoo = jsparse.BCOO.from_scipy_sparse(op._W.transpose().tocsr())
+        max_steps = int(min(10 * n, 2000))
+        rtol = 1e-8
+        atol = 1e-8
+
+        def _make_solver():
+            if lineax_solver_name == "gmres":
+                return lx.GMRES(rtol=rtol, atol=atol, max_steps=max_steps, restart=20)
+            return lx.BiCGStab(rtol=rtol, atol=atol, max_steps=max_steps)
+
+        def _solve(matvec_fn, rhs):
+            structure = jax.ShapeDtypeStruct(rhs.shape, rhs.dtype)
+            operator = lx.FunctionLinearOperator(matvec_fn, structure)
+            # ``throw=True`` makes Lineax raise on non-convergence via
+            # Equinox's runtime-error machinery. Silent fallback would
+            # corrupt downstream NUTS gradients.
+            solution = lx.linear_solve(operator, rhs, _make_solver(), throw=True)
+            return solution.value
+
+        def forward(rho, b):
+            def matvec(x):
+                return x - rho * (W_bcoo @ x)
+
+            return _solve(matvec, b)
+
+        def vjp(rho, eta, g):
+            def matvec_T(x):
+                return x - rho * (W_T_bcoo @ x)
+
+            v = _solve(matvec_T, g)
+            grad_rho = jnp.vdot(v, W_bcoo @ eta)
+            return grad_rho, v
+
+        return forward, vjp
+
     @jax_funcify.register(SparseSARSolveOp)
     def _funcify_sparse_sar_solve(op, **kwargs):
+        if sar_solver == "lineax":
+            forward, _ = _build_lineax_sar_paths(op)
+
+            def sparse_sar_solve(rho, b):
+                return forward(rho, b)
+
+            return sparse_sar_solve
+
         if sparse_backend == "klujax":
             n = op._n
             I = np.eye(n, dtype=np.float64)
@@ -563,6 +726,14 @@ def register_jax_dispatch() -> bool:
 
     @jax_funcify.register(_SparseSARVJPOp)
     def _funcify_sparse_sar_vjp(op, **kwargs):
+        if sar_solver == "lineax":
+            _, vjp = _build_lineax_sar_paths(op)
+
+            def sparse_sar_vjp(rho, eta, g):
+                return vjp(rho, eta, g)
+
+            return sparse_sar_vjp
+
         # Used by PyTensor's symbolic L_op path. This node is itself the
         # gradient, so pure_callback is sufficient.
         def _host_vjp(rho, eta, g):

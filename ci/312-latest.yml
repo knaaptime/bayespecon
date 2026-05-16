@@ -21,3 +21,4 @@ dependencies:
   - openpyxl
   - lazy_loader
   - fastprogress
+  - nutpie

@@ -125,7 +125,11 @@ class TestPrepareCompileKwargs:
 
     def test_non_pymc_sampler_unchanged(self):
         result = prepare_compile_kwargs({"chains": 2}, nuts_sampler="blackjax")
-        assert result == {"chains": 2}
+        # JAX samplers default chain_method="vectorized".
+        assert result == {
+            "chains": 2,
+            "nuts_sampler_kwargs": {"chain_method": "vectorized"},
+        }
         assert "compile_kwargs" not in result
 
     def test_existing_compile_kwargs_preserved(self):

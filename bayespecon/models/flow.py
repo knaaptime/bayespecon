@@ -29,8 +29,10 @@ Two variants are provided:
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Union
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Callable, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -52,6 +54,89 @@ from ..logdet import (
     make_flow_separable_logdet_numpy,
 )
 from ..ops import kron_solve_matrix, kron_solve_vec
+
+
+def _resolve_worker_count(parallel: Optional[int], total: int) -> int:
+    """Translate the public ``parallel`` argument into a thread count.
+
+    ``None``/``0``/``1`` → sequential (1 worker).  ``-1`` → ``os.cpu_count()``
+    (or 1 if unknown).  Any positive integer is used directly.  The result is
+    clamped to ``[1, total]`` so workers are never wasted on tiny posteriors.
+    """
+    if parallel is None or parallel == 0 or parallel == 1 or total <= 1:
+        return 1
+    if parallel == -1:
+        n = os.cpu_count() or 1
+    elif parallel < 0:
+        raise ValueError(
+            f"parallel must be -1, None, or a non-negative int; got {parallel!r}."
+        )
+    else:
+        n = int(parallel)
+    return max(1, min(n, total))
+
+
+def _parallel_draw_loop(
+    total: int,
+    worker: Callable[..., Any],
+    *,
+    parallel: Optional[int],
+    random_seed: Optional[int] = None,
+    needs_rng: bool = False,
+) -> list:
+    """Run ``worker`` for ``g in range(total)`` sequentially or via threads.
+
+    SciPy sparse factorisations and NumPy BLAS calls release the GIL, so a
+    :class:`~concurrent.futures.ThreadPoolExecutor` scales near-linearly with
+    physical cores for the per-draw work performed by posterior-predictive
+    and spatial-effects loops on flow models.
+
+    Parameters
+    ----------
+    total : int
+        Number of independent items (draws) to process.
+    worker : callable
+        ``worker(g, rng_g)`` when ``needs_rng`` is ``True``, else
+        ``worker(g)``.  Must return a value (typically an ``ndarray`` or
+        ``dict``) for draw ``g``.
+    parallel : int or None
+        Worker-count selector — see :func:`_resolve_worker_count`.
+    random_seed : int, optional
+        Parent seed used when ``needs_rng=True``.  Spawned via
+        :class:`numpy.random.SeedSequence` so each draw receives an
+        independent, reproducible substream regardless of completion order.
+    needs_rng : bool, default False
+        If ``True``, build one :class:`numpy.random.Generator` per draw and
+        pass it as the second argument to ``worker``.
+
+    Returns
+    -------
+    list
+        Length-``total`` list of worker outputs in draw order.
+    """
+    if needs_rng:
+        seed_seq = np.random.SeedSequence(random_seed)
+        rngs = [np.random.default_rng(s) for s in seed_seq.spawn(total)]
+    else:
+        rngs = [None] * total
+
+    n_workers = _resolve_worker_count(parallel, total)
+
+    if n_workers <= 1:
+        if needs_rng:
+            return [worker(g, rngs[g]) for g in range(total)]
+        return [worker(g) for g in range(total)]
+
+    results: list = [None] * total
+    with ThreadPoolExecutor(max_workers=n_workers) as ex:
+        if needs_rng:
+            futures = {ex.submit(worker, g, rngs[g]): g for g in range(total)}
+        else:
+            futures = {ex.submit(worker, g): g for g in range(total)}
+        for fut in as_completed(futures):
+            g = futures[fut]
+            results[g] = fut.result()
+    return results
 
 
 def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -491,7 +576,10 @@ class FlowModel(ABC):
 
     @abstractmethod
     def _compute_spatial_effects_posterior(
-        self, draws: Optional[int] = None
+        self,
+        draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute posterior spatial effects.  Implemented by subclasses."""
 
@@ -870,6 +958,7 @@ class FlowModel(ABC):
         return_posterior_samples: bool = False,
         ci: float = 0.95,
         mode: str = "auto",
+        parallel: Optional[int] = -1,
     ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
         """Summarise posterior origin/destination/intra/network/total effects.
 
@@ -894,6 +983,11 @@ class FlowModel(ABC):
             the destination and origin design blocks are identical
             (``self._symmetric_xo_xd``) and reports both sides otherwise.
             ``"combined"`` always sums; ``"separate"`` always reports both.
+        parallel : int or None, default -1
+            Number of worker threads for the per-draw effects loop.  ``-1``
+            uses ``os.cpu_count()``; ``None``/``0``/``1`` forces sequential
+            execution.  Ignored by closed-form (``OLSFlow``, ``SEMFlow``)
+            variants.
 
         Returns
         -------
@@ -916,7 +1010,9 @@ class FlowModel(ABC):
                 f"mode must be 'auto', 'combined', or 'separate'; got {mode!r}."
             )
 
-        posterior = self._compute_spatial_effects_posterior(draws=draws)
+        posterior = self._compute_spatial_effects_posterior(
+            draws=draws, parallel=parallel
+        )
 
         if mode == "auto":
             effective_mode = "combined" if self._symmetric_xo_xd else "separate"
@@ -1011,6 +1107,7 @@ class FlowModel(ABC):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive samples ``y_rep``.
 
@@ -1025,6 +1122,11 @@ class FlowModel(ABC):
             Number of posterior draws to use.  Defaults to all available.
         random_seed : int, optional
             Seed for the noise/Poisson sampler.
+        parallel : int or None, default -1
+            Number of worker threads for the per-draw loop.  ``-1`` uses
+            ``os.cpu_count()``; ``None``/``0``/``1`` forces sequential
+            execution.  Reproducibility under a fixed ``random_seed`` is
+            preserved across worker counts via ``SeedSequence.spawn``.
 
         Returns
         -------
@@ -1053,18 +1155,27 @@ class FlowModel(ABC):
             if sigma_draws is not None:
                 sigma_draws = sigma_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g in range(total):
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
             sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            out[g] = self._simulate_y_rep(
+            return self._simulate_y_rep(
                 float(rho_d[g]),
                 float(rho_o[g]),
                 float(rho_w[g]),
                 beta_draws[g],
                 sigma_g,
-                rng,
+                rng_g,
             )
+
+        rows = _parallel_draw_loop(
+            total,
+            _work,
+            parallel=parallel,
+            random_seed=random_seed,
+            needs_rng=True,
+        )
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
 
@@ -1219,7 +1330,10 @@ class SARFlow(FlowModel):
         )
 
     def _compute_spatial_effects_posterior(
-        self, draws: Optional[int] = None
+        self,
+        draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute posterior origin / destination / intra / network / total effects.
 
@@ -1287,7 +1401,7 @@ class SARFlow(FlowModel):
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
-        for idx in range(n_draws_total):
+        def _work(idx: int) -> dict[str, np.ndarray]:
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             rw = float(rho_w_draws[idx])
@@ -1303,7 +1417,7 @@ class SARFlow(FlowModel):
             def _solve(rhs: np.ndarray, _lu=lu) -> np.ndarray:
                 return _lu.solve(rhs)
 
-            res = _compute_flow_effects_lesage(
+            return _compute_flow_effects_lesage(
                 _solve,
                 self._dmask,
                 self._omask,
@@ -1315,6 +1429,11 @@ class SARFlow(FlowModel):
                 k_o=k_o,
                 beta_intra=beta_intra_vec,
             )
+
+        per_draw = _parallel_draw_loop(
+            n_draws_total, _work, parallel=parallel, needs_rng=False
+        )
+        for idx, res in enumerate(per_draw):
             for key, arr in res.items():
                 out[key][idx, : len(arr)] = arr
 
@@ -1455,7 +1574,10 @@ class SARFlowSeparable(FlowModel):
         return self._separable_logdet_numpy_fn(rho_d, rho_o)
 
     def _compute_spatial_effects_posterior(
-        self, draws: Optional[int] = None
+        self,
+        draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute posterior effects using Kronecker-factored solve.
 
@@ -1517,7 +1639,7 @@ class SARFlowSeparable(FlowModel):
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
-        for idx in range(n_draws_total):
+        def _work(idx: int) -> dict[str, np.ndarray]:
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             beta_d_vec = beta_draws[idx, dest_start : dest_start + k_d]
@@ -1532,7 +1654,7 @@ class SARFlowSeparable(FlowModel):
             def _solve(rhs: np.ndarray, _Lo=Lo, _Ld=Ld, _n=n) -> np.ndarray:
                 return kron_solve_matrix(_Lo, _Ld, rhs, _n)
 
-            res = _compute_flow_effects_lesage(
+            return _compute_flow_effects_lesage(
                 _solve,
                 self._dmask,
                 self._omask,
@@ -1544,6 +1666,11 @@ class SARFlowSeparable(FlowModel):
                 k_o=k_o,
                 beta_intra=beta_intra_vec,
             )
+
+        per_draw = _parallel_draw_loop(
+            n_draws_total, _work, parallel=parallel, needs_rng=False
+        )
+        for idx, res in enumerate(per_draw):
             for key, arr in res.items():
                 out[key][idx, : len(arr)] = arr
 
@@ -1957,6 +2084,7 @@ class OLSFlow(FlowModel):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flows for the OLS gravity model."""
         if self._idata is None:
@@ -1975,15 +2103,25 @@ class OLSFlow(FlowModel):
             if sigma_draws is not None:
                 sigma_draws = sigma_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g in range(total):
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
             sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            out[g] = self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng)
+            return self._simulate_y_rep(
+                0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng_g
+            )
+
+        rows = _parallel_draw_loop(
+            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
+        )
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
     def _compute_spatial_effects_posterior(
-        self, draws: Optional[int] = None
+        self,
+        draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,  # unused: closed-form, no per-draw solve
     ) -> dict[str, np.ndarray]:
         r"""Closed-form Thomas-Agnan & LeSage (2014, Table 83.1) effects.
 
@@ -2166,6 +2304,7 @@ class PoissonFlow(OLSFlow):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for the Poisson gravity model."""
         if self._idata is None:
@@ -2179,10 +2318,17 @@ class PoissonFlow(OLSFlow):
             total = min(int(n_draws), total)
             beta_draws = beta_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
+            return self._simulate_y_rep(
+                0.0, 0.0, 0.0, beta_draws[g], None, rng_g
+            )
+
+        rows = _parallel_draw_loop(
+            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
+        )
         out = np.empty((total, self._N), dtype=np.float64)
-        for g in range(total):
-            out[g] = self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], None, rng)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
 
@@ -2267,6 +2413,7 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for NB SAR flow model."""
         if self._idata is None:
@@ -2288,15 +2435,22 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
             rho_w_draws = rho_w_draws[:total]
             alpha_draws = alpha_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g in range(total):
-            A = self._assemble_A(rho_d_draws[g], rho_o_draws[g], rho_w_draws[g])
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
+            A = self._assemble_A(
+                rho_d_draws[g], rho_o_draws[g], rho_w_draws[g]
+            )
             eta = sp.linalg.spsolve(A, self._X_design @ beta_draws[g])
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
-            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
+            return rng_g.negative_binomial(alpha, p).astype(np.float64)
+
+        rows = _parallel_draw_loop(
+            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
+        )
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
 
@@ -2346,6 +2500,7 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for separable NB SAR flow."""
         if self._idata is None:
@@ -2365,18 +2520,24 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
             rho_o_draws = rho_o_draws[:total]
             alpha_draws = alpha_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N), dtype=np.float64)
         n = self._n
         I_n = sp.eye(n, format="csr", dtype=np.float64)
-        for g in range(total):
+
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
             Ld = I_n - float(rho_d_draws[g]) * self._W_sparse
             Lo = I_n - float(rho_o_draws[g]) * self._W_sparse
             eta = kron_solve_vec(Lo, Ld, self._X_design @ beta_draws[g], n)
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
-            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
+            return rng_g.negative_binomial(alpha, p).astype(np.float64)
+
+        rows = _parallel_draw_loop(
+            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
+        )
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
 
@@ -2403,6 +2564,7 @@ class NegativeBinomialFlow(PoissonFlow):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for NB gravity baseline."""
         if self._idata is None:
@@ -2418,14 +2580,19 @@ class NegativeBinomialFlow(PoissonFlow):
             beta_draws = beta_draws[:total]
             alpha_draws = alpha_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g in range(total):
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
             eta = self._X_design @ beta_draws[g]
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
-            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
+            return rng_g.negative_binomial(alpha, p).astype(np.float64)
+
+        rows = _parallel_draw_loop(
+            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
+        )
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
 
@@ -2628,7 +2795,10 @@ class SEMFlow(FlowModel):
         return Xb + u
 
     def _compute_spatial_effects_posterior(
-        self, draws: Optional[int] = None
+        self,
+        draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,  # unused: closed-form, no per-draw solve
     ) -> dict[str, np.ndarray]:
         r"""Closed-form Thomas-Agnan & LeSage (2014, Table 83.1) effects.
 

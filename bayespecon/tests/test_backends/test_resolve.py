@@ -75,7 +75,7 @@ def test_resolve_backend_passthrough_for_instance():
 
 
 def test_available_backends_lists_all():
-    assert set(available_backends()) == {"pymc", "numpyro", "blackjax"}
+    assert set(available_backends()) == {"pymc", "numpyro", "blackjax", "nutpie"}
 
 
 def test_backend_implements_protocol():
@@ -144,6 +144,27 @@ def test_pymc_backend_use_jax_likelihood():
 def test_pymc_backend_prepare_sample_kwargs_non_pymc_unchanged():
     b = PyMCBackend()
     out = b.prepare_sample_kwargs({"draws": 100}, "numpyro")
+    # JAX samplers default to chain_method="vectorized" so multiple chains
+    # run in a single XLA-compiled batched call rather than serially.
+    assert out == {
+        "draws": 100,
+        "nuts_sampler_kwargs": {"chain_method": "vectorized"},
+    }
+
+
+def test_pymc_backend_prepare_sample_kwargs_jax_chain_method_override():
+    b = PyMCBackend()
+    out = b.prepare_sample_kwargs(
+        {"draws": 100, "nuts_sampler_kwargs": {"chain_method": "parallel"}},
+        "numpyro",
+    )
+    # Caller override must be preserved.
+    assert out["nuts_sampler_kwargs"] == {"chain_method": "parallel"}
+
+
+def test_pymc_backend_prepare_sample_kwargs_nutpie_unchanged():
+    b = PyMCBackend()
+    out = b.prepare_sample_kwargs({"draws": 100}, "nutpie")
     assert out == {"draws": 100}
 
 

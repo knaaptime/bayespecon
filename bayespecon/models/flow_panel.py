@@ -37,6 +37,7 @@ from .base import SpatialModel
 from .flow import (
     _build_flow_effect_masks,
     _compute_flow_effects_lesage,
+    _parallel_draw_loop,
 )
 from .panel_base import _demean_panel
 
@@ -316,6 +317,8 @@ class FlowPanelModel(ABC):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute posterior effects per draw."""
 
@@ -614,12 +617,14 @@ class FlowPanelModel(ABC):
         return_posterior_samples: bool = False,
         ci: float = 0.95,
         mode: str = "auto",
+        parallel: Optional[int] = -1,
     ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
         """Summarise posterior origin/destination/intra/network/total effects.
 
         See :meth:`bayespecon.models.flow.FlowModel.spatial_effects` for the
         ``mode`` semantics (auto / combined / separate destination-origin
-        sides per Thomas-Agnan & LeSage 2014, §83.5.2).
+        sides per Thomas-Agnan & LeSage 2014, §83.5.2) and the ``parallel``
+        kwarg.
         """
         from ..diagnostics.spatial_effects import _compute_bayesian_pvalue
         from .flow import _EFFECT_KEYS
@@ -637,7 +642,9 @@ class FlowPanelModel(ABC):
                 f"mode must be 'auto', 'combined', or 'separate'; got {mode!r}."
             )
 
-        posterior = self._compute_spatial_effects_posterior(draws=draws)
+        posterior = self._compute_spatial_effects_posterior(
+            draws=draws, parallel=parallel
+        )
 
         if mode == "auto":
             effective_mode = "combined" if self._symmetric_xo_xd else "separate"
@@ -740,6 +747,7 @@ class FlowPanelModel(ABC):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive samples ``y_rep`` for the full panel stack.
 
@@ -749,6 +757,11 @@ class FlowPanelModel(ABC):
             Number of posterior draws to use.  Defaults to all.
         random_seed : int, optional
             Seed for the noise/Poisson sampler.
+        parallel : int or None, default -1
+            Number of worker threads for the per-draw loop.  ``-1`` uses
+            ``os.cpu_count()``; ``None``/``0``/``1`` forces sequential
+            execution.  Reproducibility under a fixed ``random_seed`` is
+            preserved across worker counts via ``SeedSequence.spawn``.
 
         Returns
         -------
@@ -778,18 +791,23 @@ class FlowPanelModel(ABC):
             if sigma_draws is not None:
                 sigma_draws = sigma_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
-        for g in range(total):
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
             sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            out[g] = self._simulate_y_rep_period(
+            return self._simulate_y_rep_period(
                 float(rho_d[g]),
                 float(rho_o[g]),
                 float(rho_w[g]),
                 beta_draws[g],
                 sigma_g,
-                rng,
+                rng_g,
             )
+
+        rows = _parallel_draw_loop(
+            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
+        )
+        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
     # ------------------------------------------------------------------
@@ -803,6 +821,8 @@ class FlowPanelModel(ABC):
         rho_w_draws: np.ndarray,
         beta_draws: np.ndarray,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute LeSage flow effects from posterior draws.
 
@@ -844,7 +864,7 @@ class FlowPanelModel(ABC):
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
-        for idx in range(n_draws_total):
+        def _work(idx: int) -> dict[str, np.ndarray]:
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             rw = float(rho_w_draws[idx])
@@ -860,7 +880,7 @@ class FlowPanelModel(ABC):
             def _solve(rhs: np.ndarray, _lu=lu) -> np.ndarray:
                 return _lu.solve(rhs)
 
-            res = _compute_flow_effects_lesage(
+            return _compute_flow_effects_lesage(
                 _solve,
                 self._dmask,
                 self._omask,
@@ -872,6 +892,12 @@ class FlowPanelModel(ABC):
                 k_o=k_o,
                 beta_intra=beta_intra_vec,
             )
+
+        for idx, res in enumerate(
+            _parallel_draw_loop(
+                n_draws_total, _work, parallel=parallel, needs_rng=False
+            )
+        ):
             for key, arr in res.items():
                 out[key][idx, : len(arr)] = arr
 
@@ -883,6 +909,8 @@ class FlowPanelModel(ABC):
         rho_o_draws: np.ndarray,
         beta_draws: np.ndarray,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute LeSage flow effects via Kronecker-factored solve.
 
@@ -924,7 +952,7 @@ class FlowPanelModel(ABC):
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
-        for idx in range(n_draws_total):
+        def _work(idx: int) -> dict[str, np.ndarray]:
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             beta_d_vec = beta_draws[idx, dest_start : dest_start + k_d]
@@ -939,7 +967,7 @@ class FlowPanelModel(ABC):
             def _solve(rhs: np.ndarray, _Lo=Lo, _Ld=Ld, _n=n) -> np.ndarray:
                 return kron_solve_matrix(_Lo, _Ld, rhs, _n)
 
-            res = _compute_flow_effects_lesage(
+            return _compute_flow_effects_lesage(
                 _solve,
                 self._dmask,
                 self._omask,
@@ -951,6 +979,12 @@ class FlowPanelModel(ABC):
                 k_o=k_o,
                 beta_intra=beta_intra_vec,
             )
+
+        for idx, res in enumerate(
+            _parallel_draw_loop(
+                n_draws_total, _work, parallel=parallel, needs_rng=False
+            )
+        ):
             for key, arr in res.items():
                 out[key][idx, : len(arr)] = arr
 
@@ -1115,6 +1149,8 @@ class SARFlowPanel(FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1132,6 +1168,7 @@ class SARFlowPanel(FlowPanelModel):
             rho_w_draws,
             beta_draws,
             draws=draws,
+            parallel=parallel,
         )
 
 
@@ -1270,6 +1307,8 @@ class SARFlowSeparablePanel(FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1285,6 +1324,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
             rho_o_draws,
             beta_draws,
             draws=draws,
+            parallel=parallel,
         )
 
 
@@ -1455,6 +1495,8 @@ class PoissonSARFlowPanel(FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1472,6 +1514,7 @@ class PoissonSARFlowPanel(FlowPanelModel):
             rho_w_draws,
             beta_draws,
             draws=draws,
+            parallel=parallel,
         )
 
     def _simulate_y_rep_period(
@@ -1643,6 +1686,8 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1658,6 +1703,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
             rho_o_draws,
             beta_draws,
             draws=draws,
+            parallel=parallel,
         )
 
     def _simulate_y_rep_period(
@@ -1794,6 +1840,7 @@ class OLSFlowPanel(FlowPanelModel):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flows for the OLS panel gravity model.
 
@@ -1817,18 +1864,25 @@ class OLSFlowPanel(FlowPanelModel):
             if sigma_draws is not None:
                 sigma_draws = sigma_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
-        for g in range(total):
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
             sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            out[g] = self._simulate_y_rep_period(
-                0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng
+            return self._simulate_y_rep_period(
+                0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng_g
             )
+
+        rows = _parallel_draw_loop(
+            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
+        )
+        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,  # unused: closed-form
     ) -> dict[str, np.ndarray]:
         r"""Closed-form Thomas-Agnan & LeSage (2014, Table 83.1) effects.
 
@@ -2004,6 +2058,7 @@ class PoissonFlowPanel(OLSFlowPanel):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
+        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for the panel Poisson gravity model."""
         if self._idata is None:
@@ -2017,12 +2072,17 @@ class PoissonFlowPanel(OLSFlowPanel):
             total = min(int(n_draws), total)
             beta_draws = beta_draws[:total]
 
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
-        for g in range(total):
-            out[g] = self._simulate_y_rep_period(
-                0.0, 0.0, 0.0, beta_draws[g], None, rng
+        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
+            return self._simulate_y_rep_period(
+                0.0, 0.0, 0.0, beta_draws[g], None, rng_g
             )
+
+        rows = _parallel_draw_loop(
+            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
+        )
+        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
+        for g, row in enumerate(rows):
+            out[g] = row
         return out
 
 
@@ -2410,6 +2470,8 @@ class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,  # unused: closed-form
     ) -> dict[str, np.ndarray]:
         """Closed-form effects (delegates to OLSFlowPanel logic)."""
         if self._idata is None:
@@ -2588,6 +2650,8 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
+        *,
+        parallel: Optional[int] = -1,  # unused: closed-form
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
