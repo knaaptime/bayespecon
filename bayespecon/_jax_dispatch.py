@@ -210,9 +210,9 @@ def _select_jax_sar_solver() -> str:
 @lru_cache(maxsize=1)
 def _select_jax_sar_lineax_solver() -> str:
     """Resolve the Lineax iterative solver (``bicgstab`` or ``gmres``)."""
-    requested = os.environ.get(
-        "BAYESPECON_JAX_SAR_LINEAX_SOLVER", "bicgstab"
-    ).strip().lower()
+    requested = (
+        os.environ.get("BAYESPECON_JAX_SAR_LINEAX_SOLVER", "bicgstab").strip().lower()
+    )
     if requested in {"", "bicgstab"}:
         return "bicgstab"
     if requested == "gmres":

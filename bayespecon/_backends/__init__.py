@@ -330,7 +330,10 @@ def recommend_backend(
                 break
     entry = _RECOMMENDATIONS.get(
         key,
-        ("pymc", f"No benchmark recommendation for {model_family!r}; defaulting to pymc."),
+        (
+            "pymc",
+            f"No benchmark recommendation for {model_family!r}; defaulting to pymc.",
+        ),
     )
     if with_rationale:
         return entry

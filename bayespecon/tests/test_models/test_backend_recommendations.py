@@ -48,9 +48,7 @@ class TestRecommendBackend:
         assert rationale  # non-empty
 
     def test_unknown_family_rationale_is_informative(self):
-        backend, rationale = recommend_backend(
-            "MysteryModel", with_rationale=True
-        )
+        backend, rationale = recommend_backend("MysteryModel", with_rationale=True)
         assert backend == "pymc"
         assert "MysteryModel" in rationale
 

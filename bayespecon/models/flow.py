@@ -2105,9 +2105,7 @@ class OLSFlow(FlowModel):
 
         def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
             sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            return self._simulate_y_rep(
-                0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng_g
-            )
+            return self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng_g)
 
         rows = _parallel_draw_loop(
             total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
@@ -2319,9 +2317,7 @@ class PoissonFlow(OLSFlow):
             beta_draws = beta_draws[:total]
 
         def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
-            return self._simulate_y_rep(
-                0.0, 0.0, 0.0, beta_draws[g], None, rng_g
-            )
+            return self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], None, rng_g)
 
         rows = _parallel_draw_loop(
             total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
@@ -2436,9 +2432,7 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
             alpha_draws = alpha_draws[:total]
 
         def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
-            A = self._assemble_A(
-                rho_d_draws[g], rho_o_draws[g], rho_w_draws[g]
-            )
+            A = self._assemble_A(rho_d_draws[g], rho_o_draws[g], rho_w_draws[g])
             eta = sp.linalg.spsolve(A, self._X_design @ beta_draws[g])
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])

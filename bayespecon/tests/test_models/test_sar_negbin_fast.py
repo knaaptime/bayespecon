@@ -154,4 +154,3 @@ def test_sar_negbin_jax_logp_grad_with_lineax(monkeypatch):
         _select_jax_sar_solver.cache_clear()
         _select_jax_sar_lineax_solver.cache_clear()
         register_jax_dispatch.cache_clear()
-

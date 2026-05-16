@@ -369,7 +369,9 @@ def _setup_lineax_dispatch(monkeypatch, sub_solver="bicgstab"):
 
 
 @pytest.mark.parametrize("sub_solver", ["bicgstab", "gmres"])
-def test_sparse_sar_jax_lineax_forward_parity(monkeypatch, lineax_env_reset, sub_solver):
+def test_sparse_sar_jax_lineax_forward_parity(
+    monkeypatch, lineax_env_reset, sub_solver
+):
     _setup_lineax_dispatch(monkeypatch, sub_solver=sub_solver)
 
     W = _line_W(8)
@@ -453,4 +455,3 @@ def test_sparse_sar_jax_lineax_convergence_failure(monkeypatch, lineax_env_reset
 
     with pytest.raises(Exception):  # noqa: B017 — Equinox/Lineax error type
         f_j(0.7, b_val)
-
