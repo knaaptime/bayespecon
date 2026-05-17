@@ -13,6 +13,9 @@ from . import (
 from . import (
     ops as ops,
 )
+from .config import (
+    enable_compile_cache as enable_compile_cache,
+)
 from .dgp.flows import (
     generate_flow_data as generate_flow_data,
 )

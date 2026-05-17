@@ -106,3 +106,51 @@ def test_simulate_sar_negbin_output_contract():
     assert np.all(y >= 0)
     assert np.allclose(y, np.round(y))
     assert out["params_true"]["alpha"] == 1.5
+
+
+@pytest.mark.requires_jax
+def test_sar_negbin_jax_logp_grad_with_lineax(monkeypatch):
+    """End-to-end smoke: SAR-NB logp + grad compile under JAX/Lineax."""
+    pytest.importorskip("jax")
+    pytest.importorskip("lineax")
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_SOLVER", "bicgstab")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+
+    from bayespecon._jax_dispatch import (
+        _select_jax_sar_lineax_solver,
+        _select_jax_sar_solver,
+        _select_jax_sparse_backend,
+        register_jax_dispatch,
+    )
+
+    _select_jax_sparse_backend.cache_clear()
+    _select_jax_sar_solver.cache_clear()
+    _select_jax_sar_lineax_solver.cache_clear()
+    register_jax_dispatch.cache_clear()
+    register_jax_dispatch()
+
+    try:
+        y, X, W = _count_data(seed=104)
+        model = SARNegativeBinomial(y=y, X=X, W=W)
+        pm_model = model._build_pymc_model()
+
+        with pm_model:
+            ip = pm_model.initial_point()
+            # Move off the degenerate point (rho=0, beta=0 makes the RHS
+            # X @ beta = 0, which BiCGStab cannot start from).
+            ip["beta"] = np.array([0.3, 0.6])
+            ip["rho_interval__"] = np.array(0.4)
+            logp_fn = pm_model.compile_logp(mode="JAX")
+            dlogp_fn = pm_model.compile_dlogp(mode="JAX")
+            lp = logp_fn(ip)
+            grads = dlogp_fn(ip)
+
+        assert np.isfinite(lp)
+        assert np.all(np.isfinite(np.asarray(grads)))
+    finally:
+        _select_jax_sparse_backend.cache_clear()
+        _select_jax_sar_solver.cache_clear()
+        _select_jax_sar_lineax_solver.cache_clear()
+        register_jax_dispatch.cache_clear()

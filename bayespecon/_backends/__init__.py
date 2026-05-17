@@ -200,16 +200,144 @@ class BlackjaxBackend(_JaxBackend):
     _required_packages = ("jax", "blackjax")
 
 
+class NutpieBackend(PyMCBackend):
+    """Run NUTS via nutpie (Rust + Numba) through ``pm.sample``.
+
+    Nutpie compiles the PyMC model via PyTensor's Numba backend by default,
+    so custom Ops with a Numba dispatch (or those that fall back to Numba
+    object mode) remain compatible.  Unlike the JAX backends, nutpie does
+    not require a JAX likelihood path, and ``prepare_idata_kwargs`` does
+    not need a Potential-only strip: PyMC silently ignores ``idata_kwargs``
+    for nutpie sampling and downstream users compute log-likelihoods via
+    :func:`pymc.compute_log_likelihood`.
+
+    This backend does **not** expose nutpie's JAX-backed mode.  Users who
+    want to experiment with that path can pass
+    ``nuts_sampler_kwargs={"backend": "jax"}`` to :meth:`fit` while still
+    selecting ``backend="nutpie"``.
+    """
+
+    name = "nutpie"
+    _required_packages: tuple[str, ...] = ("nutpie",)
+
+    def __init__(self) -> None:
+        missing = [pkg for pkg in self._required_packages if not _has_module(pkg)]
+        if missing:
+            joined = ", ".join(missing)
+            raise ImportError(
+                f"backend={self.name!r} requires {joined} to be installed. "
+                "Install with `pip install nutpie` or "
+                "`conda install -c conda-forge nutpie`."
+            )
+
+    def resolve_nuts_sampler(self, nuts_sampler: str | None) -> str:
+        if nuts_sampler not in (None, self.name):
+            raise ValueError(
+                f"backend={self.name!r} fixes nuts_sampler to {self.name!r}, "
+                f"but received nuts_sampler={nuts_sampler!r}. Either drop the "
+                f"nuts_sampler keyword or switch backend."
+            )
+        return self.name
+
+    def use_jax_likelihood(self, nuts_sampler: str) -> bool:
+        # Nutpie's default Numba backend does not need the JAX CustomDist
+        # likelihood path; keep Potential-only models on the standard path.
+        return False
+
+
 _BACKENDS: dict[str, type[ProbabilisticBackend]] = {
     "pymc": PyMCBackend,
     "numpyro": NumPyroBackend,
     "blackjax": BlackjaxBackend,
+    "nutpie": NutpieBackend,
+}
+
+
+# Model-family backend recommendations derived from
+# ``scripts/benchmarks/results/nutpie_decision.csv`` (Phase 5,
+# DEV_NUTPIE_BACKEND_PLAN.md). Each entry stores the recommended backend
+# name plus a short rationale string suitable for surfacing to users.
+#
+# Conservative policy: only families with a clear, reproducible ESS/sec win
+# get a non-default recommendation. Families that are flat or where nutpie
+# loses keep ``"pymc"``. Unknown families fall back to ``"pymc"`` as well.
+_RECOMMENDATIONS: dict[str, tuple[str, str]] = {
+    "SAR": (
+        "nutpie",
+        "nutpie wins on bulk ESS/sec vs pymc/numpyro/blackjax for "
+        "cross-sectional SAR with eigenvalue logdet.",
+    ),
+    "SEM": (
+        "pymc",
+        "Backends are within ~10% on ESS/sec for cross-sectional SEM; "
+        "default pymc keeps log_likelihood and idata_kwargs intact.",
+    ),
+    "SDM": (
+        "pymc",
+        "nutpie underperforms pymc/blackjax on bulk ESS/sec for "
+        "cross-sectional SDM in the current benchmark.",
+    ),
+    "PoissonSARFlow": (
+        "pymc",
+        "Custom sparse flow Ops fall back to Numba object mode under "
+        "nutpie; pymc remains the fastest option for ESS/sec.",
+    ),
 }
 
 
 def available_backends() -> list[str]:
     """Return the sorted list of known backend names."""
     return sorted(_BACKENDS)
+
+
+def recommend_backend(
+    model_family: str, *, with_rationale: bool = False
+) -> str | tuple[str, str]:
+    """Return the recommended NUTS backend for a given model family.
+
+    Recommendations are derived from
+    ``scripts/benchmarks/results/nutpie_decision.csv`` and intentionally
+    conservative: families without a clear, reproducible win fall back to
+    ``"pymc"``. This helper is informational only — it does not change any
+    model's default backend. Users remain free to pass ``backend=...`` or
+    ``nuts_sampler=...`` explicitly to override.
+
+    Parameters
+    ----------
+    model_family :
+        Short model identifier, e.g. ``"SAR"``, ``"SEM"``, ``"SDM"``,
+        ``"PoissonSARFlow"``. Case-insensitive. Unknown families fall back
+        to ``"pymc"``.
+    with_rationale :
+        When ``True`` return ``(backend, rationale)`` instead of just the
+        backend name.
+
+    Returns
+    -------
+    str or tuple[str, str]
+        Recommended backend name, or ``(name, rationale)`` if requested.
+    """
+    if not isinstance(model_family, str):
+        raise TypeError(
+            f"model_family must be a string; got {type(model_family).__name__}."
+        )
+    key = model_family.strip()
+    # Allow both exact case and a case-insensitive lookup.
+    if key not in _RECOMMENDATIONS:
+        for known in _RECOMMENDATIONS:
+            if known.lower() == key.lower():
+                key = known
+                break
+    entry = _RECOMMENDATIONS.get(
+        key,
+        (
+            "pymc",
+            f"No benchmark recommendation for {model_family!r}; defaulting to pymc.",
+        ),
+    )
+    if with_rationale:
+        return entry
+    return entry[0]
 
 
 def resolve_backend(name: str | ProbabilisticBackend | None) -> ProbabilisticBackend:
@@ -233,8 +361,8 @@ def resolve_backend(name: str | ProbabilisticBackend | None) -> ProbabilisticBac
     ValueError
         If ``name`` is a string not in :func:`available_backends`.
     ImportError
-        If a JAX backend is requested but its required runtime packages are
-        not importable.
+        If a JAX or nutpie backend is requested but its required runtime
+        packages are not importable.
     """
     if name is None:
         return PyMCBackend()
@@ -256,8 +384,10 @@ def resolve_backend(name: str | ProbabilisticBackend | None) -> ProbabilisticBac
 __all__ = [
     "BlackjaxBackend",
     "NumPyroBackend",
+    "NutpieBackend",
     "ProbabilisticBackend",
     "PyMCBackend",
     "available_backends",
+    "recommend_backend",
     "resolve_backend",
 ]

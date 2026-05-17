@@ -19,6 +19,7 @@ dependencies:
   - openpyxl
   - lazy_loader
   - fastprogress
+  - nutpie
 
   # docs
   - numpydoc

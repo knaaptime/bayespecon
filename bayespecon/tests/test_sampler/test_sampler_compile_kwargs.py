@@ -21,9 +21,27 @@ def _clear_caches():
 
 
 def test_non_pymc_sampler_passthrough():
+    # JAX-backed samplers ("blackjax", "numpyro") get a default
+    # chain_method="vectorized" so multiple chains run in one
+    # XLA-compiled batched call. They still must not receive
+    # compile_kwargs (only the "pymc" sampler uses it).
     out = prepare_compile_kwargs({"random_seed": 0}, "blackjax")
-    assert out == {"random_seed": 0}
+    assert out == {
+        "random_seed": 0,
+        "nuts_sampler_kwargs": {"chain_method": "vectorized"},
+    }
     assert "compile_kwargs" not in out
+
+
+def test_jax_sampler_chain_method_user_override():
+    user = {"nuts_sampler_kwargs": {"chain_method": "parallel"}}
+    out = prepare_compile_kwargs(user, "numpyro")
+    assert out["nuts_sampler_kwargs"] == {"chain_method": "parallel"}
+
+
+def test_nutpie_sampler_untouched():
+    out = prepare_compile_kwargs({"random_seed": 0}, "nutpie")
+    assert out == {"random_seed": 0}
 
 
 def test_pymc_with_numba_injects_numba_mode(monkeypatch):

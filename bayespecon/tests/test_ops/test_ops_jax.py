@@ -270,3 +270,188 @@ def test_jax_auto_falls_to_callback_scipy_when_no_optional_backends(monkeypatch)
     msgs = [str(w.message) for w in caught]
     assert any("callback+scipy" in m for m in msgs)
     assert any("scikit-umfpack" in m for m in msgs)
+
+
+# ---------------------------------------------------------------------------
+# Lineax SAR-solver path
+# ---------------------------------------------------------------------------
+
+
+def _reset_jax_dispatch_caches() -> None:
+    """Clear the JAX-dispatch selector caches so env changes take effect.
+
+    ``register_jax_dispatch`` is ``lru_cache``-wrapped and re-runs the
+    ``jax_funcify.register`` decorators on re-entry, which replaces the
+    previously registered dispatcher closures.
+    """
+    from bayespecon._jax_dispatch import (
+        _select_jax_sar_lineax_solver,
+        _select_jax_sar_solver,
+        _select_jax_sparse_backend,
+        register_jax_dispatch,
+    )
+
+    _select_jax_sparse_backend.cache_clear()
+    _select_jax_sar_solver.cache_clear()
+    _select_jax_sar_lineax_solver.cache_clear()
+    register_jax_dispatch.cache_clear()
+
+
+@pytest.fixture
+def lineax_env_reset():
+    """Reset JAX-dispatch caches before and after each Lineax test."""
+    _reset_jax_dispatch_caches()
+    yield
+    _reset_jax_dispatch_caches()
+
+
+def test_jax_sar_solver_auto_preserves_existing_backend(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import _select_jax_sar_solver
+
+    monkeypatch.delenv("BAYESPECON_JAX_SAR_SOLVER", raising=False)
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "auto")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "0")
+    monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
+    monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: True)
+
+    _reset_jax_dispatch_caches()
+    assert _select_jax_sar_solver() == "callback"
+
+
+def test_jax_sar_solver_explicit_lineax(monkeypatch, lineax_env_reset):
+    pytest.importorskip("lineax")
+    from bayespecon._jax_dispatch import _select_jax_sar_solver
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+
+    _reset_jax_dispatch_caches()
+    assert _select_jax_sar_solver() == "lineax"
+
+
+def test_jax_sar_solver_lineax_missing_strict_raises(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import _select_jax_sar_solver
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    monkeypatch.setattr("bayespecon._jax_dispatch._lineax_available", lambda: False)
+
+    _reset_jax_dispatch_caches()
+    with pytest.raises(ImportError):
+        _select_jax_sar_solver()
+
+
+def test_jax_sar_lineax_subsolver_default(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import _select_jax_sar_lineax_solver
+
+    monkeypatch.delenv("BAYESPECON_JAX_SAR_LINEAX_SOLVER", raising=False)
+    _reset_jax_dispatch_caches()
+    assert _select_jax_sar_lineax_solver() == "bicgstab"
+
+
+def test_jax_sar_lineax_subsolver_gmres(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import _select_jax_sar_lineax_solver
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_SOLVER", "gmres")
+    _reset_jax_dispatch_caches()
+    assert _select_jax_sar_lineax_solver() == "gmres"
+
+
+def _setup_lineax_dispatch(monkeypatch, sub_solver="bicgstab"):
+    pytest.importorskip("lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_SOLVER", sub_solver)
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _reset_jax_dispatch_caches()
+    from bayespecon._jax_dispatch import register_jax_dispatch
+
+    register_jax_dispatch()
+
+
+@pytest.mark.parametrize("sub_solver", ["bicgstab", "gmres"])
+def test_sparse_sar_jax_lineax_forward_parity(
+    monkeypatch, lineax_env_reset, sub_solver
+):
+    _setup_lineax_dispatch(monkeypatch, sub_solver=sub_solver)
+
+    W = _line_W(8)
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+
+    f_c = pytensor.function([rho, b], eta)
+    f_j = pytensor.function([rho, b], eta, mode="JAX")
+
+    rng = np.random.default_rng(11)
+    b_val = rng.standard_normal(8)
+
+    np.testing.assert_allclose(
+        np.asarray(f_c(0.3, b_val)),
+        np.asarray(f_j(0.3, b_val)),
+        atol=1e-7,
+        rtol=1e-7,
+    )
+
+
+@pytest.mark.parametrize("sub_solver", ["bicgstab", "gmres"])
+def test_sparse_sar_jax_lineax_grad_parity(monkeypatch, lineax_env_reset, sub_solver):
+    """Reverse-mode gradient parity — the key correctness gate."""
+    _setup_lineax_dispatch(monkeypatch, sub_solver=sub_solver)
+
+    W = _line_W(8)
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+    loss = pt.sum(eta * eta)
+    grads = [pytensor.grad(loss, v) for v in (rho, b)]
+
+    f_c = pytensor.function([rho, b], grads)
+    f_j = pytensor.function([rho, b], grads, mode="JAX")
+
+    rng = np.random.default_rng(12)
+    b_val = rng.standard_normal(8)
+
+    c_out = f_c(0.25, b_val)
+    j_out = f_j(0.25, b_val)
+    for c, j in zip(c_out, j_out):
+        np.testing.assert_allclose(np.asarray(c), np.asarray(j), atol=1e-7, rtol=1e-7)
+
+
+def test_sparse_sar_jax_lineax_convergence_failure(monkeypatch, lineax_env_reset):
+    """A solver capped at max_steps=1 on a non-trivial system must raise."""
+    pytest.importorskip("lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_SOLVER", "bicgstab")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _reset_jax_dispatch_caches()
+
+    # Monkeypatch the BiCGStab constructor used inside the closure to force
+    # max_steps=1 so any non-trivial RHS triggers non-convergence.
+    import lineax as lx
+
+    real_bicgstab = lx.BiCGStab
+
+    def _capped(*args, **kwargs):
+        kwargs["max_steps"] = 1
+        return real_bicgstab(*args, **kwargs)
+
+    monkeypatch.setattr(lx, "BiCGStab", _capped)
+
+    from bayespecon._jax_dispatch import register_jax_dispatch
+
+    register_jax_dispatch()
+
+    W = _line_W(8)
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+    f_j = pytensor.function([rho, b], eta, mode="JAX")
+
+    rng = np.random.default_rng(13)
+    b_val = rng.standard_normal(8)
+
+    with pytest.raises(Exception):  # noqa: B017 — Equinox/Lineax error type
+        f_j(0.7, b_val)
