@@ -1251,13 +1251,13 @@ Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [beta, sigma]
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 18 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 16 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 14 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 13 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [lam, beta, sigma]
@@ -1269,7 +1269,7 @@ NUTS: [rho, beta, sigma]
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 19 seconds.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 17 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [lam, beta, sigma]
@@ -1277,8 +1277,8 @@ NUTS: [lam, beta, sigma]
   return 0.5 * np.dot(x, v_out)
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
   return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 17 seconds.
-There were 8 divergences after tuning. Increase `target_accept` or reparameterize.
+Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 16 seconds.
+There were 5 divergences after tuning. Increase `target_accept` or reparameterize.
 </code></pre></div>
 </div>
 </div>
@@ -1322,62 +1322,62 @@ There were 8 divergences after tuning. Increase `target_accept` or reparameteriz
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>37.589</td>
-      <td>14.844</td>
-      <td>10.446</td>
-      <td>65.914</td>
-      <td>0.388</td>
-      <td>0.268</td>
-      <td>1462.0</td>
-      <td>1529.0</td>
+      <td>37.791</td>
+      <td>14.077</td>
+      <td>12.352</td>
+      <td>64.956</td>
+      <td>0.337</td>
+      <td>0.260</td>
+      <td>1742.0</td>
+      <td>2017.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>INC</th>
-      <td>0.570</td>
-      <td>0.543</td>
-      <td>-0.511</td>
-      <td>1.523</td>
-      <td>0.013</td>
-      <td>0.010</td>
-      <td>1764.0</td>
-      <td>1905.0</td>
+      <td>0.562</td>
+      <td>0.528</td>
+      <td>-0.432</td>
+      <td>1.544</td>
+      <td>0.012</td>
+      <td>0.009</td>
+      <td>1956.0</td>
+      <td>2047.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>CRIME</th>
-      <td>-0.453</td>
-      <td>0.186</td>
-      <td>-0.791</td>
-      <td>-0.089</td>
-      <td>0.005</td>
+      <td>-0.450</td>
+      <td>0.176</td>
+      <td>-0.790</td>
+      <td>-0.127</td>
+      <td>0.004</td>
       <td>0.003</td>
-      <td>1688.0</td>
-      <td>2045.0</td>
+      <td>2015.0</td>
+      <td>2223.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>rho</th>
-      <td>0.222</td>
-      <td>0.166</td>
-      <td>-0.079</td>
-      <td>0.531</td>
-      <td>0.004</td>
+      <td>0.216</td>
+      <td>0.163</td>
+      <td>-0.087</td>
+      <td>0.513</td>
       <td>0.003</td>
-      <td>2233.0</td>
-      <td>1658.0</td>
+      <td>0.003</td>
+      <td>2358.0</td>
+      <td>1957.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>14.964</td>
-      <td>1.567</td>
-      <td>12.189</td>
-      <td>17.852</td>
-      <td>0.034</td>
-      <td>0.031</td>
-      <td>2168.0</td>
-      <td>2165.0</td>
+      <td>14.893</td>
+      <td>1.507</td>
+      <td>12.071</td>
+      <td>17.617</td>
+      <td>0.030</td>
+      <td>0.026</td>
+      <td>2500.0</td>
+      <td>2142.0</td>
       <td>1.0</td>
     </tr>
   </tbody>
@@ -1439,12 +1439,12 @@ still under-cover the tails by 10–12 %.</p>
   <tbody>
     <tr>
       <th>rho</th>
-      <td>2232.987713</td>
-      <td>1658.372483</td>
-      <td>1.001017</td>
-      <td>0.00351</td>
-      <td>55.824693</td>
-      <td>1.490913</td>
+      <td>2357.684873</td>
+      <td>1956.972676</td>
+      <td>1.003056</td>
+      <td>0.003339</td>
+      <td>58.942122</td>
+      <td>3.318067</td>
       <td>True</td>
     </tr>
   </tbody>
@@ -1692,201 +1692,201 @@ Impacts computed using the &#39;simple&#39; method.
       <th>0</th>
       <td>SAR</td>
       <td>CONSTANT</td>
-      <td>37.589295</td>
+      <td>37.790694</td>
       <td>55.672262</td>
-      <td>-18.082967</td>
+      <td>-17.881568</td>
     </tr>
     <tr>
       <th>1</th>
       <td>SAR</td>
       <td>CRIME</td>
-      <td>-0.453299</td>
+      <td>-0.450299</td>
       <td>-0.519068</td>
-      <td>0.065769</td>
+      <td>0.068769</td>
     </tr>
     <tr>
       <th>2</th>
       <td>SAR</td>
       <td>INC</td>
-      <td>0.570078</td>
+      <td>0.562276</td>
       <td>0.695416</td>
-      <td>-0.125338</td>
+      <td>-0.133140</td>
     </tr>
     <tr>
       <th>3</th>
       <td>SAR</td>
       <td>rho</td>
-      <td>0.221983</td>
+      <td>0.215835</td>
       <td>-0.232746</td>
-      <td>0.454729</td>
+      <td>0.448581</td>
     </tr>
     <tr>
       <th>4</th>
       <td>SDEM</td>
       <td>CONSTANT</td>
-      <td>27.327421</td>
+      <td>28.491212</td>
       <td>29.460538</td>
-      <td>-2.133118</td>
+      <td>-0.969327</td>
     </tr>
     <tr>
       <th>5</th>
       <td>SDEM</td>
       <td>CRIME</td>
-      <td>-0.578241</td>
+      <td>-0.568961</td>
       <td>-0.575430</td>
-      <td>-0.002810</td>
+      <td>0.006469</td>
     </tr>
     <tr>
       <th>6</th>
       <td>SDEM</td>
       <td>INC</td>
-      <td>0.864911</td>
+      <td>0.885285</td>
       <td>0.820920</td>
-      <td>0.043991</td>
+      <td>0.064365</td>
     </tr>
     <tr>
       <th>7</th>
       <td>SDEM</td>
       <td>W_CRIME</td>
-      <td>0.299667</td>
+      <td>0.267135</td>
       <td>0.300693</td>
-      <td>-0.001026</td>
+      <td>-0.033559</td>
     </tr>
     <tr>
       <th>8</th>
       <td>SDEM</td>
       <td>W_INC</td>
-      <td>0.594517</td>
+      <td>0.545364</td>
       <td>0.478086</td>
-      <td>0.116431</td>
+      <td>0.067278</td>
     </tr>
     <tr>
       <th>9</th>
       <td>SDEM</td>
       <td>lambda</td>
-      <td>0.433522</td>
+      <td>0.440069</td>
       <td>0.358330</td>
-      <td>0.075192</td>
+      <td>0.081739</td>
     </tr>
     <tr>
       <th>10</th>
       <td>SDM</td>
       <td>CONSTANT</td>
-      <td>18.127930</td>
+      <td>18.315262</td>
       <td>1.578137</td>
-      <td>16.549793</td>
+      <td>16.737125</td>
     </tr>
     <tr>
       <th>11</th>
       <td>SDM</td>
       <td>CRIME</td>
-      <td>-0.605000</td>
+      <td>-0.604442</td>
       <td>-0.634137</td>
-      <td>0.029137</td>
+      <td>0.029695</td>
     </tr>
     <tr>
       <th>12</th>
       <td>SDM</td>
       <td>INC</td>
-      <td>0.802595</td>
+      <td>0.805481</td>
       <td>0.892362</td>
-      <td>-0.089766</td>
+      <td>-0.086881</td>
     </tr>
     <tr>
       <th>13</th>
       <td>SDM</td>
       <td>W_CRIME</td>
-      <td>0.464506</td>
+      <td>0.460443</td>
       <td>0.598950</td>
-      <td>-0.134444</td>
+      <td>-0.138507</td>
     </tr>
     <tr>
       <th>14</th>
       <td>SDM</td>
       <td>W_INC</td>
-      <td>0.074178</td>
+      <td>0.065907</td>
       <td>-0.600606</td>
-      <td>0.674785</td>
+      <td>0.666513</td>
     </tr>
     <tr>
       <th>15</th>
       <td>SDM</td>
       <td>rho</td>
-      <td>0.330510</td>
+      <td>0.329694</td>
       <td>0.887712</td>
-      <td>-0.557202</td>
+      <td>-0.558019</td>
     </tr>
     <tr>
       <th>16</th>
       <td>SEM</td>
       <td>CONSTANT</td>
-      <td>48.588321</td>
-      <td>47.943712</td>
-      <td>0.644609</td>
+      <td>47.980071</td>
+      <td>47.943711</td>
+      <td>0.036360</td>
     </tr>
     <tr>
       <th>17</th>
       <td>SEM</td>
       <td>CRIME</td>
-      <td>-0.571986</td>
+      <td>-0.564235</td>
       <td>-0.555717</td>
-      <td>-0.016269</td>
+      <td>-0.008518</td>
     </tr>
     <tr>
       <th>18</th>
       <td>SEM</td>
       <td>INC</td>
-      <td>0.708204</td>
+      <td>0.734156</td>
       <td>0.705981</td>
-      <td>0.002223</td>
+      <td>0.028175</td>
     </tr>
     <tr>
       <th>19</th>
       <td>SEM</td>
       <td>lambda</td>
-      <td>0.419665</td>
+      <td>0.426726</td>
       <td>0.372301</td>
-      <td>0.047364</td>
+      <td>0.054426</td>
     </tr>
     <tr>
       <th>20</th>
       <td>SLX</td>
       <td>CONSTANT</td>
-      <td>27.691607</td>
+      <td>27.696533</td>
       <td>27.727885</td>
-      <td>-0.036277</td>
+      <td>-0.031351</td>
     </tr>
     <tr>
       <th>21</th>
       <td>SLX</td>
       <td>CRIME</td>
-      <td>-0.592813</td>
+      <td>-0.591790</td>
       <td>-0.590675</td>
-      <td>-0.002137</td>
+      <td>-0.001114</td>
     </tr>
     <tr>
       <th>22</th>
       <td>SLX</td>
       <td>INC</td>
-      <td>0.733984</td>
+      <td>0.743739</td>
       <td>0.742442</td>
-      <td>-0.008457</td>
+      <td>0.001297</td>
     </tr>
     <tr>
       <th>23</th>
       <td>SLX</td>
       <td>W_CRIME</td>
-      <td>0.393026</td>
+      <td>0.390632</td>
       <td>0.390156</td>
-      <td>0.002870</td>
+      <td>0.000476</td>
     </tr>
     <tr>
       <th>24</th>
       <td>SLX</td>
       <td>W_INC</td>
-      <td>0.493769</td>
+      <td>0.487975</td>
       <td>0.486179</td>
-      <td>0.007590</td>
+      <td>0.001795</td>
     </tr>
   </tbody>
 </table>
@@ -1936,141 +1936,141 @@ Impacts computed using the &#39;simple&#39; method.
       <th>0</th>
       <td>SLX</td>
       <td>INC</td>
-      <td>0.733984</td>
-      <td>0.493769</td>
-      <td>1.227753</td>
+      <td>0.743739</td>
+      <td>0.487975</td>
+      <td>1.231714</td>
       <td>0.742442</td>
       <td>0.486179</td>
       <td>1.228621</td>
-      <td>-0.008457</td>
-      <td>0.007590</td>
-      <td>-0.000868</td>
+      <td>0.001297</td>
+      <td>0.001795</td>
+      <td>0.003093</td>
     </tr>
     <tr>
       <th>1</th>
       <td>SLX</td>
       <td>CRIME</td>
-      <td>-0.592813</td>
-      <td>0.393026</td>
-      <td>-0.199787</td>
+      <td>-0.591790</td>
+      <td>0.390632</td>
+      <td>-0.201157</td>
       <td>-0.590675</td>
       <td>0.390156</td>
       <td>-0.200519</td>
-      <td>-0.002137</td>
-      <td>0.002870</td>
-      <td>0.000732</td>
+      <td>-0.001114</td>
+      <td>0.000476</td>
+      <td>-0.000638</td>
     </tr>
     <tr>
       <th>2</th>
       <td>SAR</td>
       <td>INC</td>
-      <td>0.582135</td>
-      <td>0.170484</td>
-      <td>0.752619</td>
+      <td>0.572928</td>
+      <td>0.156536</td>
+      <td>0.729463</td>
       <td>0.695416</td>
       <td>-0.131296</td>
       <td>0.564120</td>
-      <td>-0.113281</td>
-      <td>0.301780</td>
-      <td>0.188500</td>
+      <td>-0.122488</td>
+      <td>0.287832</td>
+      <td>0.165344</td>
     </tr>
     <tr>
       <th>3</th>
       <td>SAR</td>
       <td>CRIME</td>
-      <td>-0.463347</td>
-      <td>-0.141484</td>
-      <td>-0.604831</td>
+      <td>-0.459952</td>
+      <td>-0.137418</td>
+      <td>-0.597370</td>
       <td>-0.519068</td>
       <td>0.098001</td>
       <td>-0.421067</td>
-      <td>0.055721</td>
-      <td>-0.239485</td>
-      <td>-0.183765</td>
+      <td>0.059116</td>
+      <td>-0.235419</td>
+      <td>-0.176303</td>
     </tr>
     <tr>
       <th>4</th>
       <td>SEM</td>
       <td>INC</td>
-      <td>0.708204</td>
+      <td>0.734156</td>
       <td>0.000000</td>
-      <td>0.708204</td>
+      <td>0.734156</td>
       <td>0.705981</td>
       <td>0.000000</td>
       <td>0.705981</td>
-      <td>0.002223</td>
+      <td>0.028175</td>
       <td>0.000000</td>
-      <td>0.002223</td>
+      <td>0.028175</td>
     </tr>
     <tr>
       <th>5</th>
       <td>SEM</td>
       <td>CRIME</td>
-      <td>-0.571986</td>
+      <td>-0.564235</td>
       <td>0.000000</td>
-      <td>-0.571986</td>
+      <td>-0.564235</td>
       <td>-0.555717</td>
       <td>0.000000</td>
       <td>-0.555717</td>
-      <td>-0.016269</td>
+      <td>-0.008518</td>
       <td>0.000000</td>
-      <td>-0.016269</td>
+      <td>-0.008518</td>
     </tr>
     <tr>
       <th>6</th>
       <td>SDM</td>
       <td>INC</td>
-      <td>0.833658</td>
-      <td>0.488973</td>
-      <td>1.322632</td>
+      <td>0.836697</td>
+      <td>0.480682</td>
+      <td>1.317378</td>
       <td>0.892362</td>
       <td>1.705923</td>
       <td>2.598284</td>
-      <td>-0.058703</td>
-      <td>-1.216949</td>
-      <td>-1.275653</td>
+      <td>-0.055665</td>
+      <td>-1.225241</td>
+      <td>-1.280906</td>
     </tr>
     <tr>
       <th>7</th>
       <td>SDM</td>
       <td>CRIME</td>
-      <td>-0.582074</td>
-      <td>0.368620</td>
-      <td>-0.213454</td>
+      <td>-0.581898</td>
+      <td>0.362772</td>
+      <td>-0.219126</td>
       <td>-0.634137</td>
       <td>0.320776</td>
       <td>-0.313360</td>
-      <td>0.052062</td>
-      <td>0.047844</td>
-      <td>0.099906</td>
+      <td>0.052238</td>
+      <td>0.041996</td>
+      <td>0.094234</td>
     </tr>
     <tr>
       <th>8</th>
       <td>SDEM</td>
       <td>INC</td>
-      <td>0.864911</td>
-      <td>0.594517</td>
-      <td>1.459428</td>
+      <td>0.885285</td>
+      <td>0.545364</td>
+      <td>1.430649</td>
       <td>0.820920</td>
       <td>0.478086</td>
       <td>1.299005</td>
-      <td>0.043991</td>
-      <td>0.116431</td>
-      <td>0.160422</td>
+      <td>0.064365</td>
+      <td>0.067278</td>
+      <td>0.131643</td>
     </tr>
     <tr>
       <th>9</th>
       <td>SDEM</td>
       <td>CRIME</td>
-      <td>-0.578241</td>
-      <td>0.299667</td>
-      <td>-0.278573</td>
+      <td>-0.568961</td>
+      <td>0.267135</td>
+      <td>-0.301826</td>
       <td>-0.575430</td>
       <td>0.300693</td>
       <td>-0.274737</td>
-      <td>-0.002810</td>
-      <td>-0.001026</td>
-      <td>-0.003836</td>
+      <td>0.006469</td>
+      <td>-0.033559</td>
+      <td>-0.027089</td>
     </tr>
   </tbody>
 </table>
@@ -2116,7 +2116,7 @@ Impacts computed using the &#39;simple&#39; method.
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-Sampling 4 chains for 1_000 tune and 2_000 draw iterations (4_000 + 8_000 draws total) took 14 seconds.
+Sampling 4 chains for 1_000 tune and 2_000 draw iterations (4_000 + 8_000 draws total) took 13 seconds.
 </code></pre></div>
 </div>
 <div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
@@ -2156,50 +2156,50 @@ for Jupyter support
   <tbody>
     <tr>
       <th>Intercept</th>
-      <td>1.016</td>
-      <td>0.068</td>
-      <td>0.889</td>
-      <td>1.144</td>
+      <td>0.946</td>
+      <td>0.060</td>
+      <td>0.831</td>
+      <td>1.054</td>
       <td>0.001</td>
       <td>0.001</td>
-      <td>4415.0</td>
-      <td>4580.0</td>
+      <td>3717.0</td>
+      <td>3640.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>X_1</th>
-      <td>-1.010</td>
+      <td>-1.004</td>
       <td>0.027</td>
-      <td>-1.063</td>
-      <td>-0.960</td>
+      <td>-1.053</td>
+      <td>-0.952</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>5432.0</td>
-      <td>4272.0</td>
+      <td>5471.0</td>
+      <td>4870.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>rho</th>
-      <td>0.501</td>
-      <td>0.029</td>
-      <td>0.446</td>
-      <td>0.555</td>
+      <td>0.517</td>
+      <td>0.028</td>
+      <td>0.465</td>
+      <td>0.569</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>4310.0</td>
-      <td>4810.0</td>
+      <td>3734.0</td>
+      <td>3891.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.047</td>
-      <td>0.018</td>
+      <td>1.050</td>
+      <td>0.019</td>
       <td>1.013</td>
-      <td>1.083</td>
+      <td>1.085</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>5040.0</td>
-      <td>4398.0</td>
+      <td>5483.0</td>
+      <td>4566.0</td>
       <td>1.0</td>
     </tr>
   </tbody>
@@ -2263,17 +2263,17 @@ for Jupyter support
   <tbody>
     <tr>
       <th>X_1</th>
-      <td>-1.056175</td>
-      <td>-1.113249</td>
-      <td>-1.001092</td>
+      <td>-1.053078</td>
+      <td>-1.109229</td>
+      <td>-0.997608</td>
       <td>0.0</td>
-      <td>-0.976776</td>
-      <td>-1.217066</td>
-      <td>-0.768913</td>
+      <td>-1.031822</td>
+      <td>-1.279473</td>
+      <td>-0.82505</td>
       <td>0.0</td>
-      <td>-2.032951</td>
-      <td>-2.298153</td>
-      <td>-1.803988</td>
+      <td>-2.0849</td>
+      <td>-2.356687</td>
+      <td>-1.851926</td>
       <td>0.0</td>
     </tr>
   </tbody>
@@ -2311,29 +2311,29 @@ SUMMARY OF OUTPUT: SPATIAL TWO STAGE LEAST SQUARES
 Data set            :     unknown
 Weights matrix      :     unknown
 Dependent Variable  :           y                Number of Observations:        1600
-Mean dependent var  :      2.1701                Number of Variables   :           3
-S.D. dependent var  :      1.5354                Degrees of Freedom    :        1597
-Pseudo R-squared    :      0.5323
-Spatial Pseudo R-squared:  0.4589
+Mean dependent var  :      1.9293                Number of Variables   :           3
+S.D. dependent var  :      1.5758                Degrees of Freedom    :        1597
+Pseudo R-squared    :      0.5625
+Spatial Pseudo R-squared:  0.4978
 
 ------------------------------------------------------------------------------------
             Variable     Coefficient       Std.Error     z-Statistic     Probability
 ------------------------------------------------------------------------------------
-            CONSTANT         1.13020         0.12395         9.11822         0.00000
-                 X_1        -1.01389         0.02721       -37.26284         0.00000
-                 W_y         0.44865         0.05573         8.05016         0.00000
+            CONSTANT         0.78945         0.09387         8.40984         0.00000
+                 X_1        -0.99525         0.02671       -37.25634         0.00000
+                 W_y         0.59814         0.04668        12.81278         0.00000
 ------------------------------------------------------------------------------------
 Instrumented: W_y
 Instruments: W_X_1
 
 DIAGNOSTICS FOR SPATIAL DEPENDENCE
 TEST                              DF         VALUE           PROB
-Anselin-Kelejian Test             1          1.048           0.3059
+Anselin-Kelejian Test             1          6.575           0.0103
 
 SPATIAL LAG MODEL IMPACTS
 Impacts computed using the &#39;simple&#39; method.
             Variable         Direct        Indirect          Total
-                 X_1        -1.0139         -0.8250         -1.8389
+                 X_1        -0.9952         -1.4813         -2.4766
 ================================ END OF REPORT =====================================
 </code></pre></div>
 </div>

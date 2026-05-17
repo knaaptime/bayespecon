@@ -1069,7 +1069,7 @@
   
 
 <h1 id="sar-sampling-backend-profiling">SAR Sampling Backend Profiling<a class="headerlink" href="#sar-sampling-backend-profiling" title="Link to this heading">¶</a></h1>
-<p><strong>Note:</strong> To run this notebook you must have optional backends installed, e.g. <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">numpyro</span> <span class="pre">blackjax</span></code></p>
+<p><strong>Note:</strong> To run this notebook you must have optional backends installed, e.g. <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">numpyro</span> <span class="pre">blackjax</span> <span class="pre">nutpie</span></code></p>
 <p>This notebook profiles a fixed SAR model across PyMC sampling backends on a regular polygon grid benchmark.</p>
 <p>The comparison keeps the SAR specification and log-determinant method fixed and varies the sampling backend only.</p>
 <p>The workflow uses the public bayespecon API end to end:</p>
@@ -1091,6 +1091,7 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">numba</span></code>: PyMC NUTS with <code class="docutils literal notranslate"><span class="pre">NUMBA</span></code> compilation mode</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">numpyro</span></code>: JAX-backed NUTS via NumPyro</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">blackjax</span></code>: JAX-backed NUTS via BlackJAX</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nutpie</span></code>: Rust + Numba NUTS via nutpie</p></li>
 </ul>
 <p>The notebook records runtime, posterior means, and divergence counts. Backends that are unavailable in the current environment are skipped automatically.</p>
 <div class="cell docutils container">
@@ -1141,6 +1142,11 @@
         <span class="s2">&quot;compile_kwargs&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
         <span class="s2">&quot;requires&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;blackjax&quot;</span><span class="p">],</span>
     <span class="p">},</span>
+    <span class="s2">&quot;nutpie&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;nuts_sampler&quot;</span><span class="p">:</span> <span class="s2">&quot;nutpie&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;compile_kwargs&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;requires&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;nutpie&quot;</span><span class="p">],</span>
+    <span class="p">},</span>
 <span class="p">}</span>
 
 <span class="n">TRUE_BETA</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
@@ -1171,7 +1177,7 @@
         <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
         <span class="n">create_gdf</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">W_graph</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">rook</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">W_graph</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">rook</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
     <span class="n">y</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
     <span class="n">X_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">gdf</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;X_&quot;</span><span class="p">)]</span>
     <span class="n">X</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">X_cols</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
@@ -1290,26 +1296,21 @@
 Profiling backend=numba...
 Profiling backend=numpyro...
 Profiling backend=blackjax...
+Profiling backend=nutpie...
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_6961/1947674717.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  model = SAR(
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [rho, beta, sigma]
+Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
 Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
-/tmp/ipykernel_6961/1947674717.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  model = SAR(
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 9 seconds.
-/tmp/ipykernel_6961/1947674717.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  model = SAR(
 /home/runner/micromamba/envs/test/lib/python3.14/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
   from .autonotebook import tqdm as notebook_tqdm
-/tmp/ipykernel_6961/1947674717.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  model = SAR(
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/sampling/mcmc.py:361: UserWarning: `idata_kwargs` are currently ignored by the nutpie sampler
+  warnings.warn(
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -1346,59 +1347,73 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>blackjax</td>
+      <td>nutpie</td>
       <td>True</td>
-      <td>3.761725</td>
-      <td>0.121173</td>
-      <td>0.847650</td>
-      <td>0.763736</td>
-      <td>-0.444573</td>
-      <td>3</td>
+      <td>4.842203</td>
+      <td>0.306133</td>
+      <td>1.087851</td>
+      <td>0.769278</td>
+      <td>-0.449502</td>
+      <td>0</td>
       <td></td>
-      <td>0.228827</td>
-      <td>0.095913</td>
+      <td>0.043867</td>
+      <td>0.061133</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>numpyro</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>4.739215</td>
-      <td>0.135107</td>
-      <td>0.760890</td>
-      <td>0.761405</td>
-      <td>-0.441429</td>
+      <td>6.009415</td>
+      <td>0.307041</td>
+      <td>1.086662</td>
+      <td>0.769066</td>
+      <td>-0.449853</td>
       <td>0</td>
       <td></td>
-      <td>0.214893</td>
-      <td>0.143868</td>
+      <td>0.042959</td>
+      <td>0.060503</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>numba</td>
+      <td>numpyro</td>
       <td>True</td>
-      <td>10.849111</td>
-      <td>0.124643</td>
-      <td>0.829939</td>
-      <td>0.761037</td>
-      <td>-0.443311</td>
-      <td>2</td>
+      <td>9.567182</td>
+      <td>0.305389</td>
+      <td>1.090718</td>
+      <td>0.769516</td>
+      <td>-0.447719</td>
+      <td>0</td>
       <td></td>
-      <td>0.225357</td>
-      <td>0.105913</td>
+      <td>0.044611</td>
+      <td>0.062961</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>c</td>
+      <td>numba</td>
       <td>True</td>
-      <td>17.359831</td>
-      <td>0.128470</td>
-      <td>0.806223</td>
-      <td>0.760170</td>
-      <td>-0.444469</td>
+      <td>11.513259</td>
+      <td>0.311810</td>
+      <td>1.082217</td>
+      <td>0.768926</td>
+      <td>-0.450564</td>
       <td>0</td>
       <td></td>
-      <td>0.221530</td>
-      <td>0.118631</td>
+      <td>0.038190</td>
+      <td>0.058221</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>c</td>
+      <td>True</td>
+      <td>18.344980</td>
+      <td>0.311810</td>
+      <td>1.082217</td>
+      <td>0.768926</td>
+      <td>-0.450564</td>
+      <td>0</td>
+      <td></td>
+      <td>0.038190</td>
+      <td>0.058221</td>
     </tr>
   </tbody>
 </table>
@@ -1456,45 +1471,56 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>blackjax</td>
+      <td>nutpie</td>
       <td>True</td>
-      <td>3.762</td>
-      <td>0.121</td>
-      <td>0.229</td>
-      <td>0.096</td>
-      <td>3</td>
+      <td>4.842</td>
+      <td>0.306</td>
+      <td>0.044</td>
+      <td>0.061</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>1</th>
-      <td>numpyro</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>4.739</td>
-      <td>0.135</td>
-      <td>0.215</td>
-      <td>0.144</td>
+      <td>6.009</td>
+      <td>0.307</td>
+      <td>0.043</td>
+      <td>0.061</td>
       <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>2</th>
-      <td>numba</td>
+      <td>numpyro</td>
       <td>True</td>
-      <td>10.849</td>
-      <td>0.125</td>
-      <td>0.225</td>
-      <td>0.106</td>
-      <td>2</td>
+      <td>9.567</td>
+      <td>0.305</td>
+      <td>0.045</td>
+      <td>0.063</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>3</th>
+      <td>numba</td>
+      <td>True</td>
+      <td>11.513</td>
+      <td>0.312</td>
+      <td>0.038</td>
+      <td>0.058</td>
+      <td>0</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>4</th>
       <td>c</td>
       <td>True</td>
-      <td>17.360</td>
-      <td>0.128</td>
-      <td>0.222</td>
-      <td>0.119</td>
+      <td>18.345</td>
+      <td>0.312</td>
+      <td>0.038</td>
+      <td>0.058</td>
       <td>0</td>
       <td></td>
     </tr>
@@ -1535,7 +1561,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/31c1df3d70f0b2c9480e66e0b08871df5660b75176287d78433ce70d41c2eb0f.png" src="../_images/31c1df3d70f0b2c9480e66e0b08871df5660b75176287d78433ce70d41c2eb0f.png" />
+<img alt="../_images/06ae745e8796c936da26cfeda462847f78d325f2b2fea61c5da55473ab9c903f.png" src="../_images/06ae745e8796c936da26cfeda462847f78d325f2b2fea61c5da55473ab9c903f.png" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -1599,24 +1625,19 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 Profiling backend=numba on 40×40 grid...
 Profiling backend=numpyro on 40×40 grid...
 Profiling backend=blackjax on 40×40 grid...
+Profiling backend=nutpie on 40×40 grid...
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/tmp/ipykernel_6961/1947674717.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  model = SAR(
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [rho, beta, sigma]
+Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 11 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
 NUTS: [rho, beta, sigma]
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 12 seconds.
-/tmp/ipykernel_6961/1947674717.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  model = SAR(
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 14 seconds.
-/tmp/ipykernel_6961/1947674717.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  model = SAR(
-/tmp/ipykernel_6961/1947674717.py:44: UserWarning: W does not appear to be row-standardised (row sums ≠ 1). Most spatial models assume W is row-standardised; results may be unreliable otherwise. For a scipy sparse matrix normalise rows manually (divide each row by its sum). To use a libpysal.graph.Graph set its transformation attribute: graph = graph.transform(&#39;r&#39;).
-  model = SAR(
+Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/sampling/mcmc.py:361: UserWarning: `idata_kwargs` are currently ignored by the nutpie sampler
+  warnings.warn(
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -1650,46 +1671,57 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>blackjax</td>
+      <td>nutpie</td>
       <td>True</td>
-      <td>4.576</td>
-      <td>0.157</td>
-      <td>0.193</td>
-      <td>0.228</td>
-      <td>6</td>
+      <td>2.846</td>
+      <td>0.355</td>
+      <td>0.005</td>
+      <td>0.014</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>1</th>
-      <td>numpyro</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>8.100</td>
-      <td>0.116</td>
-      <td>0.234</td>
-      <td>0.080</td>
-      <td>11</td>
+      <td>5.804</td>
+      <td>0.353</td>
+      <td>0.003</td>
+      <td>0.015</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>2</th>
-      <td>c</td>
+      <td>numpyro</td>
       <td>True</td>
-      <td>14.346</td>
-      <td>0.226</td>
-      <td>0.124</td>
-      <td>0.476</td>
-      <td>1</td>
+      <td>5.923</td>
+      <td>0.354</td>
+      <td>0.004</td>
+      <td>0.015</td>
+      <td>0</td>
       <td></td>
     </tr>
     <tr>
       <th>3</th>
       <td>numba</td>
       <td>True</td>
-      <td>16.025</td>
-      <td>0.095</td>
-      <td>0.255</td>
-      <td>0.009</td>
-      <td>15</td>
+      <td>12.228</td>
+      <td>0.353</td>
+      <td>0.003</td>
+      <td>0.016</td>
+      <td>0</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>c</td>
+      <td>True</td>
+      <td>13.421</td>
+      <td>0.353</td>
+      <td>0.003</td>
+      <td>0.016</td>
+      <td>0</td>
       <td></td>
     </tr>
   </tbody>
@@ -1729,7 +1761,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/17332264f3d8852e8d1ff260c97e8e9335bfc5cb4ed856298aa711093e048f54.png" src="../_images/17332264f3d8852e8d1ff260c97e8e9335bfc5cb4ed856298aa711093e048f54.png" />
+<img alt="../_images/ccf1f9700d2145b898ce091888f5739618a5b6c9acdc79058e3bae83f2fdd27e.png" src="../_images/ccf1f9700d2145b898ce091888f5739618a5b6c9acdc79058e3bae83f2fdd27e.png" />
 </div>
 </div>
 <h2 id="reading-the-results">Reading The Results<a class="headerlink" href="#reading-the-results" title="Link to this heading">¶</a></h2>

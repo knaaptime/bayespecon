@@ -1062,6 +1062,11 @@
         <span class="s2">&quot;compile_kwargs&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
         <span class="s2">&quot;requires&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;blackjax&quot;</span><span class="p">,</span> <span class="s2">&quot;jax&quot;</span><span class="p">],</span>
     <span class="p">},</span>
+    <span class="s2">&quot;nutpie&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;nuts_sampler&quot;</span><span class="p">:</span> <span class="s2">&quot;nutpie&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;compile_kwargs&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;requires&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;nutpie&quot;</span><span class="p">],</span>
+    <span class="p">},</span>
 <span class="p">}</span>
 
 <span class="n">TRUE_BETA</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
@@ -1091,7 +1096,7 @@
         <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
         <span class="n">create_gdf</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">W_graph</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">rook</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">W_graph</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">Graph</span><span class="o">.</span><span class="n">build_contiguity</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">rook</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
     <span class="n">y</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
     <span class="n">X_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">gdf</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;X_&quot;</span><span class="p">)]</span>
     <span class="n">X</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">X_cols</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
@@ -1234,6 +1239,7 @@
 Profiling backend=numba...
 Profiling backend=numpyro...
 Profiling backend=blackjax...
+Profiling backend=nutpie...
 </code></pre></div>
 </div>
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
@@ -1281,53 +1287,66 @@ Sampling 4 chains for 500 tune and 500 draw iterations (2_000 + 2_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>blackjax</td>
+      <td>nutpie</td>
       <td>True</td>
-      <td>4.052</td>
-      <td>0.120</td>
-      <td>0.280</td>
-      <td>0.692</td>
-      <td>0.037</td>
+      <td>4.650</td>
+      <td>0.450</td>
+      <td>0.050</td>
+      <td>0.691</td>
+      <td>0.032</td>
       <td>0</td>
       <td>True</td>
       <td></td>
     </tr>
     <tr>
       <th>1</th>
-      <td>numpyro</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>5.780</td>
-      <td>0.180</td>
-      <td>0.220</td>
-      <td>0.696</td>
+      <td>6.419</td>
+      <td>0.448</td>
+      <td>0.048</td>
+      <td>0.692</td>
       <td>0.032</td>
-      <td>3</td>
+      <td>0</td>
       <td>True</td>
       <td></td>
     </tr>
     <tr>
       <th>2</th>
-      <td>numba</td>
+      <td>numpyro</td>
       <td>True</td>
-      <td>11.472</td>
-      <td>0.165</td>
-      <td>0.235</td>
-      <td>0.690</td>
-      <td>0.042</td>
-      <td>8</td>
+      <td>10.444</td>
+      <td>0.450</td>
+      <td>0.050</td>
+      <td>0.692</td>
+      <td>0.033</td>
+      <td>0</td>
       <td>True</td>
       <td></td>
     </tr>
     <tr>
       <th>3</th>
+      <td>numba</td>
+      <td>True</td>
+      <td>12.042</td>
+      <td>0.449</td>
+      <td>0.049</td>
+      <td>0.692</td>
+      <td>0.032</td>
+      <td>0</td>
+      <td>True</td>
+      <td></td>
+    </tr>
+    <tr>
+      <th>4</th>
       <td>c</td>
       <td>True</td>
-      <td>17.369</td>
-      <td>0.173</td>
-      <td>0.227</td>
-      <td>0.688</td>
-      <td>0.059</td>
-      <td>8</td>
+      <td>17.200</td>
+      <td>0.449</td>
+      <td>0.049</td>
+      <td>0.692</td>
+      <td>0.032</td>
+      <td>0</td>
       <td>True</td>
       <td></td>
     </tr>
@@ -1353,7 +1372,7 @@ Sampling 4 chains for 500 tune and 500 draw iterations (2_000 + 2_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/c21cdaa3f107c7d764a5fba204597465a0ebb6d6d55a76cc34a81e007e9409fb.png" src="../_images/c21cdaa3f107c7d764a5fba204597465a0ebb6d6d55a76cc34a81e007e9409fb.png" />
+<img alt="../_images/abe7a728cdb449ac26d1ef4014b30efdb64e48bee7a4e3bed2fe0228f8e15f32.png" src="../_images/abe7a728cdb449ac26d1ef4014b30efdb64e48bee7a4e3bed2fe0228f8e15f32.png" />
 </div>
 </div>
 <h2 id="log-likelihood-equivalence-across-backends">Log-likelihood equivalence across backends<a class="headerlink" href="#log-likelihood-equivalence-across-backends" title="Link to this heading">¶</a></h2>
@@ -1388,7 +1407,7 @@ Sampling 4 chains for 500 tune and 500 draw iterations (2_000 + 2_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Backends with native log_likelihood capture: [&#39;blackjax&#39;, &#39;numpyro&#39;, &#39;numba&#39;, &#39;c&#39;]
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Backends with native log_likelihood capture: [&#39;nutpie&#39;, &#39;blackjax&#39;, &#39;numpyro&#39;, &#39;numba&#39;, &#39;c&#39;]
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -1417,27 +1436,33 @@ Sampling 4 chains for 500 tune and 500 draw iterations (2_000 + 2_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>blackjax</td>
-      <td>-275.6517</td>
-      <td>-1.0768</td>
+      <td>nutpie</td>
+      <td>-275.8425</td>
+      <td>-1.0775</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>numpyro</td>
-      <td>-294.0966</td>
-      <td>-1.1488</td>
+      <td>blackjax</td>
+      <td>-275.7076</td>
+      <td>-1.0770</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>numba</td>
-      <td>-291.2221</td>
-      <td>-1.1376</td>
+      <td>numpyro</td>
+      <td>-275.8641</td>
+      <td>-1.0776</td>
     </tr>
     <tr>
       <th>3</th>
+      <td>numba</td>
+      <td>-275.8717</td>
+      <td>-1.0776</td>
+    </tr>
+    <tr>
+      <th>4</th>
       <td>c</td>
-      <td>-293.5810</td>
-      <td>-1.1468</td>
+      <td>-275.8717</td>
+      <td>-1.0776</td>
     </tr>
   </tbody>
 </table>
@@ -1472,7 +1497,7 @@ Sampling 4 chains for 500 tune and 500 draw iterations (2_000 + 2_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/3bbca09ed58a742447f5a98b686a791e5e6e201db73342f51fcfd9cf6b56d3a6.png" src="../_images/3bbca09ed58a742447f5a98b686a791e5e6e201db73342f51fcfd9cf6b56d3a6.png" />
+<img alt="../_images/94255e89fca809246ddcf550870c2eea6296516ed9a025b4fda0b78a1c03da82.png" src="../_images/94255e89fca809246ddcf550870c2eea6296516ed9a025b4fda0b78a1c03da82.png" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -1521,31 +1546,38 @@ Sampling 4 chains for 500 tune and 500 draw iterations (2_000 + 2_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>blackjax</td>
-      <td>-277.830</td>
-      <td>12.100</td>
-      <td>4.249</td>
+      <td>nutpie</td>
+      <td>-278.134</td>
+      <td>12.039</td>
+      <td>4.468</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>numpyro</td>
-      <td>-305.170</td>
-      <td>11.565</td>
-      <td>20.375</td>
+      <td>blackjax</td>
+      <td>-277.821</td>
+      <td>12.004</td>
+      <td>4.128</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>numba</td>
-      <td>-298.907</td>
-      <td>11.662</td>
-      <td>14.292</td>
+      <td>numpyro</td>
+      <td>-278.178</td>
+      <td>12.031</td>
+      <td>4.510</td>
     </tr>
     <tr>
       <th>3</th>
+      <td>numba</td>
+      <td>-278.148</td>
+      <td>12.013</td>
+      <td>4.438</td>
+    </tr>
+    <tr>
+      <th>4</th>
       <td>c</td>
-      <td>-300.580</td>
-      <td>11.603</td>
-      <td>13.290</td>
+      <td>-278.148</td>
+      <td>12.013</td>
+      <td>4.438</td>
     </tr>
   </tbody>
 </table>
@@ -1593,48 +1625,60 @@ Sampling 4 chains for 500 tune and 500 draw iterations (2_000 + 2_000 draws tota
     <tr>
       <th>blackjax</th>
       <td>0</td>
-      <td>-277.830277</td>
-      <td>4.248829</td>
+      <td>-277.821057</td>
+      <td>4.127879</td>
       <td>0.000000</td>
-      <td>1.0</td>
-      <td>12.100045</td>
+      <td>1.000000e+00</td>
+      <td>12.004115</td>
       <td>0.000000</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
-      <th>numba</th>
+      <th>nutpie</th>
       <td>1</td>
-      <td>-298.907480</td>
-      <td>14.292233</td>
-      <td>21.077203</td>
-      <td>0.0</td>
-      <td>11.661938</td>
-      <td>1.955012</td>
+      <td>-278.133526</td>
+      <td>4.468249</td>
+      <td>0.312469</td>
+      <td>6.106227e-16</td>
+      <td>12.039359</td>
+      <td>0.063030</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>c</th>
       <td>2</td>
-      <td>-300.579720</td>
-      <td>13.289652</td>
-      <td>22.749443</td>
-      <td>0.0</td>
-      <td>11.603080</td>
-      <td>2.132489</td>
+      <td>-278.147827</td>
+      <td>4.438451</td>
+      <td>0.326770</td>
+      <td>0.000000e+00</td>
+      <td>12.012542</td>
+      <td>0.053116</td>
+      <td>False</td>
+      <td>log</td>
+    </tr>
+    <tr>
+      <th>numba</th>
+      <td>3</td>
+      <td>-278.147827</td>
+      <td>4.438451</td>
+      <td>0.326770</td>
+      <td>0.000000e+00</td>
+      <td>12.012542</td>
+      <td>0.053116</td>
       <td>False</td>
       <td>log</td>
     </tr>
     <tr>
       <th>numpyro</th>
-      <td>3</td>
-      <td>-305.169870</td>
-      <td>20.375204</td>
-      <td>27.339593</td>
-      <td>0.0</td>
-      <td>11.565384</td>
-      <td>2.633785</td>
+      <td>4</td>
+      <td>-278.177694</td>
+      <td>4.509831</td>
+      <td>0.356637</td>
+      <td>2.775558e-17</td>
+      <td>12.030650</td>
+      <td>0.055830</td>
       <td>False</td>
       <td>log</td>
     </tr>

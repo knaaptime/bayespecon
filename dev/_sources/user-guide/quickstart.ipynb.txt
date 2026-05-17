@@ -299,9 +299,9 @@
  ],
  "metadata": {
   "kernelspec": {
-   "display_name": "Python [conda env:bayespreg]",
+   "display_name": "bayespreg",
    "language": "python",
-   "name": "conda-env-bayespreg-py"
+   "name": "python3"
   },
   "language_info": {
    "codemirror_mode": {
