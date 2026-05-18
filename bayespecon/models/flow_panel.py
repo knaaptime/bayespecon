@@ -249,7 +249,9 @@ class FlowPanelModel(ABC):
         self._Ww: sp.csr_matrix = wms["network"]
 
         # Cache identity matrix for _assemble_A (avoids repeated allocation)
-        self._I_N_flow: sp.csr_matrix = sp.eye(self._N_flow, format="csr", dtype=np.float64)
+        self._I_N_flow: sp.csr_matrix = sp.eye(
+            self._N_flow, format="csr", dtype=np.float64
+        )
         self._I_n: sp.csr_matrix = sp.eye(self._n, format="csr", dtype=np.float64)
 
         # Cache region-shock masks for LeSage effects decomposition.

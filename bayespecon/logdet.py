@@ -1255,8 +1255,8 @@ def flow_logdet_numpy(
     rd_pow = np.power(rho_d[:, None], poly_a[None, :])  # (G, P)
     ro_pow = np.power(rho_o[:, None], poly_b[None, :])  # (G, P)
     rw_pow = np.power(rho_w[:, None], poly_c[None, :])  # (G, P)
-    rd_pow *= ro_pow          # in-place: rd_pow now holds rd^a * ro^b
-    rd_pow *= rw_pow          # in-place: rd_pow now holds rd^a * ro^b * rw^c
+    rd_pow *= ro_pow  # in-place: rd_pow now holds rd^a * ro^b
+    rd_pow *= rw_pow  # in-place: rd_pow now holds rd^a * ro^b * rw^c
     rd_pow *= poly_coeffs[None, :]  # in-place: multiply by coefficients
     poly_part = rd_pow.sum(axis=1)
 

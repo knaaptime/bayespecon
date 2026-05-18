@@ -378,8 +378,10 @@ class _FactorizedCallableSolver:
             return np.asarray(self._solve_fn(rhs), dtype=np.float64)
         # 2-D matrix RHS: solve column-by-column since UMFPACK's factorized()
         # callable does not accept 2-D arrays.
-        cols = [np.asarray(self._solve_fn(rhs[:, j]), dtype=np.float64)
-                for j in range(rhs.shape[1])]
+        cols = [
+            np.asarray(self._solve_fn(rhs[:, j]), dtype=np.float64)
+            for j in range(rhs.shape[1])
+        ]
         return np.column_stack(cols)
 
 

@@ -1630,13 +1630,16 @@ class TestFlowEffectsLeSageDecomposition:
         intra = imask.astype(np.float64)
 
         np.testing.assert_array_equal(
-            struct["dest_all_csc"].toarray(), dest_all,
+            struct["dest_all_csc"].toarray(),
+            dest_all,
         )
         np.testing.assert_array_equal(
-            struct["orig_all_csc"].toarray(), orig_all,
+            struct["orig_all_csc"].toarray(),
+            orig_all,
         )
         np.testing.assert_array_equal(
-            struct["intra_csc"].toarray(), intra,
+            struct["intra_csc"].toarray(),
+            intra,
         )
 
         # Verify index arrays match

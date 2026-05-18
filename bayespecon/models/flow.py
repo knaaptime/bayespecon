@@ -53,7 +53,7 @@ from ..logdet import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from ..ops import kron_solve_matrix, kron_solve_vec, _make_cached_umfpack_solver
+from ..ops import _make_cached_umfpack_solver, kron_solve_matrix, kron_solve_vec
 
 
 def _factorize(A: sp.spmatrix):
@@ -228,9 +228,7 @@ def _build_flow_effect_structure(n: int) -> dict:
 
     # intra: 1.0 at (j, j) only
     intra_data = np.ones(n, dtype=np.float64)
-    intra_csc = sp.csc_matrix(
-        (intra_data, (i_rows_all, i_cols_all)), shape=(N, n)
-    )
+    intra_csc = sp.csc_matrix((intra_data, (i_rows_all, i_cols_all)), shape=(N, n))
 
     return {
         "dest_rows": d_rows_all,
@@ -329,8 +327,8 @@ def _compute_flow_effects_lesage(
     S_orig = (omask | imask).astype(np.float64)
     S_intra = imask.astype(np.float64)
 
-    T_dest = A_solve(S_dest)    # (N, n) — destination unit shock
-    T_orig = A_solve(S_orig)    # (N, n) — origin unit shock
+    T_dest = A_solve(S_dest)  # (N, n) — destination unit shock
+    T_orig = A_solve(S_orig)  # (N, n) — origin unit shock
     T_intra = A_solve(S_intra)  # (N, n) — intra correction
 
     # Pre-compute scalar aggregates from the 3 base solves.
