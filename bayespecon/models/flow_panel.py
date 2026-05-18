@@ -37,6 +37,7 @@ from .base import SpatialModel
 from .flow import (
     _build_flow_effect_masks,
     _compute_flow_effects_lesage,
+    _factorize,
     _parallel_draw_loop,
 )
 from .panel_base import _demean_panel
@@ -246,6 +247,12 @@ class FlowPanelModel(ABC):
         self._Wd: sp.csr_matrix = wms["destination"]
         self._Wo: sp.csr_matrix = wms["origin"]
         self._Ww: sp.csr_matrix = wms["network"]
+
+        # Cache identity matrix for _assemble_A (avoids repeated allocation)
+        self._I_N_flow: sp.csr_matrix = sp.eye(
+            self._N_flow, format="csr", dtype=np.float64
+        )
+        self._I_n: sp.csr_matrix = sp.eye(self._n, format="csr", dtype=np.float64)
 
         # Cache region-shock masks for LeSage effects decomposition.
         self._dmask, self._omask, self._imask = _build_flow_effect_masks(self._n)
@@ -597,8 +604,7 @@ class FlowPanelModel(ABC):
 
     def _assemble_A(self, rho_d: float, rho_o: float, rho_w: float) -> sp.csr_matrix:
         """Assemble A = I - rho_d*Wd - rho_o*Wo - rho_w*Ww for one period."""
-        eye_n = sp.eye(self._N_flow, format="csr", dtype=np.float64)
-        return eye_n - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
+        return self._I_N_flow - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
 
     def _sparse_flow_panel_lag(
         self, v: np.ndarray, W_flow: sp.csr_matrix
@@ -732,7 +738,7 @@ class FlowPanelModel(ABC):
         N = self._N_flow
         T = self._T
         A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
-        lu = sp.linalg.splu(A)
+        lu = _factorize(A)
         Xb = self._X_design @ beta  # (N*T,)
         Xb_mat = Xb.reshape(T, N).T  # (N, T)
         if sigma is not None:
@@ -875,7 +881,7 @@ class FlowPanelModel(ABC):
             )
 
             A = self._assemble_A(rd, ro, rw).tocsc()
-            lu = sp.linalg.splu(A)
+            lu = _factorize(A)
 
             def _solve(rhs: np.ndarray, _lu=lu) -> np.ndarray:
                 return _lu.solve(rhs)
@@ -923,7 +929,7 @@ class FlowPanelModel(ABC):
         k_d = self._k_d
         k_o = self._k_o
         W = self._W_sparse.tocsr()
-        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        I_n = self._I_n
 
         dest_start = 2
         orig_start = 2 + k_d
@@ -1530,7 +1536,7 @@ class PoissonSARFlowPanel(FlowPanelModel):
         N = self._N_flow
         T = self._T
         A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
-        lu = sp.linalg.splu(A)
+        lu = _factorize(A)
         Xb = self._X_design @ beta
         Xb_mat = Xb.reshape(T, N).T
         eta_mat = lu.solve(Xb_mat)
@@ -1719,9 +1725,8 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         N = self._N_flow
         T = self._T
         n = self._n
-        I_n = sp.eye(n, format="csr", dtype=np.float64)
-        Ld = (I_n - rho_d * self._W_sparse).tocsr()
-        Lo = (I_n - rho_o * self._W_sparse).tocsr()
+        Ld = (self._I_n - rho_d * self._W_sparse).tocsr()
+        Lo = (self._I_n - rho_o * self._W_sparse).tocsr()
         Xb = self._X_design @ beta
         Xb_mat = Xb.reshape(T, N).T  # (N, T)
         eta_mat = kron_solve_matrix(Lo, Ld, Xb_mat, n)
@@ -2461,7 +2466,7 @@ class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
         if sigma is None:
             return Xb
         B = self._assemble_A(lam_d, lam_o, lam_w).tocsc()
-        lu = sp.linalg.splu(B)
+        lu = _factorize(B)
         eps = rng.normal(scale=float(sigma), size=(N, T))
         u = lu.solve(eps)  # (N, T)
         u_stacked = u.T.reshape(-1)  # back to time-first
@@ -2640,9 +2645,8 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         Xb = self._X_design @ beta
         if sigma is None:
             return Xb
-        I_n = sp.eye(n, format="csr", dtype=np.float64)
-        Ld = (I_n - lam_d * self._W_sparse).tocsr()
-        Lo = (I_n - lam_o * self._W_sparse).tocsr()
+        Ld = (self._I_n - lam_d * self._W_sparse).tocsr()
+        Lo = (self._I_n - lam_o * self._W_sparse).tocsr()
         eps = rng.normal(scale=float(sigma), size=(N, T))
         u = kron_solve_matrix(Lo, Ld, eps, n)
         return Xb + u.T.reshape(-1)

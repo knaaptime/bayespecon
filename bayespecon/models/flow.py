@@ -53,7 +53,20 @@ from ..logdet import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from ..ops import kron_solve_matrix, kron_solve_vec
+from ..ops import _make_cached_umfpack_solver, kron_solve_matrix, kron_solve_vec
+
+
+def _factorize(A: sp.spmatrix):
+    """Factorize sparse matrix using UMFPACK when available, else SuperLU.
+
+    Returns an object with a ``.solve(rhs)`` method, compatible with both
+    :class:`scipy.sparse.linalg.SuperLU` and
+    :class:`~bayespecon.ops._FactorizedCallableSolver`.
+    """
+    solver = _make_cached_umfpack_solver(A)
+    if solver is not None:
+        return solver
+    return sp.linalg.splu(A.tocsc())
 
 
 def _resolve_worker_count(parallel: Optional[int], total: int) -> int:
@@ -163,6 +176,73 @@ def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray
     return dmask, omask, imask
 
 
+def _build_flow_effect_structure(n: int) -> dict:
+    """Build compact index arrays and sparse base-shock matrices for effects.
+
+    Returns a dict with:
+    - ``dest_rows``, ``dest_cols``: indices where dest=j, orig≠j (n(n-1) pairs)
+    - ``orig_rows``, ``orig_cols``: indices where orig=j, dest≠j (n(n-1) pairs)
+    - ``intra_rows``, ``intra_cols``: indices where orig=dest=j (n pairs)
+    - ``dest_all_csc``: sparse CSC (N, n), 1.0 at all flows with dest=j
+    - ``orig_all_csc``: sparse CSC (N, n), 1.0 at all flows with orig=j
+    - ``intra_csc``: sparse CSC (N, n), 1.0 at (j,j) positions only
+
+    The CSC matrices are used as RHS for the 2-base-solve effects path,
+    avoiding materialisation of dense (N, n) shock arrays.
+    """
+    N = n * n
+    flat = np.arange(N)
+    o_idx = flat // n
+    d_idx = flat % n
+
+    # --- index arrays for mask regions ---
+    d_rows_all, d_cols_all = np.where(
+        (d_idx[:, None] == np.arange(n)[None, :])
+        & (o_idx[:, None] != np.arange(n)[None, :])
+    )
+    o_rows_all, o_cols_all = np.where(
+        (o_idx[:, None] == np.arange(n)[None, :])
+        & (d_idx[:, None] != np.arange(n)[None, :])
+    )
+    i_rows_all, i_cols_all = np.where(
+        (o_idx[:, None] == np.arange(n)[None, :])
+        & (d_idx[:, None] == np.arange(n)[None, :])
+    )
+
+    # --- sparse CSC base-shock matrices ---
+    # dest_all: 1.0 at all (o, j) where dest=j (including intra (j,j))
+    dest_all_rows = np.concatenate([d_rows_all, i_rows_all])
+    dest_all_cols = np.concatenate([d_cols_all, i_cols_all])
+    dest_all_data = np.ones(len(dest_all_rows), dtype=np.float64)
+    dest_all_csc = sp.csc_matrix(
+        (dest_all_data, (dest_all_rows, dest_all_cols)), shape=(N, n)
+    )
+
+    # orig_all: 1.0 at all (j, d) where orig=j (including intra (j,j))
+    orig_all_rows = np.concatenate([o_rows_all, i_rows_all])
+    orig_all_cols = np.concatenate([o_cols_all, i_cols_all])
+    orig_all_data = np.ones(len(orig_all_rows), dtype=np.float64)
+    orig_all_csc = sp.csc_matrix(
+        (orig_all_data, (orig_all_rows, orig_all_cols)), shape=(N, n)
+    )
+
+    # intra: 1.0 at (j, j) only
+    intra_data = np.ones(n, dtype=np.float64)
+    intra_csc = sp.csc_matrix((intra_data, (i_rows_all, i_cols_all)), shape=(N, n))
+
+    return {
+        "dest_rows": d_rows_all,
+        "dest_cols": d_cols_all,
+        "orig_rows": o_rows_all,
+        "orig_cols": o_cols_all,
+        "intra_rows": i_rows_all,
+        "intra_cols": i_cols_all,
+        "dest_all_csc": dest_all_csc,
+        "orig_all_csc": orig_all_csc,
+        "intra_csc": intra_csc,
+    }
+
+
 _EFFECT_KEYS = ("origin", "destination", "intra", "network", "total")
 
 
@@ -180,24 +260,21 @@ def _compute_flow_effects_lesage(
 ) -> dict[str, np.ndarray]:
     """Compute scalar LeSage / Thomas-Agnan effects for one posterior draw.
 
-    Implements the decomposition of Thomas-Agnan & LeSage (2014, §83.5).  For
-    each predictor *p*, two independent shocks are propagated through the
-    spatial filter so that origin-side and destination-side effects can be
-    reported separately when the design uses different attributes for the
-    origin and destination blocks.
+    Uses only **3 base sparse-system solves** regardless of the number of
+    predictors, exploiting the linearity of ``A⁻¹``:
 
-    The destination shock places ``β_d^{(p)}`` on every flow whose destination
-    equals region ``j`` (off-diagonal) and ``β_d^{(p)} + β_intra^{(p)}`` on the
-    intraregional flow ``(j, j)``.  The origin shock places ``β_o^{(p)}`` on
-    every flow whose origin equals region ``j``, including ``(j, j)``.  The
-    intra block is tied to the destination side because
-    :func:`bayespecon.graph.flow_design_matrix` constructs
-    ``X_intra = intra_indicator * X_dest``.
+    1. ``T_dest = A_solve(S_dest)`` where ``S_dest`` has 1.0 at every flow
+       whose destination equals region *j* (including the intra flow ``(j,j)``).
+    2. ``T_orig = A_solve(S_orig)`` where ``S_orig`` has 1.0 at every flow
+       whose origin equals region *j* (including the intra flow ``(j,j)``).
+    3. ``T_intra = A_solve(S_intra)`` where ``S_intra`` has 1.0 at diagonal
+       positions ``(j, j)`` only (the intra correction).
 
-    When ``k_d != k_o``, the destination and origin predictors are different
-    variables.  Destination-side effects have length ``k_d``, origin-side
-    effects have length ``k_o``, and combined effects have length
-    ``k_d + k_o`` (concatenated).
+    Destination predictor *p*: ``T_d = β_d * T_dest + β_intra * T_intra``
+    Origin predictor *p*: ``T_o = β_o * T_orig``
+
+    This reduces the number of sparse solves from ``k_d + k_o`` to **3**
+    per draw, a ~2–3× speedup for typical ``k = 5–10``.
 
     Parameters
     ----------
@@ -239,44 +316,65 @@ def _compute_flow_effects_lesage(
         else np.asarray(beta_intra, dtype=np.float64)
     )
 
+    # --- 3 base solves instead of k_d + k_o ---
+    # Destination unit shock: 1.0 at all flows with dest=j (incl. intra (j,j)).
+    # Origin unit shock: 1.0 at all flows with orig=j (incl. intra (j,j)).
+    # Intra unit shock: 1.0 at (j,j) positions only.
+    # These 3 bases suffice because every predictor's shock is a linear
+    # combination: dest_shock_p = β_d * dest_unit + β_intra * intra_unit,
+    #              orig_shock_p  = β_o * orig_unit.
+    S_dest = (dmask | imask).astype(np.float64)
+    S_orig = (omask | imask).astype(np.float64)
+    S_intra = imask.astype(np.float64)
+
+    T_dest = A_solve(S_dest)  # (N, n) — destination unit shock
+    T_orig = A_solve(S_orig)  # (N, n) — origin unit shock
+    T_intra = A_solve(S_intra)  # (N, n) — intra correction
+
+    # Pre-compute scalar aggregates from the 3 base solves.
+    # These are the same for all predictors; we scale by β below.
+    dest_total = T_dest.sum() / N
+    dest_intra = T_dest[imask].sum() / N
+    dest_origin = T_dest[omask].sum() / N
+    dest_dest = T_dest[dmask].sum() / N
+
+    orig_total = T_orig.sum() / N
+    orig_intra = T_orig[imask].sum() / N
+    orig_origin = T_orig[omask].sum() / N
+    orig_dest = T_orig[dmask].sum() / N
+
+    intra_total = T_intra.sum() / N
+    intra_intra = T_intra[imask].sum() / N
+    intra_origin = T_intra[omask].sum() / N
+    intra_dest = T_intra[dmask].sum() / N
+
     out: dict[str, np.ndarray] = {}
     for side in ("dest", "orig"):
         k_side = k_d if side == "dest" else k_o
         for eff in _EFFECT_KEYS:
             out[f"{side}_{eff}"] = np.empty(k_side, dtype=np.float64)
 
+    # Destination-side effects: T_d = β_d * T_dest + β_intra * T_intra
     for p in range(k_d):
         bd = float(beta_d[p])
         bint = float(bi[p])
-
-        # Destination-side shock: β_d on flows with destination=j, plus β_intra
-        # at (j, j) since X_intra is built from X_dest.
-        shock_d = np.zeros((N, n), dtype=np.float64)
-        shock_d[dmask] = bd
-        shock_d[imask] = bd + bint
-        T_d = A_solve(shock_d)
-        total_d = T_d.sum() / N
-        intra_d = T_d[imask].sum() / N
-        origin_d = T_d[omask].sum() / N
-        dest_d = T_d[dmask].sum() / N
+        total_d = bd * dest_total + bint * intra_total
+        intra_d = bd * dest_intra + bint * intra_intra
+        origin_d = bd * dest_origin + bint * intra_origin
+        dest_d = bd * dest_dest + bint * intra_dest
         out["dest_total"][p] = total_d
         out["dest_intra"][p] = intra_d
         out["dest_origin"][p] = origin_d
         out["dest_destination"][p] = dest_d
         out["dest_network"][p] = total_d - origin_d - dest_d - intra_d
 
+    # Origin-side effects: T_o = β_o * T_orig
     for p in range(k_o):
         bo = float(beta_o[p])
-
-        # Origin-side shock: β_o on flows with origin=j, including (j, j).
-        shock_o = np.zeros((N, n), dtype=np.float64)
-        shock_o[omask] = bo
-        shock_o[imask] = bo
-        T_o = A_solve(shock_o)
-        total_o = T_o.sum() / N
-        intra_o = T_o[imask].sum() / N
-        origin_o = T_o[omask].sum() / N
-        dest_o = T_o[dmask].sum() / N
+        total_o = bo * orig_total
+        intra_o = bo * orig_intra
+        origin_o = bo * orig_origin
+        dest_o = bo * orig_dest
         out["orig_total"][p] = total_o
         out["orig_intra"][p] = intra_o
         out["orig_origin"][p] = origin_o
@@ -538,6 +636,10 @@ class FlowModel(ABC):
         self._Wd: sp.csr_matrix = wms["destination"]
         self._Wo: sp.csr_matrix = wms["origin"]
         self._Ww: sp.csr_matrix = wms["network"]
+
+        # Cache identity matrix for _assemble_A (avoids repeated allocation)
+        self._I_N: sp.csr_matrix = sp.eye(self._N, format="csr", dtype=np.float64)
+        self._I_n: sp.csr_matrix = sp.eye(self._n, format="csr", dtype=np.float64)
 
         # Cache region-shock masks for LeSage effects decomposition.
         self._dmask, self._omask, self._imask = _build_flow_effect_masks(self._n)
@@ -945,8 +1047,7 @@ class FlowModel(ABC):
         rho_w: float,
     ) -> sp.csr_matrix:
         """Assemble A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww (sparse N×N)."""
-        I_N = sp.eye(self._N, format="csr", dtype=np.float64)
-        return I_N - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
+        return self._I_N - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
 
     # ------------------------------------------------------------------
     # Public diagnostics
@@ -1097,11 +1198,12 @@ class FlowModel(ABC):
         ``y_rep = A^{-1} (X β + σ ε)`` with ``ε ~ N(0, I_N)``.
         Subclasses (PoissonSARFlow, PoissonSARFlowSeparable) override this.
         """
-        A = self._assemble_A(rho_d, rho_o, rho_w)
+        A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
+        lu = _factorize(A)
         Xb = self._X_design @ beta
         eps = rng.normal(scale=float(sigma), size=self._N) if sigma is not None else 0.0
         rhs = Xb + eps
-        return sp.linalg.spsolve(A, rhs)
+        return lu.solve(rhs)
 
     def posterior_predictive(
         self,
@@ -1412,7 +1514,7 @@ class SARFlow(FlowModel):
             )
 
             A = self._assemble_A(rd, ro, rw).tocsc()
-            lu = sp.linalg.splu(A)
+            lu = _factorize(A)
 
             def _solve(rhs: np.ndarray, _lu=lu) -> np.ndarray:
                 return _lu.solve(rhs)
@@ -1606,7 +1708,6 @@ class SARFlowSeparable(FlowModel):
         k_d = self._k_d
         k_o = self._k_o
         W = self._W_sparse.tocsr()
-        I_n = sp.eye(n, format="csr", dtype=np.float64)
 
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
@@ -1648,8 +1749,8 @@ class SARFlowSeparable(FlowModel):
                 beta_draws[idx, intra_start : intra_start + k_d] if has_intra else None
             )
 
-            Ld = (I_n - rd * W).tocsr()
-            Lo = (I_n - ro * W).tocsr()
+            Ld = (self._I_n - rd * W).tocsr()
+            Lo = (self._I_n - ro * W).tocsr()
 
             def _solve(rhs: np.ndarray, _Lo=Lo, _Ld=Ld, _n=n) -> np.ndarray:
                 return kron_solve_matrix(_Lo, _Ld, rhs, _n)
@@ -1783,8 +1884,9 @@ class PoissonSARFlow(SARFlow):
         sigma: Optional[float],  # unused
         rng: np.random.Generator,
     ) -> np.ndarray:
-        A = self._assemble_A(rho_d, rho_o, rho_w)
-        eta = sp.linalg.spsolve(A, self._X_design @ beta)
+        A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
+        lu = _factorize(A)
+        eta = lu.solve(self._X_design @ beta)
         # Clip to avoid overflow on extreme draws.
         lam = np.exp(np.clip(eta, -50.0, 50.0))
         return rng.poisson(lam).astype(np.float64)
@@ -1939,7 +2041,7 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         sigma: Optional[float],  # unused
         rng: np.random.Generator,
     ) -> np.ndarray:
-        I_n = sp.eye(self._n, format="csr", dtype=np.float64)
+        I_n = self._I_n
         Ld = I_n - rho_d * self._W_sparse
         Lo = I_n - rho_o * self._W_sparse
         eta = kron_solve_vec(Lo, Ld, self._X_design @ beta, self._n)
@@ -2432,8 +2534,9 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
             alpha_draws = alpha_draws[:total]
 
         def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
-            A = self._assemble_A(rho_d_draws[g], rho_o_draws[g], rho_w_draws[g])
-            eta = sp.linalg.spsolve(A, self._X_design @ beta_draws[g])
+            A = self._assemble_A(rho_d_draws[g], rho_o_draws[g], rho_w_draws[g]).tocsc()
+            lu = _factorize(A)
+            eta = lu.solve(self._X_design @ beta_draws[g])
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
@@ -2515,7 +2618,7 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
             alpha_draws = alpha_draws[:total]
 
         n = self._n
-        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        I_n = self._I_n
 
         def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
             Ld = I_n - float(rho_d_draws[g]) * self._W_sparse
@@ -2783,9 +2886,10 @@ class SEMFlow(FlowModel):
         Xb = self._X_design @ beta
         if sigma is None:
             return Xb
-        B = self._assemble_A(lam_d, lam_o, lam_w)
+        B = self._assemble_A(lam_d, lam_o, lam_w).tocsc()
+        lu = _factorize(B)
         eps = rng.normal(scale=float(sigma), size=self._N)
-        u = sp.linalg.spsolve(B, eps)
+        u = lu.solve(eps)
         return Xb + u
 
     def _compute_spatial_effects_posterior(

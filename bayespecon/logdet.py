@@ -1250,21 +1250,24 @@ def flow_logdet_numpy(
     rho_o = np.atleast_1d(np.asarray(rho_o, dtype=np.float64))
     rho_w = np.atleast_1d(np.asarray(rho_w, dtype=np.float64))
 
-    # Polynomial part: vectorised over draws.
-    poly_part = (
-        poly_coeffs[None, :]
-        * np.power(rho_d[:, None], poly_a[None, :])
-        * np.power(rho_o[:, None], poly_b[None, :])
-        * np.power(rho_w[:, None], poly_c[None, :])
-    ).sum(axis=1)
+    # Polynomial part: vectorised over draws with in-place accumulation
+    # to avoid materialising the full (G, P) 4-way broadcast temporary.
+    rd_pow = np.power(rho_d[:, None], poly_a[None, :])  # (G, P)
+    ro_pow = np.power(rho_o[:, None], poly_b[None, :])  # (G, P)
+    rw_pow = np.power(rho_w[:, None], poly_c[None, :])  # (G, P)
+    rd_pow *= ro_pow  # in-place: rd_pow now holds rd^a * ro^b
+    rd_pow *= rw_pow  # in-place: rd_pow now holds rd^a * ro^b * rw^c
+    rd_pow *= poly_coeffs[None, :]  # in-place: multiply by coefficients
+    poly_part = rd_pow.sum(axis=1)
 
-    # tr(W_F^miter) symbolically per draw.
-    trace_last = (
-        miter_coeffs[None, :]
-        * np.power(rho_d[:, None], miter_a[None, :])
-        * np.power(rho_o[:, None], miter_b[None, :])
-        * np.power(rho_w[:, None], miter_c[None, :])
-    ).sum(axis=1)
+    # tr(W_F^miter) symbolically per draw — same in-place pattern.
+    ml_rd = np.power(rho_d[:, None], miter_a[None, :])
+    ml_ro = np.power(rho_o[:, None], miter_b[None, :])
+    ml_rw = np.power(rho_w[:, None], miter_c[None, :])
+    ml_rd *= ml_ro
+    ml_rd *= ml_rw
+    ml_rd *= miter_coeffs[None, :]
+    trace_last = ml_rd.sum(axis=1)
 
     # Geometric tail (clip to avoid overflow at the boundary).
     s_raw = rho_d + rho_o + rho_w

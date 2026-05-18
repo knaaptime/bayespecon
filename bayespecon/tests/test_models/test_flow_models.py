@@ -1612,6 +1612,49 @@ class TestFlowEffectsLeSageDecomposition:
             assert np.isclose(res["destination"][p], (n - 1) / n * bd)
             assert np.isclose(res["network"][p], 0.0)
 
+    def test_helper_effect_structure_consistency(self):
+        """_build_flow_effect_structure produces masks consistent with _build_flow_effect_masks."""
+        from bayespecon.models.flow import (
+            _build_flow_effect_masks,
+            _build_flow_effect_structure,
+        )
+
+        n = 5
+        N = n * n
+        dmask, omask, imask = _build_flow_effect_masks(n)
+        struct = _build_flow_effect_structure(n)
+
+        # Verify CSC matrices match the boolean masks
+        dest_all = (dmask | imask).astype(np.float64)
+        orig_all = (omask | imask).astype(np.float64)
+        intra = imask.astype(np.float64)
+
+        np.testing.assert_array_equal(
+            struct["dest_all_csc"].toarray(),
+            dest_all,
+        )
+        np.testing.assert_array_equal(
+            struct["orig_all_csc"].toarray(),
+            orig_all,
+        )
+        np.testing.assert_array_equal(
+            struct["intra_csc"].toarray(),
+            intra,
+        )
+
+        # Verify index arrays match
+        d_rows, d_cols = np.where(dmask)
+        np.testing.assert_array_equal(struct["dest_rows"], d_rows)
+        np.testing.assert_array_equal(struct["dest_cols"], d_cols)
+
+        o_rows, o_cols = np.where(omask)
+        np.testing.assert_array_equal(struct["orig_rows"], o_rows)
+        np.testing.assert_array_equal(struct["orig_cols"], o_cols)
+
+        i_rows, i_cols = np.where(imask)
+        np.testing.assert_array_equal(struct["intra_rows"], i_rows)
+        np.testing.assert_array_equal(struct["intra_cols"], i_cols)
+
     def test_helper_total_identity(self):
         """total == origin + destination + intra + network for arbitrary A."""
         import scipy.sparse as sp_local
