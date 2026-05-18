@@ -339,18 +339,31 @@ def _solve_sparse_matrix(A: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
     backend = _select_sparse_backend()
     rhs64 = np.asarray(rhs, dtype=np.float64)
     if backend == "umfpack":
-        umfpack_spsolve = _get_umfpack_spsolve()
-        cols = [
-            np.asarray(umfpack_spsolve(A.tocsc(), rhs64[:, j]), dtype=np.float64)
-            for j in range(rhs64.shape[1])
-        ]
-        return np.column_stack(cols)
+        # Use factorized() for a single LU + batched solve, rather than
+        # solving column-by-column which factors A once per column.
+        try:
+            solve_fn = sp.linalg.factorized(A.tocsc())
+            return np.asarray(solve_fn(rhs64), dtype=np.float64)
+        except Exception:
+            # Fallback: column-by-column if factorized() is unavailable
+            # (e.g. UMFPACK not linked).  This is slower but correct.
+            umfpack_spsolve = _get_umfpack_spsolve()
+            cols = [
+                np.asarray(umfpack_spsolve(A.tocsc(), rhs64[:, j]), dtype=np.float64)
+                for j in range(rhs64.shape[1])
+            ]
+            return np.column_stack(cols)
     lu = sp.linalg.splu(A.tocsc())
     return np.asarray(lu.solve(rhs64), dtype=np.float64)
 
 
 class _FactorizedCallableSolver:
-    """Adapter exposing ``solve`` for callables returned by ``factorized``."""
+    """Adapter exposing ``solve`` for callables returned by ``factorized``.
+
+    Wraps UMFPACK's ``factorized()`` callable to handle both 1-D vectors
+    and 2-D matrix right-hand sides, matching the API of
+    :class:`scipy.sparse.linalg.SuperLU`.
+    """
 
     __slots__ = ("_solve_fn",)
 
@@ -360,7 +373,14 @@ class _FactorizedCallableSolver:
     def solve(self, rhs: np.ndarray, trans: str = "N") -> np.ndarray:
         if trans != "N":
             raise ValueError("factorized solver adapter supports trans='N' only")
-        return np.asarray(self._solve_fn(rhs), dtype=np.float64)
+        rhs = np.asarray(rhs, dtype=np.float64)
+        if rhs.ndim == 1:
+            return np.asarray(self._solve_fn(rhs), dtype=np.float64)
+        # 2-D matrix RHS: solve column-by-column since UMFPACK's factorized()
+        # callable does not accept 2-D arrays.
+        cols = [np.asarray(self._solve_fn(rhs[:, j]), dtype=np.float64)
+                for j in range(rhs.shape[1])]
+        return np.column_stack(cols)
 
 
 def _make_cached_umfpack_solver(A: sp.spmatrix) -> _FactorizedCallableSolver | None:
