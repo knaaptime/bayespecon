@@ -269,7 +269,7 @@ class SARNegativeBinomial(SpatialModel):
         if decomp is None:
             raise ValueError("No spatial weights matrix available.")
         eigs_c = decomp[0]  # complex128, (n,)
-        V_c = decomp[1]     # complex128, (n, n)
+        V_c = decomp[1]  # complex128, (n, n)
         Vinv_c = decomp[2]  # complex128, (n, n)
 
         # Precompute Vinv @ X (complex128, (n, k)) — reused for every draw
@@ -292,9 +292,9 @@ class SARNegativeBinomial(SpatialModel):
             # diag((I - rho W)^{-1}) = diag(V @ diag(inv_eigs) @ Vinv)
             # = sum_j V_{ij} * Vinv_{ji} / (1 - rho lambda_j)
             # (element-wise product of V and Vinv^T, weighted by inv_eigs)
-            multiplier_diag = (
-                (V_c * Vinv_c.T) @ inv_eigs_c
-            ).real.astype(np.float64)  # (n,)
+            multiplier_diag = ((V_c * Vinv_c.T) @ inv_eigs_c).real.astype(
+                np.float64
+            )  # (n,)
 
             if self._is_row_std:
                 multiplier_row_sums = np.full(
@@ -302,9 +302,9 @@ class SARNegativeBinomial(SpatialModel):
                 )
             else:
                 # row_sum_i = (V @ diag(inv_eigs) @ Vinv @ 1)_i
-                multiplier_row_sums = (
-                    V_c @ (inv_eigs_c * Vinv_ones)
-                ).real.astype(np.float64)  # (n,)
+                multiplier_row_sums = (V_c @ (inv_eigs_c * Vinv_ones)).real.astype(
+                    np.float64
+                )  # (n,)
 
             direct_base = float(np.mean(mu * multiplier_diag))
             total_base = float(np.mean(mu * multiplier_row_sums))
@@ -450,9 +450,7 @@ class SARNegativeBinomial(SpatialModel):
                 sol = np.asarray(solver.solve(rhs), dtype=np.float64)
                 eta = sol[:, 0]
                 AinvZ = sol[:, 1:]
-                multiplier_row_sums = np.full(
-                    n, 1.0 / (1.0 - rho_f), dtype=np.float64
-                )
+                multiplier_row_sums = np.full(n, 1.0 / (1.0 - rho_f), dtype=np.float64)
             else:
                 rhs = np.empty((n, 2 + n_probes), dtype=np.float64)
                 rhs[:, 0] = Xbeta

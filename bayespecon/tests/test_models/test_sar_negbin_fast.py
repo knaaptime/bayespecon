@@ -172,7 +172,9 @@ def test_sar_negbin_count_effects_sparse_batched_matches_columnwise():
         direct[g] = float(np.mean(mu * diag_est)) * beta[ni]
         total[g] = float(np.mean(mu * row_sums)) * beta[ni]
 
-    np.testing.assert_allclose(samples_batched["direct"], direct, atol=1e-10, rtol=1e-10)
+    np.testing.assert_allclose(
+        samples_batched["direct"], direct, atol=1e-10, rtol=1e-10
+    )
     np.testing.assert_allclose(samples_batched["total"], total, atol=1e-10, rtol=1e-10)
     np.testing.assert_allclose(
         samples_batched["indirect"], total - direct, atol=1e-10, rtol=1e-10

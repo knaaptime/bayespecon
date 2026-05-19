@@ -342,8 +342,7 @@ def _select_jax_sar_lineax_neumann_k() -> int:
         return 3
     if k < 0:
         msg = (
-            f"BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K={k} must be >= 0. "
-            "Falling back to 3."
+            f"BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K={k} must be >= 0. Falling back to 3."
         )
         if _strict_env():
             raise ValueError(msg)
@@ -797,9 +796,7 @@ def register_jax_dispatch() -> bool:
         rtol = 1e-8
         atol = 1e-8
 
-        use_precond = (
-            lineax_precond_kind == "neumann" and lineax_neumann_k > 0
-        )
+        use_precond = lineax_precond_kind == "neumann" and lineax_neumann_k > 0
         neumann_k = lineax_neumann_k
 
         def _make_solver():
@@ -823,12 +820,14 @@ def register_jax_dispatch() -> bool:
 
         def _solve(W_matvec, rho, b):
             if use_precond:
+
                 def matvec(x):
                     Ax = x - rho * W_matvec(x)
                     return _apply_minv(rho, W_matvec, Ax)
 
                 rhs = _apply_minv(rho, W_matvec, b)
             else:
+
                 def matvec(x):
                     return x - rho * W_matvec(x)
 
@@ -883,7 +882,6 @@ def register_jax_dispatch() -> bool:
         cache (from the model's ``_W_eigendecomposition`` property), it
         is reused here to avoid a redundant O(n³) decomposition.
         """
-        n = op._n
 
         # Consume shared eigendecomposition cache if available.
         if op._eigendecomposition is not None:
@@ -928,7 +926,9 @@ def register_jax_dispatch() -> bool:
     @jax_funcify.register(SparseSARSolveOp)
     def _funcify_sparse_sar_solve(op, **kwargs):
         # Resolve "auto" to a concrete solver based on problem size.
-        resolved = _resolve_auto_sar_solver(op._n) if sar_solver == "auto" else sar_solver
+        resolved = (
+            _resolve_auto_sar_solver(op._n) if sar_solver == "auto" else sar_solver
+        )
 
         if resolved == "eigen":
             forward, _ = _build_eigen_sar_paths(op)
@@ -946,7 +946,9 @@ def register_jax_dispatch() -> bool:
 
             return sparse_sar_solve
 
-        if resolved == "klujax" or (sar_solver != "auto" and sparse_backend == "klujax"):
+        if resolved == "klujax" or (
+            sar_solver != "auto" and sparse_backend == "klujax"
+        ):
             n = op._n
             I = np.eye(n, dtype=np.float64)
             W_dense = np.asarray(op._W.toarray(), dtype=np.float64)
@@ -975,7 +977,9 @@ def register_jax_dispatch() -> bool:
     @jax_funcify.register(_SparseSARVJPOp)
     def _funcify_sparse_sar_vjp(op, **kwargs):
         # Resolve "auto" to a concrete solver based on problem size.
-        resolved = _resolve_auto_sar_solver(op._n) if sar_solver == "auto" else sar_solver
+        resolved = (
+            _resolve_auto_sar_solver(op._n) if sar_solver == "auto" else sar_solver
+        )
 
         if resolved == "eigen":
             _, vjp = _build_eigen_sar_paths(op)

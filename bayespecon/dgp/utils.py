@@ -127,7 +127,7 @@ def rook_grid_weights(n_side: int) -> tuple[np.ndarray, Graph]:
     if n_side <= 0:
         raise ValueError("n must be a positive integer when generating a default grid.")
 
-    n_obs = n_side * n_side
+    n_side * n_side
     focal, neighbor = [], []
     for r in range(n_side):
         for c in range(n_side):
