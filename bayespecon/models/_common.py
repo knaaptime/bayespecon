@@ -856,7 +856,7 @@ class _SpatialModelBase(ABC):
         return _chunked_eig_means(
             rho_draws,
             eigs.real.astype(np.float64),
-            weights=(eigs.real * V_col_sums.real * c.real).astype(np.float64),
+            weights=(eigs * V_col_sums * c).real.astype(np.float64),
         )
 
     # ------------------------------------------------------------------

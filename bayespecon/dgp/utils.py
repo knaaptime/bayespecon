@@ -115,28 +115,45 @@ def rook_grid_weights(n_side: int) -> tuple[np.ndarray, Graph]:
     -------
     tuple[np.ndarray, Graph]
         Dense and Graph forms of the same row-standardized weights.
+
+    Notes
+    -----
+    The Graph is built directly from COO neighbour lists (O(N) cost)
+    and the dense matrix is materialised only on demand via
+    ``Graph.sparse.toarray()``.  For large grids this avoids the
+    O(N²) memory and Python-loop overhead of the old dense-first path.
     """
     n_side = int(n_side)
     if n_side <= 0:
         raise ValueError("n must be a positive integer when generating a default grid.")
 
     n_obs = n_side * n_side
-    W = np.zeros((n_obs, n_obs), dtype=float)
-
+    focal, neighbor = [], []
     for r in range(n_side):
         for c in range(n_side):
             i = r * n_side + c
             if r > 0:
-                W[i, (r - 1) * n_side + c] = 1.0
+                focal.append(i)
+                neighbor.append((r - 1) * n_side + c)
             if r < n_side - 1:
-                W[i, (r + 1) * n_side + c] = 1.0
+                focal.append(i)
+                neighbor.append((r + 1) * n_side + c)
             if c > 0:
-                W[i, r * n_side + (c - 1)] = 1.0
+                focal.append(i)
+                neighbor.append(r * n_side + (c - 1))
             if c < n_side - 1:
-                W[i, r * n_side + (c + 1)] = 1.0
+                focal.append(i)
+                neighbor.append(r * n_side + (c + 1))
 
-    W = row_standardize(W)
-    return W, dense_to_graph(W)
+    weight = np.ones(len(focal), dtype=float)
+    g = Graph.from_arrays(
+        np.asarray(focal, dtype=int),
+        np.asarray(neighbor, dtype=int),
+        weight,
+    ).transform("r")
+
+    Wd = g.sparse.toarray().astype(float)
+    return Wd, g
 
 
 def weights_from_geodataframe(

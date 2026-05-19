@@ -25,18 +25,15 @@ def _check_rho_stability(rho: float, W: np.ndarray, name: str = "rho") -> None:
     are the (real-part) eigenvalues of :math:`W`.  For row-standardised
     W this bound is ``1``.  We emit a UserWarning rather than raising
     so that callers running deliberate boundary tests can proceed.
+
+    The DGP always uses row-standardised W, so the spectral radius is
+    exactly 1.0 and we simply check ``|rho| < 1`` — no O(N³)
+    eigenvalue computation needed.
     """
-    try:
-        eig_max = float(np.max(np.abs(np.linalg.eigvals(W).real)))
-    except np.linalg.LinAlgError:
-        return
-    if eig_max <= 0.0:
-        return
-    bound = 1.0 / eig_max
-    if abs(rho) >= bound:
+    if abs(rho) >= 1.0:
         warnings.warn(
             f"{name}={rho:g} is outside the stability domain "
-            f"|{name}| < {bound:g} (1/max|eig(W)|); the simulated draw "
+            f"|{name}| < 1 (row-standardised W); the simulated draw "
             "may be numerically singular or unbounded.",
             stacklevel=3,
         )
@@ -284,7 +281,14 @@ def simulate_sar_negbin(
 
     X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
     _check_rho_stability(rho, Wd, name="rho")
-    eta = np.linalg.solve(np.eye(nobs) - rho * Wd, X @ beta)
+
+    # Use sparse solve to avoid O(N²) dense factorisation for large grids.
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as sla
+
+    W_sp = Wg.sparse.tocsc()
+    A = sp.eye(nobs, format="csc") - rho * W_sp
+    eta = sla.spsolve(A, X @ beta)
     mu = np.exp(np.clip(eta, -30.0, 30.0))
 
     p = alpha / (alpha + mu)
