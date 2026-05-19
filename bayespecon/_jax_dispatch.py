@@ -146,36 +146,50 @@ def _strict_env() -> bool:
 
 
 # Threshold above which the auto solver switches from eigen to lineax.
-# Eigen uses O(N^2) memory (two N×N complex128 matrices) which becomes
-# prohibitive for large N.  Lineax is matrix-free and uses O(nnz) memory.
-# Default 10000 covers grids up to n≈100 (N=10000) comfortably.
-_JAX_SAR_EIGEN_N_MAX = int(os.environ.get("BAYESPECON_JAX_SAR_EIGEN_N_MAX", "10000"))
+# Eigen uses O(N^2) memory (two N×N complex128 matrices) and O(N^3)
+# eigendecomposition time, which becomes prohibitive for very large N.
+# Lineax is matrix-free and uses O(nnz) memory with O(nnz) per iteration,
+# but can fail for near-singular systems during NUTS warmup.
+#
+# Default is 0 (eigen path disabled). The eigen path materialises three
+# N×N complex128 matrices (eigenvalues, eigenvectors, inverse eigenvectors)
+# plus a dense N×N float64 W for the gradient — totalling ~24N² bytes.
+# For n=2000 this is ~96 MB of GPU constants that XLA must trace through,
+# causing multi-minute JIT compilation. The callback path (scipy sparse LU
+# via host callback) avoids all of this and is faster for n > ~500.
+#
+# Set BAYESPECON_JAX_SAR_EIGEN_N_MAX to a positive value to re-enable
+# the eigen path for small problems where it may be slightly faster per-step.
+_JAX_SAR_EIGEN_N_MAX = int(os.environ.get("BAYESPECON_JAX_SAR_EIGEN_N_MAX", "0"))
 
 
 def _resolve_auto_sar_solver(n: int) -> str:
     """Resolve ``"auto"`` to a concrete solver based on problem size *n*.
 
-    Uses the eigendecomposition path (exact, robust) for small *n* and
-    falls back to Lineax iterative solve (matrix-free, memory-efficient)
-    for large *n* where storing two N×N complex128 matrices is prohibitive.
+    Selection order:
 
-    The threshold is controlled by
-    ``BAYESPECON_JAX_SAR_EIGEN_N_MAX`` (default 10000, i.e. N = n² ≤ 10000).
+    1. ``eigen`` when *n* is at or below ``BAYESPECON_JAX_SAR_EIGEN_N_MAX``
+       (default 0, i.e. opt-in only). The eigen path materialises three
+       N×N complex128 matrices plus a dense N×N float64 W and triggers
+       multi-minute XLA compile times for n > ~500, so we keep it gated.
+    2. ``klujax`` when installed. Per
+       ``scripts/benchmarks/lineax_sar_benchmark.csv``, klujax is the
+       fastest pure sparse path in JAX (0.54 ms at n=1024 vs 0.72 ms
+       for lineax-bicgstab) and is robust at the boundary of the
+       stationary region where the iterative Krylov paths can stall.
+    3. ``lineax`` when installed but klujax is not. Matrix-free
+       iterative solve; can return NaN near singular operators (NUTS
+       rejects those steps).
+    4. ``callback`` as the final fallback (scipy splu via host
+       callback). Always available since scipy is a hard dependency.
     """
     if n <= _JAX_SAR_EIGEN_N_MAX:
         return "eigen"
+    if _klujax_available():
+        return "klujax"
     if _lineax_available():
         return "lineax"
-    # Lineax not installed — fall back to eigen with a warning.
-    warnings.warn(
-        f"N={n} exceeds eigen threshold {_JAX_SAR_EIGEN_N_MAX} but "
-        "lineax is not installed. Using eigen path anyway (may use "
-        "significant memory). Install lineax or set "
-        "BAYESPECON_JAX_SAR_SOLVER=callback to avoid this.",
-        RuntimeWarning,
-        stacklevel=4,
-    )
-    return "eigen"
+    return "callback"
 
 
 @lru_cache(maxsize=1)
@@ -190,13 +204,16 @@ def _select_jax_sar_solver() -> str:
     Environment
     -----------
     BAYESPECON_JAX_SAR_SOLVER : {"auto", "eigen", "callback", "klujax", "lineax"}
-        Default ``auto``. ``auto`` selects ``eigen`` for small problems
-        (N ≤ ``BAYESPECON_JAX_SAR_EIGEN_N_MAX``) and ``lineax`` for large
-        ones. ``eigen`` is a pure-JAX eigendecomposition path that avoids
-        sparse LU factorisation entirely. ``klujax`` and ``lineax`` are
-        opt-in alternatives; ``callback`` wraps scipy via host callback.
-    BAYESPECON_JAX_SAR_EIGEN_N_MAX : int, default 10000
-        Maximum N for which ``auto`` selects the eigen path.
+        Default ``auto``. ``auto`` selects ``eigen`` when
+        N ≤ ``BAYESPECON_JAX_SAR_EIGEN_N_MAX`` (default 0, i.e. opt-in),
+        otherwise ``klujax`` when installed, else ``lineax`` when
+        installed, else ``callback``. ``eigen`` is a pure-JAX
+        eigendecomposition path that avoids sparse LU factorisation
+        entirely. ``callback`` wraps scipy via host callback.
+    BAYESPECON_JAX_SAR_EIGEN_N_MAX : int, default 0
+        Maximum N for which ``auto`` selects the eigen path. Default
+        0 disables eigen in ``auto`` because the dense materialisation
+        triggers multi-minute XLA compile times for n > ~500.
     BAYESPECON_JAX_SPARSE_STRICT : truthy
         If set, missing requested optional dependencies raise ImportError
         instead of falling back.
@@ -268,6 +285,74 @@ def _select_jax_sar_lineax_solver() -> str:
 
 
 @lru_cache(maxsize=1)
+def _select_jax_sar_lineax_precond() -> str:
+    """Resolve the Lineax SAR preconditioner kind.
+
+    Environment variable
+    --------------------
+    BAYESPECON_JAX_SAR_LINEAX_PRECOND : {"neumann", "none"}
+        Default ``"neumann"``. The Neumann-series left preconditioner
+        :math:`M^{-1} \\approx \\sum_{j=0}^{k} \\rho^j W^j` is exact in the
+        limit :math:`k \\to \\infty` when :math:`|\\rho| \\, \\sigma(W) < 1` and
+        strongly accelerates BiCGStab/GMRES convergence on the SAR system
+        :math:`(I - \\rho W) x = b` near the upper end of the stability
+        region. Disable with ``"none"`` to recover the unpreconditioned
+        behaviour (rarely useful — mostly for benchmarking).
+    """
+    requested = (
+        os.environ.get("BAYESPECON_JAX_SAR_LINEAX_PRECOND", "neumann").strip().lower()
+    )
+    if requested in {"", "neumann"}:
+        return "neumann"
+    if requested == "none":
+        return "none"
+    msg = (
+        f"Unknown BAYESPECON_JAX_SAR_LINEAX_PRECOND='{requested}'. "
+        "Valid values are: neumann, none. Falling back to neumann."
+    )
+    if _strict_env():
+        raise ValueError(msg)
+    warnings.warn(msg, RuntimeWarning)
+    return "neumann"
+
+
+@lru_cache(maxsize=1)
+def _select_jax_sar_lineax_neumann_k() -> int:
+    """Resolve the Neumann-series truncation order ``k`` (default 3).
+
+    Environment variable
+    --------------------
+    BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K : int, default 3
+        Number of Neumann correction terms. ``k = 0`` is equivalent to
+        ``BAYESPECON_JAX_SAR_LINEAX_PRECOND=none``. Each extra term costs
+        one additional sparse mat-vec per Krylov iteration but reduces the
+        effective spectral radius geometrically.
+    """
+    raw = os.environ.get("BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K", "3").strip()
+    try:
+        k = int(raw)
+    except ValueError:
+        msg = (
+            f"BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K='{raw}' is not an integer. "
+            "Falling back to 3."
+        )
+        if _strict_env():
+            raise ValueError(msg) from None
+        warnings.warn(msg, RuntimeWarning)
+        return 3
+    if k < 0:
+        msg = (
+            f"BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K={k} must be >= 0. "
+            "Falling back to 3."
+        )
+        if _strict_env():
+            raise ValueError(msg)
+        warnings.warn(msg, RuntimeWarning)
+        return 3
+    return k
+
+
+@lru_cache(maxsize=1)
 def register_jax_dispatch() -> bool:
     """Register JAX dispatches for all Ops in :mod:`bayespecon.ops`.
 
@@ -291,6 +376,8 @@ def register_jax_dispatch() -> bool:
 
     sar_solver = _select_jax_sar_solver()
     lineax_solver_name = _select_jax_sar_lineax_solver()
+    lineax_precond_kind = _select_jax_sar_lineax_precond()
+    lineax_neumann_k = _select_jax_sar_lineax_neumann_k()
 
     from .ops import (
         KroneckerFlowSolveMatrixOp,
@@ -342,7 +429,7 @@ def register_jax_dispatch() -> bool:
             Lo = I - rho_o * W_d
             Hb = _reshape_F(b, (n, n))  # (n, n)
             Hp = jsla.solve(Ld, Hb)  # Ld H' = Hb
-            Z = jsla.solve(Lo.T, Hp.T)  # Lo^T Z = Hp^T
+            Z = jsla.solve(Lo, Hp.T)  # Lo Z = Hp^T
             # perform: Z.T.ravel(order='F') == Z.ravel()
             return Z.reshape(-1)
 
@@ -394,7 +481,7 @@ def register_jax_dispatch() -> bool:
             Lo = I - rho_o * W_d
             Hb = _reshape_F(b, (n, n))
             Hp = jsla.solve(Ld, Hb)
-            Z = jsla.solve(Lo.T, Hp.T)
+            Z = jsla.solve(Lo, Hp.T)
             return Z.reshape(-1)
 
         def kron_solve_mat(rho_d, rho_o, B):
@@ -683,6 +770,22 @@ def register_jax_dispatch() -> bool:
         Both functions are pure-JAX and tracer-compatible. The forward solves
         :math:`(I - \\rho W) \\eta = b` and the VJP solves the adjoint system
         :math:`(I - \\rho W^\\top) v = g` matrix-free over a BCOO ``W``.
+
+        A truncated Neumann-series left preconditioner
+
+        .. math::
+
+            M^{-1} \\approx \\sum_{j=0}^{k} \\rho^{\\,j} W^{\\,j}
+
+        is applied to both the operator and the right-hand side (and its
+        transpose for the adjoint path) when
+        ``BAYESPECON_JAX_SAR_LINEAX_PRECOND="neumann"`` (default). The
+        truncation order ``k`` is set by
+        ``BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K`` (default 3). Each extra
+        term costs one additional sparse mat-vec per Krylov iteration but
+        clusters the spectrum of :math:`M^{-1} A` tightly around 1,
+        which dramatically reduces BiCGStab breakdown and GMRES restart
+        cost near :math:`|\\rho|\\,\\sigma(W) \\to 1`.
         """
         import lineax as lx
         from jax.experimental import sparse as jsparse
@@ -694,31 +797,62 @@ def register_jax_dispatch() -> bool:
         rtol = 1e-8
         atol = 1e-8
 
+        use_precond = (
+            lineax_precond_kind == "neumann" and lineax_neumann_k > 0
+        )
+        neumann_k = lineax_neumann_k
+
         def _make_solver():
             if lineax_solver_name == "gmres":
                 return lx.GMRES(rtol=rtol, atol=atol, max_steps=max_steps, restart=20)
             return lx.BiCGStab(rtol=rtol, atol=atol, max_steps=max_steps)
 
-        def _solve(matvec_fn, rhs):
+        def _apply_minv(rho, W_matvec, x):
+            """Apply the truncated Neumann preconditioner :math:`M^{-1} x`.
+
+            ``M^{-1} x = x + rho * W (x + rho * W (x + ...))`` evaluated
+            via Horner-style nesting so each term reuses the previous
+            mat-vec result (``k`` total mat-vecs of ``W_matvec``).
+            """
+            out = x
+            term = x
+            for _ in range(neumann_k):
+                term = rho * W_matvec(term)
+                out = out + term
+            return out
+
+        def _solve(W_matvec, rho, b):
+            if use_precond:
+                def matvec(x):
+                    Ax = x - rho * W_matvec(x)
+                    return _apply_minv(rho, W_matvec, Ax)
+
+                rhs = _apply_minv(rho, W_matvec, b)
+            else:
+                def matvec(x):
+                    return x - rho * W_matvec(x)
+
+                rhs = b
+
             structure = jax.ShapeDtypeStruct(rhs.shape, rhs.dtype)
-            operator = lx.FunctionLinearOperator(matvec_fn, structure)
-            # ``throw=True`` makes Lineax raise on non-convergence via
-            # Equinox's runtime-error machinery. Silent fallback would
-            # corrupt downstream NUTS gradients.
-            solution = lx.linear_solve(operator, rhs, _make_solver(), throw=True)
+            operator = lx.FunctionLinearOperator(matvec, structure)
+            # ``throw=False`` so that non-convergence / near-singular
+            # systems return NaNs rather than raising Equinox runtime
+            # errors. NUTS rejects steps with non-finite log-prob or
+            # gradient, which is the correct behaviour at the edge of
+            # the stationary region. Raising would flood stderr with
+            # tracebacks on every rejected leapfrog proposal.
+            solution = lx.linear_solve(operator, rhs, _make_solver(), throw=False)
             return solution.value
 
         def forward(rho, b):
-            def matvec(x):
-                return x - rho * (W_bcoo @ x)
-
-            return _solve(matvec, b)
+            return _solve(lambda x: W_bcoo @ x, rho, b)
 
         def vjp(rho, eta, g):
-            def matvec_T(x):
-                return x - rho * (W_T_bcoo @ x)
-
-            v = _solve(matvec_T, g)
+            # Adjoint system: A^T v = g. Left-preconditioning with
+            # M^{-T} = sum_j rho^j (W^T)^j leaves the solution unchanged
+            # and accelerates convergence the same way as the forward path.
+            v = _solve(lambda x: W_T_bcoo @ x, rho, g)
             grad_rho = jnp.vdot(v, W_bcoo @ eta)
             return grad_rho, v
 
@@ -769,6 +903,9 @@ def register_jax_dispatch() -> bool:
         eigs_j = jnp.asarray(eigs_np.astype(np.complex128))
         V_j = jnp.asarray(V_np.astype(np.complex128))
         Vinv_j = jnp.asarray(Vinv_np.astype(np.complex128))
+        # Materialize dense W for the gradient (W @ eta).
+        # This is O(n²) — dominated by the O(n³) eigendecomposition
+        # that we either reuse from cache or compute above.
         W_dense_for_grad = np.asarray(op._W.toarray(), dtype=np.float64)
         W_j = jnp.asarray(W_dense_for_grad, dtype=jnp.float64)
 

@@ -91,13 +91,15 @@ class SARNegativeBinomial(SpatialModel):
 
             # SAR-in-mean reduced form: eta = (I - rho*W)^{-1} X beta
             # Uses SparseSARSolveOp for efficient differentiable sparse LU.
-            # Pass shared eigendecomposition cache so the JAX eigen path
-            # can reuse it instead of computing its own O(n³) decomposition.
+            # The eigendecomposition is NOT passed here because it forces
+            # an O(n³) decomposition at model construction time that is only
+            # consumed by the JAX eigen dispatch path. The PyMC NUTS path
+            # uses sparse LU exclusively and never touches eigenvalues.
+            # The JAX dispatch auto-selects callback (scipy sparse LU via
+            # host callback) by default, which also avoids the eigendecomp.
             from ..ops import SparseSARSolveOp
 
-            _sar_solve_op = SparseSARSolveOp(
-                self._W_sparse, eigendecomposition=self._W_eigendecomposition
-            )
+            _sar_solve_op = SparseSARSolveOp(self._W_sparse)
             Xbeta = pt.dot(self._X, beta)
             eta = _sar_solve_op(rho, Xbeta)
             mu = pm.Deterministic("mu", pt.exp(eta))
@@ -180,8 +182,17 @@ class SARNegativeBinomial(SpatialModel):
 
         return direct_samples, indirect_samples, total_samples
 
+    #: Threshold above which count-scale spatial effects use the sparse
+    #: Hutchinson path instead of the eigendecomposition path.  The eigen
+    #: path materialises three n×n complex128 matrices (V, V⁻¹, eigenvalues)
+    #: costing ~24n² bytes and O(n³) decomposition time.  For n > 2000 this
+    #: becomes prohibitive.  The sparse path uses O(nnz) per draw with
+    #: Hutchinson diagonal estimation.
+    _COUNT_EFFECTS_EIGEN_MAX_N: int = 2000
+
     def _compute_count_scale_spatial_effects_posterior(
         self,
+        method: str = "auto",
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         r"""Compute posterior impacts on the expected-count scale for each draw.
 
@@ -206,10 +217,15 @@ class SARNegativeBinomial(SpatialModel):
         expensive than the log-mean-scale formula because it requires the
         diagonal of the spatial multiplier for each posterior draw.
 
-        This implementation uses the shared eigendecomposition cache
-        (:attr:`_W_eigendecomposition`) to avoid per-draw sparse LU
-        factorisation, reducing complexity from :math:`O(n^3)` per draw to
-        :math:`O(n^2)` per draw.
+        For n ≤ ``_COUNT_EFFECTS_EIGEN_MAX_N`` (default 2000), this uses
+        the shared eigendecomposition cache (:attr:`_W_eigendecomposition`)
+        to avoid per-draw sparse LU factorisation, reducing complexity from
+        :math:`O(\text{nnz}^{1.5})` per draw to :math:`O(n^2)` per draw.
+
+        For n > ``_COUNT_EFFECTS_EIGEN_MAX_N``, this uses sparse solves
+        with Hutchinson diagonal estimation, reducing memory from
+        :math:`O(n^2)` to :math:`O(\text{nnz})` and avoiding the
+        :math:`O(n^3)` eigendecomposition entirely.
         """
         from ..diagnostics.lmtests import _get_posterior_draws
 
@@ -221,6 +237,26 @@ class SARNegativeBinomial(SpatialModel):
         ni = self._nonintercept_indices
         n_draws = rho_draws.shape[0]
         n_effects = len(ni)
+
+        if method not in {"auto", "eigen", "sparse"}:
+            raise ValueError(
+                f"method must be one of {{'auto', 'eigen', 'sparse'}}, got {method!r}."
+            )
+
+        use_sparse = method == "sparse" or (
+            method == "auto" and n > self._COUNT_EFFECTS_EIGEN_MAX_N
+        )
+        if use_sparse:
+            # Sparse solves + Hutchinson diagonal estimation; avoids the
+            # O(n³) eigendecomposition and O(n²) per-draw matmuls.
+            return self._compute_count_scale_spatial_effects_posterior_sparse(
+                rho_draws=rho_draws,
+                beta_draws=beta_draws,
+                n=n,
+                ni=ni,
+                n_draws=n_draws,
+                n_effects=n_effects,
+            )
 
         direct_samples = np.empty((n_draws, n_effects), dtype=np.float64)
         total_samples = np.empty((n_draws, n_effects), dtype=np.float64)
@@ -333,17 +369,28 @@ class SARNegativeBinomial(SpatialModel):
         ni: list[int],
         n_draws: int,
         n_effects: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         r"""Count-scale spatial effects via sparse solves + Hutchinson.
 
-        For large W where eigenvectors are unavailable, this method uses:
+        For large W where eigendecomposition is infeasible, this method uses:
 
-        - ``scipy.sparse.linalg.spsolve`` for :math:`\eta = (I - \rho W)^{-1} X\beta`
-        - Hutchinson diagonal estimator for :math:`\operatorname{diag}((I - \rho W)^{-1})`
-        - ``spsolve`` with ones vector for row sums (non-row-standardised W)
+        - A single sparse LU factorisation of :math:`A = I - \rho W` per draw
+          (UMFPACK when available, SuperLU otherwise), reused for the
+          :math:`\eta` solve, the Hutchinson probes, and the row-sum solve.
+        - **Batched** matrix solve: the right-hand sides for :math:`\eta`,
+          the optional row-sum vector :math:`\mathbf{1}`, and the
+          Hutchinson probe matrix :math:`Z \in \{-1, +1\}^{n \times K}` are
+          stacked into a single ``(n, 22)`` RHS and resolved with one
+          ``solver.solve`` call per draw. This collapses the prior
+          Python-level loop of 22 sequential solves into one C-level call
+          and lets UMFPACK / SuperLU batch the triangular sweeps.
+        - Hutchinson diagonal estimator for :math:`\operatorname{diag}(A^{-1})`.
+        - Closed-form :math:`1/(1-\rho)` row sums for row-standardised :math:`W`,
+          one extra sparse solve otherwise.
 
-        Complexity is :math:`O(\text{nnz} \cdot n_{\text{probes}})` per draw
-        instead of :math:`O(n^2)` per draw for the eigen path.
+        Complexity is one LU factor plus a single batched triangular solve
+        per draw — orders of magnitude cheaper than the prior code path,
+        which re-factorised :math:`A` on every probe.
 
         Parameters
         ----------
@@ -357,12 +404,27 @@ class SARNegativeBinomial(SpatialModel):
         Returns
         -------
         direct_samples : np.ndarray, shape (G, n_effects)
+        indirect_samples : np.ndarray, shape (G, n_effects)
         total_samples : np.ndarray, shape (G, n_effects)
         """
+        from ..ops import _make_cached_umfpack_solver
+
         W = self._W_sparse
         I_n = sp.eye(n, format="csr", dtype=np.float64)
         ones = np.ones(n, dtype=np.float64)
         rng = np.random.default_rng(42)  # fixed seed for reproducibility
+        n_probes = 20
+
+        # Pre-sample all Hutchinson probes up front so the per-draw RHS
+        # assembly is purely vectorised.  Using a single Z matrix across
+        # draws is statistically valid (each row of `direct_samples` is
+        # still an unbiased estimate; the across-draw correlation does
+        # not bias the posterior mean of impacts) and removes RNG calls
+        # from the hot loop.
+        Z = rng.choice(
+            np.array([-1.0, 1.0], dtype=np.float64),
+            size=(n, n_probes),
+        )
 
         direct_samples = np.empty((n_draws, n_effects), dtype=np.float64)
         total_samples = np.empty((n_draws, n_effects), dtype=np.float64)
@@ -371,28 +433,40 @@ class SARNegativeBinomial(SpatialModel):
             zip(rho_draws, beta_draws, strict=False)
         ):
             rho_f = float(rho)
-            A = I_n - rho_f * W
+            A = (I_n - rho_f * W).tocsc()
 
-            # eta = (I - rho W)^{-1} X beta
+            # Factorise A once and reuse for all per-draw RHSes.
+            solver = _make_cached_umfpack_solver(A)
+            if solver is None:
+                solver = sp.linalg.splu(A)
+
+            # Stack RHSes: [Xβ, ones (if needed), Z_1, ..., Z_K] → (n, 22 or 21).
             Xbeta = self._X @ beta
-            eta = sp.linalg.spsolve(A, Xbeta)
-            mu = np.exp(np.clip(eta, -50.0, 50.0))
-
-            # diag((I - rho W)^{-1}) via Hutchinson
-            multiplier_diag = self._hutchinson_diag(
-                lambda b: sp.linalg.spsolve(A, b),
-                n,
-                n_probes=20,
-                rng=rng,
-            )
-
-            # Row sums of (I - rho W)^{-1}
             if self._is_row_std:
+                # Closed-form 1/(1-ρ) row sums; no need to solve A x = 1.
+                rhs = np.empty((n, 1 + n_probes), dtype=np.float64)
+                rhs[:, 0] = Xbeta
+                rhs[:, 1:] = Z
+                sol = np.asarray(solver.solve(rhs), dtype=np.float64)
+                eta = sol[:, 0]
+                AinvZ = sol[:, 1:]
                 multiplier_row_sums = np.full(
                     n, 1.0 / (1.0 - rho_f), dtype=np.float64
                 )
             else:
-                multiplier_row_sums = sp.linalg.spsolve(A, ones)
+                rhs = np.empty((n, 2 + n_probes), dtype=np.float64)
+                rhs[:, 0] = Xbeta
+                rhs[:, 1] = ones
+                rhs[:, 2:] = Z
+                sol = np.asarray(solver.solve(rhs), dtype=np.float64)
+                eta = sol[:, 0]
+                multiplier_row_sums = sol[:, 1]
+                AinvZ = sol[:, 2:]
+
+            mu = np.exp(np.clip(eta, -50.0, 50.0))
+
+            # Hutchinson: diag(A⁻¹) ≈ mean over probes of z ⊙ A⁻¹z.
+            multiplier_diag = np.mean(Z * AinvZ, axis=1)
 
             direct_base = float(np.mean(mu * multiplier_diag))
             total_base = float(np.mean(mu * multiplier_row_sums))
@@ -400,12 +474,14 @@ class SARNegativeBinomial(SpatialModel):
             direct_samples[draw_idx] = direct_base * beta[ni]
             total_samples[draw_idx] = total_base * beta[ni]
 
-        return direct_samples, total_samples
+        indirect_samples = total_samples - direct_samples
+        return direct_samples, indirect_samples, total_samples
 
     def spatial_effects(
         self,
         return_posterior_samples: bool = False,
         scale: str = "logmean",
+        method: str = "auto",
     ):
         r"""Compute Bayesian inference for direct, indirect, and total impacts.
 
@@ -423,6 +499,13 @@ class SARNegativeBinomial(SpatialModel):
             :math:`\mu = \exp(\eta)`. This is exact but more expensive because
             it requires the diagonal of the spatial multiplier for each
             posterior draw.
+        method : {"auto", "eigen", "sparse"}, default "auto"
+            Only used when ``scale="count"``. ``"eigen"`` materialises the
+            eigendecomposition of :math:`W` (fast for small :math:`n` but
+            O(n³) memory/time); ``"sparse"`` uses one sparse LU per draw
+            plus a Hutchinson diagonal estimator; ``"auto"`` picks sparse
+            when :math:`n` exceeds
+            :attr:`_COUNT_EFFECTS_EIGEN_MAX_N` (default 2000).
         """
         from ..diagnostics.spatial_effects import _build_effects_dataframe
 
@@ -435,7 +518,7 @@ class SARNegativeBinomial(SpatialModel):
 
         self._require_fit()
         direct_samples, indirect_samples, total_samples = (
-            self._compute_count_scale_spatial_effects_posterior()
+            self._compute_count_scale_spatial_effects_posterior(method=method)
         )
 
         k_effects = direct_samples.shape[1]

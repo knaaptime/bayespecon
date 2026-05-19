@@ -285,6 +285,8 @@ def _reset_jax_dispatch_caches() -> None:
     previously registered dispatcher closures.
     """
     from bayespecon._jax_dispatch import (
+        _select_jax_sar_lineax_neumann_k,
+        _select_jax_sar_lineax_precond,
         _select_jax_sar_lineax_solver,
         _select_jax_sar_solver,
         _select_jax_sparse_backend,
@@ -294,6 +296,8 @@ def _reset_jax_dispatch_caches() -> None:
     _select_jax_sparse_backend.cache_clear()
     _select_jax_sar_solver.cache_clear()
     _select_jax_sar_lineax_solver.cache_clear()
+    _select_jax_sar_lineax_precond.cache_clear()
+    _select_jax_sar_lineax_neumann_k.cache_clear()
     register_jax_dispatch.cache_clear()
 
 
@@ -422,7 +426,14 @@ def test_sparse_sar_jax_lineax_grad_parity(monkeypatch, lineax_env_reset, sub_so
 
 
 def test_sparse_sar_jax_lineax_convergence_failure(monkeypatch, lineax_env_reset):
-    """A solver capped at max_steps=1 on a non-trivial system must raise."""
+    """Capping the solver must not raise — ``throw=False`` returns silently.
+
+    With ``throw=False`` inside the Lineax solve, a non-converged or
+    near-singular system produces an arithmetic result (often NaN/Inf,
+    but never a raised exception). NUTS will reject leapfrog steps with
+    non-finite log-prob, which is the desired behaviour at the boundary
+    of the stationary region.
+    """
     pytest.importorskip("lineax")
     monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "lineax")
     monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_SOLVER", "bicgstab")
@@ -445,7 +456,9 @@ def test_sparse_sar_jax_lineax_convergence_failure(monkeypatch, lineax_env_reset
 
     register_jax_dispatch()
 
-    W = _line_W(8)
+    # Larger system + rho near 1 → ill-conditioned, exercises the
+    # ``throw=False`` "do not raise" contract.
+    W = _line_W(64)
     op = SparseSARSolveOp(W)
     rho = pt.dscalar("rho")
     b = pt.dvector("b")
@@ -453,7 +466,153 @@ def test_sparse_sar_jax_lineax_convergence_failure(monkeypatch, lineax_env_reset
     f_j = pytensor.function([rho, b], eta, mode="JAX")
 
     rng = np.random.default_rng(13)
-    b_val = rng.standard_normal(8)
+    b_val = rng.standard_normal(64)
 
-    with pytest.raises(Exception):  # noqa: B017 — Equinox/Lineax error type
-        f_j(0.7, b_val)
+    # Must not raise. Output may be NaN/Inf or merely inaccurate; both
+    # are acceptable — the contract is only that the program continues.
+    out = np.asarray(f_j(0.999, b_val))
+    assert out.shape == (64,)
+
+
+# ---------------------------------------------------------------------------
+# Lineax SAR-solver path — Neumann-series preconditioner (Phase D)
+# ---------------------------------------------------------------------------
+
+
+def test_jax_sar_lineax_precond_default(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import (
+        _select_jax_sar_lineax_neumann_k,
+        _select_jax_sar_lineax_precond,
+    )
+
+    monkeypatch.delenv("BAYESPECON_JAX_SAR_LINEAX_PRECOND", raising=False)
+    monkeypatch.delenv("BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K", raising=False)
+    _reset_jax_dispatch_caches()
+    assert _select_jax_sar_lineax_precond() == "neumann"
+    assert _select_jax_sar_lineax_neumann_k() == 3
+
+
+def test_jax_sar_lineax_precond_disabled(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import _select_jax_sar_lineax_precond
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_PRECOND", "none")
+    _reset_jax_dispatch_caches()
+    assert _select_jax_sar_lineax_precond() == "none"
+
+
+def test_jax_sar_lineax_neumann_k_override(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import _select_jax_sar_lineax_neumann_k
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K", "5")
+    _reset_jax_dispatch_caches()
+    assert _select_jax_sar_lineax_neumann_k() == 5
+
+
+def test_jax_sar_lineax_neumann_k_invalid_strict_raises(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import _select_jax_sar_lineax_neumann_k
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K", "not-an-int")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _reset_jax_dispatch_caches()
+    with pytest.raises(ValueError):
+        _select_jax_sar_lineax_neumann_k()
+
+
+def _setup_lineax_dispatch_precond(
+    monkeypatch, *, precond: str, neumann_k: int = 3, sub_solver: str = "bicgstab"
+) -> None:
+    pytest.importorskip("lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "lineax")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_SOLVER", sub_solver)
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_PRECOND", precond)
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_NEUMANN_K", str(neumann_k))
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _reset_jax_dispatch_caches()
+    from bayespecon._jax_dispatch import register_jax_dispatch
+
+    register_jax_dispatch()
+
+
+@pytest.mark.parametrize("precond", ["neumann", "none"])
+def test_sparse_sar_jax_lineax_precond_forward_parity(
+    monkeypatch, lineax_env_reset, precond
+):
+    """Preconditioned and unpreconditioned paths must agree with C reference."""
+    _setup_lineax_dispatch_precond(monkeypatch, precond=precond, neumann_k=3)
+
+    W = _line_W(12)
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+
+    f_c = pytensor.function([rho, b], eta)
+    f_j = pytensor.function([rho, b], eta, mode="JAX")
+
+    rng = np.random.default_rng(21)
+    b_val = rng.standard_normal(12)
+    np.testing.assert_allclose(
+        np.asarray(f_c(0.55, b_val)),
+        np.asarray(f_j(0.55, b_val)),
+        atol=1e-7,
+        rtol=1e-7,
+    )
+
+
+@pytest.mark.parametrize("precond", ["neumann", "none"])
+def test_sparse_sar_jax_lineax_precond_grad_parity(
+    monkeypatch, lineax_env_reset, precond
+):
+    """Preconditioning must not alter the analytic VJP solution."""
+    _setup_lineax_dispatch_precond(monkeypatch, precond=precond, neumann_k=3)
+
+    W = _line_W(12)
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+    loss = pt.sum(eta * eta)
+    grads = [pytensor.grad(loss, v) for v in (rho, b)]
+
+    f_c = pytensor.function([rho, b], grads)
+    f_j = pytensor.function([rho, b], grads, mode="JAX")
+
+    rng = np.random.default_rng(22)
+    b_val = rng.standard_normal(12)
+    for c, j in zip(f_c(0.55, b_val), f_j(0.55, b_val)):
+        np.testing.assert_allclose(np.asarray(c), np.asarray(j), atol=1e-7, rtol=1e-7)
+
+
+@pytest.mark.parametrize("rho_val", [0.55, 0.85, 0.97])
+def test_sparse_sar_jax_lineax_precond_high_rho_correctness(
+    monkeypatch, lineax_env_reset, rho_val
+):
+    """Neumann-preconditioned solve must match the dense reference for
+    :math:`\\rho` ranging from moderate to near-singular.
+
+    This is the primary correctness gate for Phase D: the empirical
+    failure mode users hit ("lineax often fails near :math:`\\rho \\to 1`")
+    is replaced by a path that stays correct across the full prior
+    support. ``max_steps`` is left at the dispatch default (``10 * n``)
+    so the preconditioner is responsible for *speed*; this test only
+    asserts *correctness* on systems where the bare path is known to
+    misbehave.
+    """
+    _setup_lineax_dispatch_precond(monkeypatch, precond="neumann", neumann_k=3)
+
+    n = 64
+    W = _line_W(n)
+    rng = np.random.default_rng(int(rho_val * 1000))
+    b_val = rng.standard_normal(n)
+
+    A_dense = np.eye(n) - rho_val * W.toarray()
+    eta_ref = np.linalg.solve(A_dense, b_val)
+
+    op = SparseSARSolveOp(W)
+    rho_pt = pt.dscalar("rho")
+    b_pt = pt.dvector("b")
+    eta = op(rho_pt, b_pt)
+    f_j = pytensor.function([rho_pt, b_pt], eta, mode="JAX")
+
+    out = np.asarray(f_j(rho_val, b_val))
+    np.testing.assert_allclose(out, eta_ref, atol=1e-6, rtol=1e-6)
