@@ -149,14 +149,16 @@ def _strict_env() -> bool:
 def _select_jax_sar_solver() -> str:
     """Resolve the JAX SAR solver from env vars.
 
-    Returns one of ``"callback"``, ``"klujax"``, ``"lineax"``.
+    Returns one of ``"eigen"``, ``"callback"``, ``"klujax"``, ``"lineax"``.
 
     Environment
     -----------
-    BAYESPECON_JAX_SAR_SOLVER : {"auto", "callback", "klujax", "lineax"}
-        Default ``auto``. ``auto`` preserves today's behavior: prefer
-        ``klujax`` when available, otherwise ``callback``. ``auto`` never
-        selects ``lineax``; that path is opt-in only.
+    BAYESPECON_JAX_SAR_SOLVER : {"auto", "eigen", "callback", "klujax", "lineax"}
+        Default ``auto``. ``auto`` selects ``eigen`` — a pure-JAX
+        eigendecomposition path that avoids sparse LU factorisation
+        entirely and is robust to near-singular system matrices.
+        ``klujax`` and ``lineax`` are opt-in alternatives; ``callback``
+        wraps scipy via host callback.
     BAYESPECON_JAX_SPARSE_STRICT : truthy
         If set, missing requested optional dependencies raise ImportError
         instead of falling back.
@@ -165,10 +167,11 @@ def _select_jax_sar_solver() -> str:
     strict = _strict_env()
 
     if requested in {"", "auto"}:
-        # Defer to the existing global sparse-backend selector so that
-        # behavior is unchanged when the SAR-specific knob is not set.
-        backend = _select_jax_sparse_backend()
-        return backend if backend in {"callback", "klujax"} else "callback"
+        # Eigen is the default: pure-JAX, no sparse LU, never segfaults.
+        return "eigen"
+
+    if requested == "eigen":
+        return "eigen"
 
     if requested in {"callback", "scipy", "pure_callback"}:
         return "callback"
@@ -199,12 +202,12 @@ def _select_jax_sar_solver() -> str:
 
     msg = (
         f"Unknown BAYESPECON_JAX_SAR_SOLVER='{requested}'. "
-        "Valid values are: auto, callback, klujax, lineax. Falling back to auto."
+        "Valid values are: auto, eigen, callback, klujax, lineax. Falling back to eigen."
     )
     if strict:
         raise ValueError(msg)
     warnings.warn(msg, RuntimeWarning)
-    return "klujax" if _klujax_available() else "callback"
+    return "eigen"
 
 
 @lru_cache(maxsize=1)
@@ -688,8 +691,69 @@ def register_jax_dispatch() -> bool:
 
         return forward, vjp
 
+    # ------------------------------------------------------------------
+    # Cross-sectional SAR sparse Op — eigendecomposition path (default)
+    # ------------------------------------------------------------------
+
+    def _build_eigen_sar_paths(op):
+        """Return ``(forward_fn, vjp_fn)`` for the eigen SAR path.
+
+        Precomputes the eigendecomposition of W once, then solves
+        ``(I - rho W)^{-1} b = V @ diag(1/(1 - rho*lambda)) @ V^{-1} @ b``
+        using pure dense JAX operations.  This avoids sparse LU factorisation
+        entirely and is robust to near-singular system matrices that cause
+        ``klu_factor`` to segfault or raise ``INVALID_ARGUMENT``.
+
+        Row-standardised spatial weight matrices are generally non-symmetric,
+        so the eigendecomposition uses complex arithmetic.  The final result
+        is real-valued (the imaginary parts cancel), and JAX's autodiff
+        correctly propagates gradients through the complex→real conversion.
+
+        The gradient w.r.t. ``rho`` is ``v^T W eta`` where
+        ``v = (I - rho W^T)^{-1} g``.
+        """
+        n = op._n
+        W_dense = np.asarray(op._W.toarray(), dtype=np.float64)
+        eigs_np, V_np = np.linalg.eig(W_dense)
+        Vinv_np = np.linalg.inv(V_np)
+        # Sort eigenvalues by real part (descending) for numerical stability.
+        idx = np.argsort(eigs_np.real)[::-1]
+        eigs_np = eigs_np[idx]
+        V_np = V_np[:, idx]
+        Vinv_np = Vinv_np[idx, :]
+        # Use complex128 to handle non-symmetric W correctly.
+        # Row-standardised W can have complex eigenvalues/eigenvectors.
+        eigs_j = jnp.asarray(eigs_np.astype(np.complex128))
+        V_j = jnp.asarray(V_np.astype(np.complex128))
+        Vinv_j = jnp.asarray(Vinv_np.astype(np.complex128))
+        W_j = jnp.asarray(W_dense, dtype=jnp.float64)
+
+        def forward(rho, b):
+            inv_eigs = 1.0 / (1.0 - rho * eigs_j)
+            return (V_j @ (inv_eigs * (Vinv_j @ b.astype(jnp.complex128)))).real
+
+        def vjp(rho, eta, g):
+            # Adjoint: v = (I - rho W^T)^{-1} g
+            # (I - rho W^T)^{-1} = V^{-T} @ diag(1/(1-rho*lambda)) @ V^T g
+            # where V^{-T} = conj(Vinv) for the eigendecomposition W = V diag(lam) V^{-1}
+            inv_eigs = 1.0 / (1.0 - rho * eigs_j)
+            g_c = g.astype(jnp.complex128)
+            v = (jnp.conj(Vinv_j).T @ (inv_eigs * (jnp.conj(V_j).T @ g_c))).real
+            grad_rho = jnp.vdot(v, W_j @ eta)
+            return grad_rho, v
+
+        return forward, vjp
+
     @jax_funcify.register(SparseSARSolveOp)
     def _funcify_sparse_sar_solve(op, **kwargs):
+        if sar_solver == "eigen":
+            forward, _ = _build_eigen_sar_paths(op)
+
+            def sparse_sar_solve(rho, b):
+                return forward(rho, b)
+
+            return sparse_sar_solve
+
         if sar_solver == "lineax":
             forward, _ = _build_lineax_sar_paths(op)
 
@@ -698,7 +762,7 @@ def register_jax_dispatch() -> bool:
 
             return sparse_sar_solve
 
-        if sparse_backend == "klujax":
+        if sar_solver == "klujax" or sparse_backend == "klujax":
             n = op._n
             I = np.eye(n, dtype=np.float64)
             W_dense = np.asarray(op._W.toarray(), dtype=np.float64)
@@ -726,6 +790,14 @@ def register_jax_dispatch() -> bool:
 
     @jax_funcify.register(_SparseSARVJPOp)
     def _funcify_sparse_sar_vjp(op, **kwargs):
+        if sar_solver == "eigen":
+            _, vjp = _build_eigen_sar_paths(op)
+
+            def sparse_sar_vjp(rho, eta, g):
+                return vjp(rho, eta, g)
+
+            return sparse_sar_vjp
+
         if sar_solver == "lineax":
             _, vjp = _build_lineax_sar_paths(op)
 
