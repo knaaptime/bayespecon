@@ -23,11 +23,10 @@ spatial-lag computation, FE demeaning, diagnostics-test name prefixing).
 from __future__ import annotations
 
 import importlib
+import weakref
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import Any, Optional
-
-import weakref
 
 import arviz as az
 import numpy as np

@@ -25,7 +25,7 @@ from ..logdet import (
     resolve_logdet_bounds,
     resolve_logdet_method,
 )
-from ._common import _EIG_CACHE, _SpatialModelBase, _store_eigs
+from ._common import _EIG_CACHE, _SpatialModelBase
 from .priors import OLSPriors, PriorsLike, priors_as_dict, resolve_priors
 
 
