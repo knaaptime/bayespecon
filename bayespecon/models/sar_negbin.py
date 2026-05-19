@@ -8,9 +8,13 @@ NB2 observation noise.  The latent log-mean follows the SAR reduced form:
     y_i \sim \mathrm{NegBin}(\mu_i, \alpha), \qquad
     \log \mu_i = \left[(I - \rho W)^{-1} X \beta\right]_i.
 
-The spatial Jacobian :math:`\log|I-\rho W|` is included
-via ``pm.Potential`` and must be added to pointwise log-likelihood when
-computing WAIC/LOO.
+No spatial Jacobian is needed because the spatial filter
+:math:`(I - \rho W)^{-1}` parameterizes the latent mean, not the
+observed data.  Unlike the Gaussian SAR model — where
+:math:`\varepsilon \mapsto y` is a change-of-variables requiring
+:math:`\log|I - \rho W|` — the Negative Binomial likelihood is
+specified directly on the observed counts given :math:`\mu`, so
+there is no Jacobian correction.
 """
 
 from __future__ import annotations
@@ -41,8 +45,10 @@ class SARNegativeBinomial(SpatialModel):
     -----
     The model uses the SAR-in-mean reduced form
     ``log(mu) = (I - rho * W)^{-1} X @ beta``, which is the count-outcome
-    analogue of the Gaussian SAR reduced form.  The spatial Jacobian
-    ``log|I - rho * W|`` is included via ``pm.Potential``.
+    analogue of the Gaussian SAR reduced form.  Unlike the Gaussian SAR,
+    no spatial Jacobian ``log|I - rho * W|`` is needed because the
+    spatial filter parameterizes the latent mean rather than defining
+    a change-of-variables from a latent error to the observed data.
     Overdispersion is captured by the NB2 parameter ``alpha``.
     """
 
@@ -93,7 +99,11 @@ class SARNegativeBinomial(SpatialModel):
             mu = pm.Deterministic("mu", pt.exp(eta))
             pm.NegativeBinomial("obs", mu=mu, alpha=alpha, observed=self._y_int)
 
-            pm.Potential("jacobian", self._logdet_pytensor_fn(rho))
+            # No Jacobian term is needed for the SAR-in-mean reduced form.
+            # The spatial filter is applied to the latent mean parameter,
+            # not to the observed data, so there is no change-of-variables
+            # correction.  Including log|I - rho W| would incorrectly
+            # bias rho toward zero.
         return model
 
     def fit(
@@ -106,7 +116,13 @@ class SARNegativeBinomial(SpatialModel):
         idata_kwargs: Optional[dict] = None,
         **sample_kwargs,
     ) -> "az.InferenceData":
-        """Sample posterior and attach Jacobian-corrected pointwise log-likelihood."""
+        """Sample posterior.
+
+        The Negative Binomial log-likelihood is auto-captured by PyMC
+        and is already complete — no Jacobian correction is needed
+        because the spatial filter parameterizes the mean, not the
+        observed data.
+        """
         idata_kwargs = idata_kwargs or {}
         idata = super().fit(
             draws=draws,
@@ -117,8 +133,6 @@ class SARNegativeBinomial(SpatialModel):
             idata_kwargs=idata_kwargs,
             **sample_kwargs,
         )
-        if "log_likelihood" in idata.groups():
-            self._attach_jacobian_corrected_log_likelihood(idata, "rho")
         return idata
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:

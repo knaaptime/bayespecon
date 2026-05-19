@@ -1403,6 +1403,12 @@ class PoissonSARFlowPanel(FlowPanelModel):
     Within transforms are not valid for Poisson counts because they break
     the non-negative integer support. There is no ``sigma`` parameter and
     robust (Student-t) likelihoods are not supported.
+
+    Unlike the Gaussian :class:`SARFlowPanel`, no spatial Jacobian
+    :math:`T \\cdot \\log|A|` is needed because the spatial filter
+    parameterizes the mean of the Poisson distribution rather than
+    defining a change-of-variables from a latent error to the observed
+    data.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -1476,25 +1482,10 @@ class PoissonSARFlowPanel(FlowPanelModel):
 
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
 
-            pm.Potential(
-                "jacobian",
-                self._T
-                * flow_logdet_pytensor(
-                    rho_d,
-                    rho_o,
-                    rho_w,
-                    self._poly_a,
-                    self._poly_b,
-                    self._poly_c,
-                    self._poly_coeffs,
-                    self._miter_a,
-                    self._miter_b,
-                    self._miter_c,
-                    self._miter_coeffs,
-                    self.miter,
-                    self.titer,
-                ),
-            )
+            # No Jacobian term is needed for the SAR-in-mean reduced form.
+            # The spatial filter parameterizes the Poisson mean, not the
+            # observed data, so there is no change-of-variables correction.
+            # Including T * log|A| would incorrectly bias rho toward zero.
 
         return model
 
@@ -1610,6 +1601,12 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
     log-determinant used in estimation. There is no ``sigma`` parameter
     and robust (Student-t) likelihoods are not supported. The
     ``restrict_positive`` argument has no effect on this class.
+
+    Unlike the Gaussian :class:`SARFlowSeparablePanel`, no spatial
+    Jacobian :math:`T \\cdot \\log|A|` is needed because the spatial
+    filter parameterizes the mean of the Poisson distribution rather
+    than defining a change-of-variables from a latent error to the
+    observed data.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -1682,10 +1679,9 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
 
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
 
-            pm.Potential(
-                "jacobian",
-                self._T * self._separable_logdet_fn(rho_d, rho_o),
-            )
+            # No Jacobian term is needed for the SAR-in-mean reduced form.
+            # The spatial filter parameterizes the Poisson mean, not the
+            # observed data, so there is no change-of-variables correction.
 
         return model
 
@@ -2137,25 +2133,10 @@ class NegativeBinomialSARFlowPanel(PoissonSARFlowPanel):
 
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
 
-            pm.Potential(
-                "jacobian",
-                self._T
-                * flow_logdet_pytensor(
-                    rho_d,
-                    rho_o,
-                    rho_w,
-                    self._poly_a,
-                    self._poly_b,
-                    self._poly_c,
-                    self._poly_coeffs,
-                    self._miter_a,
-                    self._miter_b,
-                    self._miter_c,
-                    self._miter_coeffs,
-                    self.miter,
-                    self.titer,
-                ),
-            )
+            # No Jacobian term is needed for the SAR-in-mean reduced form.
+            # The spatial filter parameterizes the NB mean, not the
+            # observed data, so there is no change-of-variables correction.
+            # Including T * log|A| would incorrectly bias rho toward zero.
 
         return model
 
@@ -2199,10 +2180,9 @@ class NegativeBinomialSARFlowSeparablePanel(PoissonSARFlowSeparablePanel):
 
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
 
-            pm.Potential(
-                "jacobian",
-                self._T * self._separable_logdet_fn(rho_d, rho_o),
-            )
+            # No Jacobian term is needed for the SAR-in-mean reduced form.
+            # The spatial filter parameterizes the NB mean, not the
+            # observed data, so there is no change-of-variables correction.
 
         return model
 
