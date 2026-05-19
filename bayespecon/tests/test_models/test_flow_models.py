@@ -1176,10 +1176,10 @@ POISSON_SEP_SAMPLE_KWARGS: dict = dict(
 # parameters are harder to identify simultaneously
 ABS_TOL_RHO = 0.20
 ABS_TOL_RHO_SEP = 0.25  # separable model: slightly wider
-ABS_TOL_RHO_POI = 0.25  # Poisson: harder
+ABS_TOL_RHO_POI = 0.20  # Poisson: tighter after removing spurious Jacobian
 ABS_TOL_BETA = 0.35
 ABS_TOL_BETA_SEP = 0.40
-ABS_TOL_BETA_POI = 0.40
+ABS_TOL_BETA_POI = 0.35  # Poisson beta: tighter after removing spurious Jacobian
 ABS_TOL_SIGMA = 0.35
 
 

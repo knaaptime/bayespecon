@@ -503,9 +503,9 @@ POISSON_SEP_SAMPLE_KWARGS: dict = dict(
 
 # Tolerances
 ABS_TOL_RHO = 0.25
-ABS_TOL_RHO_POI = 0.30
+ABS_TOL_RHO_POI = 0.25  # Poisson panel: tighter after removing spurious Jacobian
 ABS_TOL_BETA = 0.40
-ABS_TOL_BETA_POI = 0.45
+ABS_TOL_BETA_POI = 0.40  # Poisson panel beta: tighter after removing spurious Jacobian
 ABS_TOL_SIGMA = 0.35
 
 
@@ -658,7 +658,7 @@ class TestPoissonFlowPanelRecovery:
 
     # ADVI-based fit recovers all three rho's well within the shared
     # NUTS tolerance, so use a tighter class-local bound here.
-    ABS_TOL_RHO_POI_ADVI = 0.27
+    ABS_TOL_RHO_POI_ADVI = 0.22  # tighter after removing spurious Jacobian
 
     @pytest.fixture(scope="class")
     def fitted_poisson_panel(self):
