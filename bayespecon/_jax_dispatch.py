@@ -189,7 +189,7 @@ def _resolve_auto_sar_solver(n: int) -> str:
         return "klujax"
     if _lineax_available():
         return "lineax"
-    return "callback"
+    return "jax_gmres"
 
 
 @lru_cache(maxsize=1)
@@ -247,16 +247,19 @@ def _select_jax_sar_solver() -> str:
             return "lineax"
         msg = (
             "BAYESPECON_JAX_SAR_SOLVER=lineax requested, but optional "
-            "dependency 'lineax' is not installed. Falling back to callback."
+            "dependency 'lineax' is not installed. Falling back to jax_gmres."
         )
         if strict:
             raise ImportError(msg)
         warnings.warn(msg, RuntimeWarning)
-        return "callback"
+        return "jax_gmres"
+
+    if requested in {"jax_gmres", "gmres", "jaxgmres"}:
+        return "jax_gmres"
 
     msg = (
         f"Unknown BAYESPECON_JAX_SAR_SOLVER='{requested}'. "
-        "Valid values are: auto, eigen, callback, klujax, lineax. Falling back to auto."
+        "Valid values are: auto, eigen, callback, klujax, lineax, jax_gmres. Falling back to auto."
     )
     if strict:
         raise ValueError(msg)
@@ -364,6 +367,7 @@ def register_jax_dispatch() -> bool:
     import jax
     import jax.numpy as jnp
     import jax.scipy.linalg as jsla
+    import jax.scipy.sparse.linalg as jssl
     import numpy as np
     import scipy.sparse as sp
     from pytensor.link.jax.dispatch import jax_funcify
@@ -858,6 +862,85 @@ def register_jax_dispatch() -> bool:
         return forward, vjp
 
     # ------------------------------------------------------------------
+    # Cross-sectional SAR sparse Op — JAX native GMRES with BCOO
+    # ------------------------------------------------------------------
+
+    def _build_jax_gmres_sar_paths(op):
+        """Return ``(forward_fn, vjp_fn)`` for the JAX-native GMRES path.
+
+        Uses :class:`jax.experimental.sparse.BCOO` for the weight matrix
+        and :func:`jax.scipy.sparse.linalg.gmres` with a diagonal
+        (Jacobi) preconditioner.  This path is JIT-compilable, vmappable,
+        and differentiable — no host callbacks required.
+
+        The diagonal preconditioner is nearly optimal for 2-D lattice
+        spatial weights (bounded degree ≈ 4) and keeps GMRES iteration
+        counts low for typical ρ ∈ [0.3, 0.7].
+
+        Parameters
+        ----------
+        op : SparseSARSolveOp
+            The Op being dispatched; ``op._W`` and ``op._n`` are used.
+
+        Returns
+        -------
+        forward : callable
+            ``forward(rho, b) -> eta``.
+        vjp : callable
+            ``vjp(rho, eta, g) -> (grad_rho, grad_b)``.
+        """
+        from jax.experimental import sparse as jsparse
+
+        n = op._n
+        W_bcoo = jsparse.BCOO.from_scipy_sparse(op._W)
+        W_T_bcoo = jsparse.BCOO.from_scipy_sparse(op._W.transpose().tocsr())
+
+        # Diagonal preconditioner: M^{-1} = diag(1 / (1 - rho * diag(W)))
+        # For row-standardised W, diag(W) is the self-loop weight.
+        W_diag_np = np.asarray(op._W.diagonal(), dtype=np.float64)
+        W_diag_j = jnp.asarray(W_diag_np, dtype=jnp.float64)
+
+        # GMRES settings — tuned for spatial SAR systems on lattice graphs.
+        _GMRES_TOL = float(os.environ.get("BAYESPECON_JAX_GMRES_TOL", "1e-8"))
+        _GMRES_MAXITER = int(os.environ.get("BAYESPECON_JAX_GMRES_MAXITER", "100"))
+        _GMRES_RESTART = int(os.environ.get("BAYESPECON_JAX_GMRES_RESTART", "20"))
+
+        def _solve(W_matvec, rho, b):
+            # Build diagonal preconditioner for this rho
+            diag_inv = 1.0 / (1.0 - rho * W_diag_j)
+
+            def matvec(x):
+                return x - rho * W_matvec(x)
+
+            def precond(x):
+                return diag_inv * x
+
+            x, info = jssl.gmres(
+                matvec,
+                b,
+                tol=_GMRES_TOL,
+                atol=0.0,
+                maxiter=_GMRES_MAXITER,
+                restart=_GMRES_RESTART,
+                M=precond,
+            )
+            # info == 0 means converged; non-zero means maxiter reached.
+            # Return the iterate regardless — NUTS will reject non-finite
+            # log-prob if the solve is poor.
+            return x
+
+        def forward(rho, b):
+            return _solve(lambda x: W_bcoo @ x, rho, b)
+
+        def vjp(rho, eta, g):
+            # Adjoint system: (I - rho W^T) v = g
+            v = _solve(lambda x: W_T_bcoo @ x, rho, g)
+            grad_rho = jnp.vdot(v, W_bcoo @ eta)
+            return grad_rho, v
+
+        return forward, vjp
+
+    # ------------------------------------------------------------------
     # Cross-sectional SAR sparse Op — eigendecomposition path (default)
     # ------------------------------------------------------------------
 
@@ -946,6 +1029,14 @@ def register_jax_dispatch() -> bool:
 
             return sparse_sar_solve
 
+        if resolved == "jax_gmres":
+            forward, _ = _build_jax_gmres_sar_paths(op)
+
+            def sparse_sar_solve(rho, b):
+                return forward(rho, b)
+
+            return sparse_sar_solve
+
         if resolved == "klujax" or (
             sar_solver != "auto" and sparse_backend == "klujax"
         ):
@@ -991,6 +1082,14 @@ def register_jax_dispatch() -> bool:
 
         if resolved == "lineax":
             _, vjp = _build_lineax_sar_paths(op)
+
+            def sparse_sar_vjp(rho, eta, g):
+                return vjp(rho, eta, g)
+
+            return sparse_sar_vjp
+
+        if resolved == "jax_gmres":
+            _, vjp = _build_jax_gmres_sar_paths(op)
 
             def sparse_sar_vjp(rho, eta, g):
                 return vjp(rho, eta, g)

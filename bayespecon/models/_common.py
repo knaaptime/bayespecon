@@ -27,10 +27,33 @@ from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import Any, Optional
 
+import weakref
+
 import arviz as az
 import numpy as np
 import pandas as pd
 import pymc as pm
+
+# Global eigenvalue cache keyed by ``id(graph)``.  We cannot use
+# ``WeakKeyDictionary`` because :class:`libpysal.graph.Graph` is intentionally
+# unhashable (different graphs with identical contents must still be treated as
+# distinct keys).  Instead we register a :func:`weakref.finalize` callback on
+# each Graph that drops the entry once the Graph is garbage-collected.
+_EIG_CACHE: dict[int, np.ndarray] = {}
+
+
+def _store_eigs(graph, eigs: np.ndarray) -> None:
+    """Insert ``eigs`` into :data:`_EIG_CACHE` with a finalize-based eviction."""
+    key = id(graph)
+    if key in _EIG_CACHE:
+        return
+    _EIG_CACHE[key] = eigs
+    try:
+        weakref.finalize(graph, _EIG_CACHE.pop, key, None)
+    except TypeError:
+        # Graph not weakref-able for some reason; fall back to a leaky cache
+        # entry rather than failing the model construction.
+        pass
 
 
 class _SpatialModelBase(ABC):
@@ -742,8 +765,13 @@ class _SpatialModelBase(ABC):
         eigs, V = np.linalg.eig(W_dense)
         Vinv = np.linalg.inv(V)
         idx = np.argsort(eigs.real)[::-1]
+        eigs_sorted = eigs[idx].astype(np.complex128)
+        # Defensively populate the per-Graph eigenvalue cache so that
+        # _W_eigs (defined on SpatialModel in base.py) can find the
+        # eigenvalues without triggering a second decomposition.
+        _store_eigs(self._graph, eigs_sorted.real.astype(np.float64))
         return (
-            eigs[idx].astype(np.complex128),
+            eigs_sorted,
             V[:, idx].astype(np.complex128),
             Vinv[idx, :].astype(np.complex128),
         )

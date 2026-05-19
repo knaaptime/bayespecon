@@ -196,7 +196,6 @@ class SDEM(SpatialModel):
             idata = self._idata
             n = self._y.shape[0]
             Z = np.hstack([self._X, self._WX])  # (n, 2k)
-            W = self._W_dense
 
             lam_draws = idata.posterior["lam"].values.reshape(-1)  # (n_draws,)
             beta_draws = idata.posterior["beta"].values.reshape(
@@ -206,7 +205,8 @@ class SDEM(SpatialModel):
             nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
 
             resid = self._y[None, :] - (beta_draws @ Z.T)  # (n_draws, n)
-            eps = resid - lam_draws[:, None] * (resid @ W.T)  # (n_draws, n)
+            W_resid = resid @ self._W_sparse.T  # sparse matmul, avoids dense W
+            eps = resid - lam_draws[:, None] * W_resid  # (n_draws, n)
 
             ll_gauss = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
             jacobian = self._logdet_numpy_vec_fn(lam_draws)  # (n_draws,)

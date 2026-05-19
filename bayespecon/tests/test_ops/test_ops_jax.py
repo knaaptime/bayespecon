@@ -301,6 +301,109 @@ def _reset_jax_dispatch_caches() -> None:
     register_jax_dispatch.cache_clear()
 
 
+def _setup_jax_gmres_dispatch(monkeypatch):
+    """Configure environment for JAX-native GMRES dispatch tests."""
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "jax_gmres")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _reset_jax_dispatch_caches()
+    from bayespecon._jax_dispatch import register_jax_dispatch
+
+    register_jax_dispatch()
+
+
+# ---------------------------------------------------------------------------
+# JAX-native GMRES SAR-solver path
+# ---------------------------------------------------------------------------
+
+
+def test_jax_gmres_solver_env(monkeypatch, lineax_env_reset):
+    from bayespecon._jax_dispatch import _select_jax_sar_solver
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "jax_gmres")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _reset_jax_dispatch_caches()
+    assert _select_jax_sar_solver() == "jax_gmres"
+
+
+def test_sparse_sar_jax_gmres_forward_parity(monkeypatch, lineax_env_reset):
+    """JAX GMRES forward solve must match C-backend reference."""
+    _setup_jax_gmres_dispatch(monkeypatch)
+
+    W = _line_W(8)
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+
+    f_c = pytensor.function([rho, b], eta)
+    f_j = pytensor.function([rho, b], eta, mode="JAX")
+
+    rng = np.random.default_rng(31)
+    b_val = rng.standard_normal(8)
+
+    np.testing.assert_allclose(
+        np.asarray(f_c(0.3, b_val)),
+        np.asarray(f_j(0.3, b_val)),
+        atol=1e-7,
+        rtol=1e-7,
+    )
+
+
+def test_sparse_sar_jax_gmres_grad_parity(monkeypatch, lineax_env_reset):
+    """Reverse-mode gradient parity for JAX GMRES path."""
+    _setup_jax_gmres_dispatch(monkeypatch)
+
+    W = _line_W(8)
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+    loss = pt.sum(eta * eta)
+    grads = [pytensor.grad(loss, v) for v in (rho, b)]
+
+    f_c = pytensor.function([rho, b], grads)
+    f_j = pytensor.function([rho, b], grads, mode="JAX")
+
+    rng = np.random.default_rng(32)
+    b_val = rng.standard_normal(8)
+
+    c_out = f_c(0.25, b_val)
+    j_out = f_j(0.25, b_val)
+    for c, j in zip(c_out, j_out):
+        np.testing.assert_allclose(np.asarray(c), np.asarray(j), atol=1e-7, rtol=1e-7)
+
+
+def test_jax_auto_falls_to_jax_gmres_when_no_lineax(monkeypatch):
+    from bayespecon._jax_dispatch import _resolve_auto_sar_solver
+
+    monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
+    monkeypatch.setattr("bayespecon._jax_dispatch._lineax_available", lambda: False)
+    assert _resolve_auto_sar_solver(100) == "jax_gmres"
+
+
+def test_jax_gmres_high_rho_correctness(monkeypatch, lineax_env_reset):
+    """JAX GMRES must match dense reference for moderate-to-high rho."""
+    _setup_jax_gmres_dispatch(monkeypatch)
+
+    n = 64
+    W = _line_W(n)
+    rng = np.random.default_rng(33)
+    b_val = rng.standard_normal(n)
+    rho_val = 0.85
+
+    A_dense = np.eye(n) - rho_val * W.toarray()
+    eta_ref = np.linalg.solve(A_dense, b_val)
+
+    op = SparseSARSolveOp(W)
+    rho_pt = pt.dscalar("rho")
+    b_pt = pt.dvector("b")
+    eta = op(rho_pt, b_pt)
+    f_j = pytensor.function([rho_pt, b_pt], eta, mode="JAX")
+
+    out = np.asarray(f_j(rho_val, b_val))
+    np.testing.assert_allclose(out, eta_ref, atol=1e-6, rtol=1e-6)
+
+
 @pytest.fixture
 def lineax_env_reset():
     """Reset JAX-dispatch caches before and after each Lineax test."""

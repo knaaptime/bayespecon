@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import warnings
-import weakref
 from functools import cached_property
 from typing import Optional, Union
 
@@ -26,29 +25,8 @@ from ..logdet import (
     resolve_logdet_bounds,
     resolve_logdet_method,
 )
-from ._common import _SpatialModelBase
+from ._common import _EIG_CACHE, _SpatialModelBase, _store_eigs
 from .priors import OLSPriors, PriorsLike, priors_as_dict, resolve_priors
-
-# Global eigenvalue cache keyed by ``id(graph)``.  We cannot use
-# ``WeakKeyDictionary`` because :class:`libpysal.graph.Graph` is intentionally
-# unhashable (different graphs with identical contents must still be treated as
-# distinct keys).  Instead we register a :func:`weakref.finalize` callback on
-# each Graph that drops the entry once the Graph is garbage-collected.
-_EIG_CACHE: dict[int, np.ndarray] = {}
-
-
-def _store_eigs(graph: Graph, eigs: np.ndarray) -> None:
-    """Insert ``eigs`` into :data:`_EIG_CACHE` with a finalize-based eviction."""
-    key = id(graph)
-    if key in _EIG_CACHE:
-        return
-    _EIG_CACHE[key] = eigs
-    try:
-        weakref.finalize(graph, _EIG_CACHE.pop, key, None)
-    except TypeError:
-        # Graph not weakref-able for some reason; fall back to a leaky cache
-        # entry rather than failing the model construction.
-        pass
 
 
 def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
@@ -381,21 +359,43 @@ class SpatialModel(_SpatialModelBase):
             return None
         return self._graph.sparse.tocsr().astype(np.float64)
 
+    _DENSE_W_WARN_THRESHOLD = 5000  # n above which dense W is expensive
+
     @cached_property
     def _W_dense(self) -> Optional[np.ndarray]:
-        """Dense weight matrix, materialised lazily on first access."""
+        """Dense weight matrix, materialised lazily on first access.
+
+        Warns when n > _DENSE_W_WARN_THRESHOLD (default 5000) because the
+        dense matrix requires ~8n² bytes of memory.  Consider using sparse
+        operations or a logdet method that avoids the dense matrix
+        (e.g. 'chebyshev' or 'sparse_spline') for large problems.
+        """
         if self._graph is None:
             return None
+        n = self._W_sparse.shape[0]
+        if n > self._DENSE_W_WARN_THRESHOLD:
+            warnings.warn(
+                f"Materialising dense W for n={n} requires "
+                f"~{n * n * 8 / 1e6:.0f} MB. Consider using sparse operations "
+                f"or a logdet method that avoids the dense matrix "
+                f"(e.g. 'chebyshev' or 'sparse_spline').",
+                UserWarning,
+                stacklevel=2,
+            )
         return np.asarray(self._W_sparse.toarray(), dtype=np.float64)
 
     @cached_property
     def _W_eigs(self) -> Optional[np.ndarray]:
         """Eigenvalues of W (all n), cached per Graph in :data:`_EIG_CACHE`.
 
-        Checks the per-Graph cache first (preserving identity across
-        model instances that share the same Graph).  On a cache miss,
-        derives eigenvalues from the shared :attr:`_W_eigendecomposition`
-        cache to avoid a redundant O(n³) decomposition.
+        Triggers the full eigendecomposition (:attr:`_W_eigendecomposition`)
+        on a cache miss so that the eigenvectors are also available for
+        :meth:`_batch_mean_row_sum` and other consumers, avoiding a
+        redundant O(n³) decomposition.  This is intentional: models that
+        call :meth:`spatial_effects` need both eigenvalues and eigenvectors,
+        and sharing a single ``np.linalg.eig`` call is faster than separate
+        ``np.linalg.eigvals`` + ``np.linalg.eig`` calls (which would cost
+        ~1.5× the decomposition time).
 
         Always returns the full length-n eigenvalue array regardless
         of problem size.  This is required by logdet (eigenvalue method),
@@ -408,15 +408,12 @@ class SpatialModel(_SpatialModelBase):
         cached = _EIG_CACHE.get(id(self._graph))
         if cached is not None:
             return cached
-        # Cache miss: derive eigenvalues from the shared eigendecomposition
-        # cache to avoid a redundant O(n³) decomposition.
-        decomp = self._W_eigendecomposition
-        if decomp is not None:
-            eigs_arr = decomp[0].real.astype(np.float64)
-        else:
-            eigs_arr = np.linalg.eigvals(self._W_dense).real.astype(np.float64)
-        _store_eigs(self._graph, eigs_arr)
-        return eigs_arr
+        # Derive eigenvalues from the full eigendecomposition, which
+        # also caches eigenvectors for _batch_mean_row_sum etc.
+        # _W_eigendecomposition defensively populates _EIG_CACHE, so
+        # after calling it we can return the cached array directly.
+        self._W_eigendecomposition  # triggers _store_eigs inside
+        return _EIG_CACHE[id(self._graph)]
 
     # ------------------------------------------------------------------
     # Lazy log-determinant evaluators.
