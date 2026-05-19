@@ -721,6 +721,70 @@ class _SpatialModelBase(ABC):
 
         return sparse_trace_WtW_plus_WW(self._W_sparse)
 
+    # ------------------------------------------------------------------
+    # Eigendecomposition cache
+    # ------------------------------------------------------------------
+
+    @cached_property
+    def _W_eigendecomposition(self):
+        """Full eigendecomposition W = V diag(λ) V⁻¹ with complex128 arithmetic.
+
+        Returns a 3-tuple ``(eigs, V, Vinv)`` of complex128 arrays, or
+        ``None`` when no spatial weights matrix was supplied.
+
+        Eigenvalues are sorted by real part (descending) for numerical
+        stability, matching the convention in
+        :func:`bayespecon._jax_dispatch._build_eigen_sar_paths`.
+        """
+        if self._graph is None:
+            return None
+        W_dense = self._W_dense
+        eigs, V = np.linalg.eig(W_dense)
+        Vinv = np.linalg.inv(V)
+        idx = np.argsort(eigs.real)[::-1]
+        return (
+            eigs[idx].astype(np.complex128),
+            V[:, idx].astype(np.complex128),
+            Vinv[idx, :].astype(np.complex128),
+        )
+
+    @cached_property
+    def _W_eigs_full(self) -> Optional[np.ndarray]:
+        """Real eigenvalues of W, derived from :attr:`_W_eigendecomposition`.
+
+        Convenience wrapper for code that only needs eigenvalue magnitudes
+        (e.g. logdet, spatial effects on the log-mean scale).
+        """
+        decomp = self._W_eigendecomposition
+        if decomp is None:
+            return None
+        return decomp[0].real.astype(np.float64)
+
+    @cached_property
+    def _V_full(self) -> Optional[np.ndarray]:
+        """Real eigenvector matrix of W, derived from :attr:`_W_eigendecomposition`.
+
+        Convenience wrapper for code that needs the eigenvector matrix
+        on the real domain (e.g. count-scale spatial effects).
+        """
+        decomp = self._W_eigendecomposition
+        if decomp is None:
+            return None
+        return decomp[1].real.astype(np.float64)
+
+    @cached_property
+    def _eig_inv_ones(self) -> Optional[np.ndarray]:
+        """V⁻¹ @ 1ₙ (complex128), cached once.
+
+        Used by :meth:`_batch_mean_row_sum` and
+        :meth:`_batch_mean_row_sum_MW` for the eigenvalue-based
+        computation of mean row sums.
+        """
+        decomp = self._W_eigendecomposition
+        if decomp is None:
+            return None
+        return decomp[2] @ np.ones(decomp[0].shape[0], dtype=np.complex128)
+
     def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of ``(I - ρW)^{-1}`` for each posterior draw.
 
@@ -742,22 +806,20 @@ class _SpatialModelBase(ABC):
         if self._is_row_std:
             return 1.0 / (1.0 - rho_draws)
 
-        # Eigenvalue-based computation: precompute c = V^{-1} @ ones once.
-        if not hasattr(self, "_eig_inv_ones"):
-            W_dense = self._W_dense
-            eigs, V = np.linalg.eig(W_dense)
-            self._W_eigs_full = eigs.real.astype(np.float64)
-            self._V_full = V.real.astype(np.float64)
-            self._eig_inv_ones = np.linalg.solve(
-                self._V_full, np.ones(W_dense.shape[0])
-            )
-
-        c = self._eig_inv_ones
-        eigs = self._W_eigs_full
-        V_col_sums = self._V_full.sum(axis=0)  # (n,)
+        # Eigenvalue-based computation using shared eigendecomposition cache.
+        decomp = self._W_eigendecomposition
+        if decomp is None:
+            raise ValueError("No spatial weights matrix available.")
+        c = self._eig_inv_ones  # complex128, (n,)
+        eigs = decomp[0]  # complex128, (n,)
+        V_col_sums = decomp[1].sum(axis=0)  # complex128, (n,)
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
-        return _chunked_eig_means(rho_draws, eigs, weights=V_col_sums * c)
+        return _chunked_eig_means(
+            rho_draws,
+            eigs.real.astype(np.float64),
+            weights=(V_col_sums * c).real.astype(np.float64),
+        )
 
     def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of ``(I - ρW)^{-1} W`` for each posterior draw.
@@ -782,16 +844,20 @@ class _SpatialModelBase(ABC):
         if self._is_row_std:
             return 1.0 / (1.0 - rho_draws)
 
-        # Ensure eigenvalue decomposition is available
-        if not hasattr(self, "_eig_inv_ones"):
-            _ = self._batch_mean_row_sum(rho_draws[:1])
-
-        c = self._eig_inv_ones
-        eigs = self._W_eigs_full
-        V_col_sums = self._V_full.sum(axis=0)  # (n,)
+        # Eigenvalue-based computation using shared eigendecomposition cache.
+        decomp = self._W_eigendecomposition
+        if decomp is None:
+            raise ValueError("No spatial weights matrix available.")
+        c = self._eig_inv_ones  # complex128, (n,)
+        eigs = decomp[0]  # complex128, (n,)
+        V_col_sums = decomp[1].sum(axis=0)  # complex128, (n,)
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
-        return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
+        return _chunked_eig_means(
+            rho_draws,
+            eigs.real.astype(np.float64),
+            weights=(eigs.real * V_col_sums.real * c.real).astype(np.float64),
+        )
 
     # ------------------------------------------------------------------
     # Internals

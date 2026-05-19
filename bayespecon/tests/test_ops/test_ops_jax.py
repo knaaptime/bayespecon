@@ -315,7 +315,9 @@ def test_jax_sar_solver_auto_preserves_existing_backend(monkeypatch, lineax_env_
     monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: True)
 
     _reset_jax_dispatch_caches()
-    assert _select_jax_sar_solver() == "callback"
+    # _select_jax_sar_solver returns "auto" when no explicit solver is set;
+    # concrete resolution happens in _resolve_auto_sar_solver at Op time.
+    assert _select_jax_sar_solver() == "auto"
 
 
 def test_jax_sar_solver_explicit_lineax(monkeypatch, lineax_env_reset):

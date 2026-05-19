@@ -145,20 +145,58 @@ def _strict_env() -> bool:
     }
 
 
+# Threshold above which the auto solver switches from eigen to lineax.
+# Eigen uses O(N^2) memory (two N×N complex128 matrices) which becomes
+# prohibitive for large N.  Lineax is matrix-free and uses O(nnz) memory.
+# Default 10000 covers grids up to n≈100 (N=10000) comfortably.
+_JAX_SAR_EIGEN_N_MAX = int(os.environ.get("BAYESPECON_JAX_SAR_EIGEN_N_MAX", "10000"))
+
+
+def _resolve_auto_sar_solver(n: int) -> str:
+    """Resolve ``"auto"`` to a concrete solver based on problem size *n*.
+
+    Uses the eigendecomposition path (exact, robust) for small *n* and
+    falls back to Lineax iterative solve (matrix-free, memory-efficient)
+    for large *n* where storing two N×N complex128 matrices is prohibitive.
+
+    The threshold is controlled by
+    ``BAYESPECON_JAX_SAR_EIGEN_N_MAX`` (default 10000, i.e. N = n² ≤ 10000).
+    """
+    if n <= _JAX_SAR_EIGEN_N_MAX:
+        return "eigen"
+    if _lineax_available():
+        return "lineax"
+    # Lineax not installed — fall back to eigen with a warning.
+    warnings.warn(
+        f"N={n} exceeds eigen threshold {_JAX_SAR_EIGEN_N_MAX} but "
+        "lineax is not installed. Using eigen path anyway (may use "
+        "significant memory). Install lineax or set "
+        "BAYESPECON_JAX_SAR_SOLVER=callback to avoid this.",
+        RuntimeWarning,
+        stacklevel=4,
+    )
+    return "eigen"
+
+
 @lru_cache(maxsize=1)
 def _select_jax_sar_solver() -> str:
     """Resolve the JAX SAR solver from env vars.
 
-    Returns one of ``"eigen"``, ``"callback"``, ``"klujax"``, ``"lineax"``.
+    Returns one of ``"auto"``, ``"eigen"``, ``"callback"``, ``"klujax"``, ``"lineax"``.
+
+    ``"auto"`` is resolved to a concrete solver at Op registration time
+    by :func:`_resolve_auto_sar_solver` based on the problem size *n*.
 
     Environment
     -----------
     BAYESPECON_JAX_SAR_SOLVER : {"auto", "eigen", "callback", "klujax", "lineax"}
-        Default ``auto``. ``auto`` selects ``eigen`` — a pure-JAX
-        eigendecomposition path that avoids sparse LU factorisation
-        entirely and is robust to near-singular system matrices.
-        ``klujax`` and ``lineax`` are opt-in alternatives; ``callback``
-        wraps scipy via host callback.
+        Default ``auto``. ``auto`` selects ``eigen`` for small problems
+        (N ≤ ``BAYESPECON_JAX_SAR_EIGEN_N_MAX``) and ``lineax`` for large
+        ones. ``eigen`` is a pure-JAX eigendecomposition path that avoids
+        sparse LU factorisation entirely. ``klujax`` and ``lineax`` are
+        opt-in alternatives; ``callback`` wraps scipy via host callback.
+    BAYESPECON_JAX_SAR_EIGEN_N_MAX : int, default 10000
+        Maximum N for which ``auto`` selects the eigen path.
     BAYESPECON_JAX_SPARSE_STRICT : truthy
         If set, missing requested optional dependencies raise ImportError
         instead of falling back.
@@ -167,8 +205,7 @@ def _select_jax_sar_solver() -> str:
     strict = _strict_env()
 
     if requested in {"", "auto"}:
-        # Eigen is the default: pure-JAX, no sparse LU, never segfaults.
-        return "eigen"
+        return "auto"
 
     if requested == "eigen":
         return "eigen"
@@ -202,12 +239,12 @@ def _select_jax_sar_solver() -> str:
 
     msg = (
         f"Unknown BAYESPECON_JAX_SAR_SOLVER='{requested}'. "
-        "Valid values are: auto, eigen, callback, klujax, lineax. Falling back to eigen."
+        "Valid values are: auto, eigen, callback, klujax, lineax. Falling back to auto."
     )
     if strict:
         raise ValueError(msg)
     warnings.warn(msg, RuntimeWarning)
-    return "eigen"
+    return "auto"
 
 
 @lru_cache(maxsize=1)
@@ -253,14 +290,7 @@ def register_jax_dispatch() -> bool:
         import klujax
 
     sar_solver = _select_jax_sar_solver()
-    lineax_solver_name = (
-        _select_jax_sar_lineax_solver() if sar_solver == "lineax" else "bicgstab"
-    )
-    lx = None
-    jsparse = None
-    if sar_solver == "lineax":
-        import lineax as lx  # noqa: F401
-        from jax.experimental import sparse as jsparse  # noqa: F401
+    lineax_solver_name = _select_jax_sar_lineax_solver()
 
     from .ops import (
         KroneckerFlowSolveMatrixOp,
@@ -654,10 +684,13 @@ def register_jax_dispatch() -> bool:
         :math:`(I - \\rho W) \\eta = b` and the VJP solves the adjoint system
         :math:`(I - \\rho W^\\top) v = g` matrix-free over a BCOO ``W``.
         """
+        import lineax as lx
+        from jax.experimental import sparse as jsparse
+
         n = op._n
         W_bcoo = jsparse.BCOO.from_scipy_sparse(op._W)
         W_T_bcoo = jsparse.BCOO.from_scipy_sparse(op._W.transpose().tocsr())
-        max_steps = int(min(10 * n, 2000))
+        max_steps = max(int(10 * n), 5000)
         rtol = 1e-8
         atol = 1e-8
 
@@ -711,22 +744,33 @@ def register_jax_dispatch() -> bool:
 
         The gradient w.r.t. ``rho`` is ``v^T W eta`` where
         ``v = (I - rho W^T)^{-1} g``.
+
+        If the Op was constructed with a shared ``eigendecomposition``
+        cache (from the model's ``_W_eigendecomposition`` property), it
+        is reused here to avoid a redundant O(n³) decomposition.
         """
         n = op._n
-        W_dense = np.asarray(op._W.toarray(), dtype=np.float64)
-        eigs_np, V_np = np.linalg.eig(W_dense)
-        Vinv_np = np.linalg.inv(V_np)
-        # Sort eigenvalues by real part (descending) for numerical stability.
-        idx = np.argsort(eigs_np.real)[::-1]
-        eigs_np = eigs_np[idx]
-        V_np = V_np[:, idx]
-        Vinv_np = Vinv_np[idx, :]
+
+        # Consume shared eigendecomposition cache if available.
+        if op._eigendecomposition is not None:
+            eigs_np, V_np, Vinv_np = op._eigendecomposition
+        else:
+            W_dense = np.asarray(op._W.toarray(), dtype=np.float64)
+            eigs_np, V_np = np.linalg.eig(W_dense)
+            Vinv_np = np.linalg.inv(V_np)
+            # Sort eigenvalues by real part (descending) for numerical stability.
+            idx = np.argsort(eigs_np.real)[::-1]
+            eigs_np = eigs_np[idx]
+            V_np = V_np[:, idx]
+            Vinv_np = Vinv_np[idx, :]
+
         # Use complex128 to handle non-symmetric W correctly.
         # Row-standardised W can have complex eigenvalues/eigenvectors.
         eigs_j = jnp.asarray(eigs_np.astype(np.complex128))
         V_j = jnp.asarray(V_np.astype(np.complex128))
         Vinv_j = jnp.asarray(Vinv_np.astype(np.complex128))
-        W_j = jnp.asarray(W_dense, dtype=jnp.float64)
+        W_dense_for_grad = np.asarray(op._W.toarray(), dtype=np.float64)
+        W_j = jnp.asarray(W_dense_for_grad, dtype=jnp.float64)
 
         def forward(rho, b):
             inv_eigs = 1.0 / (1.0 - rho * eigs_j)
@@ -746,7 +790,10 @@ def register_jax_dispatch() -> bool:
 
     @jax_funcify.register(SparseSARSolveOp)
     def _funcify_sparse_sar_solve(op, **kwargs):
-        if sar_solver == "eigen":
+        # Resolve "auto" to a concrete solver based on problem size.
+        resolved = _resolve_auto_sar_solver(op._n) if sar_solver == "auto" else sar_solver
+
+        if resolved == "eigen":
             forward, _ = _build_eigen_sar_paths(op)
 
             def sparse_sar_solve(rho, b):
@@ -754,7 +801,7 @@ def register_jax_dispatch() -> bool:
 
             return sparse_sar_solve
 
-        if sar_solver == "lineax":
+        if resolved == "lineax":
             forward, _ = _build_lineax_sar_paths(op)
 
             def sparse_sar_solve(rho, b):
@@ -762,7 +809,7 @@ def register_jax_dispatch() -> bool:
 
             return sparse_sar_solve
 
-        if sar_solver == "klujax" or sparse_backend == "klujax":
+        if resolved == "klujax" or (sar_solver != "auto" and sparse_backend == "klujax"):
             n = op._n
             I = np.eye(n, dtype=np.float64)
             W_dense = np.asarray(op._W.toarray(), dtype=np.float64)
@@ -790,7 +837,10 @@ def register_jax_dispatch() -> bool:
 
     @jax_funcify.register(_SparseSARVJPOp)
     def _funcify_sparse_sar_vjp(op, **kwargs):
-        if sar_solver == "eigen":
+        # Resolve "auto" to a concrete solver based on problem size.
+        resolved = _resolve_auto_sar_solver(op._n) if sar_solver == "auto" else sar_solver
+
+        if resolved == "eigen":
             _, vjp = _build_eigen_sar_paths(op)
 
             def sparse_sar_vjp(rho, eta, g):
@@ -798,7 +848,7 @@ def register_jax_dispatch() -> bool:
 
             return sparse_sar_vjp
 
-        if sar_solver == "lineax":
+        if resolved == "lineax":
             _, vjp = _build_lineax_sar_paths(op)
 
             def sparse_sar_vjp(rho, eta, g):

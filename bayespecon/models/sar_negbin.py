@@ -91,9 +91,13 @@ class SARNegativeBinomial(SpatialModel):
 
             # SAR-in-mean reduced form: eta = (I - rho*W)^{-1} X beta
             # Uses SparseSARSolveOp for efficient differentiable sparse LU.
+            # Pass shared eigendecomposition cache so the JAX eigen path
+            # can reuse it instead of computing its own O(n³) decomposition.
             from ..ops import SparseSARSolveOp
 
-            _sar_solve_op = SparseSARSolveOp(self._W_sparse)
+            _sar_solve_op = SparseSARSolveOp(
+                self._W_sparse, eigendecomposition=self._W_eigendecomposition
+            )
             Xbeta = pt.dot(self._X, beta)
             eta = _sar_solve_op(rho, Xbeta)
             mu = pm.Deterministic("mu", pt.exp(eta))
@@ -202,8 +206,8 @@ class SARNegativeBinomial(SpatialModel):
         expensive than the log-mean-scale formula because it requires the
         diagonal of the spatial multiplier for each posterior draw.
 
-        This implementation uses the cached eigendecomposition
-        (:attr:`_W_eigs_full`, :attr:`_V_full`) to avoid per-draw sparse LU
+        This implementation uses the shared eigendecomposition cache
+        (:attr:`_W_eigendecomposition`) to avoid per-draw sparse LU
         factorisation, reducing complexity from :math:`O(n^3)` per draw to
         :math:`O(n^2)` per draw.
         """
@@ -221,43 +225,50 @@ class SARNegativeBinomial(SpatialModel):
         direct_samples = np.empty((n_draws, n_effects), dtype=np.float64)
         total_samples = np.empty((n_draws, n_effects), dtype=np.float64)
 
-        # Ensure eigendecomposition is available (may not be cached for row-std W)
-        if not hasattr(self, "_W_eigs_full"):
-            W_dense = self._W_dense
-            eigs, V = np.linalg.eig(W_dense)
-            self._W_eigs_full = eigs.real.astype(np.float64)
-            self._V_full = V.real.astype(np.float64)
+        # Use shared eigendecomposition cache (complex128 throughout).
+        # Row-standardised W is generally non-symmetric, so V and Vinv
+        # are complex.  Taking .real prematurely drops imaginary parts and
+        # produces wrong results for eta, diag, and row sums.
+        decomp = self._W_eigendecomposition
+        if decomp is None:
+            raise ValueError("No spatial weights matrix available.")
+        eigs_c = decomp[0]  # complex128, (n,)
+        V_c = decomp[1]     # complex128, (n, n)
+        Vinv_c = decomp[2]  # complex128, (n, n)
 
-        # Cached eigendecomposition: W = V @ diag(lambda) @ V^{-1}
-        eigs = self._W_eigs_full  # (n,)
-        V = self._V_full  # (n, n)
-        Vt = V.T  # (n, n)
-        V_col_sums = V.sum(axis=0)  # (n,)
-        V_sq = V**2  # (n, n)
+        # Precompute Vinv @ X (complex128, (n, k)) — reused for every draw
+        VinvX = Vinv_c @ self._X.astype(np.complex128)  # (n, k)
 
-        # Precompute V^T @ X  (n, k) — reused for every draw
-        VtX = Vt @ self._X  # (n, k)
+        # Precompute Vinv @ 1 (complex128, (n,)) for row sums
+        ones_c = np.ones(n, dtype=np.complex128)
+        Vinv_ones = Vinv_c @ ones_c  # (n,)
 
         for draw_idx, (rho, beta) in enumerate(
             zip(rho_draws, beta_draws, strict=False)
         ):
-            inv_eigs = 1.0 / (1.0 - float(rho) * eigs)  # (n,)
+            inv_eigs_c = 1.0 / (1.0 - float(rho) * eigs_c)  # complex128
 
-            # eta = V @ (inv_eigs * (V^T @ X @ beta))
-            coeff = inv_eigs * (VtX @ beta)  # (n,)
-            eta = V @ coeff  # (n,)
+            # eta = V @ diag(inv_eigs) @ Vinv @ X @ beta
+            coeff = inv_eigs_c * (VinvX @ beta.astype(np.complex128))  # (n,)
+            eta = (V_c @ coeff).real.astype(np.float64)  # (n,)
             mu = np.exp(np.clip(eta, -50.0, 50.0))
 
-            # diag((I - rho W)^{-1}) = sum_j V_{ij}^2 / (1 - rho lambda_j)
-            multiplier_diag = V_sq @ inv_eigs  # (n,)
+            # diag((I - rho W)^{-1}) = diag(V @ diag(inv_eigs) @ Vinv)
+            # = sum_j V_{ij} * Vinv_{ji} / (1 - rho lambda_j)
+            # (element-wise product of V and Vinv^T, weighted by inv_eigs)
+            multiplier_diag = (
+                (V_c * Vinv_c.T) @ inv_eigs_c
+            ).real.astype(np.float64)  # (n,)
 
             if self._is_row_std:
                 multiplier_row_sums = np.full(
                     n, 1.0 / (1.0 - float(rho)), dtype=np.float64
                 )
             else:
-                # row_sum_i = sum_j V_{ij} * col_sum_j / (1 - rho lambda_j)
-                multiplier_row_sums = V @ (V_col_sums * inv_eigs)  # (n,)
+                # row_sum_i = (V @ diag(inv_eigs) @ Vinv @ 1)_i
+                multiplier_row_sums = (
+                    V_c @ (inv_eigs_c * Vinv_ones)
+                ).real.astype(np.float64)  # (n,)
 
             direct_base = float(np.mean(mu * multiplier_diag))
             total_base = float(np.mean(mu * multiplier_row_sums))
@@ -267,6 +278,129 @@ class SARNegativeBinomial(SpatialModel):
 
         indirect_samples = total_samples - direct_samples
         return direct_samples, indirect_samples, total_samples
+
+    @staticmethod
+    def _hutchinson_diag(
+        A_solve: callable,
+        n: int,
+        n_probes: int = 20,
+        rng: np.random.Generator | None = None,
+    ) -> np.ndarray:
+        r"""Estimate the diagonal of :math:`A^{-1}` via Hutchinson's method.
+
+        Given a callable ``A_solve(b)`` that returns :math:`A^{-1} b``, this
+        estimates :math:`\operatorname{diag}(A^{-1})` using Rademacher
+        (±1) probe vectors:
+
+        .. math::
+
+            \widehat{d_i} = \frac{1}{K} \sum_{k=1}^{K}
+                z_{ki} \, [A^{-1} z_k]_i,
+
+        where :math:`z_k \sim \operatorname{Rademacher}(\pm 1)`.
+        With 20 probes the relative error is typically < 5%.
+
+        Parameters
+        ----------
+        A_solve : callable
+            Function ``(b) -> A^{-1} b`` where b is (n,).
+        n : int
+            Dimension of the matrix.
+        n_probes : int
+            Number of Rademacher probe vectors.
+        rng : numpy random Generator, optional
+            Random state for reproducibility.
+
+        Returns
+        -------
+        np.ndarray, shape (n,)
+            Estimated diagonal of :math:`A^{-1}`.
+        """
+        if rng is None:
+            rng = np.random.default_rng()
+        diag_est = np.zeros(n, dtype=np.float64)
+        for _ in range(n_probes):
+            z = rng.choice(np.array([-1.0, 1.0]), size=n)
+            Az = A_solve(z)
+            diag_est += z * Az
+        return diag_est / n_probes
+
+    def _compute_count_scale_spatial_effects_posterior_sparse(
+        self,
+        rho_draws: np.ndarray,
+        beta_draws: np.ndarray,
+        n: int,
+        ni: list[int],
+        n_draws: int,
+        n_effects: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        r"""Count-scale spatial effects via sparse solves + Hutchinson.
+
+        For large W where eigenvectors are unavailable, this method uses:
+
+        - ``scipy.sparse.linalg.spsolve`` for :math:`\eta = (I - \rho W)^{-1} X\beta`
+        - Hutchinson diagonal estimator for :math:`\operatorname{diag}((I - \rho W)^{-1})`
+        - ``spsolve`` with ones vector for row sums (non-row-standardised W)
+
+        Complexity is :math:`O(\text{nnz} \cdot n_{\text{probes}})` per draw
+        instead of :math:`O(n^2)` per draw for the eigen path.
+
+        Parameters
+        ----------
+        rho_draws : np.ndarray, shape (G,)
+        beta_draws : np.ndarray, shape (G, k)
+        n : int
+        ni : list[int]
+        n_draws : int
+        n_effects : int
+
+        Returns
+        -------
+        direct_samples : np.ndarray, shape (G, n_effects)
+        total_samples : np.ndarray, shape (G, n_effects)
+        """
+        W = self._W_sparse
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        ones = np.ones(n, dtype=np.float64)
+        rng = np.random.default_rng(42)  # fixed seed for reproducibility
+
+        direct_samples = np.empty((n_draws, n_effects), dtype=np.float64)
+        total_samples = np.empty((n_draws, n_effects), dtype=np.float64)
+
+        for draw_idx, (rho, beta) in enumerate(
+            zip(rho_draws, beta_draws, strict=False)
+        ):
+            rho_f = float(rho)
+            A = I_n - rho_f * W
+
+            # eta = (I - rho W)^{-1} X beta
+            Xbeta = self._X @ beta
+            eta = sp.linalg.spsolve(A, Xbeta)
+            mu = np.exp(np.clip(eta, -50.0, 50.0))
+
+            # diag((I - rho W)^{-1}) via Hutchinson
+            multiplier_diag = self._hutchinson_diag(
+                lambda b: sp.linalg.spsolve(A, b),
+                n,
+                n_probes=20,
+                rng=rng,
+            )
+
+            # Row sums of (I - rho W)^{-1}
+            if self._is_row_std:
+                multiplier_row_sums = np.full(
+                    n, 1.0 / (1.0 - rho_f), dtype=np.float64
+                )
+            else:
+                multiplier_row_sums = sp.linalg.spsolve(A, ones)
+
+            direct_base = float(np.mean(mu * multiplier_diag))
+            total_base = float(np.mean(mu * multiplier_row_sums))
+
+            direct_samples[draw_idx] = direct_base * beta[ni]
+            total_samples[draw_idx] = total_base * beta[ni]
+
+        return direct_samples, total_samples
 
     def spatial_effects(
         self,

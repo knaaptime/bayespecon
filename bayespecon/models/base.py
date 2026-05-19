@@ -390,15 +390,33 @@ class SpatialModel(_SpatialModelBase):
 
     @cached_property
     def _W_eigs(self) -> Optional[np.ndarray]:
-        """Eigenvalues of W, cached per Graph in :data:`_EIG_CACHE`."""
+        """Eigenvalues of W (all n), cached per Graph in :data:`_EIG_CACHE`.
+
+        Checks the per-Graph cache first (preserving identity across
+        model instances that share the same Graph).  On a cache miss,
+        derives eigenvalues from the shared :attr:`_W_eigendecomposition`
+        cache to avoid a redundant O(n³) decomposition.
+
+        Always returns the full length-n eigenvalue array regardless
+        of problem size.  This is required by logdet (eigenvalue method),
+        LM tests, panel models, and spatial effects.
+        """
         if self._graph is None:
             return None
+        # Check the per-Graph cache first — this preserves object identity
+        # across model instances that share the same Graph.
         cached = _EIG_CACHE.get(id(self._graph))
         if cached is not None:
             return cached
-        eigs = np.linalg.eigvals(self._W_dense)
-        _store_eigs(self._graph, eigs)
-        return eigs
+        # Cache miss: derive eigenvalues from the shared eigendecomposition
+        # cache to avoid a redundant O(n³) decomposition.
+        decomp = self._W_eigendecomposition
+        if decomp is not None:
+            eigs_arr = decomp[0].real.astype(np.float64)
+        else:
+            eigs_arr = np.linalg.eigvals(self._W_dense).real.astype(np.float64)
+        _store_eigs(self._graph, eigs_arr)
+        return eigs_arr
 
     # ------------------------------------------------------------------
     # Lazy log-determinant evaluators.
@@ -411,10 +429,15 @@ class SpatialModel(_SpatialModelBase):
 
     @cached_property
     def _W_for_logdet(self):
-        """Argument passed to :func:`make_logdet_fn` — eigenvalues or dense W."""
+        """Argument passed to :func:`make_logdet_fn` — eigenvalues or sparse W.
+
+        For eigenvalue and chebyshev methods, returns the 1-D eigenvalue
+        array.  For all other methods, returns the sparse CSR matrix
+        (avoids materialising the O(n²) dense matrix).
+        """
         if self._resolved_logdet_method in ("eigenvalue", "chebyshev"):
             return self._W_eigs.real.astype(np.float64)
-        return self._W_dense
+        return self._W_sparse
 
     @cached_property
     def _logdet_bounds(self) -> LogdetBounds:

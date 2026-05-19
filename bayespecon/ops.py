@@ -1540,11 +1540,12 @@ class _SparseSARVJPOp(pt.Op):
 
     __props__ = ("_op_id",)
 
-    def __init__(self, W: sp.csr_matrix) -> None:
+    def __init__(self, W: sp.csr_matrix, eigendecomposition=None) -> None:
         self._W = W.tocsr().astype(np.float64)
         self._n = W.shape[0]
         self._I = sp.eye(self._n, format="csr", dtype=np.float64)
         self._W_dense = W.toarray() if self._n <= _kron_dense_max() else None
+        self._eigendecomposition = eigendecomposition
         self._cached_rho: float | None = None
         self._cached_backend: str | None = None
         self._cached_solver = None
@@ -1691,7 +1692,7 @@ class SparseSARSolveOp(pt.Op):
 
     __props__ = ("_op_id",)
 
-    def __init__(self, W: sp.csr_matrix) -> None:
+    def __init__(self, W: sp.csr_matrix, eigendecomposition=None) -> None:
         self._W = W.tocsr().astype(np.float64)
         self._n = W.shape[0]
         self._I = sp.eye(self._n, format="csr", dtype=np.float64)
@@ -1701,10 +1702,15 @@ class SparseSARSolveOp(pt.Op):
         self._I_dense = (
             np.eye(self._n, dtype=np.float64) if self._W_dense is not None else None
         )
+        # Shared eigendecomposition cache (eigs, V, Vinv) in complex128,
+        # consumed from the model's _W_eigendecomposition property.
+        # When provided, _build_eigen_sar_paths reuses it instead of
+        # computing its own decomposition.
+        self._eigendecomposition = eigendecomposition
         self._cached_rho: float | None = None
         self._cached_backend: str | None = None
         self._cached_solver = None
-        self._vjp_op = _SparseSARVJPOp(self._W)
+        self._vjp_op = _SparseSARVJPOp(self._W, eigendecomposition=eigendecomposition)
         self._op_id = next(_op_id_counter)
         super().__init__()
 
