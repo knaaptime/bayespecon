@@ -23,3 +23,7 @@ dependencies:
   - lazy_loader
   - fastprogress
   - nutpie
+  - polyagamma
+  - pip:
+    - klujax
+    - traceax 

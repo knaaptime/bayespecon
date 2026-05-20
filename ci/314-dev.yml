@@ -21,7 +21,11 @@ dependencies:
   - lazy_loader
   - fastprogress
   - nutpie
-
+  - polyagamma
+  - pip:
+    - klujax
+    - traceax 
+  
   # docs
   - twine
   - sphinx>=1.4.3

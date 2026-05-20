@@ -240,6 +240,7 @@ def simulate_sar_negbin(
     rho: float = 0.5,
     beta: np.ndarray | None = None,
     alpha: float = 2.0,
+    sigma2: float = 0.0,
     err_hetero: bool = False,
     rng: np.random.Generator | None = None,
     seed: int | None = None,
@@ -249,22 +250,79 @@ def simulate_sar_negbin(
 ) -> dict:
     r"""Simulate data from a SAR-NB2 DGP.
 
-    The latent log-mean follows the SAR reduced form, matching the
-    :class:`SARNegativeBinomial` model specification:
+        The latent log-mean follows the SAR structural form:
 
-    .. math::
+        .. math::
 
-        \eta = (I - \rho W)^{-1} X\beta, \quad \mu = \exp(\eta)
+            \eta = \rho W \eta + X\beta + \nu, \quad \nu \sim N(0, \sigma^2 I)
 
-    and counts are sampled as NB2:
+        which in reduced form is:
 
-    .. math::
+        .. math::
 
-        y_i \sim \mathrm{NegBin}(\mu_i, \alpha),
-        \;\;\mathrm{Var}(y_i)=\mu_i+\mu_i^2/\alpha.
+            \eta = (I - \rho W)^{-1}(X\beta + \nu), \quad \mu = \exp(\eta)
+
+        When ``sigma2 = 0`` (the default), the DGP reduces to the
+        deterministic reduced form :math:`\eta = (I - \rho W)^{-1} X\beta`,
+        matching the :class:`SARNegativeBinomial` model specification.
+        When ``sigma2 > 0``, the structural-form noise is included,
+        matching the :class:`SARNegBinLatent` model specification.
+
+        Counts are sampled as NB2:
+
+        .. math::
+
+            y_i \sim \mathrm{NegBin}(\mu_i, \alpha),
+            \;\;\mathrm{Var}(y_i)=\mu_i+\mu_i^2/\alpha.
+
+        Parameters
+        ----------
+        n : int, optional
+            Square-grid side length used when only ``n`` is supplied. This
+            generates ``n * n`` observations on an ``n x n`` rook grid.
+            When ``W`` or ``gdf`` is provided, ``n`` (if provided) must match
+            the implied number of observations.
+        W : Graph or array-like, optional
+            Spatial weights.
+        gdf : GeoDataFrame, optional
+            Geodataframe used to construct weights.
+        rho : float, default 0.5
+            Spatial autoregressive parameter.
+        beta : ndarray, optional
+            Regression coefficients (including intercept). Defaults to
+            ``[1.0, 0.6]``.
+        alpha : float, default 2.0
+            NB2 dispersion parameter. Must be strictly positive.
+        sigma2 : float, default 0.0
+            Structural-form residual variance. When 0, the DGP is
+            deterministic (no noise in the latent field). When > 0,
+            Gaussian noise is added to the structural form.
+        err_hetero : bool, default False
+            Heteroskedastic errors (not yet implemented; ignored with a
+            warning).
+        rng : numpy.random.Generator, optional
+            Random number generator.
+        seed : int, optional
+            Random seed (used only if rng is None).
+        contiguity : str, default "queen"
+            Contiguity type for constructing W when n is given.
+        create_gdf : bool, default False
+            Whether to attach a GeoDataFrame to the output.
+        geometry_type : str, default "polygon"
+            Type of geometry for the GeoDataFrame.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys ``y``, ``X``, ``mu``, ``W_dense``,
+            ``W_graph``, and ``params_true``. When ``sigma2 > 0``,
+            ``params_true`` also includes ``sigma2``.
     """
+
     if alpha <= 0:
         raise ValueError("alpha must be strictly positive.")
+    if sigma2 < 0:
+        raise ValueError("sigma2 must be non-negative.")
     if err_hetero:
         warnings.warn(
             "err_hetero is not implemented for simulate_sar_negbin and is ignored.",
@@ -288,11 +346,23 @@ def simulate_sar_negbin(
 
     W_sp = Wg.sparse.tocsc()
     A = sp.eye(nobs, format="csc") - rho * W_sp
-    eta = sla.spsolve(A, X @ beta)
+
+    # Structural form: (I - rho*W) eta = X beta + nu
+    # When sigma2 > 0, add Gaussian noise nu ~ N(0, sigma2 I)
+    if sigma2 > 0:
+        nu = rng.normal(0, np.sqrt(sigma2), size=nobs)
+        eta = sla.spsolve(A, X @ beta + nu)
+    else:
+        eta = sla.spsolve(A, X @ beta)
+
     mu = np.exp(np.clip(eta, -30.0, 30.0))
 
     p = alpha / (alpha + mu)
     y = rng.negative_binomial(alpha, p).astype(np.float64)
+
+    params_true = {"rho": rho, "beta": beta, "alpha": alpha}
+    if sigma2 > 0:
+        params_true["sigma2"] = sigma2
 
     out = {
         "y": y,
@@ -300,7 +370,7 @@ def simulate_sar_negbin(
         "mu": mu,
         "W_dense": Wd,
         "W_graph": Wg,
-        "params_true": {"rho": rho, "beta": beta, "alpha": alpha},
+        "params_true": params_true,
     }
     return _attach_optional_gdf(
         out,
@@ -334,7 +404,10 @@ def simulate_ols(
     Parameters
     ----------
     n : int, optional
-        Number of observations when neither ``W`` nor ``gdf`` is provided.
+        Square-grid side length used when only ``n`` is supplied. This
+        generates ``n * n`` observations on an ``n x n`` rook grid.
+        When ``W`` or ``gdf`` is provided, ``n`` (if provided) must match
+        the implied number of observations.
     W : Graph or sparse/dense matrix, optional
         Spatial weights input used only to infer ``n`` and validate dimensions.
         Not used in the OLS data-generating mechanism.
@@ -378,6 +451,7 @@ def simulate_ols(
     spatial weights matrix is ignored even when supplied. See
     :func:`simulate_sdm` for the unified Spatial Durbin form.
     """
+
     rng = ensure_rng(rng, seed)
 
     if n is None and W is None and gdf is None:

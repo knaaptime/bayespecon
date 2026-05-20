@@ -20,11 +20,12 @@ dependencies = [
     "numpy",
     "scipy",
     "pandas",
+    "polyagamma",
 ]
 
 [project.optional-dependencies]
 viz = ["graphviz"]
-backend = ['dm-tree', 'klujax', 'scikit-umfpack', 'blackjax', 'numpyro', 'nutpie']
+backend = ['dm-tree', 'klujax', 'scikit-umfpack', 'blackjax', 'numpyro', 'nutpie', 'traceax', 'lineax', 'equinox']
 
 [tool.setuptools.packages.find]
 include = ["bayespecon", "bayespecon.*"]
