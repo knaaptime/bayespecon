@@ -13,6 +13,8 @@ dependencies:
   - arviz < 1  #pinned until supported by pymc
   - lazy_loader
   - fastprogress
+  - scikit-sparse
+  - optimistix
   # optional
 # - blackjax
 # - numpyro

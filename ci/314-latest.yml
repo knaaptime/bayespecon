@@ -22,6 +22,8 @@ dependencies:
   - nutpie
   - polyagamma
   - scikit-umfpack
+  - scikit-sparse
+  - optimistix
 
   - pip:
     - klujax

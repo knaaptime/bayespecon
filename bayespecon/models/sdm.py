@@ -15,13 +15,12 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ..diagnostics.lmtests import SDM_SUITE
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 from .base import (
     SpatialModel,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
 )
-from .priors import SDMPriors
 
 
 class SDM(SpatialModel):
@@ -77,8 +76,8 @@ class SDM(SpatialModel):
     logdet_method : str, optional
         How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
         auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
-        ``"chebyshev"``. Other options: ``"exact"``, ``"grid_dense"``,
-        ``"grid_sparse"``, ``"sparse_spline"``, ``"grid_mc"``, ``"grid_ilu"``.
+        ``"chebyshev"``. Other options: ``"exact"``, ``"dense_grid"``,
+        ``"sparse_grid"``, ``"spline"``, ``"mc"``, ``"ilu"``.
     robust : bool, default False
         If True, replace the Normal error with Student-t. See *Robust
         regression* below.
@@ -110,9 +109,20 @@ class SDM(SpatialModel):
     with rate ``nu_lam`` (default 1/30, mean ≈ 30).
     """
 
-    _priors_cls = SDMPriors
-
-    _spatial_diagnostics_tests = SDM_SUITE.tests
+    _spatial_diagnostics_tests = [
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_sdm_test"
+            ),
+            "LM-Error-SDM",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sdm_test"
+            ),
+            "Robust-LM-Error-SDM",
+        ),
+    ]
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
@@ -140,9 +150,8 @@ class SDM(SpatialModel):
         self._X.shape[1]
         Z = np.hstack([self._X, self._WX])  # (n, 2k)
 
-        bounds = self._logdet_bounds
-        rho_lower = bounds.rho_min
-        rho_upper = bounds.rho_max
+        rho_lower = self.priors.get("rho_lower", -1.0)
+        rho_upper = self.priors.get("rho_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
@@ -211,16 +220,13 @@ class SDM(SpatialModel):
 
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
-        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
         model = self._build_pymc_model(compute_log_likelihood=compute_log_likelihood)
         self._pymc_model = model
-        idata_kwargs = self.backend.prepare_idata_kwargs(
-            idata_kwargs, model, nuts_sampler
-        )
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
 
         with model:
             self._idata = pm.sample(

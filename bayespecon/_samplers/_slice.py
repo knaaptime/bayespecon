@@ -5,6 +5,14 @@ or unbounded support. Returns both the new sample and the log-density
 value at that sample, allowing callers to cache expensive evaluations
 (e.g., log-determinant in the ρ update).
 
+Adaptive width variant
+----------------------
+`slice_sample_1d_adaptive` tracks how many step-out steps were needed
+and tunes the initial width ``w`` so that the interval rarely needs
+more than 1–2 expansions.  This mimics the scale-factor adaptation in
+NumPyro's ESS (Ensemble Slice Sampling) and is much cheaper than
+mode-finding.
+
 References
 ----------
 Neal, R. M. (2003). Slice sampling. *Annals of Statistics*, 31(3), 705–767.
@@ -12,9 +20,42 @@ Neal, R. M. (2003). Slice sampling. *Annals of Statistics*, 31(3), 705–767.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
+
+
+# ---------------------------------------------------------------------------
+# Adaptive width state
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SliceWidthState:
+    """Mutable state for adaptive slice-sampler width tuning.
+
+    Parameters
+    ----------
+    w : float
+        Current step-out width.
+    w_min : float
+        Lower bound for ``w``.
+    w_max : float
+        Upper bound for ``w``.
+    expand_factor : float
+        Multiplicative factor when too many step-outs are observed.
+    shrink_factor : float
+        Multiplicative factor when no step-outs are observed.
+    target_steps : int
+        Desired maximum number of step-out steps per side.
+    """
+
+    w: float = 1.0
+    w_min: float = 1e-6
+    w_max: float = 1e3
+    expand_factor: float = 1.10
+    shrink_factor: float = 0.95
+    target_steps: int = 2
 
 
 def slice_sample_1d(
@@ -122,3 +163,138 @@ def slice_sample_1d(
         # Safety: if interval has collapsed, return x0
         if R - L < 1e-15:
             return x0, log_y0
+
+
+def slice_sample_1d_adaptive(
+    log_density: Callable[[float], float],
+    x0: float,
+    lower: float,
+    upper: float,
+    *,
+    width_state: SliceWidthState,
+    max_steps_out: int = 50,
+    rng: np.random.Generator | None = None,
+) -> tuple[float, float, int, int]:
+    """Draw one sample with adaptive width tuning.
+
+    Identical to `slice_sample_1d` except it also returns the number of
+    step-out steps taken on each side.  Callers should use these counts
+    to update ``width_state.w`` via `update_slice_width`.
+
+    Parameters
+    ----------
+    log_density : callable
+        Log-density function (up to a normalising constant).
+    x0 : float
+        Current state (starting point).
+    lower, upper : float
+        Support bounds for the variable.
+    width_state : SliceWidthState
+        Current width state (only ``width_state.w`` is read).
+    max_steps_out : int, default=50
+        Maximum number of stepping-out iterations.
+    rng : numpy.random.Generator, optional
+        Random state.
+
+    Returns
+    -------
+    x_new : float
+        New sample point.
+    log_density_new : float
+        Log-density evaluated at ``x_new``.
+    steps_out_left : int
+        Number of left step-out steps taken.
+    steps_out_right : int
+        Number of right step-out steps taken.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if lower >= upper:
+        raise ValueError(f"lower ({lower}) must be less than upper ({upper}).")
+    if x0 < lower or x0 > upper:
+        raise ValueError(f"x0 ({x0}) must be in [lower, upper] = [{lower}, {upper}].")
+
+    w = width_state.w
+
+    # Evaluate log-density at current point
+    log_y0 = log_density(x0)
+
+    # Draw vertical level: log(u) where u ~ Uniform(0, f(x0))
+    log_u = log_y0 + np.log(rng.uniform())
+
+    # --- Stepping out ---
+    u_rand = rng.uniform()
+    L = x0 - u_rand * w
+    R = L + w
+
+    # Clamp to support bounds
+    L = max(L, lower)
+    R = min(R, upper)
+
+    # Step out left
+    steps_out_left = 0
+    while L > lower and log_density(L) > log_u and steps_out_left < max_steps_out:
+        L -= w
+        L = max(L, lower)
+        steps_out_left += 1
+
+    # Step out right
+    steps_out_right = 0
+    while R < upper and log_density(R) > log_u and steps_out_right < max_steps_out:
+        R += w
+        R = min(R, upper)
+        steps_out_right += 1
+
+    # --- Shrinkage ---
+    while True:
+        x_new = L + rng.uniform() * (R - L)
+        log_density_new = log_density(x_new)
+
+        if log_density_new > log_u:
+            return x_new, log_density_new, steps_out_left, steps_out_right
+
+        if x_new < x0:
+            L = x_new
+        else:
+            R = x_new
+
+        if R - L < 1e-15:
+            return x0, log_y0, steps_out_left, steps_out_right
+
+
+def update_slice_width(
+    width_state: SliceWidthState,
+    steps_out_left: int,
+    steps_out_right: int,
+) -> None:
+    """Update ``width_state.w`` based on observed step-out counts.
+
+    Logic (mimics NumPyro ESS ``tune_mu``):
+
+    * If either side needed **more** than ``target_steps`` expansions,
+      the width is too small → multiply by ``expand_factor``.
+    * If **both** sides needed **zero** expansions, the width is too
+      large → multiply by ``shrink_factor``.
+    * Otherwise leave ``w`` unchanged.
+
+    The updated width is clamped to ``[w_min, w_max]``.
+
+    Parameters
+    ----------
+    width_state : SliceWidthState
+        Mutable state object; ``w`` is updated in-place.
+    steps_out_left : int
+        Number of left step-out steps from the last draw.
+    steps_out_right : int
+        Number of right step-out steps from the last draw.
+    """
+    max_steps = max(steps_out_left, steps_out_right)
+
+    if max_steps > width_state.target_steps:
+        width_state.w *= width_state.expand_factor
+    elif steps_out_left == 0 and steps_out_right == 0:
+        width_state.w *= width_state.shrink_factor
+
+    # Clamp
+    width_state.w = max(width_state.w_min, min(width_state.w_max, width_state.w))

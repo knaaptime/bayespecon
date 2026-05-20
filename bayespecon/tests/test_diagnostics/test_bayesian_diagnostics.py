@@ -1021,12 +1021,12 @@ class TestSpatialDiagnosticsMethod:
         obj._W_sparse = W_sparse
         # Eager-fill the lazy slots used by ``base.Model._W_dense``
         # and ``base.Model._T_ww`` so the new robust-after-naive tests
-        # (which require dense W) work on these mock objects.  Setting the
-        # cached_property names directly on the instance shadows the
-        # descriptor, so the property bodies are never invoked.
+        # (which require dense W) work on these mock objects.  We set
+        # the backing cache attributes directly since _W_dense is a
+        # read-only @property backed by _W_dense_cache.
         W_dense_arr = np.asarray(W_sparse.todense())
         obj._graph = None
-        obj._W_dense = W_dense_arr
+        obj._W_dense_cache = W_dense_arr
         obj._T_ww_cache = float(
             np.sum(W_dense_arr * W_dense_arr) + np.trace(W_dense_arr @ W_dense_arr)
         )

@@ -31,7 +31,7 @@ from bayespecon._samplers._jax_gibbs import (
     _sample_alpha_python,
     run_chain_jax,
 )
-from bayespecon._samplers.pg_gibbs import GibbsPriors, GibbsState
+from bayespecon._samplers.pg_gibbs import GibbsPriors, GibbsState, JAXGibbsState
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -136,7 +136,7 @@ class TestMakeGibbsStepWithData:
         assert callable(gibbs_step)
 
     def test_step_output_shapes(self):
-        """Gibbs step should return state dict with correct shapes."""
+        """Gibbs step should return JAXGibbsState with correct shapes."""
         y, X, W, W_sym, WtW, W_eigs, params = _make_test_data(n=20, k=2)
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
@@ -163,24 +163,24 @@ class TestMakeGibbsStepWithData:
             lanczos_deg=30,
         )
 
-        state = {
-            "eta": jnp.asarray(params["eta"], dtype=jnp.float64),
-            "beta": jnp.asarray(params["beta"], dtype=jnp.float64),
-            "sigma2": jnp.float64(params["sigma2"]),
-            "rho": jnp.float64(params["rho"]),
-            "omega": jnp.ones(n, dtype=jnp.float64),
-            "alpha": jnp.float64(params["alpha"]),
-        }
+        state = JAXGibbsState(
+            eta=jnp.asarray(params["eta"], dtype=jnp.float64),
+            beta=jnp.asarray(params["beta"], dtype=jnp.float64),
+            sigma2=jnp.float64(params["sigma2"]),
+            rho=jnp.float64(params["rho"]),
+            omega=jnp.ones(n, dtype=jnp.float64),
+            alpha=jnp.float64(params["alpha"]),
+        )
 
         key = jax.random.PRNGKey(42)
         new_state, accept = gibbs_step(state, key)
 
-        assert new_state["eta"].shape == (n,)
-        assert new_state["beta"].shape == (k,)
-        assert new_state["sigma2"].shape == ()
-        assert new_state["rho"].shape == ()
-        assert new_state["omega"].shape == (n,)
-        assert new_state["alpha"].shape == ()
+        assert new_state.eta.shape == (n,)
+        assert new_state.beta.shape == (k,)
+        assert new_state.sigma2.shape == ()
+        assert new_state.rho.shape == ()
+        assert new_state.omega.shape == (n,)
+        assert new_state.alpha.shape == ()
         assert isinstance(bool(accept), bool)
 
     def test_step_produces_finite_values(self):
@@ -211,27 +211,27 @@ class TestMakeGibbsStepWithData:
             lanczos_deg=30,
         )
 
-        state = {
-            "eta": jnp.asarray(params["eta"], dtype=jnp.float64),
-            "beta": jnp.asarray(params["beta"], dtype=jnp.float64),
-            "sigma2": jnp.float64(params["sigma2"]),
-            "rho": jnp.float64(params["rho"]),
-            "omega": jnp.ones(n, dtype=jnp.float64),
-            "alpha": jnp.float64(params["alpha"]),
-        }
+        state = JAXGibbsState(
+            eta=jnp.asarray(params["eta"], dtype=jnp.float64),
+            beta=jnp.asarray(params["beta"], dtype=jnp.float64),
+            sigma2=jnp.float64(params["sigma2"]),
+            rho=jnp.float64(params["rho"]),
+            omega=jnp.ones(n, dtype=jnp.float64),
+            alpha=jnp.float64(params["alpha"]),
+        )
 
         key = jax.random.PRNGKey(42)
         new_state, accept = gibbs_step(state, key)
 
-        assert jnp.all(jnp.isfinite(new_state["eta"]))
-        assert jnp.all(jnp.isfinite(new_state["beta"]))
-        assert jnp.isfinite(new_state["sigma2"])
-        assert jnp.isfinite(new_state["rho"])
-        assert jnp.all(jnp.isfinite(new_state["omega"]))
-        assert jnp.isfinite(new_state["alpha"])
-        assert float(new_state["sigma2"]) > 0
-        assert float(new_state["alpha"]) > 0
-        assert -0.999 <= float(new_state["rho"]) <= 0.999
+        assert jnp.all(jnp.isfinite(new_state.eta))
+        assert jnp.all(jnp.isfinite(new_state.beta))
+        assert jnp.isfinite(new_state.sigma2)
+        assert jnp.isfinite(new_state.rho)
+        assert jnp.all(jnp.isfinite(new_state.omega))
+        assert jnp.isfinite(new_state.alpha)
+        assert float(new_state.sigma2) > 0
+        assert float(new_state.alpha) > 0
+        assert -0.999 <= float(new_state.rho) <= 0.999
 
     def test_multiple_steps_dont_diverge(self):
         """Running 20 Gibbs steps should not diverge."""
@@ -261,14 +261,14 @@ class TestMakeGibbsStepWithData:
             lanczos_deg=30,
         )
 
-        state = {
-            "eta": jnp.asarray(params["eta"], dtype=jnp.float64),
-            "beta": jnp.asarray(params["beta"], dtype=jnp.float64),
-            "sigma2": jnp.float64(params["sigma2"]),
-            "rho": jnp.float64(params["rho"]),
-            "omega": jnp.ones(n, dtype=jnp.float64),
-            "alpha": jnp.float64(params["alpha"]),
-        }
+        state = JAXGibbsState(
+            eta=jnp.asarray(params["eta"], dtype=jnp.float64),
+            beta=jnp.asarray(params["beta"], dtype=jnp.float64),
+            sigma2=jnp.float64(params["sigma2"]),
+            rho=jnp.float64(params["rho"]),
+            omega=jnp.ones(n, dtype=jnp.float64),
+            alpha=jnp.float64(params["alpha"]),
+        )
 
         key = jax.random.PRNGKey(42)
         alpha_rng = np.random.default_rng(42)
@@ -279,14 +279,21 @@ class TestMakeGibbsStepWithData:
             state, accept = gibbs_step(state, step_key)
             accept_count += int(accept)
             alpha_new = _sample_alpha_python(state, y, priors.alpha_sigma, alpha_rng)
-            state = {**state, "alpha": jnp.float64(alpha_new)}
+            state = JAXGibbsState(
+                eta=state.eta,
+                beta=state.beta,
+                sigma2=state.sigma2,
+                rho=state.rho,
+                omega=state.omega,
+                alpha=jnp.float64(alpha_new),
+            )
 
         # Check that values are still finite and reasonable
-        assert jnp.all(jnp.isfinite(state["eta"]))
-        assert jnp.all(jnp.isfinite(state["beta"]))
-        assert float(state["sigma2"]) > 0
-        assert float(state["alpha"]) > 0
-        assert -0.999 <= float(state["rho"]) <= 0.999
+        assert jnp.all(jnp.isfinite(state.eta))
+        assert jnp.all(jnp.isfinite(state.beta))
+        assert float(state.sigma2) > 0
+        assert float(state.alpha) > 0
+        assert -0.999 <= float(state.rho) <= 0.999
         # MH acceptance rate should be reasonable (>30%)
         assert accept_count / 20 > 0.3, (
             f"MH acceptance rate too low: {accept_count / 20}"
@@ -591,7 +598,14 @@ class TestSampleAlphaPython:
     def test_returns_positive(self):
         """Alpha should always be positive."""
         y, X, W, W_sym, WtW, W_eigs, params = _make_test_data(n=20, k=2)
-        state = {"eta": params["eta"], "alpha": params["alpha"]}
+        state = JAXGibbsState(
+            eta=jnp.asarray(params["eta"], dtype=jnp.float64),
+            beta=jnp.zeros(2, dtype=jnp.float64),
+            sigma2=jnp.float64(1.0),
+            rho=jnp.float64(0.0),
+            alpha=jnp.float64(params["alpha"]),
+            omega=jnp.ones(20, dtype=jnp.float64),
+        )
         alpha_new = _sample_alpha_python(
             state, y, alpha_sigma=10.0, rng=np.random.default_rng(42)
         )
@@ -600,7 +614,14 @@ class TestSampleAlphaPython:
     def test_reasonable_value(self):
         """Alpha should be in a reasonable range."""
         y, X, W, W_sym, WtW, W_eigs, params = _make_test_data(n=20, k=2)
-        state = {"eta": params["eta"], "alpha": params["alpha"]}
+        state = JAXGibbsState(
+            eta=jnp.asarray(params["eta"], dtype=jnp.float64),
+            beta=jnp.zeros(2, dtype=jnp.float64),
+            sigma2=jnp.float64(1.0),
+            rho=jnp.float64(0.0),
+            alpha=jnp.float64(params["alpha"]),
+            omega=jnp.ones(20, dtype=jnp.float64),
+        )
         alpha_new = _sample_alpha_python(
             state, y, alpha_sigma=10.0, rng=np.random.default_rng(42)
         )

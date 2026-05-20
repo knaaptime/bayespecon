@@ -29,7 +29,8 @@ selected via ``gibbs_method`` in :meth:`SARNegBinLatent.fit`:
   factorisation).
 - ``"jax_dense"``: JAX dense matvec + vmap (3–4× faster for single
   draws, 20–27× per-draw when batching Chebyshev draws).  Requires
-  JAX with float64 enabled.  Viable for n ≤ ~5000.
+  JAX with float64 enabled.  Viable for n ≤ ~10 000 on machines
+  with ≥ 32 GB RAM (the dense matrices need ~800 MB at n=10 000).
 
 References
 ----------
@@ -49,8 +50,9 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from .._jax_dispatch import _eqx_available
 from ._polyagamma import sample_polyagamma
-from ._slice import slice_sample_1d
+from ._slice import slice_sample_1d, SliceWidthState, slice_sample_1d_adaptive, update_slice_width
 from ._spatial_normal import (
     CholmodFactor,
     cg_solve,
@@ -68,9 +70,10 @@ from ._spatial_normal import (
 
 @dataclass
 class GibbsState:
-    """Mutable state carried through one Gibbs sweep.
+    """Mutable state carried through one Gibbs sweep (Python-loop path).
 
     All arrays are numpy arrays; scalars are Python floats.
+    For the JAX-dense path, use :class:`JAXGibbsState` instead.
     """
 
     eta: np.ndarray  # (n,) latent field
@@ -79,6 +82,63 @@ class GibbsState:
     rho: float  # spatial autoregressive parameter
     alpha: float  # NB dispersion parameter
     omega: np.ndarray  # (n,) PG auxiliary variables
+
+    def to_jax(self) -> "JAXGibbsState":
+        """Convert to a JAX-compatible :class:`JAXGibbsState`."""
+        import jax.numpy as jnp
+
+        return JAXGibbsState(
+            eta=jnp.asarray(self.eta, dtype=jnp.float64),
+            beta=jnp.asarray(self.beta, dtype=jnp.float64),
+            sigma2=jnp.float64(self.sigma2),
+            rho=jnp.float64(self.rho),
+            alpha=jnp.float64(self.alpha),
+            omega=jnp.asarray(self.omega, dtype=jnp.float64),
+        )
+
+
+if _eqx_available():
+    import equinox as eqx
+    import jax
+
+    class JAXGibbsState(eqx.Module):
+        """JAX-compatible Gibbs sampler state (used by the JAX-dense path).
+
+        An ``equinox.Module`` that holds JAX arrays and is automatically
+        registered as a PyTree, so it can be passed through ``@jax.jit``
+        and ``@eqx.filter_jit`` boundaries without manual registration.
+
+        For the Python-loop path, use :class:`GibbsState` instead.
+        """
+
+        eta: jax.Array
+        beta: jax.Array
+        sigma2: jax.Array
+        rho: jax.Array
+        alpha: jax.Array
+        omega: jax.Array
+
+        def to_numpy(self) -> GibbsState:
+            """Convert to a numpy-based :class:`GibbsState`."""
+            return GibbsState(
+                eta=np.asarray(self.eta),
+                beta=np.asarray(self.beta),
+                sigma2=float(self.sigma2),
+                rho=float(self.rho),
+                alpha=float(self.alpha),
+                omega=np.asarray(self.omega),
+            )
+
+else:
+
+    class JAXGibbsState:  # type: ignore[no-redef]
+        """Stub when equinox is not installed — should never be instantiated."""
+
+        def __init__(self, *args, **kwargs):
+            raise ImportError(
+                "equinox is required for the JAX-dense Gibbs sampler path. "
+                "Install with: pip install equinox"
+            )
 
 
 @dataclass
@@ -124,7 +184,7 @@ class GibbsCache(NamedTuple):
     When ``solve_method="jax_dense"``, the JAX-accelerated path is
     used: dense matvec + vmap over Lanczos probes and Chebyshev
     draws.  This gives 3–4× speedup for single draws and 20–27×
-    per-draw when batching Chebyshev draws, for n ≤ ~5000.
+    per-draw when batching Chebyshev draws, for n ≤ ~10 000.
     """
 
     W_sparse: sp.csr_matrix
@@ -145,6 +205,12 @@ class GibbsCache(NamedTuple):
     W_sym_dense: object | None = None  # jax.numpy.ndarray (n, n): W + W^T
     WtW_dense: object | None = None  # jax.numpy.ndarray (n, n): W^T W
     W_eigs: object | None = None  # jax.numpy.ndarray (n,): eigenvalues of W
+    # Mode-finding for ρ slice sampler (JAX-dense only)
+    rho_mode_update_freq: int = 10  # recompute mode every N sweeps (0 = never)
+    rho_mode_w_factor: float = 2.0  # slice width = factor / sqrt(-Hessian)
+    # Adaptive width for ρ slice sampler (all backends)
+    rho_adaptive_width: bool = True  # enable adaptive width tuning
+    rho_slice_width_state: SliceWidthState | None = None  # mutable state
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +477,62 @@ def _sample_sigma2(
     return sigma2_new
 
 
+def _find_rho_mode_optimistix(
+    log_density_jax: Callable,
+    rho_lower: float,
+    rho_upper: float,
+    x0: float,
+) -> tuple[float, float, float]:
+    """Find the mode of the ρ log-density using optimistix (JAX-only).
+
+    Uses BFGS to maximise the log-density (minimise negative log-density).
+    The log-density must be a JAX-compatible function that returns a JAX
+    scalar so that ``jax.hessian`` can be used for the curvature estimate.
+
+    Parameters
+    ----------
+    log_density_jax : callable
+        JAX function ``rho -> log p(rho | ·)`` returning a JAX scalar.
+    rho_lower, rho_upper : float
+        Support bounds for ρ.
+    x0 : float
+        Initial guess (typically the current ρ).
+
+    Returns
+    -------
+    rho_mode : float
+        Mode of the conditional posterior.
+    log_dens_mode : float
+        Log-density at the mode.
+    hessian : float
+        Second derivative at the mode (negative for a maximum).
+    """
+    import jax
+    import jax.numpy as jnp
+    from scipy.optimize import minimize_scalar
+
+    # Convert JAX log-density to a Python callable for scipy
+    def _py_logdens(rho: float) -> float:
+        return float(log_density_jax(jnp.float64(rho)))
+
+    # Bounded 1-D optimisation (Brent's method) — robust and no gradients needed
+    result = minimize_scalar(
+        lambda r: -_py_logdens(r),
+        bounds=(rho_lower, rho_upper),
+        method="bounded",
+        options={"xatol": 1e-5, "maxiter": 50},
+    )
+
+    rho_mode = float(result.x)
+    log_dens_mode = _py_logdens(rho_mode)
+
+    # Exact Hessian via JAX autodiff
+    hessian_fn = jax.hessian(log_density_jax)
+    hessian = float(hessian_fn(jnp.float64(rho_mode)))
+
+    return rho_mode, log_dens_mode, hessian
+
+
 def _sample_rho(
     state: GibbsState,
     cache: GibbsCache,
@@ -420,6 +542,8 @@ def _sample_rho(
     *,
     rng: np.random.Generator,
     log_density_current: float | None = None,
+    sweep_idx: int = 0,
+    tune: int = 0,
 ) -> tuple[float, float]:
     """Block 5: Draw ρ | β, σ², ω, α, y — collapsed 1-D slice sampler.
 
@@ -616,14 +740,77 @@ def _sample_rho(
     else:
         log_density(x0)
 
-    rho_new, log_density_new = slice_sample_1d(
-        log_density=log_density,
-        x0=x0,
-        lower=rho_lower,
-        upper=rho_upper,
-        w=0.2,  # step-out width for ρ
-        rng=rng,
-    )
+    # --- Mode-centered slice sampling (JAX dense only, burn-in only) ---
+    # Mode-finding is expensive (~50 Lanczos/CG evals) but helps mixing
+    # during burn-in. After burn-in, the mode is stable — skip it.
+    in_burnin = sweep_idx < tune
+    use_mode_centered = use_jax and cache.rho_mode_update_freq > 0 and in_burnin
+    if use_mode_centered and (sweep_idx % cache.rho_mode_update_freq == 0):
+        # For mode-finding, use the exact dense-Cholesky log-density
+        # (no stochastic Lanczos/CG) — it's 15× faster for n ≤ ~500.
+        from bayespecon._samplers._spatial_normal import _jax_log_density_core_exact
+
+        _jax_logdens_exact_fn = jax.jit(
+            lambda rho: _jax_log_density_core_exact(
+                rho=rho,
+                sigma2=sigma2,
+                omega=omega_jax,
+                W_sym_dense=cache.W_sym_dense,
+                WtW_dense=cache.WtW_dense,
+                W_eigs=cache.W_eigs,
+                Xbeta_over_s2=_Xbeta_over_s2_jax,
+                WtXbeta_over_s2=_WtXbeta_over_s2_jax,
+                kappa=_kappa_jax,
+            ),
+        )
+
+        def _jax_logdens_scalar(rho):
+            return _jax_logdens_exact_fn(jnp.float64(rho))
+
+        rho_mode, log_dens_mode, hessian = _find_rho_mode_optimistix(
+            _jax_logdens_scalar,
+            rho_lower=rho_lower,
+            rho_upper=rho_upper,
+            x0=x0,
+        )
+
+        # Proposal width from curvature: σ = 1 / sqrt(-H), w = factor * σ
+        if hessian < 0:
+            sigma = 1.0 / np.sqrt(-hessian)
+            w = float(cache.rho_mode_w_factor * sigma)
+        else:
+            w = 0.2  # fallback if Hessian is non-negative
+        w = min(w, rho_upper - rho_lower)
+
+        # Mode-centered slice sampling
+        rho_new, log_density_new = slice_sample_1d(
+            log_density=log_density,
+            x0=rho_mode,
+            lower=rho_lower,
+            upper=rho_upper,
+            w=w,
+            rng=rng,
+        )
+    else:
+        # --- Adaptive width slice sampling ---
+        # Initialise width state on first call if not present
+        if cache.rho_slice_width_state is None:
+            width_state = SliceWidthState(w=0.2)
+        else:
+            width_state = cache.rho_slice_width_state
+
+        rho_new, log_density_new, steps_left, steps_right = slice_sample_1d_adaptive(
+            log_density=log_density,
+            x0=x0,
+            lower=rho_lower,
+            upper=rho_upper,
+            width_state=width_state,
+            rng=rng,
+        )
+
+        # Update width (only during burn-in; freeze after)
+        if cache.rho_adaptive_width and sweep_idx < tune:
+            update_slice_width(width_state, steps_left, steps_right)
 
     return rho_new, log_density_new
 
@@ -858,6 +1045,8 @@ def run_chain(
             X,
             rng=rng,
             log_density_current=log_density_rho,
+            sweep_idx=i,
+            tune=tune,
         )
 
         # --- Block 6: α | y, η ---

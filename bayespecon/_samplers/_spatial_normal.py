@@ -1282,3 +1282,54 @@ def _jax_log_density_core(
 
     # Final log-density
     return logdet_W - 0.5 * log_det_P + 0.5 * quad
+
+
+def _jax_log_density_core_exact(
+    rho,
+    sigma2,
+    omega,
+    W_sym_dense,
+    WtW_dense,
+    W_eigs,
+    Xbeta_over_s2,
+    WtXbeta_over_s2,
+    kappa,
+):
+    """Exact log-density computation using dense Cholesky (no stochastic approx).
+
+    This is a deterministic variant of :func:`_jax_log_density_core` that
+    replaces Lanczos logdet with dense Cholesky and CG solve with
+    ``jax.scipy.linalg.cho_solve``.  It is **much faster** for small
+    matrices (n \u2264 ~500) because it avoids the overhead of stochastic
+    trace estimation and iterative solvers.
+
+    Use this for mode-finding during burn-in, where exactness and speed
+    matter more than O(n\u00b3) scaling.
+
+    Returns a JAX scalar.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    n = omega.shape[0]
+    inv_s2 = 1.0 / sigma2
+
+    # Build P
+    P_diag = jnp.ones(n) * inv_s2 + omega
+    P = jnp.diag(P_diag) - rho * W_sym_dense * inv_s2 + rho**2 * WtW_dense * inv_s2
+
+    # RHS
+    rhs = Xbeta_over_s2 - rho * WtXbeta_over_s2 + kappa
+
+    # Exact log|P| via dense Cholesky
+    L = jnp.linalg.cholesky(P)
+    log_det_P = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+
+    # Exact solve via Cholesky
+    m = jax.scipy.linalg.cho_solve((L, True), rhs)
+    quad = rhs @ m
+
+    # log|I - rho*W| from eigenvalues
+    logdet_W = _jax_logdet_W(rho, W_eigs)
+
+    return logdet_W - 0.5 * log_det_P + 0.5 * quad

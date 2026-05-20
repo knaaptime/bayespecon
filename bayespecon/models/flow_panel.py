@@ -21,8 +21,6 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from .._backends import resolve_backend
-from ..diagnostics.lmtests import FLOW_PANEL_SUITE
 from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from ..logdet import (
     _flow_logdet_poly_coeffs,
@@ -33,12 +31,15 @@ from ..logdet import (
     make_flow_separable_logdet_numpy,
 )
 from ..ops import kron_solve_matrix
+from ._sampler import (
+    enforce_c_backend,
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+)
 from .base import SpatialModel
 from .flow import (
     _build_flow_effect_masks,
     _compute_flow_effects_lesage,
-    _factorize,
-    _parallel_draw_loop,
 )
 from .panel_base import _demean_panel
 
@@ -97,7 +98,6 @@ class FlowPanelModel(ABC):
         trace_riter: int = 50,
         trace_seed: Optional[int] = None,
         symmetric_xo_xd: Optional[bool] = None,
-        backend: Optional[str] = None,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
@@ -112,11 +112,6 @@ class FlowPanelModel(ABC):
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._approximation = None
-        # Resolve probabilistic-programming backend up-front so invalid
-        # names fail at construction time; ``fit()`` routes sampler calls
-        # through ``self.backend.*``.
-        self.backend = resolve_backend(backend)
-        self.backend_name = self.backend.name
 
         # Validate and extract n x n W
         self._W_sparse: sp.csr_matrix = _validate_graph(G)
@@ -248,12 +243,6 @@ class FlowPanelModel(ABC):
         self._Wo: sp.csr_matrix = wms["origin"]
         self._Ww: sp.csr_matrix = wms["network"]
 
-        # Cache identity matrix for _assemble_A (avoids repeated allocation)
-        self._I_N_flow: sp.csr_matrix = sp.eye(
-            self._N_flow, format="csr", dtype=np.float64
-        )
-        self._I_n: sp.csr_matrix = sp.eye(self._n, format="csr", dtype=np.float64)
-
         # Cache region-shock masks for LeSage effects decomposition.
         self._dmask, self._omask, self._imask = _build_flow_effect_masks(self._n)
 
@@ -272,7 +261,7 @@ class FlowPanelModel(ABC):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "trace_mc"}
+        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
         if self.logdet_method in _SEPARABLE_METHODS:
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
@@ -324,8 +313,6 @@ class FlowPanelModel(ABC):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute posterior effects per draw."""
 
@@ -358,9 +345,8 @@ class FlowPanelModel(ABC):
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
-        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
-        nuts_sampler = self.backend.enforce_c_backend(
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = enforce_c_backend(
             nuts_sampler,
             requires_c_backend=getattr(self, "_requires_c_backend", False),
             model_name=type(self).__name__,
@@ -374,10 +360,8 @@ class FlowPanelModel(ABC):
                 model,
                 store_lambda=False,
             )
-        idata_kwargs = self.backend.prepare_idata_kwargs(
-            idata_kwargs, model, nuts_sampler
-        )
-        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -479,13 +463,14 @@ class FlowPanelModel(ABC):
         RuntimeError
             If the model has not been fit yet.
         """
+        from .base import SpatialModel
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
         return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
 
     def spatial_diagnostics_decision(
-        self, alpha: float = 0.05, format: str = "graphviz", theme: Any = "default"
+        self, alpha: float = 0.05, format: str = "graphviz"
     ) -> Any:
         """Return a model-selection decision from Bayesian LM test results.
 
@@ -536,7 +521,6 @@ class FlowPanelModel(ABC):
             alpha=alpha,
             fmt=format,
             title=f"{model_type} decision tree (alpha={alpha})",
-            theme=theme,
         )
 
     def _model_coords(self, extra: Optional[dict] = None) -> dict:
@@ -604,7 +588,8 @@ class FlowPanelModel(ABC):
 
     def _assemble_A(self, rho_d: float, rho_o: float, rho_w: float) -> sp.csr_matrix:
         """Assemble A = I - rho_d*Wd - rho_o*Wo - rho_w*Ww for one period."""
-        return self._I_N_flow - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
+        eye_n = sp.eye(self._N_flow, format="csr", dtype=np.float64)
+        return eye_n - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
 
     def _sparse_flow_panel_lag(
         self, v: np.ndarray, W_flow: sp.csr_matrix
@@ -623,14 +608,12 @@ class FlowPanelModel(ABC):
         return_posterior_samples: bool = False,
         ci: float = 0.95,
         mode: str = "auto",
-        parallel: Optional[int] = -1,
     ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
         """Summarise posterior origin/destination/intra/network/total effects.
 
         See :meth:`bayespecon.models.flow.FlowModel.spatial_effects` for the
         ``mode`` semantics (auto / combined / separate destination-origin
-        sides per Thomas-Agnan & LeSage 2014, §83.5.2) and the ``parallel``
-        kwarg.
+        sides per Thomas-Agnan & LeSage 2014, §83.5.2).
         """
         from ..diagnostics.spatial_effects import _compute_bayesian_pvalue
         from .flow import _EFFECT_KEYS
@@ -648,9 +631,7 @@ class FlowPanelModel(ABC):
                 f"mode must be 'auto', 'combined', or 'separate'; got {mode!r}."
             )
 
-        posterior = self._compute_spatial_effects_posterior(
-            draws=draws, parallel=parallel
-        )
+        posterior = self._compute_spatial_effects_posterior(draws=draws)
 
         if mode == "auto":
             effective_mode = "combined" if self._symmetric_xo_xd else "separate"
@@ -738,7 +719,7 @@ class FlowPanelModel(ABC):
         N = self._N_flow
         T = self._T
         A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
-        lu = _factorize(A)
+        lu = sp.linalg.splu(A)
         Xb = self._X_design @ beta  # (N*T,)
         Xb_mat = Xb.reshape(T, N).T  # (N, T)
         if sigma is not None:
@@ -753,7 +734,6 @@ class FlowPanelModel(ABC):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive samples ``y_rep`` for the full panel stack.
 
@@ -763,11 +743,6 @@ class FlowPanelModel(ABC):
             Number of posterior draws to use.  Defaults to all.
         random_seed : int, optional
             Seed for the noise/Poisson sampler.
-        parallel : int or None, default -1
-            Number of worker threads for the per-draw loop.  ``-1`` uses
-            ``os.cpu_count()``; ``None``/``0``/``1`` forces sequential
-            execution.  Reproducibility under a fixed ``random_seed`` is
-            preserved across worker counts via ``SeedSequence.spawn``.
 
         Returns
         -------
@@ -797,23 +772,18 @@ class FlowPanelModel(ABC):
             if sigma_draws is not None:
                 sigma_draws = sigma_draws[:total]
 
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
+        for g in range(total):
             sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            return self._simulate_y_rep_period(
+            out[g] = self._simulate_y_rep_period(
                 float(rho_d[g]),
                 float(rho_o[g]),
                 float(rho_w[g]),
                 beta_draws[g],
                 sigma_g,
-                rng_g,
+                rng,
             )
-
-        rows = _parallel_draw_loop(
-            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
-        )
-        out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
         return out
 
     # ------------------------------------------------------------------
@@ -827,8 +797,6 @@ class FlowPanelModel(ABC):
         rho_w_draws: np.ndarray,
         beta_draws: np.ndarray,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute LeSage flow effects from posterior draws.
 
@@ -870,7 +838,7 @@ class FlowPanelModel(ABC):
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
-        def _work(idx: int) -> dict[str, np.ndarray]:
+        for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             rw = float(rho_w_draws[idx])
@@ -881,12 +849,12 @@ class FlowPanelModel(ABC):
             )
 
             A = self._assemble_A(rd, ro, rw).tocsc()
-            lu = _factorize(A)
+            lu = sp.linalg.splu(A)
 
             def _solve(rhs: np.ndarray, _lu=lu) -> np.ndarray:
                 return _lu.solve(rhs)
 
-            return _compute_flow_effects_lesage(
+            res = _compute_flow_effects_lesage(
                 _solve,
                 self._dmask,
                 self._omask,
@@ -898,12 +866,6 @@ class FlowPanelModel(ABC):
                 k_o=k_o,
                 beta_intra=beta_intra_vec,
             )
-
-        for idx, res in enumerate(
-            _parallel_draw_loop(
-                n_draws_total, _work, parallel=parallel, needs_rng=False
-            )
-        ):
             for key, arr in res.items():
                 out[key][idx, : len(arr)] = arr
 
@@ -915,8 +877,6 @@ class FlowPanelModel(ABC):
         rho_o_draws: np.ndarray,
         beta_draws: np.ndarray,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         """Compute LeSage flow effects via Kronecker-factored solve.
 
@@ -929,7 +889,7 @@ class FlowPanelModel(ABC):
         k_d = self._k_d
         k_o = self._k_o
         W = self._W_sparse.tocsr()
-        I_n = self._I_n
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
 
         dest_start = 2
         orig_start = 2 + k_d
@@ -958,7 +918,7 @@ class FlowPanelModel(ABC):
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
-        def _work(idx: int) -> dict[str, np.ndarray]:
+        for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             beta_d_vec = beta_draws[idx, dest_start : dest_start + k_d]
@@ -973,7 +933,7 @@ class FlowPanelModel(ABC):
             def _solve(rhs: np.ndarray, _Lo=Lo, _Ld=Ld, _n=n) -> np.ndarray:
                 return kron_solve_matrix(_Lo, _Ld, rhs, _n)
 
-            return _compute_flow_effects_lesage(
+            res = _compute_flow_effects_lesage(
                 _solve,
                 self._dmask,
                 self._omask,
@@ -985,12 +945,6 @@ class FlowPanelModel(ABC):
                 k_o=k_o,
                 beta_intra=beta_intra_vec,
             )
-
-        for idx, res in enumerate(
-            _parallel_draw_loop(
-                n_draws_total, _work, parallel=parallel, needs_rng=False
-            )
-        ):
             for key, arr in res.items():
                 out[key][idx, : len(arr)] = arr
 
@@ -1155,8 +1109,6 @@ class SARFlowPanel(FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1174,7 +1126,6 @@ class SARFlowPanel(FlowPanelModel):
             rho_w_draws,
             beta_draws,
             draws=draws,
-            parallel=parallel,
         )
 
 
@@ -1212,7 +1163,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -1221,11 +1172,11 @@ class SARFlowSeparablePanel(FlowPanelModel):
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"trace_mc"``).
+        ``"mc_poly"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"trace_mc"``).
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1250,7 +1201,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
+        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
                 f"SARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -1269,7 +1220,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -1306,15 +1257,13 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         return self._T * self._separable_logdet_numpy_fn(rho_d, rho_o)
 
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1330,7 +1279,6 @@ class SARFlowSeparablePanel(FlowPanelModel):
             rho_o_draws,
             beta_draws,
             draws=draws,
-            parallel=parallel,
         )
 
 
@@ -1403,12 +1351,6 @@ class PoissonSARFlowPanel(FlowPanelModel):
     Within transforms are not valid for Poisson counts because they break
     the non-negative integer support. There is no ``sigma`` parameter and
     robust (Student-t) likelihoods are not supported.
-
-    Unlike the Gaussian :class:`SARFlowPanel`, no spatial Jacobian
-    :math:`T \\cdot \\log|A|` is needed because the spatial filter
-    parameterizes the mean of the Poisson distribution rather than
-    defining a change-of-variables from a latent error to the observed
-    data.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -1482,18 +1424,31 @@ class PoissonSARFlowPanel(FlowPanelModel):
 
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter parameterizes the Poisson mean, not the
-            # observed data, so there is no change-of-variables correction.
-            # Including T * log|A| would incorrectly bias rho toward zero.
+            pm.Potential(
+                "jacobian",
+                self._T
+                * flow_logdet_pytensor(
+                    rho_d,
+                    rho_o,
+                    rho_w,
+                    self._poly_a,
+                    self._poly_b,
+                    self._poly_c,
+                    self._poly_coeffs,
+                    self._miter_a,
+                    self._miter_b,
+                    self._miter_c,
+                    self._miter_coeffs,
+                    self.miter,
+                    self.titer,
+                ),
+            )
 
         return model
 
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1511,7 +1466,6 @@ class PoissonSARFlowPanel(FlowPanelModel):
             rho_w_draws,
             beta_draws,
             draws=draws,
-            parallel=parallel,
         )
 
     def _simulate_y_rep_period(
@@ -1527,7 +1481,7 @@ class PoissonSARFlowPanel(FlowPanelModel):
         N = self._N_flow
         T = self._T
         A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
-        lu = _factorize(A)
+        lu = sp.linalg.splu(A)
         Xb = self._X_design @ beta
         Xb_mat = Xb.reshape(T, N).T
         eta_mat = lu.solve(Xb_mat)
@@ -1572,15 +1526,15 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         inferred from columns prefixed ``dest_`` if omitted.
     model : int, default 0
         Fixed-effects transform. **Only** ``0`` (pooled) is supported.
-    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"trace_mc"``).
+        ``"mc_poly"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"trace_mc"``).
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1601,12 +1555,6 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
     log-determinant used in estimation. There is no ``sigma`` parameter
     and robust (Student-t) likelihoods are not supported. The
     ``restrict_positive`` argument has no effect on this class.
-
-    Unlike the Gaussian :class:`SARFlowSeparablePanel`, no spatial
-    Jacobian :math:`T \\cdot \\log|A|` is needed because the spatial
-    filter parameterizes the mean of the Poisson distribution rather
-    than defining a change-of-variables from a latent error to the
-    observed data.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -1632,7 +1580,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
             )
 
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
+        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
                 f"PoissonSARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -1653,7 +1601,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "PoissonSARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         n = self._n
         N = self._N_flow  # n²
@@ -1679,17 +1627,16 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
 
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter parameterizes the Poisson mean, not the
-            # observed data, so there is no change-of-variables correction.
+            pm.Potential(
+                "jacobian",
+                self._T * self._separable_logdet_fn(rho_d, rho_o),
+            )
 
         return model
 
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
@@ -1705,7 +1652,6 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
             rho_o_draws,
             beta_draws,
             draws=draws,
-            parallel=parallel,
         )
 
     def _simulate_y_rep_period(
@@ -1721,8 +1667,9 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         N = self._N_flow
         T = self._T
         n = self._n
-        Ld = (self._I_n - rho_d * self._W_sparse).tocsr()
-        Lo = (self._I_n - rho_o * self._W_sparse).tocsr()
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        Ld = (I_n - rho_d * self._W_sparse).tocsr()
+        Lo = (I_n - rho_o * self._W_sparse).tocsr()
         Xb = self._X_design @ beta
         Xb_mat = Xb.reshape(T, N).T  # (N, T)
         eta_mat = kron_solve_matrix(Lo, Ld, Xb_mat, n)
@@ -1794,7 +1741,38 @@ class OLSFlowPanel(FlowPanelModel):
     :math:`|A| = 1`).
     """
 
-    _spatial_diagnostics_tests = FLOW_PANEL_SUITE.tests
+    _spatial_diagnostics_tests = [
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_dest_test"
+            ),
+            "Panel-LM-Flow-Dest",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_orig_test"
+            ),
+            "Panel-LM-Flow-Orig",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_network_test"
+            ),
+            "Panel-LM-Flow-Network",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_joint_test"
+            ),
+            "Panel-LM-Flow-Joint",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_flow_intra_test"
+            ),
+            "Panel-LM-Flow-Intra",
+        ),
+    ]
 
     def __init__(self, y, G, X, T, **kwargs):
         # Skip log-determinant precomputation: A = I_N has |A| = 1.
@@ -1841,7 +1819,6 @@ class OLSFlowPanel(FlowPanelModel):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flows for the OLS panel gravity model.
 
@@ -1865,25 +1842,18 @@ class OLSFlowPanel(FlowPanelModel):
             if sigma_draws is not None:
                 sigma_draws = sigma_draws[:total]
 
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
-            sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            return self._simulate_y_rep_period(
-                0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng_g
-            )
-
-        rows = _parallel_draw_loop(
-            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
-        )
+        rng = np.random.default_rng(random_seed)
         out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
+        for g in range(total):
+            sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
+            out[g] = self._simulate_y_rep_period(
+                0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng
+            )
         return out
 
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,  # unused: closed-form
     ) -> dict[str, np.ndarray]:
         r"""Closed-form Thomas-Agnan & LeSage (2014, Table 83.1) effects.
 
@@ -2059,7 +2029,6 @@ class PoissonFlowPanel(OLSFlowPanel):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for the panel Poisson gravity model."""
         if self._idata is None:
@@ -2073,17 +2042,12 @@ class PoissonFlowPanel(OLSFlowPanel):
             total = min(int(n_draws), total)
             beta_draws = beta_draws[:total]
 
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
-            return self._simulate_y_rep_period(
-                0.0, 0.0, 0.0, beta_draws[g], None, rng_g
-            )
-
-        rows = _parallel_draw_loop(
-            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
-        )
+        rng = np.random.default_rng(random_seed)
         out = np.empty((total, self._N_flow * self._T), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
+        for g in range(total):
+            out[g] = self._simulate_y_rep_period(
+                0.0, 0.0, 0.0, beta_draws[g], None, rng
+            )
         return out
 
 
@@ -2133,10 +2097,25 @@ class NegativeBinomialSARFlowPanel(PoissonSARFlowPanel):
 
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter parameterizes the NB mean, not the
-            # observed data, so there is no change-of-variables correction.
-            # Including T * log|A| would incorrectly bias rho toward zero.
+            pm.Potential(
+                "jacobian",
+                self._T
+                * flow_logdet_pytensor(
+                    rho_d,
+                    rho_o,
+                    rho_w,
+                    self._poly_a,
+                    self._poly_b,
+                    self._poly_c,
+                    self._poly_coeffs,
+                    self._miter_a,
+                    self._miter_b,
+                    self._miter_c,
+                    self._miter_coeffs,
+                    self.miter,
+                    self.titer,
+                ),
+            )
 
         return model
 
@@ -2156,7 +2135,7 @@ class NegativeBinomialSARFlowSeparablePanel(PoissonSARFlowSeparablePanel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "NegativeBinomialSARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         n = self._n
         N = self._N_flow
@@ -2180,9 +2159,10 @@ class NegativeBinomialSARFlowSeparablePanel(PoissonSARFlowSeparablePanel):
 
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter parameterizes the NB mean, not the
-            # observed data, so there is no change-of-variables correction.
+            pm.Potential(
+                "jacobian",
+                self._T * self._separable_logdet_fn(rho_d, rho_o),
+            )
 
         return model
 
@@ -2446,7 +2426,7 @@ class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
         if sigma is None:
             return Xb
         B = self._assemble_A(lam_d, lam_o, lam_w).tocsc()
-        lu = _factorize(B)
+        lu = sp.linalg.splu(B)
         eps = rng.normal(scale=float(sigma), size=(N, T))
         u = lu.solve(eps)  # (N, T)
         u_stacked = u.T.reshape(-1)  # back to time-first
@@ -2455,8 +2435,6 @@ class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,  # unused: closed-form
     ) -> dict[str, np.ndarray]:
         """Closed-form effects (delegates to OLSFlowPanel logic)."""
         if self._idata is None:
@@ -2499,7 +2477,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -2508,11 +2486,11 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"trace_mc"``).
+        ``"mc_poly"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"trace_mc"``).
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -2537,7 +2515,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
 
     def __init__(self, y, G, X, T, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
+        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
                 f"SEMFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -2557,7 +2535,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -2605,7 +2583,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         return self._T * self._separable_logdet_numpy_fn(lam_d, lam_o)
 
@@ -2625,8 +2603,9 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         Xb = self._X_design @ beta
         if sigma is None:
             return Xb
-        Ld = (self._I_n - lam_d * self._W_sparse).tocsr()
-        Lo = (self._I_n - lam_o * self._W_sparse).tocsr()
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        Ld = (I_n - lam_d * self._W_sparse).tocsr()
+        Lo = (I_n - lam_o * self._W_sparse).tocsr()
         eps = rng.normal(scale=float(sigma), size=(N, T))
         u = kron_solve_matrix(Lo, Ld, eps, n)
         return Xb + u.T.reshape(-1)
@@ -2634,8 +2613,6 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     def _compute_spatial_effects_posterior(
         self,
         draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,  # unused: closed-form
     ) -> dict[str, np.ndarray]:
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")

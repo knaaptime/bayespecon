@@ -29,10 +29,8 @@ Two variants are provided:
 
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -42,8 +40,6 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from .._backends import resolve_backend
-from ..diagnostics.lmtests import FLOW_INTRA_SUITE, FLOW_SUITE
 from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from ..logdet import (
     _flow_logdet_poly_coeffs,
@@ -53,103 +49,13 @@ from ..logdet import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from ..ops import _make_cached_umfpack_solver, kron_solve_matrix, kron_solve_vec
-
-
-def _factorize(A: sp.spmatrix):
-    """Factorize sparse matrix using UMFPACK when available, else SuperLU.
-
-    Returns an object with a ``.solve(rhs)`` method, compatible with both
-    :class:`scipy.sparse.linalg.SuperLU` and
-    :class:`~bayespecon.ops._FactorizedCallableSolver`.
-    """
-    solver = _make_cached_umfpack_solver(A)
-    if solver is not None:
-        return solver
-    return sp.linalg.splu(A.tocsc())
-
-
-def _resolve_worker_count(parallel: Optional[int], total: int) -> int:
-    """Translate the public ``parallel`` argument into a thread count.
-
-    ``None``/``0``/``1`` → sequential (1 worker).  ``-1`` → ``os.cpu_count()``
-    (or 1 if unknown).  Any positive integer is used directly.  The result is
-    clamped to ``[1, total]`` so workers are never wasted on tiny posteriors.
-    """
-    if parallel is None or parallel == 0 or parallel == 1 or total <= 1:
-        return 1
-    if parallel == -1:
-        n = os.cpu_count() or 1
-    elif parallel < 0:
-        raise ValueError(
-            f"parallel must be -1, None, or a non-negative int; got {parallel!r}."
-        )
-    else:
-        n = int(parallel)
-    return max(1, min(n, total))
-
-
-def _parallel_draw_loop(
-    total: int,
-    worker: Callable[..., Any],
-    *,
-    parallel: Optional[int],
-    random_seed: Optional[int] = None,
-    needs_rng: bool = False,
-) -> list:
-    """Run ``worker`` for ``g in range(total)`` sequentially or via threads.
-
-    SciPy sparse factorisations and NumPy BLAS calls release the GIL, so a
-    :class:`~concurrent.futures.ThreadPoolExecutor` scales near-linearly with
-    physical cores for the per-draw work performed by posterior-predictive
-    and spatial-effects loops on flow models.
-
-    Parameters
-    ----------
-    total : int
-        Number of independent items (draws) to process.
-    worker : callable
-        ``worker(g, rng_g)`` when ``needs_rng`` is ``True``, else
-        ``worker(g)``.  Must return a value (typically an ``ndarray`` or
-        ``dict``) for draw ``g``.
-    parallel : int or None
-        Worker-count selector — see :func:`_resolve_worker_count`.
-    random_seed : int, optional
-        Parent seed used when ``needs_rng=True``.  Spawned via
-        :class:`numpy.random.SeedSequence` so each draw receives an
-        independent, reproducible substream regardless of completion order.
-    needs_rng : bool, default False
-        If ``True``, build one :class:`numpy.random.Generator` per draw and
-        pass it as the second argument to ``worker``.
-
-    Returns
-    -------
-    list
-        Length-``total`` list of worker outputs in draw order.
-    """
-    if needs_rng:
-        seed_seq = np.random.SeedSequence(random_seed)
-        rngs = [np.random.default_rng(s) for s in seed_seq.spawn(total)]
-    else:
-        rngs = [None] * total
-
-    n_workers = _resolve_worker_count(parallel, total)
-
-    if n_workers <= 1:
-        if needs_rng:
-            return [worker(g, rngs[g]) for g in range(total)]
-        return [worker(g) for g in range(total)]
-
-    results: list = [None] * total
-    with ThreadPoolExecutor(max_workers=n_workers) as ex:
-        if needs_rng:
-            futures = {ex.submit(worker, g, rngs[g]): g for g in range(total)}
-        else:
-            futures = {ex.submit(worker, g): g for g in range(total)}
-        for fut in as_completed(futures):
-            g = futures[fut]
-            results[g] = fut.result()
-    return results
+from ..ops import kron_solve_matrix, kron_solve_vec
+from ._sampler import (
+    enforce_c_backend,
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+)
+from .base import SpatialModel
 
 
 def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -176,73 +82,6 @@ def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray
     return dmask, omask, imask
 
 
-def _build_flow_effect_structure(n: int) -> dict:
-    """Build compact index arrays and sparse base-shock matrices for effects.
-
-    Returns a dict with:
-    - ``dest_rows``, ``dest_cols``: indices where dest=j, orig≠j (n(n-1) pairs)
-    - ``orig_rows``, ``orig_cols``: indices where orig=j, dest≠j (n(n-1) pairs)
-    - ``intra_rows``, ``intra_cols``: indices where orig=dest=j (n pairs)
-    - ``dest_all_csc``: sparse CSC (N, n), 1.0 at all flows with dest=j
-    - ``orig_all_csc``: sparse CSC (N, n), 1.0 at all flows with orig=j
-    - ``intra_csc``: sparse CSC (N, n), 1.0 at (j,j) positions only
-
-    The CSC matrices are used as RHS for the 2-base-solve effects path,
-    avoiding materialisation of dense (N, n) shock arrays.
-    """
-    N = n * n
-    flat = np.arange(N)
-    o_idx = flat // n
-    d_idx = flat % n
-
-    # --- index arrays for mask regions ---
-    d_rows_all, d_cols_all = np.where(
-        (d_idx[:, None] == np.arange(n)[None, :])
-        & (o_idx[:, None] != np.arange(n)[None, :])
-    )
-    o_rows_all, o_cols_all = np.where(
-        (o_idx[:, None] == np.arange(n)[None, :])
-        & (d_idx[:, None] != np.arange(n)[None, :])
-    )
-    i_rows_all, i_cols_all = np.where(
-        (o_idx[:, None] == np.arange(n)[None, :])
-        & (d_idx[:, None] == np.arange(n)[None, :])
-    )
-
-    # --- sparse CSC base-shock matrices ---
-    # dest_all: 1.0 at all (o, j) where dest=j (including intra (j,j))
-    dest_all_rows = np.concatenate([d_rows_all, i_rows_all])
-    dest_all_cols = np.concatenate([d_cols_all, i_cols_all])
-    dest_all_data = np.ones(len(dest_all_rows), dtype=np.float64)
-    dest_all_csc = sp.csc_matrix(
-        (dest_all_data, (dest_all_rows, dest_all_cols)), shape=(N, n)
-    )
-
-    # orig_all: 1.0 at all (j, d) where orig=j (including intra (j,j))
-    orig_all_rows = np.concatenate([o_rows_all, i_rows_all])
-    orig_all_cols = np.concatenate([o_cols_all, i_cols_all])
-    orig_all_data = np.ones(len(orig_all_rows), dtype=np.float64)
-    orig_all_csc = sp.csc_matrix(
-        (orig_all_data, (orig_all_rows, orig_all_cols)), shape=(N, n)
-    )
-
-    # intra: 1.0 at (j, j) only
-    intra_data = np.ones(n, dtype=np.float64)
-    intra_csc = sp.csc_matrix((intra_data, (i_rows_all, i_cols_all)), shape=(N, n))
-
-    return {
-        "dest_rows": d_rows_all,
-        "dest_cols": d_cols_all,
-        "orig_rows": o_rows_all,
-        "orig_cols": o_cols_all,
-        "intra_rows": i_rows_all,
-        "intra_cols": i_cols_all,
-        "dest_all_csc": dest_all_csc,
-        "orig_all_csc": orig_all_csc,
-        "intra_csc": intra_csc,
-    }
-
-
 _EFFECT_KEYS = ("origin", "destination", "intra", "network", "total")
 
 
@@ -260,21 +99,24 @@ def _compute_flow_effects_lesage(
 ) -> dict[str, np.ndarray]:
     """Compute scalar LeSage / Thomas-Agnan effects for one posterior draw.
 
-    Uses only **3 base sparse-system solves** regardless of the number of
-    predictors, exploiting the linearity of ``A⁻¹``:
+    Implements the decomposition of Thomas-Agnan & LeSage (2014, §83.5).  For
+    each predictor *p*, two independent shocks are propagated through the
+    spatial filter so that origin-side and destination-side effects can be
+    reported separately when the design uses different attributes for the
+    origin and destination blocks.
 
-    1. ``T_dest = A_solve(S_dest)`` where ``S_dest`` has 1.0 at every flow
-       whose destination equals region *j* (including the intra flow ``(j,j)``).
-    2. ``T_orig = A_solve(S_orig)`` where ``S_orig`` has 1.0 at every flow
-       whose origin equals region *j* (including the intra flow ``(j,j)``).
-    3. ``T_intra = A_solve(S_intra)`` where ``S_intra`` has 1.0 at diagonal
-       positions ``(j, j)`` only (the intra correction).
+    The destination shock places ``β_d^{(p)}`` on every flow whose destination
+    equals region ``j`` (off-diagonal) and ``β_d^{(p)} + β_intra^{(p)}`` on the
+    intraregional flow ``(j, j)``.  The origin shock places ``β_o^{(p)}`` on
+    every flow whose origin equals region ``j``, including ``(j, j)``.  The
+    intra block is tied to the destination side because
+    :func:`bayespecon.graph.flow_design_matrix` constructs
+    ``X_intra = intra_indicator * X_dest``.
 
-    Destination predictor *p*: ``T_d = β_d * T_dest + β_intra * T_intra``
-    Origin predictor *p*: ``T_o = β_o * T_orig``
-
-    This reduces the number of sparse solves from ``k_d + k_o`` to **3**
-    per draw, a ~2–3× speedup for typical ``k = 5–10``.
+    When ``k_d != k_o``, the destination and origin predictors are different
+    variables.  Destination-side effects have length ``k_d``, origin-side
+    effects have length ``k_o``, and combined effects have length
+    ``k_d + k_o`` (concatenated).
 
     Parameters
     ----------
@@ -316,65 +158,44 @@ def _compute_flow_effects_lesage(
         else np.asarray(beta_intra, dtype=np.float64)
     )
 
-    # --- 3 base solves instead of k_d + k_o ---
-    # Destination unit shock: 1.0 at all flows with dest=j (incl. intra (j,j)).
-    # Origin unit shock: 1.0 at all flows with orig=j (incl. intra (j,j)).
-    # Intra unit shock: 1.0 at (j,j) positions only.
-    # These 3 bases suffice because every predictor's shock is a linear
-    # combination: dest_shock_p = β_d * dest_unit + β_intra * intra_unit,
-    #              orig_shock_p  = β_o * orig_unit.
-    S_dest = (dmask | imask).astype(np.float64)
-    S_orig = (omask | imask).astype(np.float64)
-    S_intra = imask.astype(np.float64)
-
-    T_dest = A_solve(S_dest)  # (N, n) — destination unit shock
-    T_orig = A_solve(S_orig)  # (N, n) — origin unit shock
-    T_intra = A_solve(S_intra)  # (N, n) — intra correction
-
-    # Pre-compute scalar aggregates from the 3 base solves.
-    # These are the same for all predictors; we scale by β below.
-    dest_total = T_dest.sum() / N
-    dest_intra = T_dest[imask].sum() / N
-    dest_origin = T_dest[omask].sum() / N
-    dest_dest = T_dest[dmask].sum() / N
-
-    orig_total = T_orig.sum() / N
-    orig_intra = T_orig[imask].sum() / N
-    orig_origin = T_orig[omask].sum() / N
-    orig_dest = T_orig[dmask].sum() / N
-
-    intra_total = T_intra.sum() / N
-    intra_intra = T_intra[imask].sum() / N
-    intra_origin = T_intra[omask].sum() / N
-    intra_dest = T_intra[dmask].sum() / N
-
     out: dict[str, np.ndarray] = {}
     for side in ("dest", "orig"):
         k_side = k_d if side == "dest" else k_o
         for eff in _EFFECT_KEYS:
             out[f"{side}_{eff}"] = np.empty(k_side, dtype=np.float64)
 
-    # Destination-side effects: T_d = β_d * T_dest + β_intra * T_intra
     for p in range(k_d):
         bd = float(beta_d[p])
         bint = float(bi[p])
-        total_d = bd * dest_total + bint * intra_total
-        intra_d = bd * dest_intra + bint * intra_intra
-        origin_d = bd * dest_origin + bint * intra_origin
-        dest_d = bd * dest_dest + bint * intra_dest
+
+        # Destination-side shock: β_d on flows with destination=j, plus β_intra
+        # at (j, j) since X_intra is built from X_dest.
+        shock_d = np.zeros((N, n), dtype=np.float64)
+        shock_d[dmask] = bd
+        shock_d[imask] = bd + bint
+        T_d = A_solve(shock_d)
+        total_d = T_d.sum() / N
+        intra_d = T_d[imask].sum() / N
+        origin_d = T_d[omask].sum() / N
+        dest_d = T_d[dmask].sum() / N
         out["dest_total"][p] = total_d
         out["dest_intra"][p] = intra_d
         out["dest_origin"][p] = origin_d
         out["dest_destination"][p] = dest_d
         out["dest_network"][p] = total_d - origin_d - dest_d - intra_d
 
-    # Origin-side effects: T_o = β_o * T_orig
     for p in range(k_o):
         bo = float(beta_o[p])
-        total_o = bo * orig_total
-        intra_o = bo * orig_intra
-        origin_o = bo * orig_origin
-        dest_o = bo * orig_dest
+
+        # Origin-side shock: β_o on flows with origin=j, including (j, j).
+        shock_o = np.zeros((N, n), dtype=np.float64)
+        shock_o[omask] = bo
+        shock_o[imask] = bo
+        T_o = A_solve(shock_o)
+        total_o = T_o.sum() / N
+        intra_o = T_o[imask].sum() / N
+        origin_o = T_o[omask].sum() / N
+        dest_o = T_o[dmask].sum() / N
         out["orig_total"][p] = total_o
         out["orig_intra"][p] = intra_o
         out["orig_origin"][p] = origin_o
@@ -438,7 +259,7 @@ class FlowModel(ABC):
         How to compute :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`.
         ``"traces"`` uses Barry-Pace stochastic traces with the multinomial
         Kronecker identity (the default and recommended method).
-        ``"eigenvalue"``, ``"chebyshev"``, ``"trace_mc"`` (separable
+        ``"eigenvalue"``, ``"chebyshev"``, ``"mc_poly"`` (separable
         flow models only) use the Kronecker eigenvalue factorisation.
     restrict_positive : bool, default True
         If True, use a ``pm.Dirichlet`` prior that restricts :math:`\\rho_d,
@@ -480,7 +301,6 @@ class FlowModel(ABC):
         trace_riter: int = 50,
         trace_seed: Optional[int] = None,
         symmetric_xo_xd: Optional[bool] = None,
-        backend: Optional[str] = None,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
@@ -490,11 +310,6 @@ class FlowModel(ABC):
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._approximation = None
-        # Resolve probabilistic-programming backend up-front so invalid
-        # names fail at construction time; ``fit()`` routes sampler calls
-        # through ``self.backend.*``.
-        self.backend = resolve_backend(backend)
-        self.backend_name = self.backend.name
 
         # Validate and extract the n×n weight matrix
         self._W_sparse: sp.csr_matrix = _validate_graph(G)
@@ -603,7 +418,7 @@ class FlowModel(ABC):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "trace_mc"}
+        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
         if logdet_method in _SEPARABLE_METHODS:
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
@@ -636,10 +451,6 @@ class FlowModel(ABC):
         self._Wd: sp.csr_matrix = wms["destination"]
         self._Wo: sp.csr_matrix = wms["origin"]
         self._Ww: sp.csr_matrix = wms["network"]
-
-        # Cache identity matrix for _assemble_A (avoids repeated allocation)
-        self._I_N: sp.csr_matrix = sp.eye(self._N, format="csr", dtype=np.float64)
-        self._I_n: sp.csr_matrix = sp.eye(self._n, format="csr", dtype=np.float64)
 
         # Cache region-shock masks for LeSage effects decomposition.
         self._dmask, self._omask, self._imask = _build_flow_effect_masks(self._n)
@@ -678,10 +489,7 @@ class FlowModel(ABC):
 
     @abstractmethod
     def _compute_spatial_effects_posterior(
-        self,
-        draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
+        self, draws: Optional[int] = None
     ) -> dict[str, np.ndarray]:
         """Compute posterior spatial effects.  Implemented by subclasses."""
 
@@ -749,9 +557,8 @@ class FlowModel(ABC):
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
-        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
-        nuts_sampler = self.backend.enforce_c_backend(
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        nuts_sampler = enforce_c_backend(
             nuts_sampler,
             requires_c_backend=getattr(self, "_requires_c_backend", False),
             model_name=type(self).__name__,
@@ -765,10 +572,8 @@ class FlowModel(ABC):
                 model,
                 store_lambda=False,
             )
-        idata_kwargs = self.backend.prepare_idata_kwargs(
-            idata_kwargs, model, nuts_sampler
-        )
-        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -917,7 +722,7 @@ class FlowModel(ABC):
         return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
 
     def spatial_diagnostics_decision(
-        self, alpha: float = 0.05, format: str = "graphviz", theme: Any = "default"
+        self, alpha: float = 0.05, format: str = "graphviz"
     ) -> Any:
         """Return a model-selection decision from Bayesian LM test results.
 
@@ -968,7 +773,6 @@ class FlowModel(ABC):
             alpha=alpha,
             fmt=format,
             title=f"{model_type} decision tree (alpha={alpha})",
-            theme=theme,
         )
 
     def _model_coords(self, extra: Optional[dict] = None) -> dict:
@@ -986,11 +790,10 @@ class FlowModel(ABC):
         """Per-draw :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`.
 
         Returns ``None`` (the default) when no Jacobian correction is
-        required — for example, OLS flow baselines (``A = I_N``) and
-        Poisson/NB SAR variants.  For Poisson/NB models the spatial
-        filter parameterizes the mean, not the observed data, so there
-        is no change-of-variables and the auto-captured log-likelihood
-        is already complete.
+        required — for example, OLS / Poisson flow baselines (``A = I_N``)
+        and the Poisson SAR variants (the ``pm.Poisson("obs", ...)``
+        log-likelihood already captured by PyMC is the appropriate
+        pointwise density on observed counts).
 
         Subclasses with a Gaussian observation model and a
         ``pm.Potential("jacobian", ...)`` term must override this to return
@@ -1048,7 +851,8 @@ class FlowModel(ABC):
         rho_w: float,
     ) -> sp.csr_matrix:
         """Assemble A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww (sparse N×N)."""
-        return self._I_N - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
+        I_N = sp.eye(self._N, format="csr", dtype=np.float64)
+        return I_N - rho_d * self._Wd - rho_o * self._Wo - rho_w * self._Ww
 
     # ------------------------------------------------------------------
     # Public diagnostics
@@ -1060,7 +864,6 @@ class FlowModel(ABC):
         return_posterior_samples: bool = False,
         ci: float = 0.95,
         mode: str = "auto",
-        parallel: Optional[int] = -1,
     ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
         """Summarise posterior origin/destination/intra/network/total effects.
 
@@ -1085,11 +888,6 @@ class FlowModel(ABC):
             the destination and origin design blocks are identical
             (``self._symmetric_xo_xd``) and reports both sides otherwise.
             ``"combined"`` always sums; ``"separate"`` always reports both.
-        parallel : int or None, default -1
-            Number of worker threads for the per-draw effects loop.  ``-1``
-            uses ``os.cpu_count()``; ``None``/``0``/``1`` forces sequential
-            execution.  Ignored by closed-form (``OLSFlow``, ``SEMFlow``)
-            variants.
 
         Returns
         -------
@@ -1112,9 +910,7 @@ class FlowModel(ABC):
                 f"mode must be 'auto', 'combined', or 'separate'; got {mode!r}."
             )
 
-        posterior = self._compute_spatial_effects_posterior(
-            draws=draws, parallel=parallel
-        )
+        posterior = self._compute_spatial_effects_posterior(draws=draws)
 
         if mode == "auto":
             effective_mode = "combined" if self._symmetric_xo_xd else "separate"
@@ -1199,18 +995,16 @@ class FlowModel(ABC):
         ``y_rep = A^{-1} (X β + σ ε)`` with ``ε ~ N(0, I_N)``.
         Subclasses (PoissonSARFlow, PoissonSARFlowSeparable) override this.
         """
-        A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
-        lu = _factorize(A)
+        A = self._assemble_A(rho_d, rho_o, rho_w)
         Xb = self._X_design @ beta
         eps = rng.normal(scale=float(sigma), size=self._N) if sigma is not None else 0.0
         rhs = Xb + eps
-        return lu.solve(rhs)
+        return sp.linalg.spsolve(A, rhs)
 
     def posterior_predictive(
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive samples ``y_rep``.
 
@@ -1225,11 +1019,6 @@ class FlowModel(ABC):
             Number of posterior draws to use.  Defaults to all available.
         random_seed : int, optional
             Seed for the noise/Poisson sampler.
-        parallel : int or None, default -1
-            Number of worker threads for the per-draw loop.  ``-1`` uses
-            ``os.cpu_count()``; ``None``/``0``/``1`` forces sequential
-            execution.  Reproducibility under a fixed ``random_seed`` is
-            preserved across worker counts via ``SeedSequence.spawn``.
 
         Returns
         -------
@@ -1258,27 +1047,18 @@ class FlowModel(ABC):
             if sigma_draws is not None:
                 sigma_draws = sigma_draws[:total]
 
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g in range(total):
             sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            return self._simulate_y_rep(
+            out[g] = self._simulate_y_rep(
                 float(rho_d[g]),
                 float(rho_o[g]),
                 float(rho_w[g]),
                 beta_draws[g],
                 sigma_g,
-                rng_g,
+                rng,
             )
-
-        rows = _parallel_draw_loop(
-            total,
-            _work,
-            parallel=parallel,
-            random_seed=random_seed,
-            needs_rng=True,
-        )
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
         return out
 
 
@@ -1350,7 +1130,32 @@ class SARFlow(FlowModel):
         - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
     """
 
-    _spatial_diagnostics_tests = FLOW_SUITE.tests
+    _spatial_diagnostics_tests = [
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_dest_test"
+            ),
+            "Robust-LM-Flow-Dest",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_orig_test"
+            ),
+            "Robust-LM-Flow-Orig",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_network_test"
+            ),
+            "Robust-LM-Flow-Network",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_intra_test"
+            ),
+            "LM-Flow-Intra",
+        ),
+    ]
 
     def _build_pymc_model(self) -> pm.Model:
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -1433,10 +1238,7 @@ class SARFlow(FlowModel):
         )
 
     def _compute_spatial_effects_posterior(
-        self,
-        draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
+        self, draws: Optional[int] = None
     ) -> dict[str, np.ndarray]:
         """Compute posterior origin / destination / intra / network / total effects.
 
@@ -1504,7 +1306,7 @@ class SARFlow(FlowModel):
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
-        def _work(idx: int) -> dict[str, np.ndarray]:
+        for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             rw = float(rho_w_draws[idx])
@@ -1515,12 +1317,12 @@ class SARFlow(FlowModel):
             )
 
             A = self._assemble_A(rd, ro, rw).tocsc()
-            lu = _factorize(A)
+            lu = sp.linalg.splu(A)
 
             def _solve(rhs: np.ndarray, _lu=lu) -> np.ndarray:
                 return _lu.solve(rhs)
 
-            return _compute_flow_effects_lesage(
+            res = _compute_flow_effects_lesage(
                 _solve,
                 self._dmask,
                 self._omask,
@@ -1532,11 +1334,6 @@ class SARFlow(FlowModel):
                 k_o=k_o,
                 beta_intra=beta_intra_vec,
             )
-
-        per_draw = _parallel_draw_loop(
-            n_draws_total, _work, parallel=parallel, needs_rng=False
-        )
-        for idx, res in enumerate(per_draw):
             for key, arr in res.items():
                 out[key][idx, : len(arr)] = arr
 
@@ -1582,18 +1379,18 @@ class SARFlowSeparable(FlowModel):
         Number of regional attribute columns (destination/origin variable
         pairs). Inferred from ``dest_*``/``orig_*`` column names when the
         standard LeSage layout is used.
-    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant
         :math:`\\log|I_n - \\rho_d W| + \\log|I_n - \\rho_o W|`.
-        ``"eigenvalue"`` is exact; ``"chebyshev"`` and ``"trace_mc"`` are
+        ``"eigenvalue"`` is exact; ``"chebyshev"`` and ``"mc_poly"`` are
         polynomial approximations for large *n*.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"trace_mc"`` methods).
+        ``"mc_poly"`` methods).
     titer : int, default 800
         Geometric tail cutoff for series-based log-determinant variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"trace_mc"``).
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1618,7 +1415,7 @@ class SARFlowSeparable(FlowModel):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
+        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
                 f"SARFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
@@ -1637,7 +1434,7 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -1672,15 +1469,12 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         return self._separable_logdet_numpy_fn(rho_d, rho_o)
 
     def _compute_spatial_effects_posterior(
-        self,
-        draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,
+        self, draws: Optional[int] = None
     ) -> dict[str, np.ndarray]:
         """Compute posterior effects using Kronecker-factored solve.
 
@@ -1709,6 +1503,7 @@ class SARFlowSeparable(FlowModel):
         k_d = self._k_d
         k_o = self._k_o
         W = self._W_sparse.tocsr()
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
 
         rho_d_draws = idata.posterior["rho_d"].values.reshape(-1)
         rho_o_draws = idata.posterior["rho_o"].values.reshape(-1)
@@ -1741,7 +1536,7 @@ class SARFlowSeparable(FlowModel):
         for eff in _EFFECT_KEYS:
             out[eff] = np.zeros((n_draws_total, k_combined), dtype=np.float64)
 
-        def _work(idx: int) -> dict[str, np.ndarray]:
+        for idx in range(n_draws_total):
             rd = float(rho_d_draws[idx])
             ro = float(rho_o_draws[idx])
             beta_d_vec = beta_draws[idx, dest_start : dest_start + k_d]
@@ -1750,13 +1545,13 @@ class SARFlowSeparable(FlowModel):
                 beta_draws[idx, intra_start : intra_start + k_d] if has_intra else None
             )
 
-            Ld = (self._I_n - rd * W).tocsr()
-            Lo = (self._I_n - ro * W).tocsr()
+            Ld = (I_n - rd * W).tocsr()
+            Lo = (I_n - ro * W).tocsr()
 
             def _solve(rhs: np.ndarray, _Lo=Lo, _Ld=Ld, _n=n) -> np.ndarray:
                 return kron_solve_matrix(_Lo, _Ld, rhs, _n)
 
-            return _compute_flow_effects_lesage(
+            res = _compute_flow_effects_lesage(
                 _solve,
                 self._dmask,
                 self._omask,
@@ -1768,11 +1563,6 @@ class SARFlowSeparable(FlowModel):
                 k_o=k_o,
                 beta_intra=beta_intra_vec,
             )
-
-        per_draw = _parallel_draw_loop(
-            n_draws_total, _work, parallel=parallel, needs_rng=False
-        )
-        for idx, res in enumerate(per_draw):
             for key, arr in res.items():
                 out[key][idx, : len(arr)] = arr
 
@@ -1885,9 +1675,8 @@ class PoissonSARFlow(SARFlow):
         sigma: Optional[float],  # unused
         rng: np.random.Generator,
     ) -> np.ndarray:
-        A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
-        lu = _factorize(A)
-        eta = lu.solve(self._X_design @ beta)
+        A = self._assemble_A(rho_d, rho_o, rho_w)
+        eta = sp.linalg.spsolve(A, self._X_design @ beta)
         # Clip to avoid overflow on extreme draws.
         lam = np.exp(np.clip(eta, -50.0, 50.0))
         return rng.poisson(lam).astype(np.float64)
@@ -1927,10 +1716,24 @@ class PoissonSARFlow(SARFlow):
 
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter parameterizes the Poisson mean, not the
-            # observed data, so there is no change-of-variables correction.
-            # Including log|A| would incorrectly bias rho toward zero.
+            pm.Potential(
+                "jacobian",
+                flow_logdet_pytensor(
+                    rho_d,
+                    rho_o,
+                    rho_w,
+                    self._poly_a,
+                    self._poly_b,
+                    self._poly_c,
+                    self._poly_coeffs,
+                    self._miter_a,
+                    self._miter_b,
+                    self._miter_c,
+                    self._miter_coeffs,
+                    self.miter,
+                    self.titer,
+                ),
+            )
 
         return model
 
@@ -1967,15 +1770,15 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         Number of regional attribute columns. Inferred from
         ``dest_*``/``orig_*`` column names when the standard LeSage
         layout is used.
-    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"trace_mc"``).
+        ``"mc_poly"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"trace_mc"``).
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1994,11 +1797,6 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
     There is no ``sigma`` parameter; the Poisson variance equals the mean.
     Robust (Student-t) likelihoods are not supported for Poisson counts.
     The ``restrict_positive`` argument has no effect on this class.
-
-    Unlike the Gaussian :class:`SARFlowSeparable`, no spatial Jacobian
-    :math:`\\log|A|` is needed because the spatial filter parameterizes
-    the mean of the Poisson distribution rather than defining a
-    change-of-variables from a latent error to the observed data.
     """
 
     def __init__(self, y, G, X, **kwargs):
@@ -2033,7 +1831,7 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         sigma: Optional[float],  # unused
         rng: np.random.Generator,
     ) -> np.ndarray:
-        I_n = self._I_n
+        I_n = sp.eye(self._n, format="csr", dtype=np.float64)
         Ld = I_n - rho_d * self._W_sparse
         Lo = I_n - rho_o * self._W_sparse
         eta = kron_solve_vec(Lo, Ld, self._X_design @ beta, self._n)
@@ -2052,7 +1850,7 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "PoissonSARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
@@ -2073,9 +1871,10 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
 
             pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter parameterizes the Poisson mean, not the
-            # observed data, so there is no change-of-variables correction.
+            pm.Potential(
+                "jacobian",
+                self._separable_logdet_fn(rho_d, rho_o),
+            )
 
         return model
 
@@ -2135,7 +1934,38 @@ class OLSFlow(FlowModel):
     is required and ``logdet_method`` is ignored if passed.
     """
 
-    _spatial_diagnostics_tests = FLOW_INTRA_SUITE.tests
+    _spatial_diagnostics_tests = [
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_dest_test"
+            ),
+            "LM-Flow-Dest",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_orig_test"
+            ),
+            "LM-Flow-Orig",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_network_test"
+            ),
+            "LM-Flow-Network",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_joint_test"
+            ),
+            "LM-Flow-Joint",
+        ),
+        (
+            SpatialModel._lazy_lm_test(
+                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_intra_test"
+            ),
+            "LM-Flow-Intra",
+        ),
+    ]
 
     def __init__(self, y, G, X, **kwargs):
         # Skip log-determinant precomputation: A = I_N has |A| = 1.
@@ -2177,7 +2007,6 @@ class OLSFlow(FlowModel):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flows for the OLS gravity model."""
         if self._idata is None:
@@ -2196,23 +2025,15 @@ class OLSFlow(FlowModel):
             if sigma_draws is not None:
                 sigma_draws = sigma_draws[:total]
 
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
-            sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
-            return self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng_g)
-
-        rows = _parallel_draw_loop(
-            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
-        )
+        rng = np.random.default_rng(random_seed)
         out = np.empty((total, self._N), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
+        for g in range(total):
+            sigma_g = float(sigma_draws[g]) if sigma_draws is not None else None
+            out[g] = self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], sigma_g, rng)
         return out
 
     def _compute_spatial_effects_posterior(
-        self,
-        draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,  # unused: closed-form, no per-draw solve
+        self, draws: Optional[int] = None
     ) -> dict[str, np.ndarray]:
         r"""Closed-form Thomas-Agnan & LeSage (2014, Table 83.1) effects.
 
@@ -2395,7 +2216,6 @@ class PoissonFlow(OLSFlow):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for the Poisson gravity model."""
         if self._idata is None:
@@ -2409,15 +2229,10 @@ class PoissonFlow(OLSFlow):
             total = min(int(n_draws), total)
             beta_draws = beta_draws[:total]
 
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
-            return self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], None, rng_g)
-
-        rows = _parallel_draw_loop(
-            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
-        )
+        rng = np.random.default_rng(random_seed)
         out = np.empty((total, self._N), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
+        for g in range(total):
+            out[g] = self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], None, rng)
         return out
 
 
@@ -2477,10 +2292,24 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
 
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter parameterizes the NB mean, not the
-            # observed data, so there is no change-of-variables correction.
-            # Including log|A| would incorrectly bias rho toward zero.
+            pm.Potential(
+                "jacobian",
+                flow_logdet_pytensor(
+                    rho_d,
+                    rho_o,
+                    rho_w,
+                    self._poly_a,
+                    self._poly_b,
+                    self._poly_c,
+                    self._poly_coeffs,
+                    self._miter_a,
+                    self._miter_b,
+                    self._miter_c,
+                    self._miter_coeffs,
+                    self.miter,
+                    self.titer,
+                ),
+            )
 
         return model
 
@@ -2488,7 +2317,6 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for NB SAR flow model."""
         if self._idata is None:
@@ -2510,21 +2338,15 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
             rho_w_draws = rho_w_draws[:total]
             alpha_draws = alpha_draws[:total]
 
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
-            A = self._assemble_A(rho_d_draws[g], rho_o_draws[g], rho_w_draws[g]).tocsc()
-            lu = _factorize(A)
-            eta = lu.solve(self._X_design @ beta_draws[g])
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g in range(total):
+            A = self._assemble_A(rho_d_draws[g], rho_o_draws[g], rho_w_draws[g])
+            eta = sp.linalg.spsolve(A, self._X_design @ beta_draws[g])
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
-            return rng_g.negative_binomial(alpha, p).astype(np.float64)
-
-        rows = _parallel_draw_loop(
-            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
-        )
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
+            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
 
@@ -2544,7 +2366,7 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "NegativeBinomialSARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
@@ -2563,9 +2385,10 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
 
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter parameterizes the NB mean, not the
-            # observed data, so there is no change-of-variables correction.
+            pm.Potential(
+                "jacobian",
+                self._separable_logdet_fn(rho_d, rho_o),
+            )
 
         return model
 
@@ -2573,7 +2396,6 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for separable NB SAR flow."""
         if self._idata is None:
@@ -2593,24 +2415,18 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
             rho_o_draws = rho_o_draws[:total]
             alpha_draws = alpha_draws[:total]
 
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
         n = self._n
-        I_n = self._I_n
-
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        for g in range(total):
             Ld = I_n - float(rho_d_draws[g]) * self._W_sparse
             Lo = I_n - float(rho_o_draws[g]) * self._W_sparse
             eta = kron_solve_vec(Lo, Ld, self._X_design @ beta_draws[g], n)
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
-            return rng_g.negative_binomial(alpha, p).astype(np.float64)
-
-        rows = _parallel_draw_loop(
-            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
-        )
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
+            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
 
@@ -2637,7 +2453,6 @@ class NegativeBinomialFlow(PoissonFlow):
         self,
         n_draws: Optional[int] = None,
         random_seed: Optional[int] = None,
-        parallel: Optional[int] = -1,
     ) -> np.ndarray:
         """Draw posterior-predictive flow counts for NB gravity baseline."""
         if self._idata is None:
@@ -2653,19 +2468,14 @@ class NegativeBinomialFlow(PoissonFlow):
             beta_draws = beta_draws[:total]
             alpha_draws = alpha_draws[:total]
 
-        def _work(g: int, rng_g: np.random.Generator) -> np.ndarray:
+        rng = np.random.default_rng(random_seed)
+        out = np.empty((total, self._N), dtype=np.float64)
+        for g in range(total):
             eta = self._X_design @ beta_draws[g]
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
-            return rng_g.negative_binomial(alpha, p).astype(np.float64)
-
-        rows = _parallel_draw_loop(
-            total, _work, parallel=parallel, random_seed=random_seed, needs_rng=True
-        )
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g, row in enumerate(rows):
-            out[g] = row
+            out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
 
@@ -2862,17 +2672,13 @@ class SEMFlow(FlowModel):
         Xb = self._X_design @ beta
         if sigma is None:
             return Xb
-        B = self._assemble_A(lam_d, lam_o, lam_w).tocsc()
-        lu = _factorize(B)
+        B = self._assemble_A(lam_d, lam_o, lam_w)
         eps = rng.normal(scale=float(sigma), size=self._N)
-        u = lu.solve(eps)
+        u = sp.linalg.spsolve(B, eps)
         return Xb + u
 
     def _compute_spatial_effects_posterior(
-        self,
-        draws: Optional[int] = None,
-        *,
-        parallel: Optional[int] = -1,  # unused: closed-form, no per-draw solve
+        self, draws: Optional[int] = None
     ) -> dict[str, np.ndarray]:
         r"""Closed-form Thomas-Agnan & LeSage (2014, Table 83.1) effects.
 
@@ -2975,15 +2781,15 @@ class SEMFlowSeparable(SEMFlow):
         Number of regional attribute columns. Inferred from
         ``dest_*``/``orig_*`` column names when the standard LeSage
         layout is used.
-    logdet_method : {"eigenvalue", "chebyshev", "trace_mc"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"trace_mc"``).
+        ``"mc_poly"``).
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"trace_mc"``).
+        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -3007,7 +2813,7 @@ class SEMFlowSeparable(SEMFlow):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "trace_mc"}
+        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
         if method not in _VALID:
             raise ValueError(
                 f"SEMFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
@@ -3026,7 +2832,7 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -3069,6 +2875,6 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'trace_mc'."
+                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
             )
         return self._separable_logdet_numpy_fn(lam_d, lam_o)

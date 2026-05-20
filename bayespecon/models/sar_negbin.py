@@ -1,20 +1,26 @@
 r"""Spatial autoregressive Negative Binomial (SAR-NB) model.
 
 Count-outcome analogue of :class:`bayespecon.models.sar.SAR` with
-NB2 observation noise.  The latent log-mean follows the SAR reduced form:
+NB2 observation noise.  The latent log-mean follows the SAR structural
+form:
 
 .. math::
 
     y_i \sim \mathrm{NegBin}(\mu_i, \alpha), \qquad
-    \log \mu_i = \left[(I - \rho W)^{-1} X \beta\right]_i.
+    \eta = (I - \rho W)^{-1}(X \beta + \sigma z), \qquad
+    z \sim N(0, I).
 
-No spatial Jacobian is needed because the spatial filter
-:math:`(I - \rho W)^{-1}` parameterizes the latent mean, not the
-observed data.  Unlike the Gaussian SAR model — where
-:math:`\varepsilon \mapsto y` is a change-of-variables requiring
-:math:`\log|I - \rho W|` — the Negative Binomial likelihood is
-specified directly on the observed counts given :math:`\mu`, so
-there is no Jacobian correction.
+This is the non-centred parameterisation of the structural form
+:math:`\eta = \rho W \eta + X \beta + \nu, \; \nu \sim N(0, \sigma^2 I)`,
+which is equivalent to :class:`SARNegBinLatent` and enables fair
+comparison between NUTS and Gibbs samplers.
+
+No spatial Jacobian is needed because the change-of-variables Jacobian
+:math:`|d\eta/dz| = \sigma^n / |I - \rho W|` cancels exactly with the
+multivariate-normal normalisation constant :math:`|\Sigma_\eta|^{-1/2} =
+|I - \rho W| / \sigma^n`.  This cancellation is specific to the
+non-centred parameterisation; a centred parameterisation would require
+:math:`\log|I - \rho W|`.
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ from .base import SpatialModel
 
 
 class SARNegativeBinomial(SpatialModel):
-    """Bayesian SAR model with a Negative Binomial likelihood.
+    r"""Bayesian SAR model with a Negative Binomial likelihood.
 
     Parameters
     ----------
@@ -43,13 +49,26 @@ class SARNegativeBinomial(SpatialModel):
 
     Notes
     -----
-    The model uses the SAR-in-mean reduced form
-    ``log(mu) = (I - rho * W)^{-1} X @ beta``, which is the count-outcome
-    analogue of the Gaussian SAR reduced form.  Unlike the Gaussian SAR,
-    no spatial Jacobian ``log|I - rho * W|`` is needed because the
-    spatial filter parameterizes the latent mean rather than defining
-    a change-of-variables from a latent error to the observed data.
-    Overdispersion is captured by the NB2 parameter ``alpha``.
+    The model uses the SAR structural form with a non-centred
+    parameterisation:
+
+    .. math::
+
+        \eta = (I - \rho W)^{-1}(X \beta + \sigma z), \quad
+        z \sim N(0, I),
+
+    which is equivalent to the centred form
+    :math:`\eta \sim N((I - \rho W)^{-1} X \beta,\;
+    \sigma^2 (I - \rho W)^{-1}(I - \rho W')^{-1})`.
+    This matches the structural form used by :class:`SARNegBinLatent`,
+    enabling fair comparison between NUTS and Gibbs samplers.
+
+    No spatial Jacobian :math:`\log|I - \rho W|` is needed because the
+    change-of-variables Jacobian cancels with the multivariate-normal
+    normalisation constant in the non-centred parameterisation.
+
+    Overdispersion is captured by the NB2 parameter ``alpha``, and
+    spatial noise in the latent field by ``sigma``.
     """
 
     _spatial_diagnostics_tests = SAR_NEGBIN_SUITE.tests
@@ -76,40 +95,58 @@ class SARNegativeBinomial(SpatialModel):
         self._y = y_round.astype(np.float64)
         self._Wy = np.asarray(self._W_sparse @ self._y, dtype=np.float64)
 
+    def _model_coords(self) -> dict[str, list[str]]:
+        """Return PyMC coordinate labels including obs_id for the latent z."""
+        coords = super()._model_coords()
+        coords["obs_id"] = list(range(self._X.shape[0]))
+        return coords
+
     def _build_pymc_model(self) -> pm.Model:
         bounds = self._logdet_bounds
         rho_lower = bounds.rho_min
         rho_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        n = self._X.shape[0]
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
 
-            # SAR-in-mean reduced form: eta = (I - rho*W)^{-1} X beta
+            # Structural form (non-centred parameterisation):
+            #   eta = (I - rho*W)^{-1} (X @ beta + sigma * z),  z ~ N(0, I)
+            #
+            # This is equivalent to the centred form:
+            #   eta | rho, beta, sigma ~ N((I-rho*W)^{-1} X beta,
+            #                              sigma^2 (I-rho*W)^{-1}(I-rho*W')^{-1})
+            #
+            # No Jacobian is needed because the change-of-variables
+            # Jacobian |d(eta)/d(z)| = sigma^n / |I - rho*W| cancels
+            # exactly with the MVN normalisation |Sigma_eta|^{-1/2}.
+            #
             # Uses SparseSARSolveOp for efficient differentiable sparse LU.
             # The eigendecomposition is NOT passed here because it forces
             # an O(n³) decomposition at model construction time that is only
             # consumed by the JAX eigen dispatch path. The PyMC NUTS path
             # uses sparse LU exclusively and never touches eigenvalues.
-            # The JAX dispatch auto-selects callback (scipy sparse LU via
-            # host callback) by default, which also avoids the eigendecomp.
             from ..ops import SparseSARSolveOp
 
             _sar_solve_op = SparseSARSolveOp(self._W_sparse)
+            z = pm.Normal("z", mu=0, sigma=1, dims="obs_id")
             Xbeta = pt.dot(self._X, beta)
-            eta = _sar_solve_op(rho, Xbeta)
+            rhs = Xbeta + sigma * z
+            eta = _sar_solve_op(rho, rhs)
             mu = pm.Deterministic("mu", pt.exp(eta))
             pm.NegativeBinomial("obs", mu=mu, alpha=alpha, observed=self._y_int)
 
-            # No Jacobian term is needed for the SAR-in-mean reduced form.
-            # The spatial filter is applied to the latent mean parameter,
-            # not to the observed data, so there is no change-of-variables
-            # correction.  Including log|I - rho W| would incorrectly
-            # bias rho toward zero.
+            # No Jacobian term is needed.  In the non-centred
+            # parameterisation, the change-of-variables Jacobian cancels
+            # with the MVN normalisation constant.  Adding log|I-rho*W|
+            # would incorrectly bias rho toward zero.
         return model
 
     def fit(
@@ -124,10 +161,10 @@ class SARNegativeBinomial(SpatialModel):
     ) -> "az.InferenceData":
         """Sample posterior.
 
-        The Negative Binomial log-likelihood is auto-captured by PyMC
-        and is already complete — no Jacobian correction is needed
-        because the spatial filter parameterizes the mean, not the
-        observed data.
+        The Negative Binomial log-likelihood is auto-captured by PyMC.
+        No Jacobian correction is needed because the non-centred
+        parameterisation's change-of-variables Jacobian cancels with
+        the multivariate-normal normalisation constant.
         """
         idata_kwargs = idata_kwargs or {}
         idata = super().fit(
@@ -552,11 +589,18 @@ class SARNegativeBinomial(SpatialModel):
         return df
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
-        """Posterior-mean fitted expected counts."""
+        """Posterior-mean fitted expected counts.
+
+        Computes ``exp(eta)`` where ``eta = (I - rho*W)^{-1} (X @ beta + sigma * z)``
+        at the posterior means of ``rho``, ``beta``, ``sigma``, and ``z``.
+        """
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
+        sigma = float(self._posterior_mean("sigma"))
+        z = self._posterior_mean("z")
         Xbeta = self._X @ beta
+        rhs = Xbeta + sigma * z
         n = self._X.shape[0]
         A = sp.eye(n, format="csr", dtype=np.float64) - rho * self._W_sparse
-        eta = sp.linalg.spsolve(A, Xbeta)
+        eta = sp.linalg.spsolve(A, rhs)
         return np.exp(eta)

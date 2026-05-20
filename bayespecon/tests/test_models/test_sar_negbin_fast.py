@@ -36,6 +36,8 @@ def test_sar_negbin_build_pymc_model():
     assert isinstance(pymc_model, pm.Model)
     assert "rho" in pymc_model.named_vars
     assert "alpha" in pymc_model.named_vars
+    assert "sigma" in pymc_model.named_vars
+    assert "z" in pymc_model.named_vars
 
 
 def test_sar_negbin_rejects_noninteger_or_negative_y():
@@ -53,13 +55,16 @@ def test_sar_negbin_rejects_noninteger_or_negative_y():
 
 def test_sar_negbin_fitted_values_and_effects_with_mock_posterior():
     y, X, W = _count_data(seed=103)
+    n = X.shape[0]
     model = SARNegativeBinomial(y=y, X=X, W=W)
 
     model._idata = _idata(
         {
             "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
             "rho": np.array([0.15, 0.16]),
+            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([2.0, 2.1]),
+            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
 
@@ -90,12 +95,15 @@ def test_sar_negbin_count_effects_sparse_matches_eigen():
     re-factorised A on every probe and returned only a 2-tuple.
     """
     y, X, W = _count_data(seed=103)
+    n = X.shape[0]
     model = SARNegativeBinomial(y=y, X=X, W=W)
     model._idata = _idata(
         {
             "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
             "rho": np.array([0.15, 0.16]),
+            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([2.0, 2.1]),
+            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
 
@@ -133,12 +141,15 @@ def test_sar_negbin_count_effects_sparse_batched_matches_columnwise():
     import scipy.sparse as sp
 
     y, X, W = _count_data(seed=131)
+    n = X.shape[0]
     model = SARNegativeBinomial(y=y, X=X, W=W)
     model._idata = _idata(
         {
             "beta": np.stack([np.array([0.25, 0.55]), np.array([0.24, 0.57])]),
             "rho": np.array([0.18, 0.22]),
+            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([1.8, 2.2]),
+            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
 
@@ -183,12 +194,15 @@ def test_sar_negbin_count_effects_sparse_batched_matches_columnwise():
 
 def test_sar_negbin_spatial_effects_rejects_unknown_method():
     y, X, W = _count_data(seed=103)
+    n = X.shape[0]
     model = SARNegativeBinomial(y=y, X=X, W=W)
     model._idata = _idata(
         {
             "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
             "rho": np.array([0.15, 0.16]),
+            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([2.0, 2.1]),
+            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
     with pytest.raises(ValueError, match="method must be one of"):
@@ -197,12 +211,15 @@ def test_sar_negbin_spatial_effects_rejects_unknown_method():
 
 def test_sar_negbin_spatial_effects_rejects_unknown_scale():
     y, X, W = _count_data(seed=104)
+    n = X.shape[0]
     model = SARNegativeBinomial(y=y, X=X, W=W)
     model._idata = _idata(
         {
             "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
             "rho": np.array([0.15, 0.16]),
+            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([2.0, 2.1]),
+            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
 
@@ -256,6 +273,8 @@ def test_sar_negbin_jax_logp_grad_with_lineax(monkeypatch):
             # X @ beta = 0, which BiCGStab cannot start from).
             ip["beta"] = np.array([0.3, 0.6])
             ip["rho_interval__"] = np.array(0.4)
+            ip["sigma_log__"] = np.array(0.0)
+            ip["z"] = np.zeros(X.shape[0])
             logp_fn = pm_model.compile_logp(mode="JAX")
             dlogp_fn = pm_model.compile_dlogp(mode="JAX")
             lp = logp_fn(ip)

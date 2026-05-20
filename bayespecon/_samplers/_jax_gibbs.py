@@ -42,15 +42,22 @@ from __future__ import annotations
 
 import numpy as np
 
+from bayespecon._samplers.pg_gibbs import JAXGibbsState
+
 
 def _check_jax_available() -> None:
-    """Raise ImportError if JAX is not installed."""
+    """Raise ImportError if JAX or equinox is not installed."""
     import importlib.util
 
     if importlib.util.find_spec("jax") is None:
         raise ImportError(
             "JAX is required for the full-JIT Gibbs sampler. "
             "Install with: pip install jax"
+        )
+    if importlib.util.find_spec("equinox") is None:
+        raise ImportError(
+            "equinox is required for the full-JIT Gibbs sampler. "
+            "Install with: pip install equinox"
         )
 
 
@@ -114,9 +121,10 @@ def _make_gibbs_step_with_data(
 
             gibbs_step(state, key) -> (new_state, accept)
 
-        where ``state`` is a dict with keys ``eta, beta, sigma2, rho,
-        omega, alpha`` and ``key`` is a JAX PRNG key.
+        where ``state`` is a :class:`~bayespecon._samplers.pg_gibbs.JAXGibbsState`
+        and ``key`` is a JAX PRNG key.
     """
+    import equinox as eqx
     import jax
     import jax.numpy as jnp
 
@@ -153,30 +161,30 @@ def _make_gibbs_step_with_data(
     pi = jnp.pi
     pi2 = pi * pi
 
-    @jax.jit
+    @eqx.filter_jit
     def gibbs_step(state, key):
         """One complete Gibbs sweep: ω → η → β → σ² → ρ (MH).
 
         Parameters
         ----------
-        state : dict
-            Current state with keys: eta, beta, sigma2, rho, omega, alpha.
+        state : JAXGibbsState
+            Current state.
         key : jax.random.PRNGKey
             JAX random key.
 
         Returns
         -------
-        new_state : dict
+        new_state : JAXGibbsState
             Updated state.
         accept : bool
             Whether the MH step for ρ was accepted.
         """
-        eta = state["eta"]
-        beta = state["beta"]
-        sigma2 = state["sigma2"]
-        rho = state["rho"]
-        state["omega"]
-        alpha = state["alpha"]
+        eta = state.eta
+        beta = state.beta
+        sigma2 = state.sigma2
+        rho = state.rho
+        state.omega
+        alpha = state.alpha
 
         key_omega, key_eta, key_beta, key_sigma2, key_rho = jax.random.split(key, 5)
 
@@ -275,14 +283,14 @@ def _make_gibbs_step_with_data(
         rho_new = jnp.where(accept, rho_proposed, rho)
         rho_new = jnp.clip(rho_new, rho_lower_jax, rho_upper_jax)
 
-        new_state = {
-            "eta": eta_new,
-            "beta": beta_new,
-            "sigma2": sigma2_new,
-            "rho": rho_new,
-            "omega": omega_new,
-            "alpha": alpha,  # α is updated in the Python loop
-        }
+        new_state = JAXGibbsState(
+            eta=eta_new,
+            beta=beta_new,
+            sigma2=sigma2_new,
+            rho=rho_new,
+            omega=omega_new,
+            alpha=alpha,  # α is updated in the Python loop
+        )
         return new_state, accept
 
     return gibbs_step
@@ -293,13 +301,29 @@ def _sample_alpha_python(state, y, alpha_sigma, rng):
 
     This is called from the Python loop because scipy's gammaln
     is not JAX-compatible.
+
+    Parameters
+    ----------
+    state : JAXGibbsState
+        Current Gibbs state.
+    y : ndarray
+        Integer response vector.
+    alpha_sigma : float
+        Prior scale for α.
+    rng : numpy.random.Generator
+        Random state.
+
+    Returns
+    -------
+    float
+        New α value.
     """
     from scipy.special import gammaln
 
     from bayespecon._samplers._slice import slice_sample_1d
 
-    alpha = float(state["alpha"])
-    eta = np.asarray(state["eta"])
+    alpha = float(state.alpha)
+    eta = np.asarray(state.eta)
     log_alpha = np.log(alpha)
 
     def log_density(log_a):
@@ -451,14 +475,14 @@ def run_chain_jax(
     )
 
     # Initialize state
-    state = {
-        "eta": jnp.asarray(init.eta, dtype=jnp.float64),
-        "beta": jnp.asarray(init.beta, dtype=jnp.float64),
-        "sigma2": jnp.float64(init.sigma2),
-        "rho": jnp.float64(init.rho),
-        "omega": jnp.asarray(init.omega, dtype=jnp.float64),
-        "alpha": jnp.float64(init.alpha),
-    }
+    state = JAXGibbsState(
+        eta=jnp.asarray(init.eta, dtype=jnp.float64),
+        beta=jnp.asarray(init.beta, dtype=jnp.float64),
+        sigma2=jnp.float64(init.sigma2),
+        rho=jnp.float64(init.rho),
+        omega=jnp.asarray(init.omega, dtype=jnp.float64),
+        alpha=jnp.float64(init.alpha),
+    )
 
     # Pre-allocate storage
     rho_samples = np.empty(n_keep, dtype=np.float64)
@@ -483,22 +507,29 @@ def run_chain_jax(
 
         # Block 6: α | y, η — slice sampling (Python, not JIT)
         alpha_new = _sample_alpha_python(state, y, priors.alpha_sigma, rng)
-        state = {**state, "alpha": jnp.float64(alpha_new)}
+        state = JAXGibbsState(
+            eta=state.eta,
+            beta=state.beta,
+            sigma2=state.sigma2,
+            rho=state.rho,
+            omega=state.omega,
+            alpha=jnp.float64(alpha_new),
+        )
 
         # Store post-warmup draws
         if i >= tune and (i - tune) % thin == 0:
             idx = (i - tune) // thin
             if idx < n_keep:
-                rho_samples[idx] = float(state["rho"])
-                beta_samples[idx] = np.asarray(state["beta"])
-                sigma_samples[idx] = np.sqrt(float(state["sigma2"]))
-                alpha_samples[idx] = float(state["alpha"])
-                eta_np = np.asarray(state["eta"])
+                rho_samples[idx] = float(state.rho)
+                beta_samples[idx] = np.asarray(state.beta)
+                sigma_samples[idx] = np.sqrt(float(state.sigma2))
+                alpha_samples[idx] = float(state.alpha)
+                eta_np = np.asarray(state.eta)
                 eta_norm_samples[idx] = float(eta_np @ eta_np)
                 if return_eta:
                     eta_samples[idx] = eta_np
                 log_lik_samples[idx] = _nb_loglik_pointwise_jax(
-                    y, eta_np, float(state["alpha"])
+                    y, eta_np, float(state.alpha)
                 )
 
     result = {

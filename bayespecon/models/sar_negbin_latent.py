@@ -101,7 +101,7 @@ class SARNegBinLatent(SpatialModel):
         return make_logdet_numpy_fn(
             self._W_sparse,
             eigs=self._W_eigs.real if self._W_eigs is not None else None,
-            method=self._resolved_logdet_method,
+            method=bounds.method,
             rho_min=bounds.rho_min,
             rho_max=bounds.rho_max,
         )
@@ -114,8 +114,11 @@ class SARNegBinLatent(SpatialModel):
     _CG_SOLVE_THRESHOLD: int = 5000
     _LANCZOS_LOGDET_THRESHOLD: int = 5000
     _CHEBYSHEV_SAMPLE_THRESHOLD: int = 5000
-    # Threshold for JAX dense backend (O(n²) memory, competitive matvec)
-    _JAX_DENSE_THRESHOLD: int = 5000
+    # Threshold for JAX dense backend (O(n²) memory, competitive matvec).
+    # Raised from 5000 to 10000: on a 128 GB machine the 800 MB dense
+    # matrix is trivial; the real limit is the O(n³) Cholesky time
+    # (~1 s per solve at n=10 000).
+    _JAX_DENSE_THRESHOLD: int = 10000
 
     def _resolve_solve_method(self, n: int, cholmod_factor) -> str:
         """Choose the solve method for P_η in the ρ slice sampler.
@@ -283,9 +286,9 @@ class SARNegBinLatent(SpatialModel):
             Which Gibbs sampler path to use:
 
             - ``"auto"``: select based on problem size and JAX
-              availability.  When JAX is installed and n ≤ 5000, uses
+              availability.  When JAX is installed and n ≤ 10 000, uses
               ``"jax_dense"`` for maximum speed.  Otherwise falls back
-              to factorisation (n ≤ 5000) or iterative (n > 5000).
+              to factorisation (n ≤ 10 000) or iterative (n > 10 000).
             - ``"factorize"``: force factorisation-based path (CHOLMOD if
               available, else ``scipy.sparse.linalg.splu``). Exact but
               O(nnz^{1.5}) for the factorisation step.
@@ -296,7 +299,8 @@ class SARNegBinLatent(SpatialModel):
               + vmap over Lanczos probes and Chebyshev draws).  3–4×
               faster for single draws, 20–27× per-draw when batching
               Chebyshev draws.  Requires JAX with float64 enabled.
-              Only viable for n ≤ ~5000 due to O(n²) memory.
+              Viable for n ≤ ~10 000 on machines with ≥ 32 GB RAM
+              (the dense matrices need ~800 MB at n = 10 000).
 
         Returns
         -------
@@ -393,8 +397,15 @@ class SARNegBinLatent(SpatialModel):
             logdet_P_method = "jax_dense"
             sample_method = "jax_dense"
         else:  # "auto"
-            # Prefer JAX dense when available and n is small enough
-            if _jax_available and n <= self._JAX_DENSE_THRESHOLD:
+            # Prefer exact factorisation when CHOLMOD is available.
+            # CHOLMOD is 6–30× faster than Lanczos for n up to ~5000.
+            # Only use JAX dense when CHOLMOD is unavailable or n is very
+            # small (where dense matvec overhead is negligible).
+            if cholmod_factor is not None and n < self._CG_SOLVE_THRESHOLD:
+                solve_method = "cholmod"
+                logdet_P_method = "cholmod"
+                sample_method = "cholmod"
+            elif _jax_available and n <= self._JAX_DENSE_THRESHOLD:
                 solve_method = "jax_dense"
                 logdet_P_method = "jax_dense"
                 sample_method = "jax_dense"
@@ -432,6 +443,10 @@ class SARNegBinLatent(SpatialModel):
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
             W_eigs=W_eigs_jax,
+            rho_mode_update_freq=0,  # disabled by default — opt-in for slow-mixing ρ
+            rho_mode_w_factor=2.0,
+            rho_adaptive_width=True,
+            rho_slice_width_state=None,
         )
 
         # Derive per-chain seeds
