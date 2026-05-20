@@ -22,6 +22,8 @@ dependencies:
   - fastprogress
   - nutpie
   - polyagamma
+  - scikit-umfpack
+
   - pip:
     - klujax
     - traceax 

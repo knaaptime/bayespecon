@@ -373,12 +373,12 @@ def test_sparse_sar_jax_gmres_grad_parity(monkeypatch, lineax_env_reset):
         np.testing.assert_allclose(np.asarray(c), np.asarray(j), atol=1e-7, rtol=1e-7)
 
 
-def test_jax_auto_falls_to_jax_gmres_when_no_lineax(monkeypatch):
+def test_jax_auto_falls_to_chebyshev_when_no_lineax(monkeypatch):
     from bayespecon._jax_dispatch import _resolve_auto_sar_solver
 
     monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._lineax_available", lambda: False)
-    assert _resolve_auto_sar_solver(100) == "jax_gmres"
+    assert _resolve_auto_sar_solver(100) == "chebyshev"
 
 
 def test_jax_gmres_high_rho_correctness(monkeypatch, lineax_env_reset):
