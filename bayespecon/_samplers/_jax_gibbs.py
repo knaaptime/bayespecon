@@ -1,6 +1,6 @@
-"""JAX-accelerated full-JIT Gibbs sampler for SAR Negative Binomial.
+r"""JAX-accelerated full-JIT Gibbs sampler for SAR Negative Binomial.
 
-Composes all Gibbs blocks (PG ω, η, β, σ², ρ MH) into a single
+Composes all Gibbs blocks (PG ω, η, β, σ², ρ MALA) into a single
 ``@jax.jit``-compiled function, eliminating Python→JAX dispatch overhead
 entirely.  Achieves 12–92× speedup over CHOLMOD for n ≤ 1000.
 
@@ -19,15 +19,42 @@ The sampler uses:
 - **η and β draws**: Dense Cholesky factorisation via ``jnp.linalg.cholesky``
   and ``jnp.linalg.solve``.  O(n³) but fast for n ≤ ~2000.
 - **σ² draw**: Conjugate inverse-Gamma (direct, no solve needed).
-- **ρ draw**: Random-walk Metropolis–Hastings with eigenvalue-based logdet
-  ``log|I-ρW| = Σ log(1-ρλᵢ)`` and Lanczos-based log|P| estimation.
-  ~92% acceptance rate with proposal σ=0.05.
+- **ρ draw**: Metropolis-adjusted Langevin algorithm (MALA) with
+  eigenvalue-based logdet ``log|I-ρW| = Σ log(1-ρλᵢ)`` and Lanczos-based
+  ``log|P|`` estimation.  The proposal uses JAX autodiff for the exact
+  gradient:
+
+  .. math::
+
+      \rho^* = \rho + \frac{\varepsilon^2}{2}\,\nabla\log p(\rho\mid\cdot)
+      + \varepsilon\,z, \qquad z\sim\mathcal N(0,1)
+
+  The Metropolis–Hastings acceptance ratio includes the asymmetric
+  proposal density correction:
+
+  .. math::
+
+      \alpha_{\text{MALA}} = \frac{p(\rho^*\mid\cdot)\,q(\rho\mid\rho^*)}
+      {p(\rho\mid\cdot)\,q(\rho^*\mid\rho)},
+
+  where the forward and reverse proposal densities are Gaussian with
+  mean shifted by the gradient drift:
+
+  .. math::
+
+      q(\rho^*\mid\rho) = \mathcal N\!
+      \Bigl(\rho^*\;\Big|\;\rho + \tfrac{\varepsilon^2}{2}\nabla\log p(\rho),
+      \;\varepsilon^2\Bigr).
+
+  The stochastic Lanczos ``log|P|`` estimator is wrapped with
+  ``jax.lax.stop_gradient`` so that back-propagation only flows
+  through the deterministic parts of the log-density (Cholesky solve,
+  quadratic form, and eigenvalue logdet).
 
 Limitations
 -----------
 - O(n³) dense Cholesky limits scalability to n ≤ ~2000.
 - PG sum-of-exponentials has ~2% mean bias (acceptable for MCMC).
-- MH for ρ has lower acceptance than slice sampling (~92% vs ~99%).
 - α (NB dispersion) is updated in the Python loop using scipy's gammaln,
   not inside the JIT step.
 
@@ -36,6 +63,10 @@ References
 Polson, N. G., Scott, J. G., & Windle, J. (2013). Bayesian inference
 for logistic models using Pólya–Gamma latent variables.
 *Journal of the American Statistical Association*, 108(504), 1339–1349.
+
+Roberts, G. O., & Tweedie, R. L. (1996). Exponential convergence of
+Langevin distributions and their discrete approximations.
+*Bernoulli*, 2(4), 341–363.
 """
 
 from __future__ import annotations
@@ -76,11 +107,12 @@ def _make_gibbs_step_with_data(
     mh_proposal_sd,
     n_probes,
     lanczos_deg,
+    use_mala: bool = True,
 ):
     """Build a JIT-compiled Gibbs step with data bound into the closure.
 
     This function creates a ``@jax.jit``-compiled function that performs
-    one complete Gibbs sweep (ω, η, β, σ², ρ MH) in a single XLA
+    one complete Gibbs sweep (ω, η, β, σ², ρ MALA/RW-MH) in a single XLA
     kernel call, eliminating all Python→JAX dispatch overhead.
 
     Parameters
@@ -108,11 +140,14 @@ def _make_gibbs_step_with_data(
     pg_n_terms : int
         Number of PG sum-of-exponentials terms.
     mh_proposal_sd : float
-        MH proposal standard deviation for ρ.
+        MH proposal standard deviation for ρ (used when ``use_mala=False``).
     n_probes : int
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int
         Lanczos iteration depth.
+    use_mala : bool, default True
+        If True, use MALA (gradient-guided proposals) for the ρ update.
+        If False, use random-walk Metropolis–Hastings.
 
     Returns
     -------
@@ -152,6 +187,9 @@ def _make_gibbs_step_with_data(
     rho_lower_jax = jnp.float64(priors.rho_lower)
     rho_upper_jax = jnp.float64(priors.rho_upper)
     mh_sd_jax = jnp.float64(mh_proposal_sd)
+    # MALA step size: start with the same scale as RW-MH proposal sd.
+    # The gradient drift provides directed movement on top of this noise.
+    mala_step_size = jnp.float64(mh_proposal_sd)
 
     # Prior precision for beta
     beta_prior_prec = jnp.diag(1.0 / beta_sigma2_jax)
@@ -230,11 +268,8 @@ def _make_gibbs_step_with_data(
         sigma2_inv = jax.random.gamma(key_sigma2, a_post) / b_post
         sigma2_new = jnp.maximum(1.0 / sigma2_inv, 1e-10)
 
-        # ── Block 5: ρ — Metropolis-Hastings ──
+        # ── Block 5: ρ — MALA or RW-MH ──
         key_rho_proposal, key_rho_accept = jax.random.split(key_rho)
-        rho_proposed = rho + mh_sd_jax * jax.random.normal(
-            key_rho_proposal, dtype=jnp.float64
-        )
 
         def log_density_rho(rho_val):
             """Collapsed log-density of ρ (η integrated out)."""
@@ -257,12 +292,13 @@ def _make_gibbs_step_with_data(
 
             M_inv_r = 1.0 / jnp.where(jnp.abs(P_diag_r) > 1e-15, P_diag_r, 1.0)
 
-            # Use the same key for both proposed and current rho evaluations
-            # (common random numbers) so that Lanczos noise cancels in the
-            # MH acceptance ratio.
             log_det_P = jax_lanczos_logdet(
                 P_r, key=key_rho_proposal, n_probes=n_probes, lanczos_deg=lanczos_deg
             )
+            # Stop gradient through stochastic Lanczos logdet — the gradient
+            # of a Monte Carlo estimator is not well-defined and causes NaN.
+            log_det_p_sg = jax.lax.stop_gradient(log_det_P)
+
             m_r = jax_cg_solve(P_r, rhs_r, M_inv_r, tol=1e-8, maxiter=cg_maxiter)
             quad_r = rhs_r @ m_r
 
@@ -271,12 +307,41 @@ def _make_gibbs_step_with_data(
             log_prior = jnp.where(
                 (rho_val >= rho_lower_jax) & (rho_val <= rho_upper_jax), 0.0, -jnp.inf
             )
-            return logdet_W - 0.5 * log_det_P + 0.5 * quad_r + log_prior
+            return logdet_W - 0.5 * log_det_p_sg + 0.5 * quad_r + log_prior
 
-        log_density_proposed = log_density_rho(rho_proposed)
-        log_density_current = log_density_rho(rho)
+        if use_mala:
+            # Gradient via JAX autodiff
+            grad_log_dens = jax.grad(log_density_rho)
+            g_current = grad_log_dens(rho)
 
-        log_alpha = log_density_proposed - log_density_current
+            # MALA proposal: ρ* = ρ + (ε²/2) ∇log p(ρ) + ε z
+            eps = mala_step_size
+            drift = (eps**2 / 2.0) * g_current
+            noise = eps * jax.random.normal(key_rho_proposal, dtype=jnp.float64)
+            rho_proposed = rho + drift + noise
+            rho_proposed = jnp.clip(rho_proposed, rho_lower_jax, rho_upper_jax)
+
+            # MALA acceptance ratio includes proposal density
+            g_proposed = grad_log_dens(rho_proposed)
+            log_p_fwd = -0.5 * ((rho_proposed - rho - (eps**2 / 2.0) * g_current) / eps) ** 2
+            log_p_rev = -0.5 * ((rho - rho_proposed - (eps**2 / 2.0) * g_proposed) / eps) ** 2
+
+            log_density_proposed = log_density_rho(rho_proposed)
+            log_density_current = log_density_rho(rho)
+
+            log_alpha = (log_density_proposed - log_density_current
+                         + log_p_rev - log_p_fwd)
+        else:
+            # RW-MH proposal
+            rho_proposed = rho + mh_sd_jax * jax.random.normal(
+                key_rho_proposal, dtype=jnp.float64
+            )
+            rho_proposed = jnp.clip(rho_proposed, rho_lower_jax, rho_upper_jax)
+
+            log_density_proposed = log_density_rho(rho_proposed)
+            log_density_current = log_density_rho(rho)
+            log_alpha = log_density_proposed - log_density_current
+
         u = jax.random.uniform(key_rho_accept, dtype=jnp.float64)
         accept = jnp.log(u) < log_alpha
 

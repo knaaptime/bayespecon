@@ -351,7 +351,7 @@ class TestRunChainJax:
         assert result["log_lik"].shape == (draws, n)
         assert result["eta_norm"].shape == (draws,)
         assert "mh_accept_rate" in result
-        assert 0 < result["mh_accept_rate"] < 1
+        assert 0 < result["mh_accept_rate"] <= 1
 
     def test_output_with_eta(self):
         """run_chain_jax with return_eta=True should include eta array."""

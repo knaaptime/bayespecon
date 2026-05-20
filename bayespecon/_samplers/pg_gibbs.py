@@ -477,17 +477,33 @@ def _sample_sigma2(
     return sigma2_new
 
 
-def _find_rho_mode_optimistix(
+def _find_rho_mode_newton(
     log_density_jax: Callable,
     rho_lower: float,
     rho_upper: float,
     x0: float,
+    *,
+    max_iter: int = 10,
+    tol: float = 1e-5,
 ) -> tuple[float, float, float]:
-    """Find the mode of the ρ log-density using optimistix (JAX-only).
+    r"""Find the mode of the ρ log-density via Newton's method with JAX autodiff.
 
-    Uses BFGS to maximise the log-density (minimise negative log-density).
-    The log-density must be a JAX-compatible function that returns a JAX
-    scalar so that ``jax.hessian`` can be used for the curvature estimate.
+    Uses ``jax.grad`` and ``jax.hessian`` for exact first/second derivatives,
+    giving quadratic convergence near the mode.  Typically needs 4–6
+    iterations vs. ~30 for Brent's method.
+
+    The Newton update for maximisation is:
+
+    .. math::
+
+        \rho_{k+1} = \rho_k - \frac{f'(\rho_k)}{f''(\rho_k)},
+
+    where :math:`f(\rho)=\log p(\rho\mid\cdot)`.  Because we seek a
+    maximum, :math:`f''(\rho_k)<0` and the step moves in the direction
+    of the gradient.
+
+    Falls back to bounded Brent if the Hessian is non-negative (non-concave
+    region) or if Newton steps diverge.
 
     Parameters
     ----------
@@ -497,6 +513,10 @@ def _find_rho_mode_optimistix(
         Support bounds for ρ.
     x0 : float
         Initial guess (typically the current ρ).
+    max_iter : int, default 10
+        Maximum Newton iterations.
+    tol : float, default 1e-5
+        Stopping tolerance for :math:`|f'(\rho)|`.
 
     Returns
     -------
@@ -511,26 +531,46 @@ def _find_rho_mode_optimistix(
     import jax.numpy as jnp
     from scipy.optimize import minimize_scalar
 
-    # Convert JAX log-density to a Python callable for scipy
-    def _py_logdens(rho: float) -> float:
-        return float(log_density_jax(jnp.float64(rho)))
+    grad_fn = jax.grad(log_density_jax)
+    hess_fn = jax.hessian(log_density_jax)
 
-    # Bounded 1-D optimisation (Brent's method) — robust and no gradients needed
-    result = minimize_scalar(
-        lambda r: -_py_logdens(r),
-        bounds=(rho_lower, rho_upper),
-        method="bounded",
-        options={"xatol": 1e-5, "maxiter": 50},
-    )
+    rho = float(x0)
+    converged = False
+    for _ in range(max_iter):
+        g = float(grad_fn(jnp.float64(rho)))
+        h = float(hess_fn(jnp.float64(rho)))
 
-    rho_mode = float(result.x)
-    log_dens_mode = _py_logdens(rho_mode)
+        # If not concave, abort and fall back to Brent
+        if h >= 0:
+            break
 
-    # Exact Hessian via JAX autodiff
-    hessian_fn = jax.hessian(log_density_jax)
-    hessian = float(hessian_fn(jnp.float64(rho_mode)))
+        # Newton step for maximisation: rho -= f' / f''
+        step = g / h  # h < 0, so step moves in direction of gradient
+        rho -= step
 
-    return rho_mode, log_dens_mode, hessian
+        # Clip to bounds
+        rho = max(rho_lower, min(rho_upper, rho))
+
+        if abs(g) < tol or abs(step) < tol:
+            converged = True
+            break
+
+    if not converged:
+        # Fall back to bounded Brent
+        def _py_logdens(r: float) -> float:
+            return float(log_density_jax(jnp.float64(r)))
+
+        result = minimize_scalar(
+            lambda r: -_py_logdens(r),
+            bounds=(rho_lower, rho_upper),
+            method="bounded",
+            options={"xatol": tol, "maxiter": 50},
+        )
+        rho = float(result.x)
+
+    log_dens_mode = float(log_density_jax(jnp.float64(rho)))
+    hessian = float(hess_fn(jnp.float64(rho)))
+    return rho, log_dens_mode, hessian
 
 
 def _sample_rho(
@@ -733,12 +773,13 @@ def _sample_rho(
         # Uniform prior on [rho_lower, rho_upper] → log p(rho) = 0
         return logdet - 0.5 * log_det_P + 0.5 * quad
 
-    # Use cached log-density if available
+    # Cache log-density at current x0 to avoid redundant evaluation
+    # inside the slice sampler (which always evaluates log_density(x0))
     x0 = state.rho
     if log_density_current is not None:
-        pass
+        log_dens_x0 = log_density_current
     else:
-        log_density(x0)
+        log_dens_x0 = log_density(x0)
 
     # --- Mode-centered slice sampling (JAX dense only, burn-in only) ---
     # Mode-finding is expensive (~50 Lanczos/CG evals) but helps mixing
@@ -767,7 +808,7 @@ def _sample_rho(
         def _jax_logdens_scalar(rho):
             return _jax_logdens_exact_fn(jnp.float64(rho))
 
-        rho_mode, log_dens_mode, hessian = _find_rho_mode_optimistix(
+        rho_mode, log_dens_mode, hessian = _find_rho_mode_newton(
             _jax_logdens_scalar,
             rho_lower=rho_lower,
             rho_upper=rho_upper,
@@ -806,6 +847,7 @@ def _sample_rho(
             upper=rho_upper,
             width_state=width_state,
             rng=rng,
+            log_density_x0=log_dens_x0,
         )
 
         # Update width (only during burn-in; freeze after)

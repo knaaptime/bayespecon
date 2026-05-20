@@ -48,6 +48,10 @@ class SliceWidthState:
         Multiplicative factor when no step-outs are observed.
     target_steps : int
         Desired maximum number of step-out steps per side.
+    L : float or None
+        Left boundary of the persistent interval from the previous draw.
+    R : float or None
+        Right boundary of the persistent interval from the previous draw.
     """
 
     w: float = 1.0
@@ -56,6 +60,8 @@ class SliceWidthState:
     expand_factor: float = 1.10
     shrink_factor: float = 0.95
     target_steps: int = 2
+    L: float | None = None
+    R: float | None = None
 
 
 def slice_sample_1d(
@@ -174,12 +180,26 @@ def slice_sample_1d_adaptive(
     width_state: SliceWidthState,
     max_steps_out: int = 50,
     rng: np.random.Generator | None = None,
+    log_density_x0: float | None = None,
 ) -> tuple[float, float, int, int]:
-    """Draw one sample with adaptive width tuning.
+    r"""Draw one sample with adaptive width and persistent interval tuning.
 
-    Identical to `slice_sample_1d` except it also returns the number of
-    step-out steps taken on each side.  Callers should use these counts
-    to update ``width_state.w`` via `update_slice_width`.
+    Implements Neal (2003) slice sampling with two enhancements:
+
+    1. **Adaptive width** — tracks step-out counts and tunes ``w`` so
+       that the interval rarely needs more than ``target_steps``
+       expansions per side.
+    2. **Persistent interval** — stores the final bracket ``[L, R]``
+       from draw :math:`t` and reuses it to initialise the interval for
+       draw :math:`t+1`.  When the posterior changes slowly (typical
+       post-burn-in), this eliminates almost all stepping-out.
+
+    The vertical slice level is drawn as
+
+    .. math::
+
+        u \sim \mathrm{Uniform}(0, f(x_0)),
+        \qquad \log u = \log f(x_0) + \log(\mathrm{Uniform}(0,1)).
 
     Parameters
     ----------
@@ -190,11 +210,14 @@ def slice_sample_1d_adaptive(
     lower, upper : float
         Support bounds for the variable.
     width_state : SliceWidthState
-        Current width state (only ``width_state.w`` is read).
+        Mutable state holding ``w`` and the persistent ``[L, R]``.
     max_steps_out : int, default=50
         Maximum number of stepping-out iterations.
     rng : numpy.random.Generator, optional
         Random state.
+    log_density_x0 : float, optional
+        Pre-computed log-density at ``x0``. If provided, avoids one
+        redundant call to ``log_density(x0)``.
 
     Returns
     -------
@@ -217,34 +240,74 @@ def slice_sample_1d_adaptive(
 
     w = width_state.w
 
-    # Evaluate log-density at current point
-    log_y0 = log_density(x0)
+    # Evaluate log-density at current point (or use cached value)
+    log_y0 = log_density_x0 if log_density_x0 is not None else log_density(x0)
 
     # Draw vertical level: log(u) where u ~ Uniform(0, f(x0))
     log_u = log_y0 + np.log(rng.uniform())
 
-    # --- Stepping out ---
-    u_rand = rng.uniform()
-    L = x0 - u_rand * w
-    R = L + w
+    # --- Stepping out (with persistent interval) ---
+    # If we have a persistent interval from the previous draw and x0
+    # lies inside it, try to reuse it.  This avoids stepping-out when
+    # the posterior changes slowly (typical post-burn-in).
+    persistent_L = width_state.L
+    persistent_R = width_state.R
+    has_persistent = (
+        persistent_L is not None
+        and persistent_R is not None
+        and persistent_L < x0 < persistent_R
+    )
 
-    # Clamp to support bounds
-    L = max(L, lower)
-    R = min(R, upper)
+    if has_persistent:
+        L = max(persistent_L, lower)
+        R = min(persistent_R, upper)
+        # Verify the interval still brackets the slice.  If both
+        # endpoints are below log_u, no stepping-out is needed.
+        left_ok = L <= lower or log_density(L) < log_u
+        right_ok = R >= upper or log_density(R) < log_u
+        if left_ok and right_ok:
+            steps_out_left = 0
+            steps_out_right = 0
+        else:
+            # Fall back to fresh stepping-out from x0
+            u_rand = rng.uniform()
+            L = x0 - u_rand * w
+            R = L + w
+            L = max(L, lower)
+            R = min(R, upper)
+            steps_out_left = 0
+            while L > lower and log_density(L) > log_u and steps_out_left < max_steps_out:
+                L -= w
+                L = max(L, lower)
+                steps_out_left += 1
+            steps_out_right = 0
+            while R < upper and log_density(R) > log_u and steps_out_right < max_steps_out:
+                R += w
+                R = min(R, upper)
+                steps_out_right += 1
+    else:
+        # Standard stepping-out from x0
+        u_rand = rng.uniform()
+        L = x0 - u_rand * w
+        R = L + w
 
-    # Step out left
-    steps_out_left = 0
-    while L > lower and log_density(L) > log_u and steps_out_left < max_steps_out:
-        L -= w
+        # Clamp to support bounds
         L = max(L, lower)
-        steps_out_left += 1
-
-    # Step out right
-    steps_out_right = 0
-    while R < upper and log_density(R) > log_u and steps_out_right < max_steps_out:
-        R += w
         R = min(R, upper)
-        steps_out_right += 1
+
+        # Step out left
+        steps_out_left = 0
+        while L > lower and log_density(L) > log_u and steps_out_left < max_steps_out:
+            L -= w
+            L = max(L, lower)
+            steps_out_left += 1
+
+        # Step out right
+        steps_out_right = 0
+        while R < upper and log_density(R) > log_u and steps_out_right < max_steps_out:
+            R += w
+            R = min(R, upper)
+            steps_out_right += 1
 
     # --- Shrinkage ---
     while True:
@@ -252,6 +315,9 @@ def slice_sample_1d_adaptive(
         log_density_new = log_density(x_new)
 
         if log_density_new > log_u:
+            # Store the final interval for the next draw
+            width_state.L = L
+            width_state.R = R
             return x_new, log_density_new, steps_out_left, steps_out_right
 
         if x_new < x0:
@@ -260,6 +326,8 @@ def slice_sample_1d_adaptive(
             R = x_new
 
         if R - L < 1e-15:
+            width_state.L = L
+            width_state.R = R
             return x0, log_y0, steps_out_left, steps_out_right
 
 

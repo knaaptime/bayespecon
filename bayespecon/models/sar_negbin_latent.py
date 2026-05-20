@@ -443,7 +443,7 @@ class SARNegBinLatent(SpatialModel):
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
             W_eigs=W_eigs_jax,
-            rho_mode_update_freq=0,  # disabled by default — opt-in for slow-mixing ρ
+            rho_mode_update_freq=5,  # recompute mode every 5 sweeps during burn-in
             rho_mode_w_factor=2.0,
             rho_adaptive_width=True,
             rho_slice_width_state=None,
