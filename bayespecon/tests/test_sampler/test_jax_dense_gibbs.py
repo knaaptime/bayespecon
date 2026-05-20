@@ -10,6 +10,7 @@ All tests are skipped when JAX is not installed.
 from __future__ import annotations
 
 import importlib.util
+
 import numpy as np
 import pytest
 import scipy.sparse as sp
@@ -21,6 +22,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
@@ -28,16 +30,16 @@ from bayespecon._samplers._spatial_normal import (
     cg_solve,
     chebyshev_sample,
     jax_build_P_dense,
-    jax_chebyshev_sample,
     jax_cg_solve,
+    jax_chebyshev_sample,
     jax_lanczos_logdet,
     lanczos_logdet,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_precision(n: int, rho: float = 0.3, sigma2: float = 1.0):
     """Build a simple spatial precision matrix and its components.
@@ -52,10 +54,12 @@ def _make_precision(n: int, rho: float = 0.3, sigma2: float = 1.0):
     W_sym = W + W.T
     WtW = W.T @ W
 
-    P = (sp.eye(n, format="csr") / sigma2
-         + sp.diags(omega, format="csr")
-         - rho * W_sym / sigma2
-         + rho**2 * WtW / sigma2)
+    P = (
+        sp.eye(n, format="csr") / sigma2
+        + sp.diags(omega, format="csr")
+        - rho * W_sym / sigma2
+        + rho**2 * WtW / sigma2
+    )
     return P, W_sym, WtW, omega
 
 
@@ -72,6 +76,7 @@ def _exact_solve(P: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # jax_build_P_dense tests
 # ---------------------------------------------------------------------------
+
 
 class TestJaxBuildPDense:
     """Tests for jax_build_P_dense()."""
@@ -98,10 +103,12 @@ class TestJaxBuildPDense:
 
         for rho in [0.0, 0.1, 0.5, 0.9]:
             P_dense = jax_build_P_dense(rho, 1.0, omega_jax, W_sym_dense, WtW_dense)
-            P_sparse_rho = (sp.eye(n, format="csr") / 1.0
-                            + sp.diags(omega, format="csr")
-                            - rho * W_sym / 1.0
-                            + rho**2 * WtW / 1.0)
+            P_sparse_rho = (
+                sp.eye(n, format="csr") / 1.0
+                + sp.diags(omega, format="csr")
+                - rho * W_sym / 1.0
+                + rho**2 * WtW / 1.0
+            )
             err = np.max(np.abs(np.asarray(P_dense) - P_sparse_rho.toarray()))
             assert err < 1e-14, f"rho={rho}: P_dense max error: {err:.2e}"
 
@@ -109,6 +116,7 @@ class TestJaxBuildPDense:
 # ---------------------------------------------------------------------------
 # jax_cg_solve tests
 # ---------------------------------------------------------------------------
+
 
 class TestJaxCGSolve:
     """Tests for jax_cg_solve()."""
@@ -157,6 +165,7 @@ class TestJaxCGSolve:
 # ---------------------------------------------------------------------------
 # jax_lanczos_logdet tests
 # ---------------------------------------------------------------------------
+
 
 class TestJaxLanczosLogdet:
     """Tests for jax_lanczos_logdet()."""
@@ -213,12 +222,14 @@ class TestJaxLanczosLogdet:
 # jax_chebyshev_sample tests
 # ---------------------------------------------------------------------------
 
+
 class TestJaxChebyshevSample:
     """Tests for jax_chebyshev_sample()."""
 
     def test_returns_spatial_normal_draw(self):
         """JAX Chebyshev should return a SpatialNormalDraw."""
         from bayespecon._samplers._spatial_normal import SpatialNormalDraw
+
         n = 30
         P_sparse, _, _, _ = _make_precision(n)
         P_dense = jnp.asarray(P_sparse.toarray())
@@ -272,6 +283,7 @@ class TestJaxChebyshevSample:
 # ---------------------------------------------------------------------------
 # Integration: full JAX decoupled step
 # ---------------------------------------------------------------------------
+
 
 class TestJaxDecoupledStep:
     """Integration tests for the full JAX decoupled Gibbs step."""

@@ -35,10 +35,11 @@ P = L D Lᵀ, and x = m + L⁻ᵀ D⁻¹ᐟ² z.
 
 from __future__ import annotations
 
+from typing import Any, NamedTuple, Union
+
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-from typing import Any, NamedTuple, Union
 
 # ---------------------------------------------------------------------------
 # CHOLMOD availability
@@ -59,6 +60,7 @@ def has_cholmod() -> bool:
 # ---------------------------------------------------------------------------
 # CHOLMOD factorisation wrapper
 # ---------------------------------------------------------------------------
+
 
 class CholmodFactor:
     """Wrapper around a CHOLMOD factorisation for a fixed sparsity pattern.
@@ -151,6 +153,7 @@ class CholmodFactor:
 # Result type
 # ---------------------------------------------------------------------------
 
+
 class SpatialNormalDraw(NamedTuple):
     """Result of a spatial-normal draw.
 
@@ -162,6 +165,7 @@ class SpatialNormalDraw(NamedTuple):
         The factorisation of the precision matrix.  Can be reused
         for subsequent solves when the precision matrix has not changed.
     """
+
     x: np.ndarray
     factor: Any  # CholmodFactor or spla.SuperLU
 
@@ -169,6 +173,7 @@ class SpatialNormalDraw(NamedTuple):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def sample_spatial_normal(
     precision: sp.csr_matrix | sp.csc_matrix,
@@ -239,16 +244,19 @@ def sample_spatial_normal(
     precision_csc = sp.csc_matrix(precision)
 
     if use_cholmod and _HAS_CHOLMOD:
-        return _sample_cholmod(precision_csc, mean_term, rng=rng,
-                               cached_factor=cached_factor)
+        return _sample_cholmod(
+            precision_csc, mean_term, rng=rng, cached_factor=cached_factor
+        )
     else:
-        return _sample_splu(precision_csc, mean_term, rng=rng,
-                            cached_factor=cached_factor)
+        return _sample_splu(
+            precision_csc, mean_term, rng=rng, cached_factor=cached_factor
+        )
 
 
 # ---------------------------------------------------------------------------
 # CHOLMOD implementation
 # ---------------------------------------------------------------------------
+
 
 def _sample_cholmod(
     precision_csc: sp.csc_matrix,
@@ -282,6 +290,7 @@ def _sample_cholmod(
 # ---------------------------------------------------------------------------
 # splu fallback implementation
 # ---------------------------------------------------------------------------
+
 
 def _sample_splu(
     precision_csc: sp.csc_matrix,
@@ -338,6 +347,7 @@ def _sample_splu(
 # ---------------------------------------------------------------------------
 # Lanczos log-determinant estimator
 # ---------------------------------------------------------------------------
+
 
 def lanczos_logdet(
     precision: sp.spmatrix,
@@ -435,7 +445,7 @@ def lanczos_logdet(
             if beta_vals[i - 1] < 1e-15:
                 # Invariant subspace found — truncate
                 alpha_vals = alpha_vals[:i]
-                beta_vals = beta_vals[:i - 1] if i > 1 else beta_vals
+                beta_vals = beta_vals[: i - 1] if i > 1 else beta_vals
                 Q = Q[:, :i]
                 break
             q_new = r / beta_vals[i - 1]
@@ -466,6 +476,7 @@ def lanczos_logdet(
 # ---------------------------------------------------------------------------
 # Preconditioned CG solve
 # ---------------------------------------------------------------------------
+
 
 def cg_solve(
     precision: sp.spmatrix,
@@ -516,9 +527,7 @@ def cg_solve(
         M_diag = P_csr.diagonal()
         M_diag = np.where(np.abs(M_diag) > 1e-15, M_diag, 1.0)
         M_inv_diag = 1.0 / M_diag
-        M_op = spla.LinearOperator(
-            (n, n), matvec=lambda v: M_inv_diag * v
-        )
+        M_op = spla.LinearOperator((n, n), matvec=lambda v: M_inv_diag * v)
     elif preconditioner == "none":
         M_op = None
     else:
@@ -537,6 +546,7 @@ def cg_solve(
     if info != 0:
         # CG did not converge — return best iterate anyway
         import warnings
+
         warnings.warn(
             f"CG did not converge after {maxiter} iterations "
             f"(info={info}). Returning best iterate.",
@@ -550,6 +560,7 @@ def cg_solve(
 # ---------------------------------------------------------------------------
 # Chebyshev polynomial sampler for η draw
 # ---------------------------------------------------------------------------
+
 
 def _gershgorin_bounds(P: sp.spmatrix) -> tuple[float, float]:
     """Compute Gershgorin eigenvalue bounds for a symmetric sparse matrix.
@@ -627,9 +638,7 @@ def _chebyshev_coeffs_inv_sqrt(
     coeffs = np.zeros(m, dtype=np.float64)
     for j in range(m):
         scale = 2.0 / m if j > 0 else 1.0 / m
-        coeffs[j] = scale * np.sum(
-            f_vals * np.cos(j * (2 * k - 1) * np.pi / (2 * m))
-        )
+        coeffs[j] = scale * np.sum(f_vals * np.cos(j * (2 * k - 1) * np.pi / (2 * m)))
 
     return coeffs
 
@@ -756,8 +765,8 @@ def chebyshev_sample(
     inv_d = 1.0 / d
 
     # Forward recurrence for T_j(P_mapped) z
-    y_prev = z.copy()                                    # T_0(P_m) z = z
-    y_curr = (P_csr @ z - c * z) * inv_d                 # T_1(P_m) z = (Pz - cz) / d
+    y_prev = z.copy()  # T_0(P_m) z = z
+    y_curr = (P_csr @ z - c * z) * inv_d  # T_1(P_m) z = (Pz - cz) / d
 
     v = coeffs[0] * y_prev + coeffs[1] * y_curr
 
@@ -785,9 +794,11 @@ def chebyshev_sample(
 # checked at model construction time.
 # ---------------------------------------------------------------------------
 
+
 def _check_jax_available() -> None:
     """Raise ImportError if JAX is not installed."""
     import importlib.util
+
     if importlib.util.find_spec("jax") is None:
         raise ImportError(
             "JAX is required for the 'jax_dense' Gibbs method. "
@@ -973,7 +984,6 @@ def jax_cg_solve(
     """
     _check_jax_available()
     import jax
-    import jax.numpy as jnp
     import jax.scipy.sparse.linalg
 
     n = P_dense.shape[0]
@@ -984,12 +994,17 @@ def jax_cg_solve(
     # Passing the dense array directly is simplest and fastest.
     if M_inv_diag is not None:
         # Jacobi preconditioner: M^{-1} applied as element-wise multiply
-        M_func = lambda v: M_inv_diag * v
+        def M_func(v):
+            return M_inv_diag * v
     else:
         M_func = None
 
     x, info = jax.scipy.sparse.linalg.cg(
-        P_dense, rhs, tol=tol, maxiter=maxiter, M=M_func,
+        P_dense,
+        rhs,
+        tol=tol,
+        maxiter=maxiter,
+        M=M_func,
     )
     return x
 
@@ -1197,13 +1212,18 @@ def jax_build_P_dense(
 
     n = omega.shape[0]
     inv_s2 = 1.0 / sigma2
-    P = jnp.diag(jnp.ones(n) * inv_s2 + omega) - rho * W_sym_dense * inv_s2 + rho**2 * WtW_dense * inv_s2
+    P = (
+        jnp.diag(jnp.ones(n) * inv_s2 + omega)
+        - rho * W_sym_dense * inv_s2
+        + rho**2 * WtW_dense * inv_s2
+    )
     return P
 
 
 def _jax_logdet_W(rho, W_eigs):
     """Compute log|I - rho*W| from eigenvalues (JAX-compatible)."""
     import jax.numpy as jnp
+
     return jnp.sum(jnp.log(jnp.abs(1.0 - rho * W_eigs)))
 
 
@@ -1247,7 +1267,9 @@ def _jax_log_density_core(
     M_inv_diag = 1.0 / jnp.where(jnp.abs(P_diag) > 1e-15, P_diag, 1.0)
 
     # Lanczos logdet of P
-    log_det_P = jax_lanczos_logdet(P, key=key, n_probes=n_probes, lanczos_deg=lanczos_deg)
+    log_det_P = jax_lanczos_logdet(
+        P, key=key, n_probes=n_probes, lanczos_deg=lanczos_deg
+    )
 
     # CG solve P m = rhs
     m = jax_cg_solve(P, rhs, M_inv_diag, tol=cg_tol, maxiter=cg_maxiter)

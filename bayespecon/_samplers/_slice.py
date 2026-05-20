@@ -12,8 +12,9 @@ Neal, R. M. (2003). Slice sampling. *Annals of Statistics*, 31(3), 705–767.
 
 from __future__ import annotations
 
-import numpy as np
 from typing import Callable
+
+import numpy as np
 
 
 def slice_sample_1d(

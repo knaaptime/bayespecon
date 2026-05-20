@@ -24,16 +24,14 @@ for logistic models using Pólya–Gamma latent variables.
 
 from __future__ import annotations
 
-import numpy as np
-
 
 def _check_jax_available() -> None:
     """Raise ImportError if JAX is not installed."""
     import importlib.util
+
     if importlib.util.find_spec("jax") is None:
         raise ImportError(
-            "JAX is required for jax_polyagamma. "
-            "Install with: pip install jax"
+            "JAX is required for jax_polyagamma. Install with: pip install jax"
         )
 
 
@@ -218,7 +216,7 @@ def jax_polyagamma_normal(
     mean1 = S1 / (2.0 * pi2)
 
     # Var[PG(1, z)] = (1/(2π²))² Σ 1/denom²
-    S2 = jnp.sum(1.0 / denom ** 2, axis=1)  # (n,)
+    S2 = jnp.sum(1.0 / denom**2, axis=1)  # (n,)
     var1 = S2 / (2.0 * pi2) ** 2
 
     # For PG(h, z): mean = h * mean1, var = h * var1
@@ -227,8 +225,12 @@ def jax_polyagamma_normal(
 
     # Draw from Normal approximation
     import jax
+
     key, subkey = jax.random.split(key)
-    result = jax.random.normal(subkey, shape=h.shape, dtype=jnp.float64) * jnp.sqrt(var) + mean
+    result = (
+        jax.random.normal(subkey, shape=h.shape, dtype=jnp.float64) * jnp.sqrt(var)
+        + mean
+    )
 
     # Ensure positivity (PG is always positive)
     result = jnp.maximum(result, 1e-10)

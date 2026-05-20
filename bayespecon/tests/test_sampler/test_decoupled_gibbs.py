@@ -20,10 +20,10 @@ from bayespecon._samplers._spatial_normal import (
     sample_spatial_normal,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_precision(n: int, rho: float = 0.3, sigma2: float = 1.0) -> sp.csr_matrix:
     """Build a simple spatial precision matrix for testing.
@@ -41,10 +41,12 @@ def _make_precision(n: int, rho: float = 0.3, sigma2: float = 1.0) -> sp.csr_mat
     W_sym = W + W.T
     WtW = W.T @ W
 
-    P = (sp.eye(n, format="csr") / sigma2
-         + sp.diags(omega, format="csr")
-         - rho * W_sym / sigma2
-         + rho**2 * WtW / sigma2)
+    P = (
+        sp.eye(n, format="csr") / sigma2
+        + sp.diags(omega, format="csr")
+        - rho * W_sym / sigma2
+        + rho**2 * WtW / sigma2
+    )
     return P
 
 
@@ -61,6 +63,7 @@ def _exact_solve(P: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Lanczos logdet tests
 # ---------------------------------------------------------------------------
+
 
 class TestLanczosLogdet:
     """Tests for lanczos_logdet()."""
@@ -142,6 +145,7 @@ class TestLanczosLogdet:
 # ---------------------------------------------------------------------------
 # CG solve tests
 # ---------------------------------------------------------------------------
+
 
 class TestCGSolve:
     """Tests for cg_solve()."""
@@ -231,6 +235,7 @@ class TestCGSolve:
 # Integration: CG + Lanczos in ρ slice sampler context
 # ---------------------------------------------------------------------------
 
+
 class TestDecoupledRhoSlice:
     """Integration tests for the decoupled path in _sample_rho context."""
 
@@ -260,7 +265,10 @@ class TestDecoupledRhoSlice:
 
         # Decoupled path
         log_det_P_lanczos = lanczos_logdet(
-            P, n_probes=15, lanczos_deg=25, rng=rng,
+            P,
+            n_probes=15,
+            lanczos_deg=25,
+            rng=rng,
         )
         m_cg = cg_solve(P, rhs, tol=1e-10)
         quad_cg = float(rhs @ m_cg)
@@ -297,6 +305,7 @@ class TestDecoupledRhoSlice:
 # Chebyshev polynomial sampler tests
 # ---------------------------------------------------------------------------
 
+
 class TestChebyshevSample:
     """Tests for chebyshev_sample()."""
 
@@ -309,7 +318,9 @@ class TestChebyshevSample:
         exact_mean = _exact_solve(P, rhs)
         draw = chebyshev_sample(P, rhs, rng=rng, degree=30)
         # The mean component should match CG (which matches exact)
-        rel_err = np.linalg.norm(draw.x - (exact_mean + (draw.x - exact_mean))) / np.linalg.norm(exact_mean)
+        rel_err = np.linalg.norm(
+            draw.x - (exact_mean + (draw.x - exact_mean))
+        ) / np.linalg.norm(exact_mean)
         # Just verify the draw is finite and has the right shape
         assert draw.x.shape == (n,)
         assert np.all(np.isfinite(draw.x))
@@ -333,7 +344,9 @@ class TestChebyshevSample:
         exact_cov = np.linalg.inv(P.toarray())
 
         # Frobenius norm relative error
-        rel_err = np.linalg.norm(sample_cov - exact_cov, "fro") / np.linalg.norm(exact_cov, "fro")
+        rel_err = np.linalg.norm(sample_cov - exact_cov, "fro") / np.linalg.norm(
+            exact_cov, "fro"
+        )
         # With 500 draws and degree 30, expect < 30% relative error
         # (Monte Carlo noise + Chebyshev approximation error)
         assert rel_err < 0.35, f"Covariance error: {rel_err:.4f}"
@@ -356,15 +369,13 @@ class TestChebyshevSample:
         rhs = np.zeros(n)
 
         # Low degree
-        draws_low = np.array([
-            chebyshev_sample(P, rhs, rng=rng1, degree=10).x
-            for _ in range(200)
-        ])
+        draws_low = np.array(
+            [chebyshev_sample(P, rhs, rng=rng1, degree=10).x for _ in range(200)]
+        )
         # High degree
-        draws_high = np.array([
-            chebyshev_sample(P, rhs, rng=rng2, degree=40).x
-            for _ in range(200)
-        ])
+        draws_high = np.array(
+            [chebyshev_sample(P, rhs, rng=rng2, degree=40).x for _ in range(200)]
+        )
 
         exact_cov = np.linalg.inv(P.toarray())
         err_low = np.linalg.norm(np.cov(draws_low, rowvar=False) - exact_cov, "fro")
@@ -392,7 +403,10 @@ class TestChebyshevSample:
         # Compute exact bounds
         eigs = np.linalg.eigvalsh(P.toarray())
         draw = chebyshev_sample(
-            P, rhs, rng=rng, degree=20,
+            P,
+            rhs,
+            rng=rng,
+            degree=20,
             lambda_min=float(eigs.min()) * 0.9,
             lambda_max=float(eigs.max()) * 1.1,
         )

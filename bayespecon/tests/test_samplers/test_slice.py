@@ -13,7 +13,8 @@ class TestSliceSample1d:
 
     def test_truncated_normal(self, rng):
         """Sample from N(0, 1) truncated to [-3, 3]."""
-        log_density = lambda x: -0.5 * x * x  # unnormalized N(0, 1)
+        def log_density(x):
+            return -0.5 * x * x  # unnormalized N(0, 1)
         samples = []
         x = 0.0
         for _ in range(5000):
@@ -25,19 +26,23 @@ class TestSliceSample1d:
 
     def test_gamma(self, rng):
         """Sample from Gamma(2, 1) via log-density log(x) - x."""
-        log_density = lambda x: np.log(x) - x if x > 0 else -np.inf
+        def log_density(x):
+            return np.log(x) - x if x > 0 else -np.inf
         samples = []
         x = 2.0
         for _ in range(5000):
             x, _ = slice_sample_1d(log_density, x, 1e-6, 20.0, w=1.0, rng=rng)
             samples.append(x)
         samples = np.array(samples)
-        assert abs(np.mean(samples) - 2.0) < 0.5, f"Mean {np.mean(samples):.3f} far from 2"
+        assert abs(np.mean(samples) - 2.0) < 0.5, (
+            f"Mean {np.mean(samples):.3f} far from 2"
+        )
         assert abs(np.var(samples) - 2.0) < 1.0, f"Var {np.var(samples):.3f} far from 2"
 
     def test_returns_log_density(self, rng):
         """slice_sample_1d returns the log-density at the new point."""
-        log_density = lambda x: -0.5 * x * x
+        def log_density(x):
+            return -0.5 * x * x
         x_new, ld_new = slice_sample_1d(log_density, 0.0, -5.0, 5.0, rng=rng)
         assert np.isclose(ld_new, log_density(x_new), atol=1e-12)
 
@@ -53,7 +58,8 @@ class TestSliceSample1d:
 
     def test_small_w_converges(self, rng):
         """Very small w still produces valid samples (slower mixing)."""
-        log_density = lambda x: -0.5 * x * x
+        def log_density(x):
+            return -0.5 * x * x
         x = 0.0
         for _ in range(200):
             x, _ = slice_sample_1d(log_density, x, -5.0, 5.0, w=0.01, rng=rng)

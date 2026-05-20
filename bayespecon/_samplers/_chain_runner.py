@@ -7,9 +7,9 @@ Each chain runs independently in its own process, with its own
 
 from __future__ import annotations
 
-import numpy as np
 from typing import Callable
-from tqdm.auto import tqdm
+
+import numpy as np
 
 
 def run_chains(
@@ -65,7 +65,6 @@ def run_chains(
         from joblib import Parallel, delayed
 
         results = Parallel(n_jobs=n_jobs, backend="loky")(
-            delayed(chain_fn)(chain_id, seed)
-            for chain_id, seed in enumerate(seeds)
+            delayed(chain_fn)(chain_id, seed) for chain_id, seed in enumerate(seeds)
         )
         return list(results)

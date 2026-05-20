@@ -84,8 +84,8 @@ def _make_sparse_w_operator(W_sparse: sp.csr_matrix):
         A lineax linear operator wrapping W, tagged as symmetric when
         W is symmetric (within floating-point tolerance).
     """
-    import lineax as lx
     import jax.numpy as jnp
+    import lineax as lx
 
     W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
     W_jax = jnp.array(W_dense)
@@ -209,9 +209,7 @@ def traceax_traces(
     # Override with exact values for k=1, 2 (same as _barry_pace_traces)
     traces[0] = float(W_sparse.diagonal().sum())  # tr(W) = 0 for zero-diagonal W
     if order >= 2:
-        traces[1] = float(
-            W_sparse.multiply(W_sparse.T).sum()
-        )  # tr(W^2) = sum(W .* W')
+        traces[1] = float(W_sparse.multiply(W_sparse.T).sum())  # tr(W^2) = sum(W .* W')
 
     return traces
 
@@ -299,7 +297,7 @@ def logdet_traceax(
     I_minus_rhoW_dense = np.eye(n, dtype=np.float64) - rho * np.asarray(
         W_sparse.toarray(), dtype=np.float64
     )
-    I_minus_rhoW_jax = jax.numpy.array(I_minus_rhoW_dense)
+    jax.numpy.array(I_minus_rhoW_dense)
 
     # Build the log(I - rho*W) operator via power series
     # log(I - rho*W) = -sum_{j=1}^{m} (rho^j / j) W^j

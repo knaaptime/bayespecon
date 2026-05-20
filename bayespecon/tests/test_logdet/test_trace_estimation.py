@@ -90,12 +90,16 @@ class TestTraceaxTraces:
             if abs(exact[k]) > 0.5:
                 # Use relative error for large exact values
                 rel_err = abs(result[k] - exact[k]) / abs(exact[k])
-                assert rel_err < 0.2, f"k={k+1}: mean={result[k]:.4f}, exact={exact[k]:.4f}"
+                assert rel_err < 0.2, (
+                    f"k={k + 1}: mean={result[k]:.4f}, exact={exact[k]:.4f}"
+                )
             else:
                 # Use absolute error for near-zero exact values
                 # (tr(W^k) can be 0 for some k in circular contiguity)
                 abs_err = abs(result[k] - exact[k])
-                assert abs_err < 1.0, f"k={k+1}: mean={result[k]:.4f}, exact={exact[k]:.4f}"
+                assert abs_err < 1.0, (
+                    f"k={k + 1}: mean={result[k]:.4f}, exact={exact[k]:.4f}"
+                )
 
     def test_exact_k1_k2(self):
         """k=1 and k=2 entries use exact values (not stochastic)."""
@@ -149,7 +153,9 @@ class TestTraceaxTracesForChebyshev:
         td = traceax_traces_for_chebyshev(W, order=order, n_mc_iter=30)
         # td[i] = mean(tr(W^{i+1})) / (i+1)
         # Check that td[0] = tr(W) / 1 = 0 (zero-diagonal W)
-        assert abs(td[0]) < 1e-10, f"td[0] should be ~0 for zero-diagonal W, got {td[0]}"
+        assert abs(td[0]) < 1e-10, (
+            f"td[0] should be ~0 for zero-diagonal W, got {td[0]}"
+        )
         # td[1] = tr(W^2) / 2
         exact_tr_w2 = float(W.multiply(W.T).sum())
         assert abs(td[1] - exact_tr_w2 / 2) < 1e-10

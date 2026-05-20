@@ -6,9 +6,10 @@ with proper warmup/posterior split, log-likelihood, and observed data.
 
 from __future__ import annotations
 
+from typing import Sequence
+
 import arviz as az
 import numpy as np
-from typing import Sequence
 
 
 def gibbs_to_inference_data(
@@ -89,9 +90,7 @@ def gibbs_to_inference_data(
                 obs_dict[name] = xr.DataArray(arr, dims=["obs_dim"])
             else:
                 obs_dict[name] = xr.DataArray(arr)
-        idata.add_groups(
-            {"observed_data": xr.Dataset(obs_dict)}
-        )
+        idata.add_groups({"observed_data": xr.Dataset(obs_dict)})
 
     # Add sample_stats group
     if sample_stats is not None:

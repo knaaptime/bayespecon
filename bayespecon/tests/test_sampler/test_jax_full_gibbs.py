@@ -9,6 +9,7 @@ All tests are skipped when JAX is not installed.
 from __future__ import annotations
 
 import importlib.util
+
 import numpy as np
 import pytest
 import scipy.sparse as sp
@@ -20,6 +21,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
@@ -31,10 +33,10 @@ from bayespecon._samplers._jax_gibbs import (
 )
 from bayespecon._samplers.pg_gibbs import GibbsPriors, GibbsState
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_test_data(n=20, k=2, rho_true=0.3, seed=42):
     """Create a small synthetic SAR-NB dataset for testing.
@@ -66,9 +68,9 @@ def _make_test_data(n=20, k=2, rho_true=0.3, seed=42):
         A_rho, X @ beta_true + rng.standard_normal(n) * np.sqrt(sigma2_true)
     )
     mu = np.exp(eta_true)
-    y = rng.negative_binomial(
-        alpha_true, alpha_true / (mu + alpha_true)
-    ).astype(np.float64)
+    y = rng.negative_binomial(alpha_true, alpha_true / (mu + alpha_true)).astype(
+        np.float64
+    )
 
     W_sym = W + W.T
     WtW = W.T @ W
@@ -100,6 +102,7 @@ def _make_jax_components(W, W_sym, WtW, W_eigs, X):
 # Test _make_gibbs_step_with_data
 # ---------------------------------------------------------------------------
 
+
 class TestMakeGibbsStepWithData:
     """Tests for _make_gibbs_step_with_data()."""
 
@@ -109,16 +112,26 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = \
+        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
+        )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
 
         gibbs_step = _make_gibbs_step_with_data(
-            y_jax=y_jax, X_jax=X_jax, W_dense_jax=W_dense_jax,
-            n=n, k=k,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            XtX_jax=XtX_jax, priors=priors,
-            pg_n_terms=20, mh_proposal_sd=0.05, n_probes=10, lanczos_deg=30,
+            y_jax=y_jax,
+            X_jax=X_jax,
+            W_dense_jax=W_dense_jax,
+            n=n,
+            k=k,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            XtX_jax=XtX_jax,
+            priors=priors,
+            pg_n_terms=20,
+            mh_proposal_sd=0.05,
+            n_probes=10,
+            lanczos_deg=30,
         )
         assert callable(gibbs_step)
 
@@ -128,16 +141,26 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = \
+        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
+        )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
 
         gibbs_step = _make_gibbs_step_with_data(
-            y_jax=y_jax, X_jax=X_jax, W_dense_jax=W_dense_jax,
-            n=n, k=k,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            XtX_jax=XtX_jax, priors=priors,
-            pg_n_terms=20, mh_proposal_sd=0.05, n_probes=10, lanczos_deg=30,
+            y_jax=y_jax,
+            X_jax=X_jax,
+            W_dense_jax=W_dense_jax,
+            n=n,
+            k=k,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            XtX_jax=XtX_jax,
+            priors=priors,
+            pg_n_terms=20,
+            mh_proposal_sd=0.05,
+            n_probes=10,
+            lanczos_deg=30,
         )
 
         state = {
@@ -166,16 +189,26 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = \
+        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
+        )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
 
         gibbs_step = _make_gibbs_step_with_data(
-            y_jax=y_jax, X_jax=X_jax, W_dense_jax=W_dense_jax,
-            n=n, k=k,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            XtX_jax=XtX_jax, priors=priors,
-            pg_n_terms=20, mh_proposal_sd=0.05, n_probes=10, lanczos_deg=30,
+            y_jax=y_jax,
+            X_jax=X_jax,
+            W_dense_jax=W_dense_jax,
+            n=n,
+            k=k,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            XtX_jax=XtX_jax,
+            priors=priors,
+            pg_n_terms=20,
+            mh_proposal_sd=0.05,
+            n_probes=10,
+            lanczos_deg=30,
         )
 
         state = {
@@ -206,16 +239,26 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = \
+        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
+        )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
 
         gibbs_step = _make_gibbs_step_with_data(
-            y_jax=y_jax, X_jax=X_jax, W_dense_jax=W_dense_jax,
-            n=n, k=k,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            XtX_jax=XtX_jax, priors=priors,
-            pg_n_terms=20, mh_proposal_sd=0.05, n_probes=10, lanczos_deg=30,
+            y_jax=y_jax,
+            X_jax=X_jax,
+            W_dense_jax=W_dense_jax,
+            n=n,
+            k=k,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            XtX_jax=XtX_jax,
+            priors=priors,
+            pg_n_terms=20,
+            mh_proposal_sd=0.05,
+            n_probes=10,
+            lanczos_deg=30,
         )
 
         state = {
@@ -245,12 +288,15 @@ class TestMakeGibbsStepWithData:
         assert float(state["alpha"]) > 0
         assert -0.999 <= float(state["rho"]) <= 0.999
         # MH acceptance rate should be reasonable (>30%)
-        assert accept_count / 20 > 0.3, f"MH acceptance rate too low: {accept_count/20}"
+        assert accept_count / 20 > 0.3, (
+            f"MH acceptance rate too low: {accept_count / 20}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Test run_chain_jax
 # ---------------------------------------------------------------------------
+
 
 class TestRunChainJax:
     """Tests for run_chain_jax()."""
@@ -276,11 +322,19 @@ class TestRunChainJax:
 
         draws, tune = 50, 50
         result = run_chain_jax(
-            y=y, X=X, W_sparse=W,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            priors=priors, init=init,
-            draws=draws, tune=tune, thin=1,
-            return_eta=False, rng=np.random.default_rng(42),
+            y=y,
+            X=X,
+            W_sparse=W,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            priors=priors,
+            init=init,
+            draws=draws,
+            tune=tune,
+            thin=1,
+            return_eta=False,
+            rng=np.random.default_rng(42),
         )
 
         assert result["rho"].shape == (draws,)
@@ -313,11 +367,19 @@ class TestRunChainJax:
 
         draws, tune = 30, 30
         result = run_chain_jax(
-            y=y, X=X, W_sparse=W,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            priors=priors, init=init,
-            draws=draws, tune=tune, thin=1,
-            return_eta=True, rng=np.random.default_rng(42),
+            y=y,
+            X=X,
+            W_sparse=W,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            priors=priors,
+            init=init,
+            draws=draws,
+            tune=tune,
+            thin=1,
+            return_eta=True,
+            rng=np.random.default_rng(42),
         )
 
         assert "eta" in result
@@ -344,11 +406,19 @@ class TestRunChainJax:
 
         draws, tune, thin = 100, 50, 2
         result = run_chain_jax(
-            y=y, X=X, W_sparse=W,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            priors=priors, init=init,
-            draws=draws, tune=tune, thin=thin,
-            return_eta=False, rng=np.random.default_rng(42),
+            y=y,
+            X=X,
+            W_sparse=W,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            priors=priors,
+            init=init,
+            draws=draws,
+            tune=tune,
+            thin=thin,
+            return_eta=False,
+            rng=np.random.default_rng(42),
         )
 
         n_keep = draws // thin
@@ -375,11 +445,19 @@ class TestRunChainJax:
         )
 
         result = run_chain_jax(
-            y=y, X=X, W_sparse=W,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            priors=priors, init=init,
-            draws=50, tune=100, thin=1,
-            return_eta=False, rng=np.random.default_rng(42),
+            y=y,
+            X=X,
+            W_sparse=W,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            priors=priors,
+            init=init,
+            draws=50,
+            tune=100,
+            thin=1,
+            return_eta=False,
+            rng=np.random.default_rng(42),
         )
 
         assert np.all(np.isfinite(result["rho"]))
@@ -411,11 +489,19 @@ class TestRunChainJax:
         )
 
         result = run_chain_jax(
-            y=y, X=X, W_sparse=W,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            priors=priors, init=init,
-            draws=50, tune=50, thin=1,
-            return_eta=False, rng=np.random.default_rng(42),
+            y=y,
+            X=X,
+            W_sparse=W,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            priors=priors,
+            init=init,
+            draws=50,
+            tune=50,
+            thin=1,
+            return_eta=False,
+            rng=np.random.default_rng(42),
         )
 
         assert np.all(result["rho"] >= -0.999)
@@ -440,11 +526,19 @@ class TestRunChainJax:
         )
 
         result = run_chain_jax(
-            y=y, X=X, W_sparse=W,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            priors=priors, init=init,
-            draws=50, tune=50, thin=1,
-            return_eta=False, rng=np.random.default_rng(42),
+            y=y,
+            X=X,
+            W_sparse=W,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            priors=priors,
+            init=init,
+            draws=50,
+            tune=50,
+            thin=1,
+            return_eta=False,
+            rng=np.random.default_rng(42),
         )
 
         assert np.all(result["sigma"] > 0)
@@ -468,11 +562,19 @@ class TestRunChainJax:
         )
 
         result = run_chain_jax(
-            y=y, X=X, W_sparse=W,
-            W_sym_dense=W_sym_dense, WtW_dense=WtW_dense, W_eigs=W_eigs_jax,
-            priors=priors, init=init,
-            draws=50, tune=50, thin=1,
-            return_eta=False, rng=np.random.default_rng(42),
+            y=y,
+            X=X,
+            W_sparse=W,
+            W_sym_dense=W_sym_dense,
+            WtW_dense=WtW_dense,
+            W_eigs=W_eigs_jax,
+            priors=priors,
+            init=init,
+            draws=50,
+            tune=50,
+            thin=1,
+            return_eta=False,
+            rng=np.random.default_rng(42),
         )
 
         assert np.all(result["alpha"] > 0)
@@ -482,6 +584,7 @@ class TestRunChainJax:
 # Test _sample_alpha_python
 # ---------------------------------------------------------------------------
 
+
 class TestSampleAlphaPython:
     """Tests for _sample_alpha_python()."""
 
@@ -489,20 +592,25 @@ class TestSampleAlphaPython:
         """Alpha should always be positive."""
         y, X, W, W_sym, WtW, W_eigs, params = _make_test_data(n=20, k=2)
         state = {"eta": params["eta"], "alpha": params["alpha"]}
-        alpha_new = _sample_alpha_python(state, y, alpha_sigma=10.0, rng=np.random.default_rng(42))
+        alpha_new = _sample_alpha_python(
+            state, y, alpha_sigma=10.0, rng=np.random.default_rng(42)
+        )
         assert alpha_new > 0
 
     def test_reasonable_value(self):
         """Alpha should be in a reasonable range."""
         y, X, W, W_sym, WtW, W_eigs, params = _make_test_data(n=20, k=2)
         state = {"eta": params["eta"], "alpha": params["alpha"]}
-        alpha_new = _sample_alpha_python(state, y, alpha_sigma=10.0, rng=np.random.default_rng(42))
+        alpha_new = _sample_alpha_python(
+            state, y, alpha_sigma=10.0, rng=np.random.default_rng(42)
+        )
         assert 0.01 < alpha_new < 100  # Very wide range
 
 
 # ---------------------------------------------------------------------------
 # Test _nb_loglik_pointwise_jax
 # ---------------------------------------------------------------------------
+
 
 class TestNBLoglikPointwiseJax:
     """Tests for _nb_loglik_pointwise_jax()."""

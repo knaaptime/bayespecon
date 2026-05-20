@@ -19,7 +19,6 @@ import pytest
 from bayespecon import SARNegBinLatent, dgp
 from bayespecon.tests.helpers import W_to_graph, make_rook_W
 
-
 # ---------------------------------------------------------------------------
 # Fast build / validation tests (not marked slow)
 # ---------------------------------------------------------------------------
@@ -131,8 +130,12 @@ class TestSARNegBinLatentRecovery:
 
         model = SARNegBinLatent(y=y, X=X, W=W)
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         assert "posterior" in idata
@@ -153,8 +156,12 @@ class TestSARNegBinLatentRecovery:
 
         model = SARNegBinLatent(y=y, X=X, W=W)
         idata = model.fit(
-            draws=n_draws, tune=TUNE, chains=n_chains,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=n_draws,
+            tune=TUNE,
+            chains=n_chains,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         assert idata.posterior["rho"].shape == (n_chains, n_draws)
@@ -170,8 +177,12 @@ class TestSARNegBinLatentRecovery:
 
         model = SARNegBinLatent(y=y, X=X, W=W)
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         rho_mean = float(idata.posterior["rho"].mean())
@@ -190,8 +201,12 @@ class TestSARNegBinLatentRecovery:
 
         model = SARNegBinLatent(y=y, X=X, W=W)
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         alpha_mean = float(idata.posterior["alpha"].mean())
@@ -208,8 +223,12 @@ class TestSARNegBinLatentRecovery:
 
         model = SARNegBinLatent(y=y, X=X, W=W)
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         beta_mean = idata.posterior["beta"].mean(dim=["chain", "draw"]).values
@@ -244,8 +263,13 @@ class TestSARNegBinLatentRecovery:
 
         model = SARNegBinLatent(y=y, X=X, W=W)
         idata = model.fit(
-            draws=50, tune=50, chains=1, random_seed=42, n_jobs=1,
-            progressbar=False, return_eta=True,
+            draws=50,
+            tune=50,
+            chains=1,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
+            return_eta=True,
         )
 
         assert "eta" in idata.posterior
@@ -259,8 +283,13 @@ class TestSARNegBinLatentRecovery:
 
         model = SARNegBinLatent(y=y, X=X, W=W)
         idata = model.fit(
-            draws=100, tune=100, chains=1, random_seed=42,
-            n_jobs=1, progressbar=False, thin=2,
+            draws=100,
+            tune=100,
+            chains=1,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
+            thin=2,
         )
 
         # With thin=2, we keep 100/2 = 50 draws

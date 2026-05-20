@@ -42,11 +42,12 @@ Neal, R. M. (2003). Slice sampling. *Annals of Statistics*, 31(3), 705–767.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Callable, NamedTuple
+
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-from dataclasses import dataclass
-from typing import Callable, NamedTuple
 
 from ._polyagamma import sample_polyagamma
 from ._slice import slice_sample_1d
@@ -56,16 +57,14 @@ from ._spatial_normal import (
     chebyshev_sample,
     jax_build_P_dense,
     jax_chebyshev_sample,
-    jax_cg_solve,
-    jax_lanczos_logdet,
     lanczos_logdet,
     sample_spatial_normal,
 )
 
-
 # ---------------------------------------------------------------------------
 # Data classes for state, priors, and precomputed cache
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class GibbsState:
@@ -73,12 +72,13 @@ class GibbsState:
 
     All arrays are numpy arrays; scalars are Python floats.
     """
-    eta: np.ndarray       # (n,) latent field
-    beta: np.ndarray      # (k,) regression coefficients
-    sigma2: float         # residual variance σ²
-    rho: float            # spatial autoregressive parameter
-    alpha: float          # NB dispersion parameter
-    omega: np.ndarray     # (n,) PG auxiliary variables
+
+    eta: np.ndarray  # (n,) latent field
+    beta: np.ndarray  # (k,) regression coefficients
+    sigma2: float  # residual variance σ²
+    rho: float  # spatial autoregressive parameter
+    alpha: float  # NB dispersion parameter
+    omega: np.ndarray  # (n,) PG auxiliary variables
 
 
 @dataclass
@@ -88,10 +88,11 @@ class GibbsPriors:
     All priors are weakly informative by default, matching the
     ``SARNegativeBinomial`` defaults.
     """
+
     beta_mu: np.ndarray | float = 0.0
     beta_sigma: np.ndarray | float = 1e6
-    sigma_sigma: float = 10.0    # HalfNormal scale for σ
-    alpha_sigma: float = 10.0    # HalfNormal scale for α
+    sigma_sigma: float = 10.0  # HalfNormal scale for σ
+    alpha_sigma: float = 10.0  # HalfNormal scale for α
     rho_lower: float = -0.999
     rho_upper: float = 0.999
 
@@ -125,29 +126,31 @@ class GibbsCache(NamedTuple):
     draws.  This gives 3–4× speedup for single draws and 20–27×
     per-draw when batching Chebyshev draws, for n ≤ ~5000.
     """
+
     W_sparse: sp.csr_matrix
-    XtX: np.ndarray                       # (k, k) = X^T X
-    logdet_fn: Callable[[float], float]    # log|I - rho*W| callable
+    XtX: np.ndarray  # (k, k) = X^T X
+    logdet_fn: Callable[[float], float]  # log|I - rho*W| callable
     rho_lower: float
     rho_upper: float
     cholmod_factor: CholmodFactor | None = None
-    W_sym_over_s2: sp.csr_matrix | None = None   # (W + W^T), divided by σ² at runtime
-    WtW_over_s2: sp.csr_matrix | None = None     # W^T W, divided by σ² at runtime
-    solve_method: str = "cholmod"          # "cholmod" | "splu" | "cg" | "jax_dense"
-    logdet_P_method: str = "cholmod"      # "cholmod" | "lanczos" | "jax_dense"
-    sample_method: str = "cholmod"        # "cholmod" | "splu" | "chebyshev" | "jax_dense"
-    lanczos_n_probes: int = 10            # probe vectors for Lanczos logdet
-    lanczos_deg: int = 30                 # Lanczos iteration depth
-    chebyshev_degree: int = 30            # Chebyshev polynomial degree for η draw
+    W_sym_over_s2: sp.csr_matrix | None = None  # (W + W^T), divided by σ² at runtime
+    WtW_over_s2: sp.csr_matrix | None = None  # W^T W, divided by σ² at runtime
+    solve_method: str = "cholmod"  # "cholmod" | "splu" | "cg" | "jax_dense"
+    logdet_P_method: str = "cholmod"  # "cholmod" | "lanczos" | "jax_dense"
+    sample_method: str = "cholmod"  # "cholmod" | "splu" | "chebyshev" | "jax_dense"
+    lanczos_n_probes: int = 10  # probe vectors for Lanczos logdet
+    lanczos_deg: int = 30  # Lanczos iteration depth
+    chebyshev_degree: int = 30  # Chebyshev polynomial degree for η draw
     # JAX dense backend fields (only used when solve_method="jax_dense")
-    W_sym_dense: object | None = None     # jax.numpy.ndarray (n, n): W + W^T
-    WtW_dense: object | None = None       # jax.numpy.ndarray (n, n): W^T W
-    W_eigs: object | None = None          # jax.numpy.ndarray (n,): eigenvalues of W
+    W_sym_dense: object | None = None  # jax.numpy.ndarray (n, n): W + W^T
+    WtW_dense: object | None = None  # jax.numpy.ndarray (n, n): W^T W
+    W_eigs: object | None = None  # jax.numpy.ndarray (n,): eigenvalues of W
 
 
 # ---------------------------------------------------------------------------
 # Gibbs block samplers
 # ---------------------------------------------------------------------------
+
 
 def _sample_omega(
     y: np.ndarray,
@@ -178,7 +181,7 @@ def _sample_omega(
     # Guard against numerical zeros (alpha can be very small during
     # early iterations when y_i = 0)
     h = np.maximum(h, 1e-6)
-    z = eta         # tilting parameters
+    z = eta  # tilting parameters
     return sample_polyagamma(h, z, rng=rng)
 
 
@@ -231,11 +234,17 @@ def _sample_eta(
 
     # Precision: P = I/σ² + diag(ω) - ρ*(W+W^T)/σ² + ρ²*W^T W/σ²
     # Use precomputed pieces if available to avoid A_rho^T @ A_rho product.
-    if cache is not None and cache.W_sym_over_s2 is not None and cache.WtW_over_s2 is not None:
-        P = (sp.eye(n, format="csr") / sigma2
-             + sp.diags(omega, format="csr")
-             - rho * cache.W_sym_over_s2 / sigma2
-             + rho**2 * cache.WtW_over_s2 / sigma2)
+    if (
+        cache is not None
+        and cache.W_sym_over_s2 is not None
+        and cache.WtW_over_s2 is not None
+    ):
+        P = (
+            sp.eye(n, format="csr") / sigma2
+            + sp.diags(omega, format="csr")
+            - rho * cache.W_sym_over_s2 / sigma2
+            + rho**2 * cache.WtW_over_s2 / sigma2
+        )
     else:
         A_rho = sp.eye(n, format="csr") - rho * W_sparse
         AtA = A_rho.T @ A_rho / sigma2
@@ -253,19 +262,25 @@ def _sample_eta(
     if sample_method == "jax_dense":
         # JAX Chebyshev path: build dense P, use vmap over draws
         import jax
+
         jax.config.update("jax_enable_x64", True)
         import jax.numpy as jnp
+
         omega_jax = jnp.asarray(omega)
         P_dense = jax_build_P_dense(
-            rho, sigma2, omega_jax,
-            cache.W_sym_dense, cache.WtW_dense,
+            rho,
+            sigma2,
+            omega_jax,
+            cache.W_sym_dense,
+            cache.WtW_dense,
         )
         rhs_jax = jnp.asarray(rhs)
         # Create JAX PRNG key from numpy RNG (avoids pickle issues with
         # joblib worker processes — JAX keys can't be serialized)
         _jax_key_eta = jax.random.PRNGKey(rng.integers(2**31))
         draw = jax_chebyshev_sample(
-            P_dense, rhs_jax,
+            P_dense,
+            rhs_jax,
             key=_jax_key_eta,
             degree=cache.chebyshev_degree,
         )
@@ -321,7 +336,9 @@ def _sample_beta(
 
     # Prior precision and mean
     beta_mu = np.broadcast_to(np.asarray(priors.beta_mu, dtype=np.float64), (k,))
-    beta_sigma2 = np.broadcast_to(np.asarray(priors.beta_sigma, dtype=np.float64) ** 2, (k,))
+    beta_sigma2 = np.broadcast_to(
+        np.asarray(priors.beta_sigma, dtype=np.float64) ** 2, (k,)
+    )
 
     # Posterior precision: Sigma_beta_inv = diag(1/sigma_beta^2) + XtX / sigma2
     Sigma_beta_inv = np.diag(1.0 / beta_sigma2) + XtX / sigma2
@@ -384,7 +401,7 @@ def _sample_sigma2(
     # shape += 0.5, rate += 1/(2*σ_σ²)
     sigma_sigma = priors.sigma_sigma
     a_post = n / 2.0 + 0.5 + 1.0  # (n + 3) / 2
-    b_post = float(r @ r) / 2.0 + 1.0 / (2.0 * sigma_sigma ** 2)
+    b_post = float(r @ r) / 2.0 + 1.0 / (2.0 * sigma_sigma**2)
 
     # Draw sigma2 ~ InvGamma(a_post, b_post)
     # InvGamma(a, b) has density ∝ x^{-(a+1)} exp(-b/x)
@@ -490,9 +507,12 @@ def _sample_rho(
     use_jax = solve_method == "jax_dense"
     if use_jax:
         import jax
+
         jax.config.update("jax_enable_x64", True)
         import jax.numpy as jnp
+
         from bayespecon._samplers._spatial_normal import _jax_log_density_core
+
         # Convert omega to JAX array (changes each Gibbs iteration,
         # but is constant across ρ candidates within one slice step)
         omega_jax = jnp.asarray(omega)
@@ -592,9 +612,9 @@ def _sample_rho(
     # Use cached log-density if available
     x0 = state.rho
     if log_density_current is not None:
-        ld0 = log_density_current
+        pass
     else:
-        ld0 = log_density(x0)
+        log_density(x0)
 
     rho_new, log_density_new = slice_sample_1d(
         log_density=log_density,
@@ -659,6 +679,7 @@ def _sample_alpha(
         #   - log(y!)
         # Using scipy's nbinom: n=alpha, p=alpha/(mu+alpha)
         from scipy.special import gammaln
+
         log_lik = (
             gammaln(y + alpha)
             - gammaln(alpha)
@@ -670,7 +691,7 @@ def _sample_alpha(
         # HalfNormal prior on alpha: p(alpha) = (2/(pi*sigma^2))^{1/2} exp(-alpha^2/(2*sigma^2))
         # On log(alpha) scale: log p(alpha) + log(alpha) [Jacobian]
         # = -alpha^2 / (2*sigma^2) + log(alpha) + const
-        log_prior = -alpha ** 2 / (2.0 * alpha_sigma ** 2)
+        log_prior = -(alpha**2) / (2.0 * alpha_sigma**2)
 
         # Jacobian: d(alpha)/d(log_alpha) = alpha, so log|J| = log(alpha) = log_a
         return log_a + total_log_lik + log_prior
@@ -680,7 +701,7 @@ def _sample_alpha(
         log_density=log_density,
         x0=log_alpha,
         lower=-10.0,  # alpha > exp(-10) ≈ 4.5e-5
-        upper=10.0,   # alpha < exp(10) ≈ 22026
+        upper=10.0,  # alpha < exp(10) ≈ 22026
         w=0.5,
         rng=rng,
     )
@@ -691,6 +712,7 @@ def _sample_alpha(
 # ---------------------------------------------------------------------------
 # NB log-likelihood (for InferenceData)
 # ---------------------------------------------------------------------------
+
 
 def _nb_loglik_pointwise(
     y: np.ndarray,
@@ -714,6 +736,7 @@ def _nb_loglik_pointwise(
         Pointwise log-likelihood values.
     """
     from scipy.special import gammaln
+
     mu = np.exp(eta)
     return (
         gammaln(y + alpha)
@@ -726,6 +749,7 @@ def _nb_loglik_pointwise(
 # ---------------------------------------------------------------------------
 # Main chain runner
 # ---------------------------------------------------------------------------
+
 
 def run_chain(
     y: np.ndarray,
@@ -806,7 +830,6 @@ def run_chain(
     # Track log-density at current rho for caching
     log_density_rho = None
 
-    keep_idx = 0
     for i in range(total_iters):
         # --- Block 1: ω | η, α ---
         state.omega = _sample_omega(y, state.alpha, state.eta, rng=rng)
@@ -828,8 +851,13 @@ def run_chain(
 
         # --- Block 5: ρ | β, σ², ω, α, y (collapsed, η integrated out) ---
         state.rho, log_density_rho = _sample_rho(
-            state, cache, priors, y, X,
-            rng=rng, log_density_current=log_density_rho,
+            state,
+            cache,
+            priors,
+            y,
+            X,
+            rng=rng,
+            log_density_current=log_density_rho,
         )
 
         # --- Block 6: α | y, η ---

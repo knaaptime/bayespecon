@@ -891,7 +891,6 @@ def register_jax_dispatch() -> bool:
         """
         from jax.experimental import sparse as jsparse
 
-        n = op._n
         W_bcoo = jsparse.BCOO.from_scipy_sparse(op._W)
         W_T_bcoo = jsparse.BCOO.from_scipy_sparse(op._W.transpose().tocsr())
 

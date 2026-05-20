@@ -27,9 +27,9 @@ class TestSampleSpatialNormal:
         assert np.all(np.isfinite(draw.x))
         # The mean should be mean_term since P = I → m = P^{-1} @ mean_term = mean_term
         # Check empirical mean over many draws
-        draws = np.array([
-            sample_spatial_normal(P, mean_term, rng=rng).x for _ in range(2000)
-        ])
+        draws = np.array(
+            [sample_spatial_normal(P, mean_term, rng=rng).x for _ in range(2000)]
+        )
         empirical_mean = draws.mean(axis=0)
         np.testing.assert_allclose(empirical_mean, mean_term, atol=0.15)
 
@@ -46,9 +46,9 @@ class TestSampleSpatialNormal:
 
         # Expected mean: P^{-1} @ mean_term = mean_term / v
         expected_mean = mean_term / v
-        draws = np.array([
-            sample_spatial_normal(P, mean_term, rng=rng).x for _ in range(3000)
-        ])
+        draws = np.array(
+            [sample_spatial_normal(P, mean_term, rng=rng).x for _ in range(3000)]
+        )
         empirical_mean = draws.mean(axis=0)
         np.testing.assert_allclose(empirical_mean, expected_mean, atol=0.1)
 
@@ -59,16 +59,20 @@ class TestSampleSpatialNormal:
         diag_val = 2.0
         offdiag_val = -0.5
         P = sp.diags(
-            [offdiag_val * np.ones(n - 1), diag_val * np.ones(n), offdiag_val * np.ones(n - 1)],
+            [
+                offdiag_val * np.ones(n - 1),
+                diag_val * np.ones(n),
+                offdiag_val * np.ones(n - 1),
+            ],
             offsets=[-1, 0, 1],
             format="csc",
         )
         mean_term = rng.standard_normal(n)
 
         # Draw many samples
-        draws = np.array([
-            sample_spatial_normal(P, mean_term, rng=rng).x for _ in range(5000)
-        ])
+        draws = np.array(
+            [sample_spatial_normal(P, mean_term, rng=rng).x for _ in range(5000)]
+        )
 
         # Check mean
         P_dense = P.toarray()
@@ -79,9 +83,7 @@ class TestSampleSpatialNormal:
         # Check diagonal of covariance (most reliably estimated)
         P_inv = np.linalg.inv(P_dense)
         empirical_cov = np.cov(draws.T)
-        np.testing.assert_allclose(
-            np.diag(empirical_cov), np.diag(P_inv), atol=0.08
-        )
+        np.testing.assert_allclose(np.diag(empirical_cov), np.diag(P_inv), atol=0.08)
         # Check off-diagonal elements with looser tolerance (MC noise)
         np.testing.assert_allclose(empirical_cov, P_inv, atol=0.25)
 
@@ -103,10 +105,12 @@ class TestSampleSpatialNormal:
         expected_mean = mean_term / v
         assert np.allclose(draw1.x, draw2.x) is False  # different random draws
         # But the means should be close (both centered on the same point)
-        draws = np.array([
-            sample_spatial_normal(P, mean_term, rng=rng, cached_factor=factor).x
-            for _ in range(2000)
-        ])
+        draws = np.array(
+            [
+                sample_spatial_normal(P, mean_term, rng=rng, cached_factor=factor).x
+                for _ in range(2000)
+            ]
+        )
         np.testing.assert_allclose(draws.mean(axis=0), expected_mean, atol=0.1)
 
     @pytest.mark.skipif(not has_cholmod(), reason="CHOLMOD not available")
@@ -124,6 +128,7 @@ class TestSampleSpatialNormal:
 
         # Check logdet matches scipy
         import scipy.sparse.linalg as spla
+
         lu = spla.splu(sp.csc_matrix(P), permc_spec="MMD_AT_PLUS_A")
         logdet_splu = np.sum(np.log(np.abs(lu.U.diagonal())))
         np.testing.assert_allclose(factor.logdet(), logdet_splu, rtol=1e-10)
@@ -153,8 +158,11 @@ class TestSampleSpatialNormal:
 
         # Verify solve matches fresh factorization
         from sksparse.cholmod import cholesky
+
         f2 = cholesky(P2)
-        np.testing.assert_allclose(factor.solve(mean_term), f2.solve_A(mean_term), atol=1e-12)
+        np.testing.assert_allclose(
+            factor.solve(mean_term), f2.solve_A(mean_term), atol=1e-12
+        )
 
     def test_splu_fallback(self, rng):
         """splu fallback produces correct samples."""
@@ -169,10 +177,12 @@ class TestSampleSpatialNormal:
 
         # Check empirical mean
         expected_mean = mean_term / v
-        draws = np.array([
-            sample_spatial_normal(P, mean_term, rng=rng, use_cholmod=False).x
-            for _ in range(2000)
-        ])
+        draws = np.array(
+            [
+                sample_spatial_normal(P, mean_term, rng=rng, use_cholmod=False).x
+                for _ in range(2000)
+            ]
+        )
         np.testing.assert_allclose(draws.mean(axis=0), expected_mean, atol=0.1)
 
     @pytest.mark.skipif(not has_cholmod(), reason="scikit-sparse not installed")

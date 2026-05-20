@@ -250,73 +250,73 @@ def simulate_sar_negbin(
 ) -> dict:
     r"""Simulate data from a SAR-NB2 DGP.
 
-        The latent log-mean follows the SAR structural form:
+    The latent log-mean follows the SAR structural form:
 
-        .. math::
+    .. math::
 
-            \eta = \rho W \eta + X\beta + \nu, \quad \nu \sim N(0, \sigma^2 I)
+        \eta = \rho W \eta + X\beta + \nu, \quad \nu \sim N(0, \sigma^2 I)
 
-        which in reduced form is:
+    which in reduced form is:
 
-        .. math::
+    .. math::
 
-            \eta = (I - \rho W)^{-1}(X\beta + \nu), \quad \mu = \exp(\eta)
+        \eta = (I - \rho W)^{-1}(X\beta + \nu), \quad \mu = \exp(\eta)
 
-        When ``sigma2 = 0`` (the default), the DGP reduces to the
-        deterministic reduced form :math:`\eta = (I - \rho W)^{-1} X\beta`,
-        matching the :class:`SARNegativeBinomial` model specification.
-        When ``sigma2 > 0``, the structural-form noise is included,
-        matching the :class:`SARNegBinLatent` model specification.
+    When ``sigma2 = 0`` (the default), the DGP reduces to the
+    deterministic reduced form :math:`\eta = (I - \rho W)^{-1} X\beta`,
+    matching the :class:`SARNegativeBinomial` model specification.
+    When ``sigma2 > 0``, the structural-form noise is included,
+    matching the :class:`SARNegBinLatent` model specification.
 
-        Counts are sampled as NB2:
+    Counts are sampled as NB2:
 
-        .. math::
+    .. math::
 
-            y_i \sim \mathrm{NegBin}(\mu_i, \alpha),
-            \;\;\mathrm{Var}(y_i)=\mu_i+\mu_i^2/\alpha.
+        y_i \sim \mathrm{NegBin}(\mu_i, \alpha),
+        \;\;\mathrm{Var}(y_i)=\mu_i+\mu_i^2/\alpha.
 
-        Parameters
-        ----------
-        n : int, optional
-            Square-grid side length used when only ``n`` is supplied. This
-            generates ``n * n`` observations on an ``n x n`` rook grid.
-            When ``W`` or ``gdf`` is provided, ``n`` (if provided) must match
-            the implied number of observations.
-        W : Graph or array-like, optional
-            Spatial weights.
-        gdf : GeoDataFrame, optional
-            Geodataframe used to construct weights.
-        rho : float, default 0.5
-            Spatial autoregressive parameter.
-        beta : ndarray, optional
-            Regression coefficients (including intercept). Defaults to
-            ``[1.0, 0.6]``.
-        alpha : float, default 2.0
-            NB2 dispersion parameter. Must be strictly positive.
-        sigma2 : float, default 0.0
-            Structural-form residual variance. When 0, the DGP is
-            deterministic (no noise in the latent field). When > 0,
-            Gaussian noise is added to the structural form.
-        err_hetero : bool, default False
-            Heteroskedastic errors (not yet implemented; ignored with a
-            warning).
-        rng : numpy.random.Generator, optional
-            Random number generator.
-        seed : int, optional
-            Random seed (used only if rng is None).
-        contiguity : str, default "queen"
-            Contiguity type for constructing W when n is given.
-        create_gdf : bool, default False
-            Whether to attach a GeoDataFrame to the output.
-        geometry_type : str, default "polygon"
-            Type of geometry for the GeoDataFrame.
+    Parameters
+    ----------
+    n : int, optional
+        Square-grid side length used when only ``n`` is supplied. This
+        generates ``n * n`` observations on an ``n x n`` rook grid.
+        When ``W`` or ``gdf`` is provided, ``n`` (if provided) must match
+        the implied number of observations.
+    W : Graph or array-like, optional
+        Spatial weights.
+    gdf : GeoDataFrame, optional
+        Geodataframe used to construct weights.
+    rho : float, default 0.5
+        Spatial autoregressive parameter.
+    beta : ndarray, optional
+        Regression coefficients (including intercept). Defaults to
+        ``[1.0, 0.6]``.
+    alpha : float, default 2.0
+        NB2 dispersion parameter. Must be strictly positive.
+    sigma2 : float, default 0.0
+        Structural-form residual variance. When 0, the DGP is
+        deterministic (no noise in the latent field). When > 0,
+        Gaussian noise is added to the structural form.
+    err_hetero : bool, default False
+        Heteroskedastic errors (not yet implemented; ignored with a
+        warning).
+    rng : numpy.random.Generator, optional
+        Random number generator.
+    seed : int, optional
+        Random seed (used only if rng is None).
+    contiguity : str, default "queen"
+        Contiguity type for constructing W when n is given.
+    create_gdf : bool, default False
+        Whether to attach a GeoDataFrame to the output.
+    geometry_type : str, default "polygon"
+        Type of geometry for the GeoDataFrame.
 
-        Returns
-        -------
-        dict
-            Dictionary with keys ``y``, ``X``, ``mu``, ``W_dense``,
-            ``W_graph``, and ``params_true``. When ``sigma2 > 0``,
-            ``params_true`` also includes ``sigma2``.
+    Returns
+    -------
+    dict
+        Dictionary with keys ``y``, ``X``, ``mu``, ``W_dense``,
+        ``W_graph``, and ``params_true``. When ``sigma2 > 0``,
+        ``params_true`` also includes ``sigma2``.
     """
 
     if alpha <= 0:

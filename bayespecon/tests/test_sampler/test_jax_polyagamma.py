@@ -48,23 +48,25 @@ needs_polyagamma = pytest.mark.skipif(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _pg1_mean(z: float, n_terms: int = 10000) -> float:
     """Analytical mean of PG(1, z) via truncated series."""
     k = np.arange(n_terms, dtype=np.float64)
     denom = (k + 0.5) ** 2 + (z / (2 * np.pi)) ** 2
-    return np.sum(1.0 / denom) / (2 * np.pi ** 2)
+    return np.sum(1.0 / denom) / (2 * np.pi**2)
 
 
 def _pg1_var(z: float, n_terms: int = 10000) -> float:
     """Analytical variance of PG(1, z) via truncated series."""
     k = np.arange(n_terms, dtype=np.float64)
     denom = (k + 0.5) ** 2 + (z / (2 * np.pi)) ** 2
-    return np.sum(1.0 / denom ** 2) / (2 * np.pi ** 2) ** 2
+    return np.sum(1.0 / denom**2) / (2 * np.pi**2) ** 2
 
 
 # ---------------------------------------------------------------------------
 # jax_polyagamma tests — sum-of-exponentials method
 # ---------------------------------------------------------------------------
+
 
 class TestJaxPolyaGammaExp:
     """Tests for jax_polyagamma with method='exp' (sum-of-exponentials)."""
@@ -126,9 +128,9 @@ class TestJaxPolyaGammaExp:
         means = {}
         for h_val in [1.0, 3.0, 10.0]:
             keys = jax.random.split(key, n_draws)
-            draws = jax.vmap(
-                lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20)
-            )(keys)
+            draws = jax.vmap(lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20))(
+                keys
+            )
             means[h_val] = float(jnp.mean(draws))
             key = jax.random.split(key, 1)[0]
 
@@ -138,7 +140,9 @@ class TestJaxPolyaGammaExp:
 
         # PG(10,z) mean should be ~10x PG(1,z) mean
         ratio_10 = means[10.0] / means[1.0]
-        assert abs(ratio_10 - 10.0) < 2.0, f"PG(10,z)/PG(1,z) = {ratio_10:.2f}, expected ~10"
+        assert abs(ratio_10 - 10.0) < 2.0, (
+            f"PG(10,z)/PG(1,z) = {ratio_10:.2f}, expected ~10"
+        )
 
     def test_z_zero_larger_than_z_nonzero(self):
         """PG(h, 0) should be larger than PG(h, z) for z > 0."""
@@ -147,15 +151,15 @@ class TestJaxPolyaGammaExp:
         h_val = 5.0
 
         keys = jax.random.split(key, n_draws)
-        draws_z0 = jax.vmap(
-            lambda k: jax_polyagamma(h_val, 0.0, key=k, n_terms=20)
-        )(keys)
+        draws_z0 = jax.vmap(lambda k: jax_polyagamma(h_val, 0.0, key=k, n_terms=20))(
+            keys
+        )
 
         key = jax.random.split(key, 1)[0]
         keys = jax.random.split(key, n_draws)
-        draws_z2 = jax.vmap(
-            lambda k: jax_polyagamma(h_val, 2.0, key=k, n_terms=20)
-        )(keys)
+        draws_z2 = jax.vmap(lambda k: jax_polyagamma(h_val, 2.0, key=k, n_terms=20))(
+            keys
+        )
 
         mean_z0 = float(jnp.mean(draws_z0))
         mean_z2 = float(jnp.mean(draws_z2))
@@ -237,9 +241,9 @@ class TestJaxPolyaGammaExp:
         z_val = 1.5
 
         keys = jax.random.split(key, n_draws)
-        draws_pos = jax.vmap(
-            lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20)
-        )(keys)
+        draws_pos = jax.vmap(lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20))(
+            keys
+        )
 
         key = jax.random.split(key, 1)[0]
         keys = jax.random.split(key, n_draws)
@@ -258,6 +262,7 @@ class TestJaxPolyaGammaExp:
 # ---------------------------------------------------------------------------
 # jax_polyagamma tests — gamma method
 # ---------------------------------------------------------------------------
+
 
 class TestJaxPolyaGammaGamma:
     """Tests for jax_polyagamma with method='gamma' (sum-of-gammas)."""
@@ -295,6 +300,7 @@ class TestJaxPolyaGammaGamma:
 # jax_polyagamma_normal tests
 # ---------------------------------------------------------------------------
 
+
 class TestJaxPolyaGammaNormal:
     """Tests for jax_polyagamma_normal (Normal approximation)."""
 
@@ -328,9 +334,7 @@ class TestJaxPolyaGammaNormal:
         z_val = 1.0
 
         keys = jax.random.split(key, n_draws)
-        draws = jax.vmap(
-            lambda k: jax_polyagamma_normal(h_val, z_val, key=k)
-        )(keys)
+        draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
 
         empirical_mean = float(jnp.mean(draws))
         analytical_mean = _pg1_mean(z_val) * h_val
@@ -348,9 +352,7 @@ class TestJaxPolyaGammaNormal:
         z_val = 1.0
 
         keys = jax.random.split(key, n_draws)
-        draws = jax.vmap(
-            lambda k: jax_polyagamma_normal(h_val, z_val, key=k)
-        )(keys)
+        draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
 
         empirical_var = float(jnp.var(draws))
         analytical_var = _pg1_var(z_val) * h_val
@@ -369,9 +371,7 @@ class TestJaxPolyaGammaNormal:
         means = {}
         for h_val in [5.0, 10.0, 50.0]:
             keys = jax.random.split(key, n_draws)
-            draws = jax.vmap(
-                lambda k: jax_polyagamma_normal(h_val, z_val, key=k)
-            )(keys)
+            draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
             means[h_val] = float(jnp.mean(draws))
             key = jax.random.split(key, 1)[0]
 
@@ -400,15 +400,11 @@ class TestJaxPolyaGammaNormal:
         h_val = 10.0
 
         keys = jax.random.split(key, n_draws)
-        draws_z0 = jax.vmap(
-            lambda k: jax_polyagamma_normal(h_val, 0.0, key=k)
-        )(keys)
+        draws_z0 = jax.vmap(lambda k: jax_polyagamma_normal(h_val, 0.0, key=k))(keys)
 
         key = jax.random.split(key, 1)[0]
         keys = jax.random.split(key, n_draws)
-        draws_z2 = jax.vmap(
-            lambda k: jax_polyagamma_normal(h_val, 2.0, key=k)
-        )(keys)
+        draws_z2 = jax.vmap(lambda k: jax_polyagamma_normal(h_val, 2.0, key=k))(keys)
 
         mean_z0 = float(jnp.mean(draws_z0))
         mean_z2 = float(jnp.mean(draws_z2))
@@ -420,6 +416,7 @@ class TestJaxPolyaGammaNormal:
 # ---------------------------------------------------------------------------
 # Comparison with polyagamma reference (if available)
 # ---------------------------------------------------------------------------
+
 
 @needs_polyagamma
 class TestPolyaGammaReferenceComparison:
@@ -434,9 +431,9 @@ class TestPolyaGammaReferenceComparison:
 
         # JAX draws
         keys = jax.random.split(key, n_draws)
-        jax_draws = jax.vmap(
-            lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20)
-        )(keys)
+        jax_draws = jax.vmap(lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20))(
+            keys
+        )
 
         # Reference draws
         ref_draws = np.array([pg_ref(1, z_val) for _ in range(n_draws)])
@@ -458,9 +455,7 @@ class TestPolyaGammaReferenceComparison:
 
         # JAX Normal draws
         keys = jax.random.split(key, n_draws)
-        jax_draws = jax.vmap(
-            lambda k: jax_polyagamma_normal(h_val, z_val, key=k)
-        )(keys)
+        jax_draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
 
         # Reference draws
         ref_draws = np.array([pg_ref(h_val, z_val) for _ in range(n_draws)])
@@ -501,6 +496,7 @@ class TestPolyaGammaReferenceComparison:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
@@ -549,9 +545,7 @@ class TestEdgeCases:
         z_val = 1.0
 
         keys = jax.random.split(key, n_draws)
-        draws = jax.vmap(
-            lambda k: jax_polyagamma_normal(h_val, z_val, key=k)
-        )(keys)
+        draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
 
         analytical_mean = _pg1_mean(z_val) * h_val
         empirical_mean = float(jnp.mean(draws))

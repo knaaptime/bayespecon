@@ -28,13 +28,13 @@ import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
-from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
-from ..logdet import make_logdet_numpy_fn
 from .._samplers._chain_runner import run_chains
 from .._samplers._idata import gibbs_to_inference_data
-from .._samplers.pg_gibbs import GibbsCache, GibbsPriors, GibbsState, run_chain
-from .._samplers._spatial_normal import CholmodFactor, has_cholmod
 from .._samplers._jax_gibbs import run_chain_jax
+from .._samplers._spatial_normal import CholmodFactor, has_cholmod
+from .._samplers.pg_gibbs import GibbsCache, GibbsPriors, GibbsState, run_chain
+from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
+from ..logdet import make_logdet_numpy_fn
 from .base import SpatialModel
 
 
@@ -81,9 +81,7 @@ class SARNegBinLatent(SpatialModel):
         # Validate y is integer and non-negative
         y_round = np.round(self._y).astype(np.int64)
         if not np.allclose(self._y, y_round):
-            raise ValueError(
-                "SARNegBinLatent requires integer-valued observations."
-            )
+            raise ValueError("SARNegBinLatent requires integer-valued observations.")
         if np.any(y_round < 0):
             raise ValueError(
                 "SARNegBinLatent requires non-negative integer observations."
@@ -222,17 +220,18 @@ class SARNegBinLatent(SpatialModel):
 
         # α₀: method of moments estimate
         mu_init = np.exp(eta_init)
-        mu_mean = np.mean(mu_init)
+        np.mean(mu_init)
         y_mean = np.mean(y)
         y_var = np.var(y)
         if y_var > y_mean and y_mean > 0:
-            alpha_init = y_mean ** 2 / (y_var - y_mean)
+            alpha_init = y_mean**2 / (y_var - y_mean)
             alpha_init = max(alpha_init, 0.1)
         else:
             alpha_init = 1.0
 
         # ω₀: draw from PG(y + α, η)
         from .._samplers._polyagamma import sample_polyagamma
+
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 
         return GibbsState(
@@ -368,18 +367,17 @@ class SARNegBinLatent(SpatialModel):
         _valid_methods = {"auto", "factorize", "iterative", "jax_dense"}
         if gibbs_method not in _valid_methods:
             raise ValueError(
-                f"gibbs_method must be one of {_valid_methods}, "
-                f"got '{gibbs_method}'"
+                f"gibbs_method must be one of {_valid_methods}, got '{gibbs_method}'"
             )
 
         # Check JAX availability for jax_dense path
         import importlib.util
+
         _jax_available = importlib.util.find_spec("jax") is not None
 
         if gibbs_method == "jax_dense" and not _jax_available:
             raise ImportError(
-                "gibbs_method='jax_dense' requires JAX. "
-                "Install with: pip install jax"
+                "gibbs_method='jax_dense' requires JAX. Install with: pip install jax"
             )
 
         if gibbs_method == "factorize":
@@ -412,6 +410,7 @@ class SARNegBinLatent(SpatialModel):
         if solve_method == "jax_dense":
             import jax
             import jax.numpy as jnp
+
             # Enable float64 for numerical stability
             jax.config.update("jax_enable_x64", True)
             W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
@@ -506,9 +505,7 @@ class SARNegBinLatent(SpatialModel):
             posterior_samples[key] = np.stack(arrays, axis=0)
 
         # beta has shape (n_keep, k) per chain
-        posterior_samples["beta"] = np.stack(
-            [c["beta"] for c in chain_results], axis=0
-        )
+        posterior_samples["beta"] = np.stack([c["beta"] for c in chain_results], axis=0)
 
         # Feature names for coords
         feature_names = list(self._feature_names)

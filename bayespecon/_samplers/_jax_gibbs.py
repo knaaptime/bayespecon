@@ -119,9 +119,10 @@ def _make_gibbs_step_with_data(
     """
     import jax
     import jax.numpy as jnp
+
     from bayespecon._samplers._spatial_normal import (
-        jax_lanczos_logdet,
         jax_cg_solve,
+        jax_lanczos_logdet,
     )
 
     jax.config.update("jax_enable_x64", True)
@@ -136,7 +137,9 @@ def _make_gibbs_step_with_data(
     # Prior hyperparameters
     # Note: priors.beta_sigma is the standard deviation, not the variance
     beta_mu_jax = jnp.broadcast_to(jnp.asarray(priors.beta_mu, dtype=jnp.float64), (k,))
-    beta_sigma2_jax = jnp.broadcast_to(jnp.asarray(priors.beta_sigma, dtype=jnp.float64) ** 2, (k,))
+    beta_sigma2_jax = jnp.broadcast_to(
+        jnp.asarray(priors.beta_sigma, dtype=jnp.float64) ** 2, (k,)
+    )
     sigma_sigma_jax = jnp.float64(priors.sigma_sigma)
     rho_lower_jax = jnp.float64(priors.rho_lower)
     rho_upper_jax = jnp.float64(priors.rho_upper)
@@ -172,7 +175,7 @@ def _make_gibbs_step_with_data(
         beta = state["beta"]
         sigma2 = state["sigma2"]
         rho = state["rho"]
-        omega = state["omega"]
+        state["omega"]
         alpha = state["alpha"]
 
         key_omega, key_eta, key_beta, key_sigma2, key_rho = jax.random.split(key, 5)
@@ -190,7 +193,7 @@ def _make_gibbs_step_with_data(
         # ── Block 2: η | ω, ρ, β, σ² — dense Cholesky solve ──
         inv_s2 = 1.0 / sigma2
         P_diag = jnp.ones(n) * inv_s2 + omega_new
-        P = jnp.diag(P_diag) - rho * W_sym * inv_s2 + rho ** 2 * WtW * inv_s2
+        P = jnp.diag(P_diag) - rho * W_sym * inv_s2 + rho**2 * WtW * inv_s2
         P = P + 1e-6 * jnp.eye(n)  # regularisation for numerical stability
 
         Xbeta = X_jax @ beta
@@ -215,24 +218,34 @@ def _make_gibbs_step_with_data(
         Xbeta_new = X_jax @ beta_new
         r = A_rho_eta - Xbeta_new
         a_post = jnp.float64(n / 2.0 + 0.5 + 1.0)  # (n+3)/2
-        b_post = jnp.float64(r @ r / 2.0 + 1.0 / (2.0 * sigma_sigma_jax ** 2))
+        b_post = jnp.float64(r @ r / 2.0 + 1.0 / (2.0 * sigma_sigma_jax**2))
         sigma2_inv = jax.random.gamma(key_sigma2, a_post) / b_post
         sigma2_new = jnp.maximum(1.0 / sigma2_inv, 1e-10)
 
         # ── Block 5: ρ — Metropolis-Hastings ──
         key_rho_proposal, key_rho_accept = jax.random.split(key_rho)
-        rho_proposed = rho + mh_sd_jax * jax.random.normal(key_rho_proposal, dtype=jnp.float64)
+        rho_proposed = rho + mh_sd_jax * jax.random.normal(
+            key_rho_proposal, dtype=jnp.float64
+        )
 
         def log_density_rho(rho_val):
             """Collapsed log-density of ρ (η integrated out)."""
             inv_s2_r = 1.0 / sigma2_new
             P_diag_r = jnp.ones(n) * inv_s2_r + omega_new
-            P_r = jnp.diag(P_diag_r) - rho_val * W_sym * inv_s2_r + rho_val ** 2 * WtW * inv_s2_r
+            P_r = (
+                jnp.diag(P_diag_r)
+                - rho_val * W_sym * inv_s2_r
+                + rho_val**2 * WtW * inv_s2_r
+            )
             P_r = P_r + 1e-6 * jnp.eye(n)
 
             Xbeta_r = X_jax @ beta_new
             kappa_r = (y_jax - alpha) / 2.0
-            rhs_r = Xbeta_r * inv_s2_r - rho_val * (W_dense_jax.T @ Xbeta_r) * inv_s2_r + kappa_r
+            rhs_r = (
+                Xbeta_r * inv_s2_r
+                - rho_val * (W_dense_jax.T @ Xbeta_r) * inv_s2_r
+                + kappa_r
+            )
 
             M_inv_r = 1.0 / jnp.where(jnp.abs(P_diag_r) > 1e-15, P_diag_r, 1.0)
 
@@ -248,8 +261,7 @@ def _make_gibbs_step_with_data(
             logdet_W = jnp.sum(jnp.log(jnp.abs(1.0 - rho_val * W_eigvals)))
 
             log_prior = jnp.where(
-                (rho_val >= rho_lower_jax) & (rho_val <= rho_upper_jax),
-                0.0, -jnp.inf
+                (rho_val >= rho_lower_jax) & (rho_val <= rho_upper_jax), 0.0, -jnp.inf
             )
             return logdet_W - 0.5 * log_det_P + 0.5 * quad_r + log_prior
 
@@ -283,6 +295,7 @@ def _sample_alpha_python(state, y, alpha_sigma, rng):
     is not JAX-compatible.
     """
     from scipy.special import gammaln
+
     from bayespecon._samplers._slice import slice_sample_1d
 
     alpha = float(state["alpha"])
@@ -296,13 +309,14 @@ def _sample_alpha_python(state, y, alpha_sigma, rng):
         mu = np.exp(eta)
         # Numerically stable NB log-likelihood
         log_lik = (
-            gammaln(y + a) - gammaln(a)
+            gammaln(y + a)
+            - gammaln(a)
             + y * np.log(np.maximum(mu / (mu + a), 1e-300))
             + a * np.log(np.maximum(a / (mu + a), 1e-300))
         )
         log_lik = np.where(np.isfinite(log_lik), log_lik, -1e10)
         total_log_lik = np.sum(log_lik)
-        log_prior = -a ** 2 / (2.0 * alpha_sigma ** 2)
+        log_prior = -(a**2) / (2.0 * alpha_sigma**2)
         return log_a + total_log_lik + log_prior
 
     log_alpha_new, _ = slice_sample_1d(
@@ -325,9 +339,7 @@ def _nb_loglik_pointwise_jax(y, eta, alpha):
     log_mu_ratio = np.log(np.maximum(mu / (mu + alpha), 1e-300))
     log_alpha_ratio = np.log(np.maximum(alpha / (mu + alpha), 1e-300))
     return (
-        gammaln(y + alpha) - gammaln(alpha)
-        + y * log_mu_ratio
-        + alpha * log_alpha_ratio
+        gammaln(y + alpha) - gammaln(alpha) + y * log_mu_ratio + alpha * log_alpha_ratio
     )
 
 
