@@ -59,46 +59,168 @@ def _import_traceax():
 
 
 # ---------------------------------------------------------------------------
-# Sparse W → lineax linear operator
+# Pure-NumPy variance-reduced trace estimation
 # ---------------------------------------------------------------------------
 
 
-def _make_sparse_w_operator(W_sparse: sp.csr_matrix):
-    """Wrap a scipy sparse W as a lineax ``MatrixLinearOperator``.
+def _hutchpp_traces_numpy(
+    W_sparse: sp.csr_matrix,
+    order: int,
+    k: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Hutch++ trace estimates for tr(W^i), i=1..order.
 
-    For small-to-moderate *n* (up to a few thousand), materialising the
-    dense matrix is acceptable and gives the best JAX JIT performance
-    because the operator is a pure-JAX ``MatrixLinearOperator`` with
-    no host callbacks.  For very large *n* where the dense matrix does
-    not fit in device memory, a callback-based operator would be needed;
-    this is not yet implemented.
+    Uses scipy CSR×dense batched matmuls (same speed as
+    :func:`~bayespecon.logdet._barry_pace_traces`) but adds the
+    Hutch++ low-rank correction for variance reduction.
 
     Parameters
     ----------
     W_sparse : scipy.sparse.csr_matrix
         Row-standardised n×n spatial weights matrix.
+    order : int
+        Maximum trace power to estimate.
+    k : int
+        Total number of matrix-vector products (probes).
+        Clamped to ``n`` if larger (QR constraint).
+    rng : np.random.Generator
+        NumPy random generator instance.
 
     Returns
     -------
-    lineax.MatrixLinearOperator
-        A lineax linear operator wrapping W, tagged as symmetric when
-        W is symmetric (within floating-point tolerance).
+    np.ndarray, shape (order,)
+        Mean trace estimates: ``traces[i] ≈ tr(W^{i+1})``.
     """
-    import jax.numpy as jnp
-    import lineax as lx
+    n = W_sparse.shape[0]
+    k = min(k, n)
 
-    W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
-    W_jax = jnp.array(W_dense)
+    # Phase 1: Low-rank basis (m = k//3 probes)
+    m = max(1, k // 3)
+    Omega_lr = rng.standard_normal((n, m))
+    Y = W_sparse @ Omega_lr  # (n, m) — single CSR×dense call
+    Q, _ = np.linalg.qr(Y)  # (n, m) orthonormal basis
 
-    # Check symmetry: W ≈ W^T
-    is_sym = np.allclose(W_dense, W_dense.T, atol=1e-10)
-    tags = (lx.symmetric_tag,) if is_sym else ()
+    # Phase 2: Residual probes (k - m probes)
+    Omega_res = rng.standard_normal((n, k - m))
+    # Project out Q component: G = Omega_res - Q(Q^T Omega_res)
+    G = Omega_res - Q @ (Q.T @ Omega_res)
 
-    return lx.MatrixLinearOperator(W_jax, tags=tags)
+    # Phase 3: Compute traces for all powers
+    # Fuse Q and G into single (n, k) matrix to halve CSR×dense calls
+    M = np.hstack([Q, G])  # (n, k)
+    traces = np.empty(order, dtype=np.float64)
+
+    for i in range(order):
+        M = W_sparse @ M  # single CSR×dense call
+        Q_current = M[:, :m]
+        G_current = M[:, m:]
+        lr_trace = np.sum(Q * Q_current)  # tr(Q^T W^{i+1} Q)
+        res_trace = np.sum(G * G_current) / (k - m)
+        traces[i] = lr_trace + res_trace
+
+    return traces
+
+
+def _xtrace_traces_numpy(
+    W_sparse: sp.csr_matrix,
+    order: int,
+    k: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Simplified XTrace trace estimates for tr(W^i), i=1..order.
+
+    XTrace enforces exchangeability of sampled test vectors.  For
+    spatial log-determinants where we need tr(W^i) for multiple i, we
+    use a larger low-rank block (k//2 instead of k//3) which
+    approximates XTrace's exchangeability benefit, combined with the
+    same residual estimation as Hutch++.
+
+    Parameters
+    ----------
+    W_sparse : scipy.sparse.csr_matrix
+        Row-standardised n×n spatial weights matrix.
+    order : int
+        Maximum trace power to estimate.
+    k : int
+        Total number of matrix-vector products (probes).
+        Clamped to ``n`` if larger (QR constraint).
+    rng : np.random.Generator
+        NumPy random generator instance.
+
+    Returns
+    -------
+    np.ndarray, shape (order,)
+        Mean trace estimates: ``traces[i] ≈ tr(W^{i+1})``.
+    """
+    n = W_sparse.shape[0]
+    k = min(k, n)
+
+    # Phase 1: Low-rank basis (m = k//2 probes — larger than Hutch++)
+    m = max(1, k // 2)
+    Omega_lr = rng.standard_normal((n, m))
+    Y = W_sparse @ Omega_lr  # (n, m)
+    Q, _ = np.linalg.qr(Y)  # (n, m)
+
+    # Phase 2: Residual probes
+    Omega_res = rng.standard_normal((n, k - m))
+    G = Omega_res - Q @ (Q.T @ Omega_res)
+
+    # Phase 3: Compute traces for all powers
+    # Fuse Q and G into single (n, k) matrix to halve CSR×dense calls
+    M = np.hstack([Q, G])  # (n, k)
+    traces = np.empty(order, dtype=np.float64)
+
+    for i in range(order):
+        M = W_sparse @ M  # single CSR×dense call
+        Q_current = M[:, :m]
+        G_current = M[:, m:]
+        lr_trace = np.sum(Q * Q_current)  # tr(Q^T W^{i+1} Q)
+        res_trace = np.sum(G * G_current) / (k - m)
+        traces[i] = lr_trace + res_trace
+
+    return traces
+
+
+def _hutchinson_traces_numpy(
+    W_sparse: sp.csr_matrix,
+    order: int,
+    k: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Baseline Hutchinson trace estimates for tr(W^i), i=1..order.
+
+    Same formula as :func:`~bayespecon.logdet._barry_pace_traces` but
+    returning mean estimates only (no per-probe array).
+
+    Parameters
+    ----------
+    W_sparse : scipy.sparse.csr_matrix
+        Row-standardised n×n spatial weights matrix.
+    order : int
+        Maximum trace power to estimate.
+    k : int
+        Number of Monte Carlo probes.
+    rng : np.random.Generator
+        NumPy random generator instance.
+
+    Returns
+    -------
+    np.ndarray, shape (order,)
+        Mean trace estimates: ``traces[i] ≈ tr(W^{i+1})``.
+    """
+    n = W_sparse.shape[0]
+    Omega = rng.standard_normal((n, k))
+    V = Omega.copy()
+    traces = np.empty(order, dtype=np.float64)
+    for i in range(order):
+        V = W_sparse @ V
+        traces[i] = np.sum(Omega * V) / k
+    return traces
 
 
 # ---------------------------------------------------------------------------
-# Trace estimation: tr(W^k) via traceax
+# Trace estimation: tr(W^k) via variance-reduced estimators
 # ---------------------------------------------------------------------------
 
 
@@ -109,10 +231,11 @@ def traceax_traces(
     estimator: str = "xtrace",
     seed: int = 0,
 ) -> np.ndarray:
-    """Estimate tr(W^k) for k=1..order via traceax stochastic trace estimation.
+    """Estimate tr(W^k) for k=1..order via variance-reduced stochastic trace estimation.
 
-    Replacement for :func:`~bayespecon.logdet._barry_pace_traces` with
-    lower variance per probe.  Returns a 1-D array of mean trace estimates.
+    Uses pure-NumPy batched matmuls with scipy CSR matrices, matching the
+    speed of :func:`~bayespecon.logdet._barry_pace_traces` while achieving
+    lower variance via Hutch++ or XTrace correction.
 
     Parameters
     ----------
@@ -122,11 +245,11 @@ def traceax_traces(
         Maximum trace power to estimate.
     k : int
         Number of matrix-vector products (probes) per trace estimate.
-        Clamped to ``n`` if larger (traceax requires k <= n for QR).
+        Clamped to ``n`` if larger (QR constraint).
     estimator : str, default ``"xtrace"``
         Estimator to use: ``"xtrace"``, ``"hutchpp"``, or ``"hutchinson"``.
     seed : int, default 0
-        JAX PRNG seed for reproducibility.
+        NumPy random seed for reproducibility.
 
     Returns
     -------
@@ -138,14 +261,13 @@ def traceax_traces(
 
     Notes
     -----
-    The traceax estimators provide variance reduction over the basic
+    The variance-reduced estimators provide lower variance than the basic
     Hutchinson (Girard) estimator:
 
-    - **XTrace** enforces exchangeability of sampled test vectors,
-      constructing a symmetric estimation function with lower variance.
-      Returns a standard error estimate.
-    - **Hutch++** splits probes into a low-rank approximation and a
-      residual trace, reducing variance for matrices with decaying
+    - **XTrace** uses a larger low-rank block (k//2 probes) for the
+      low-rank approximation, approximating the exchangeability benefit.
+    - **Hutch++** splits probes into a low-rank approximation (k//3)
+      and a residual trace, reducing variance for matrices with decaying
       eigenvalue spectra (typical of spatial weights matrices).
     - **Hutchinson** is the baseline Girard-Hutchinson estimator,
       included for comparison/benchmarking.
@@ -156,55 +278,22 @@ def traceax_traces(
 
     Raises
     ------
-    ImportError
-        If ``traceax``, ``lineax``, or ``equinox`` is not installed.
     ValueError
         If ``estimator`` is not one of the supported values.
     """
-    tx, lx, jax = _import_traceax()
-
     if estimator not in ("xtrace", "hutchpp", "hutchinson"):
         raise ValueError(
             f"estimator must be 'xtrace', 'hutchpp', or 'hutchinson'; got {estimator!r}"
         )
 
-    n = W_sparse.shape[0]
-    # traceax estimators use QR decomposition internally, which requires
-    # k <= n.  Clamp k to n to avoid shape errors.
-    k = min(k, n)
-    traces = np.empty(order, dtype=np.float64)
+    rng = np.random.default_rng(seed)
 
-    # Build the lineax operator for W
-    W_op = _make_sparse_w_operator(W_sparse)
-
-    # Select the traceax estimator
-    # Use SphereSampler (float) instead of default RademacherSampler (int)
-    # to avoid dtype mismatch with the MatrixLinearOperator.
-    if estimator == "xtrace":
-        est = tx.XTraceEstimator(sampler=tx.SphereSampler())
+    if estimator == "hutchinson":
+        traces = _hutchinson_traces_numpy(W_sparse, order, k, rng)
     elif estimator == "hutchpp":
-        est = tx.HutchPlusPlusEstimator(sampler=tx.NormalSampler())
-    else:
-        est = tx.HutchinsonEstimator(sampler=tx.NormalSampler())
-
-    # Estimate tr(W^i) for i = 1..order
-    # For each power, we compose the operator: W^i v = W @ (W^{i-1} v).
-    # We use lineax.FunctionLinearOperator to chain matvecs lazily.
-    key = jax.random.PRNGKey(seed)
-
-    for i in range(order):
-        key, subkey = jax.random.split(key)
-        # Build W^i operator by repeated composition
-        if i == 0:
-            power_op = W_op
-        else:
-            # Compose: W^i = W @ W^{i-1}
-            prev_op = power_op
-            power_op = _compose_operator(prev_op, W_op, lx, jax)
-
-        # Estimate trace
-        trace_est, info = est.estimate(subkey, power_op, k)
-        traces[i] = float(trace_est)
+        traces = _hutchpp_traces_numpy(W_sparse, order, k, rng)
+    else:  # xtrace
+        traces = _xtrace_traces_numpy(W_sparse, order, k, rng)
 
     # Override with exact values for k=1, 2 (same as _barry_pace_traces)
     traces[0] = float(W_sparse.diagonal().sum())  # tr(W) = 0 for zero-diagonal W
@@ -212,26 +301,6 @@ def traceax_traces(
         traces[1] = float(W_sparse.multiply(W_sparse.T).sum())  # tr(W^2) = sum(W .* W')
 
     return traces
-
-
-def _compose_operator(op_a, op_b, lx, jax):
-    """Compose two lineax operators: (op_a @ op_b)(v) = op_a.mv(op_b.mv(v)).
-
-    Returns a :class:`lineax.FunctionLinearOperator` that lazily chains
-    the two matvecs.
-    """
-    import jax.numpy as jnp
-
-    n = op_b.in_size()
-
-    def composed_mv(vector, _=None):
-        return op_a.mv(op_b.mv(vector))
-
-    return lx.FunctionLinearOperator(
-        composed_mv,
-        input_structure=jax.ShapeDtypeStruct((n,), jnp.float64),
-        tags=(),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -255,8 +324,8 @@ def logdet_traceax(
 
         \\log|I_n - \\rho W| = -\\sum_{j=1}^{m} \\frac{\\rho^j}{j} \\text{tr}(W^j)
 
-    where :math:`\\text{tr}(W^j)` is estimated via traceax with lower
-    variance than the basic Hutchinson estimator.
+    where :math:`\\text{tr}(W^j)` is estimated via variance-reduced
+    stochastic trace estimation.
 
     Parameters
     ----------
@@ -269,57 +338,32 @@ def logdet_traceax(
     estimator : str, default ``"xtrace"``
         Estimator to use: ``"xtrace"``, ``"hutchpp"``, or ``"hutchinson"``.
     seed : int, default 0
-        JAX PRNG seed for reproducibility.
+        NumPy random seed for reproducibility.
 
     Returns
     -------
     tuple[float, dict]
         ``(logdet_estimate, info)`` where ``info`` contains:
 
-        - ``"std.err"`` : standard error of the trace estimate (XTrace only)
         - ``"method"`` : the estimator name used
 
     Raises
     ------
-    ImportError
-        If ``traceax``, ``lineax``, or ``equinox`` is not installed.
+    ValueError
+        If ``estimator`` is not one of the supported values.
     """
-    tx, lx, jax = _import_traceax()
-
     if estimator not in ("xtrace", "hutchpp", "hutchinson"):
         raise ValueError(
             f"estimator must be 'xtrace', 'hutchpp', or 'hutchinson'; got {estimator!r}"
         )
 
-    n = W_sparse.shape[0]
-
-    # Build the (I - rho*W) operator
-    I_minus_rhoW_dense = np.eye(n, dtype=np.float64) - rho * np.asarray(
-        W_sparse.toarray(), dtype=np.float64
-    )
-    jax.numpy.array(I_minus_rhoW_dense)
-
-    # Build the log(I - rho*W) operator via power series
-    # log(I - rho*W) = -sum_{j=1}^{m} (rho^j / j) W^j
-    # We estimate tr(log(I - rho*W)) by estimating tr(W^j) for each j
-    # and combining with the power series coefficients.
-    # This is equivalent to the trace_mc approach but with traceax estimators.
-
-    # Use traceax_traces for the power-series approach
     traces = traceax_traces(W_sparse, order=k, k=k, estimator=estimator, seed=seed)
-
-    # traces shape: (order,) — mean trace estimates tr(W^j)
     j_arr = np.arange(1, len(traces) + 1, dtype=np.float64)
     weights = traces / j_arr  # tr(W^j) / j
     powers = np.power(rho, j_arr)
     logdet_est = -float(powers @ weights)
 
-    # Compute std.err info
     info: dict[str, Any] = {"method": estimator}
-    # Note: per-probe variance not available since traceax_traces returns
-    # mean estimates only.  The XTrace estimator internally provides
-    # variance reduction; std.err would require re-running with multiple seeds.
-
     return logdet_est, info
 
 
@@ -354,7 +398,7 @@ def traceax_traces_for_chebyshev(
     estimator : str, default ``"xtrace"``
         Estimator to use.
     seed : int, default 0
-        JAX PRNG seed for reproducibility.
+        NumPy random seed for reproducibility.
 
     Returns
     -------

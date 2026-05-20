@@ -42,6 +42,8 @@ class LogDetMethod(str, Enum):
     TRACE_MC = "trace_mc"
     GRID_ILU = "grid_ilu"
     CHEBYSHEV = "chebyshev"
+    TRACE_XTRACE = "trace_xtrace"
+    TRACE_HUTCHPP = "trace_hutchpp"
 
 
 VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
@@ -63,6 +65,8 @@ LogDetMethodName = Literal[
     "trace_mc",
     "grid_ilu",
     "chebyshev",
+    "trace_xtrace",
+    "trace_hutchpp",
 ]
 
 
@@ -673,21 +677,39 @@ def chebyshev(
         )
         method_used = "eigenvalue"
     else:
-        # Monte Carlo trace-based: use Barry-Pace stochastic trace
+        # Monte Carlo trace-based: prefer traceax when available, else Barry-Pace
         # ln|I - ρW| = -Σ_{k=1}^{∞} (ρ^k / k) tr(W^k)
         # Approximate tr(W^k) via MC, then evaluate at nodes
-        rng = np.random.default_rng(random_state)
+        try:
+            from bayespecon._trace_estimation import (
+                traceax_available,
+                traceax_traces_for_chebyshev,
+            )
 
-        # Compute MC trace estimates for k=1..order via batched Hutchinson
-        # probes: one CSR×dense product per order covers all probes.
-        U = rng.standard_normal((n, n_mc_iter))
-        utu = np.einsum("ij,ij->j", U, U)  # (n_mc_iter,)
-        V = U.copy()
-        td = np.zeros(order, dtype=np.float64)
-        for i in range(order):
-            V = W_sp @ V
-            tr_k = n * np.einsum("ij,ij->j", U, V) / utu  # (n_mc_iter,)
-            td[i] = tr_k.mean() / (i + 1)
+            if traceax_available():
+                td = traceax_traces_for_chebyshev(
+                    W_sp,
+                    order=order,
+                    n_mc_iter=n_mc_iter,
+                    estimator="xtrace",
+                    seed=random_state,
+                )
+                method_used = "trace_xtrace"
+            else:
+                raise ImportError("traceax not available")
+        except ImportError:
+            rng = np.random.default_rng(random_state)
+            # Compute MC trace estimates for k=1..order via batched Hutchinson
+            # probes: one CSR×dense product per order covers all probes.
+            U = rng.standard_normal((n, n_mc_iter))
+            utu = np.einsum("ij,ij->j", U, U)  # (n_mc_iter,)
+            V = U.copy()
+            td = np.zeros(order, dtype=np.float64)
+            for i in range(order):
+                V = W_sp @ V
+                tr_k = n * np.einsum("ij,ij->j", U, V) / utu  # (n_mc_iter,)
+                td[i] = tr_k.mean() / (i + 1)
+            method_used = "grid_mc"
 
         # Evaluate power series at each node
         logdet_at_nodes = np.zeros(order, dtype=np.float64)
@@ -1308,7 +1330,23 @@ def _auto_logdet_method(n: int) -> str:
         cutoff = max(1, int(cutoff_raw))
     except ValueError:
         cutoff = 500
-    return "eigenvalue" if n <= cutoff else "chebyshev"
+    if n <= cutoff:
+        return "eigenvalue"
+    # For large n, prefer traceax-based estimators when available
+    traceax_min_raw = os.getenv("BAYESPECON_LOGDET_TRACEAX_MIN_N", "2000")
+    try:
+        traceax_min = max(1, int(traceax_min_raw))
+    except ValueError:
+        traceax_min = 2000
+    if n >= traceax_min:
+        try:
+            from bayespecon._trace_estimation import traceax_available
+
+            if traceax_available():
+                return "trace_xtrace"
+        except ImportError:
+            pass
+    return "chebyshev"
 
 
 _GRID_SPLINE_METHODS = (
@@ -1460,6 +1498,28 @@ def make_logdet_numpy_fn(
 
         return _mc_poly_numpy
 
+    elif method in ("trace_xtrace", "trace_hutchpp"):
+        from bayespecon._trace_estimation import traceax_traces
+
+        est_name = "xtrace" if method == "trace_xtrace" else "hutchpp"
+        if sp.issparse(W_sparse):
+            W_sp = W_sparse.tocsr().astype(np.float64)
+        else:
+            W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
+        traces = traceax_traces(W_sp, order=30, k=50, estimator=est_name)
+        m = len(traces)
+        k_arr = np.arange(1, m + 1, dtype=np.float64)
+        w = (traces / k_arr).astype(np.float64)
+
+        def _traceax_poly_numpy(r):
+            r = float(r)
+            result = w[m - 1]
+            for j in range(m - 2, -1, -1):
+                result = result * r + w[j]
+            return -result * r
+
+        return _traceax_poly_numpy
+
     elif method in _GRID_SPLINE_METHODS:
         # Grid/spline methods: precompute numpy spline, then evaluate directly.
         W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
@@ -1573,6 +1633,28 @@ def make_logdet_numpy_vec_fn(
             return -rho_arr * poly_val
 
         return _vec_mc_poly
+
+    if method in ("trace_xtrace", "trace_hutchpp"):
+        from bayespecon._trace_estimation import traceax_traces
+
+        est_name = "xtrace" if method == "trace_xtrace" else "hutchpp"
+        if sp.issparse(W_sparse):
+            W_sp = W_sparse.tocsr().astype(np.float64)
+        else:
+            W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
+        traces = traceax_traces(W_sp, order=30, k=50, estimator=est_name)
+        m = len(traces)
+        k_arr = np.arange(1, m + 1, dtype=np.float64)
+        w = (traces / k_arr).astype(np.float64)
+
+        def _vec_traceax_poly(rho_arr: np.ndarray) -> np.ndarray:
+            rho_arr = np.asarray(rho_arr, dtype=np.float64)
+            if m == 0:
+                return np.zeros_like(rho_arr, dtype=np.float64)
+            poly_val = np.polynomial.polynomial.polyval(rho_arr, w)
+            return -rho_arr * poly_val
+
+        return _vec_traceax_poly
 
     if method in _GRID_SPLINE_METHODS:
         W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
@@ -1792,9 +1874,24 @@ def make_logdet_fn(
             return val if T == 1 else T * val
 
         return _mc_poly_eval
+    elif method in ("trace_xtrace", "trace_hutchpp"):
+        from bayespecon._trace_estimation import traceax_traces
+
+        est_name = "xtrace" if method == "trace_xtrace" else "hutchpp"
+        W_sp = sp.csr_matrix(W_dense.astype(np.float64))
+        traces = traceax_traces(W_sp, order=30, k=50, estimator=est_name)
+        m = len(traces)
+        k_arr = np.arange(1, m + 1, dtype=np.float64)
+        w = (traces / k_arr).astype(np.float64)
+
+        def _traceax_poly_eval(rho):
+            val = logdet_mc_poly_pytensor(rho, w)
+            return val if T == 1 else T * val
+
+        return _traceax_poly_eval
     else:
         raise ValueError(
-            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'grid_dense', 'grid_sparse', 'sparse_spline', 'grid_mc', 'grid_ilu', 'chebyshev', 'trace_mc'."
+            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'grid_dense', 'grid_sparse', 'sparse_spline', 'grid_mc', 'grid_ilu', 'chebyshev', 'trace_mc', 'trace_xtrace', 'trace_hutchpp'."
         )
 
 
