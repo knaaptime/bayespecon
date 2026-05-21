@@ -259,6 +259,11 @@ class SARNegBinLatent(SpatialModel):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "auto",
+        pg_n_terms: int = 10,
+        n_probes: int = 5,
+        lanczos_deg: int = 15,
+        mh_proposal_sd: float = 0.05,
+        use_mala: bool = True,
         **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
@@ -303,6 +308,23 @@ class SARNegBinLatent(SpatialModel):
               Chebyshev draws.  Requires JAX with float64 enabled.
               Viable for n ≤ ~10 000 on machines with ≥ 32 GB RAM
               (the dense matrices need ~800 MB at n = 10 000).
+        pg_n_terms : int, default 20
+            Number of sum-of-exponentials terms for the JAX Pólya–Gamma
+            sampler.  Higher values reduce bias at the cost of more compute.
+            Only used when ``gibbs_method="jax_dense"``.
+        n_probes : int, default 10
+            Number of Lanczos probe vectors for stochastic log|P|
+            estimation.  Only used when ``gibbs_method="jax_dense"``.
+        lanczos_deg : int, default 30
+            Lanczos iteration depth for log|P| estimation.  Only used
+            when ``gibbs_method="jax_dense"``.
+        mh_proposal_sd : float, default 0.05
+            Standard deviation of the random-walk MH proposal for ρ.
+            Only used when ``use_mala=False``.
+        use_mala : bool, default True
+            If True, use MALA (gradient-guided proposals) for the ρ
+            update.  If False, use random-walk Metropolis–Hastings.
+            Only used when ``gibbs_method="jax_dense"``.
 
         Returns
         -------
@@ -483,6 +505,11 @@ class SARNegBinLatent(SpatialModel):
                     thin=thin,
                     return_eta=return_eta,
                     rng=rng,
+                    pg_n_terms=pg_n_terms,
+                    n_probes=n_probes,
+                    lanczos_deg=lanczos_deg,
+                    mh_proposal_sd=mh_proposal_sd,
+                    use_mala=use_mala,
                 )
             return run_chain(
                 y=y,
