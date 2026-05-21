@@ -32,6 +32,7 @@ from bayespecon._samplers._jax_gibbs import (
     run_chain_jax,
 )
 from bayespecon._samplers.pg_gibbs import GibbsPriors, GibbsState, JAXGibbsState
+from bayespecon.logdet import make_logdet_jax_fn
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -88,14 +89,15 @@ def _make_test_data(n=20, k=2, rho_true=0.3, seed=42):
 
 def _make_jax_components(W, W_sym, WtW, W_eigs, X):
     """Convert numpy/scipy arrays to JAX arrays for the Gibbs step."""
+    from bayespecon.logdet import make_logdet_jax_fn
+
     W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
     WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-    W_eigs_jax = jnp.asarray(W_eigs, dtype=jnp.float64)
+    logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
     W_dense_jax = jnp.asarray(W.toarray(), dtype=jnp.float64)
-    y_jax = None  # Set by caller
     X_jax = jnp.asarray(X, dtype=jnp.float64)
     XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
-    return W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax
+    return W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +114,7 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = (
+        W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
         )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
@@ -125,7 +127,7 @@ class TestMakeGibbsStepWithData:
             k=k,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             XtX_jax=XtX_jax,
             priors=priors,
             pg_n_terms=20,
@@ -141,7 +143,7 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = (
+        W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
         )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
@@ -154,7 +156,7 @@ class TestMakeGibbsStepWithData:
             k=k,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             XtX_jax=XtX_jax,
             priors=priors,
             pg_n_terms=20,
@@ -189,7 +191,7 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = (
+        W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
         )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
@@ -202,7 +204,7 @@ class TestMakeGibbsStepWithData:
             k=k,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             XtX_jax=XtX_jax,
             priors=priors,
             pg_n_terms=20,
@@ -239,7 +241,7 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, W_eigs_jax, W_dense_jax, X_jax, XtX_jax = (
+        W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
         )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
@@ -252,7 +254,7 @@ class TestMakeGibbsStepWithData:
             k=k,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             XtX_jax=XtX_jax,
             priors=priors,
             pg_n_terms=20,
@@ -316,7 +318,7 @@ class TestRunChainJax:
 
         W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
         WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-        W_eigs_jax = jnp.asarray(W_eigs, dtype=jnp.float64)
+        logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
 
         init = GibbsState(
             eta=params["eta"].copy(),
@@ -334,7 +336,7 @@ class TestRunChainJax:
             W_sparse=W,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             priors=priors,
             init=init,
             draws=draws,
@@ -361,7 +363,7 @@ class TestRunChainJax:
 
         W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
         WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-        W_eigs_jax = jnp.asarray(W_eigs, dtype=jnp.float64)
+        logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
 
         init = GibbsState(
             eta=params["eta"].copy(),
@@ -379,7 +381,7 @@ class TestRunChainJax:
             W_sparse=W,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             priors=priors,
             init=init,
             draws=draws,
@@ -400,7 +402,7 @@ class TestRunChainJax:
 
         W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
         WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-        W_eigs_jax = jnp.asarray(W_eigs, dtype=jnp.float64)
+        logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
 
         init = GibbsState(
             eta=params["eta"].copy(),
@@ -418,7 +420,7 @@ class TestRunChainJax:
             W_sparse=W,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             priors=priors,
             init=init,
             draws=draws,
@@ -440,7 +442,7 @@ class TestRunChainJax:
 
         W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
         WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-        W_eigs_jax = jnp.asarray(W_eigs, dtype=jnp.float64)
+        logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
 
         init = GibbsState(
             eta=params["eta"].copy(),
@@ -457,7 +459,7 @@ class TestRunChainJax:
             W_sparse=W,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             priors=priors,
             init=init,
             draws=50,
@@ -484,7 +486,7 @@ class TestRunChainJax:
 
         W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
         WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-        W_eigs_jax = jnp.asarray(W_eigs, dtype=jnp.float64)
+        logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
 
         init = GibbsState(
             eta=params["eta"].copy(),
@@ -501,7 +503,7 @@ class TestRunChainJax:
             W_sparse=W,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             priors=priors,
             init=init,
             draws=50,
@@ -521,7 +523,7 @@ class TestRunChainJax:
 
         W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
         WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-        W_eigs_jax = jnp.asarray(W_eigs, dtype=jnp.float64)
+        logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
 
         init = GibbsState(
             eta=params["eta"].copy(),
@@ -538,7 +540,7 @@ class TestRunChainJax:
             W_sparse=W,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             priors=priors,
             init=init,
             draws=50,
@@ -557,7 +559,7 @@ class TestRunChainJax:
 
         W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
         WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-        W_eigs_jax = jnp.asarray(W_eigs, dtype=jnp.float64)
+        logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
 
         init = GibbsState(
             eta=params["eta"].copy(),
@@ -574,7 +576,7 @@ class TestRunChainJax:
             W_sparse=W,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            logdet_jax=logdet_jax,
             priors=priors,
             init=init,
             draws=50,

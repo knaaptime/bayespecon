@@ -61,6 +61,12 @@ def _umfpack_available() -> bool:
 
 
 @lru_cache(maxsize=1)
+def _eqx_available() -> bool:
+    """Return ``True`` when optional ``equinox`` is importable."""
+    return importlib.util.find_spec("equinox") is not None
+
+
+@lru_cache(maxsize=1)
 def _warn_jax_auto_fallback_once(missing: str, target: str) -> None:
     """Emit a one-time advisory warning for JAX sparse backend auto-fallbacks."""
     install_hint = ""

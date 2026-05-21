@@ -1233,7 +1233,7 @@ def _jax_log_density_core(
     omega,
     W_sym_dense,
     WtW_dense,
-    W_eigs,
+    logdet_jax,
     Xbeta_over_s2,
     WtXbeta_over_s2,
     kappa,
@@ -1277,8 +1277,8 @@ def _jax_log_density_core(
     # Quadratic form
     quad = rhs @ m
 
-    # log|I - rho*W| from eigenvalues
-    logdet_W = _jax_logdet_W(rho, W_eigs)
+    # log|I - rho*W| via generic JAX-native logdet callable
+    logdet_W = logdet_jax(rho)
 
     # Final log-density
     return logdet_W - 0.5 * log_det_P + 0.5 * quad
@@ -1290,7 +1290,7 @@ def _jax_log_density_core_exact(
     omega,
     W_sym_dense,
     WtW_dense,
-    W_eigs,
+    logdet_jax,
     Xbeta_over_s2,
     WtXbeta_over_s2,
     kappa,
@@ -1329,7 +1329,7 @@ def _jax_log_density_core_exact(
     m = jax.scipy.linalg.cho_solve((L, True), rhs)
     quad = rhs @ m
 
-    # log|I - rho*W| from eigenvalues
-    logdet_W = _jax_logdet_W(rho, W_eigs)
+    # log|I - rho*W| via generic JAX-native logdet callable
+    logdet_W = logdet_jax(rho)
 
     return logdet_W - 0.5 * log_det_P + 0.5 * quad

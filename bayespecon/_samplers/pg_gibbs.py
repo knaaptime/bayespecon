@@ -209,7 +209,8 @@ class GibbsCache(NamedTuple):
     # JAX dense backend fields (only used when solve_method="jax_dense")
     W_sym_dense: object | None = None  # jax.numpy.ndarray (n, n): W + W^T
     WtW_dense: object | None = None  # jax.numpy.ndarray (n, n): W^T W
-    W_eigs: object | None = None  # jax.numpy.ndarray (n,): eigenvalues of W
+    W_eigs: object | None = None  # jax.numpy.ndarray (n,): eigenvalues of W (legacy)
+    logdet_jax: object | None = None  # callable (rho) -> jax.numpy.ndarray
     # Mode-finding for ρ slice sampler (JAX-dense only)
     rho_mode_update_freq: int = 10  # recompute mode every N sweeps (0 = never)
     rho_mode_w_factor: float = 2.0  # slice width = factor / sqrt(-Hessian)
@@ -700,7 +701,7 @@ def _sample_rho(
                 omega=omega_jax,
                 W_sym_dense=cache.W_sym_dense,
                 WtW_dense=cache.WtW_dense,
-                W_eigs=cache.W_eigs,
+                logdet_jax=cache.logdet_jax,
                 Xbeta_over_s2=_Xbeta_over_s2_jax,
                 WtXbeta_over_s2=_WtXbeta_over_s2_jax,
                 kappa=_kappa_jax,
@@ -803,7 +804,7 @@ def _sample_rho(
                 omega=omega_jax,
                 W_sym_dense=cache.W_sym_dense,
                 WtW_dense=cache.WtW_dense,
-                W_eigs=cache.W_eigs,
+                logdet_jax=cache.logdet_jax,
                 Xbeta_over_s2=_Xbeta_over_s2_jax,
                 WtXbeta_over_s2=_WtXbeta_over_s2_jax,
                 kappa=_kappa_jax,

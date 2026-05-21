@@ -112,88 +112,11 @@ class SARNegBinLatent(SpatialModel):
     # Auto-selection for decoupled Gibbs path
     # ------------------------------------------------------------------
 
-    # Thresholds for switching from factorisation to iterative methods.
-    _CG_SOLVE_THRESHOLD: int = 5000
-    _LANCZOS_LOGDET_THRESHOLD: int = 5000
-    _CHEBYSHEV_SAMPLE_THRESHOLD: int = 5000
     # Threshold for JAX dense backend (O(n²) memory, competitive matvec).
     # Raised from 5000 to 10000: on a 128 GB machine the 800 MB dense
     # matrix is trivial; the real limit is the O(n³) Cholesky time
     # (~1 s per solve at n=10 000).
     _JAX_DENSE_THRESHOLD: int = 10000
-
-    def _resolve_solve_method(self, n: int, cholmod_factor) -> str:
-        """Choose the solve method for P_η in the ρ slice sampler.
-
-        Parameters
-        ----------
-        n : int
-            Number of spatial units.
-        cholmod_factor : CholmodFactor or None
-            CHOLMOD factor if available.
-
-        Returns
-        -------
-        method : str
-            One of "cholmod", "splu", "cg".
-        """
-        if n < self._CG_SOLVE_THRESHOLD:
-            # Small n: factorisation is fast and exact.
-            if cholmod_factor is not None:
-                return "cholmod"
-            return "splu"
-        else:
-            # Large n: CG avoids O(nnz^{1.5}) factorisation cost.
-            return "cg"
-
-    def _resolve_logdet_P_method(self, n: int, cholmod_factor) -> str:
-        """Choose the log|P_η| method for the ρ slice sampler.
-
-        Parameters
-        ----------
-        n : int
-            Number of spatial units.
-        cholmod_factor : CholmodFactor or None
-            CHOLMOD factor if available.
-
-        Returns
-        -------
-        method : str
-            One of "cholmod", "lanczos".
-        """
-        if n < self._LANCZOS_LOGDET_THRESHOLD:
-            # Small n: factorisation-based logdet is exact.
-            if cholmod_factor is not None:
-                return "cholmod"
-            # splu path: logdet from LU diagonal
-            return "cholmod"  # same code path, just via splu
-        else:
-            # Large n: Lanczos avoids factorisation entirely.
-            return "lanczos"
-
-    def _resolve_sample_method(self, n: int, cholmod_factor) -> str:
-        """Choose the η draw method for the Gibbs sampler.
-
-        Parameters
-        ----------
-        n : int
-            Number of spatial units.
-        cholmod_factor : CholmodFactor or None
-            CHOLMOD factor if available.
-
-        Returns
-        -------
-        method : str
-            One of "cholmod", "splu", "chebyshev".
-        """
-        if n < self._CHEBYSHEV_SAMPLE_THRESHOLD:
-            # Small n: factorisation is fast and exact.
-            if cholmod_factor is not None:
-                return "cholmod"
-            return "splu"
-        else:
-            # Large n: Chebyshev polynomial avoids factorisation.
-            return "chebyshev"
 
     def _initialize_from_glm(self, rng):
         """Warm-start the Gibbs sampler from a non-spatial NB GLM fit.
@@ -292,22 +215,19 @@ class SARNegBinLatent(SpatialModel):
         gibbs_method : str, default "auto"
             Which Gibbs sampler path to use:
 
-            - ``"auto"``: select based on problem size and JAX
-              availability.  When JAX is installed and n ≤ 10 000, uses
-              ``"jax_dense"`` for maximum speed.  Otherwise falls back
-              to factorisation (n ≤ 10 000) or iterative (n > 10 000).
+            - ``"auto"``: select based on JAX availability and CHOLMOD.
+              When CHOLMOD is available, uses ``"factorize"`` (fastest
+              on CPU for sparse W).  When CHOLMOD is unavailable but
+              JAX is installed and n ≤ 10 000, uses ``"jax_dense"``.
+              Otherwise falls back to SPLU factorisation.
             - ``"factorize"``: force factorisation-based path (CHOLMOD if
               available, else ``scipy.sparse.linalg.splu``). Exact but
               O(nnz^{1.5}) for the factorisation step.
-            - ``"iterative"``: force iterative path (CG solve + Lanczos
-              logdet + Chebyshev polynomial draw). Approximate but
-              avoids factorisation entirely — preferred for large n.
             - ``"jax_dense"``: force JAX-accelerated path (dense matvec
-              + vmap over Lanczos probes and Chebyshev draws).  3–4×
-              faster for single draws, 20–27× per-draw when batching
-              Chebyshev draws.  Requires JAX with float64 enabled.
-              Viable for n ≤ ~10 000 on machines with ≥ 32 GB RAM
-              (the dense matrices need ~800 MB at n = 10 000).
+              + vmap over Lanczos probes and Chebyshev draws).  Requires
+              JAX with float64 enabled.  Viable for n ≤ ~10 000 on
+              machines with ≥ 32 GB RAM (the dense matrices need
+              ~800 MB at n = 10 000).
         pg_n_terms : int, default 20
             Number of sum-of-exponentials terms for the JAX Pólya–Gamma
             sampler.  Higher values reduce bias at the cost of more compute.
@@ -392,7 +312,7 @@ class SARNegBinLatent(SpatialModel):
             cholmod_factor = None
 
         # Resolve Gibbs method based on user choice or auto-selection
-        _valid_methods = {"auto", "factorize", "iterative", "jax_dense"}
+        _valid_methods = {"auto", "factorize", "jax_dense"}
         if gibbs_method not in _valid_methods:
             raise ValueError(
                 f"gibbs_method must be one of {_valid_methods}, got '{gibbs_method}'"
@@ -412,20 +332,15 @@ class SARNegBinLatent(SpatialModel):
             solve_method = "cholmod" if cholmod_factor is not None else "splu"
             logdet_P_method = "cholmod"
             sample_method = "cholmod" if cholmod_factor is not None else "splu"
-        elif gibbs_method == "iterative":
-            solve_method = "cg"
-            logdet_P_method = "lanczos"
-            sample_method = "chebyshev"
         elif gibbs_method == "jax_dense":
             solve_method = "jax_dense"
             logdet_P_method = "jax_dense"
             sample_method = "jax_dense"
         else:  # "auto"
             # Prefer exact factorisation when CHOLMOD is available.
-            # CHOLMOD is 6–30× faster than Lanczos for n up to ~5000.
-            # Only use JAX dense when CHOLMOD is unavailable or n is very
-            # small (where dense matvec overhead is negligible).
-            if cholmod_factor is not None and n < self._CG_SOLVE_THRESHOLD:
+            # CHOLMOD is 3× faster than jax_dense at n=2500 on CPU.
+            # JAX dense wins on GPU or when CHOLMOD is unavailable.
+            if cholmod_factor is not None:
                 solve_method = "cholmod"
                 logdet_P_method = "cholmod"
                 sample_method = "cholmod"
@@ -434,14 +349,15 @@ class SARNegBinLatent(SpatialModel):
                 logdet_P_method = "jax_dense"
                 sample_method = "jax_dense"
             else:
-                solve_method = self._resolve_solve_method(n, cholmod_factor)
-                logdet_P_method = self._resolve_logdet_P_method(n, cholmod_factor)
-                sample_method = self._resolve_sample_method(n, cholmod_factor)
+                # Fallback: SPLU (no CHOLMOD, no JAX)
+                solve_method = "splu"
+                logdet_P_method = "cholmod"  # same code path via splu
+                sample_method = "splu"
 
         # Precompute JAX dense components if using jax_dense path
         W_sym_dense = None
         WtW_dense = None
-        W_eigs_jax = None
+        logdet_jax = None
         if solve_method == "jax_dense":
             import jax
             import jax.numpy as jnp
@@ -450,7 +366,20 @@ class SARNegBinLatent(SpatialModel):
             jax.config.update("jax_enable_x64", True)
             W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
             WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-            W_eigs_jax = jnp.asarray(self._W_eigs.real, dtype=jnp.float64)
+
+            # Build JAX-native logdet callable.  For n > 2000 this uses
+            # trace-seeded Chebyshev (O(nnz·m) precomputation, O(m) per
+            # eval), avoiding the O(n³) eigendecomposition.  For small n
+            # it falls back to eigenvalue-based exact evaluation.
+            from ..logdet import make_logdet_jax_fn
+
+            bounds = self._logdet_bounds
+            logdet_jax = make_logdet_jax_fn(
+                W_sparse,
+                method=bounds.method,
+                rho_min=bounds.rho_min,
+                rho_max=bounds.rho_max,
+            )
 
         cache = GibbsCache(
             W_sparse=W_sparse,
@@ -466,7 +395,8 @@ class SARNegBinLatent(SpatialModel):
             sample_method=sample_method,
             W_sym_dense=W_sym_dense,
             WtW_dense=WtW_dense,
-            W_eigs=W_eigs_jax,
+            W_eigs=None,  # JAX path uses logdet_jax instead
+            logdet_jax=logdet_jax,
             rho_mode_update_freq=5,  # recompute mode every 5 sweeps during burn-in
             rho_mode_w_factor=2.0,
             rho_adaptive_width=True,
@@ -497,7 +427,7 @@ class SARNegBinLatent(SpatialModel):
                     W_sparse=W_sparse,
                     W_sym_dense=W_sym_dense,
                     WtW_dense=WtW_dense,
-                    W_eigs=W_eigs_jax,
+                    logdet_jax=logdet_jax,
                     priors=priors,
                     init=init,
                     draws=draws,

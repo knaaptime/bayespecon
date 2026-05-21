@@ -100,7 +100,7 @@ def _make_gibbs_step_with_data(
     k,
     W_sym_dense,
     WtW_dense,
-    W_eigs,
+    logdet_jax,
     XtX_jax,
     priors,
     pg_n_terms,
@@ -131,8 +131,12 @@ def _make_gibbs_step_with_data(
         Dense (W + W^T).
     WtW_dense : jax.numpy.ndarray of shape (n, n)
         Dense W^T W.
-    W_eigs : jax.numpy.ndarray of shape (n,)
-        Eigenvalues of W.
+    logdet_jax : callable
+        JAX-native function ``(rho) -> jax.numpy.ndarray`` computing
+        log|I - rho*W|.  Built by :func:`~bayespecon.logdet.make_logdet_jax_fn`.
+        Replaces the former ``W_eigs`` eigenvalue-based logdet, allowing
+        trace-seeded Chebyshev or other methods that avoid the O(n³)
+        eigendecomposition.
     XtX_jax : jax.numpy.ndarray of shape (k, k)
         Precomputed X^T X.
     priors : GibbsPriors
@@ -175,8 +179,6 @@ def _make_gibbs_step_with_data(
     # Convert constants to JAX arrays
     W_sym = jnp.asarray(W_sym_dense, dtype=jnp.float64)
     WtW = jnp.asarray(WtW_dense, dtype=jnp.float64)
-    W_eigvals = jnp.asarray(W_eigs, dtype=jnp.float64)
-
     # Prior hyperparameters
     # Note: priors.beta_sigma is the standard deviation, not the variance
     beta_mu_jax = jnp.broadcast_to(jnp.asarray(priors.beta_mu, dtype=jnp.float64), (k,))
@@ -302,7 +304,7 @@ def _make_gibbs_step_with_data(
             m_r = jax_cg_solve(P_r, rhs_r, M_inv_r, tol=1e-8, maxiter=cg_maxiter)
             quad_r = rhs_r @ m_r
 
-            logdet_W = jnp.sum(jnp.log(jnp.abs(1.0 - rho_val * W_eigvals)))
+            logdet_W = logdet_jax(rho_val)
 
             log_prior = jnp.where(
                 (rho_val >= rho_lower_jax) & (rho_val <= rho_upper_jax), 0.0, -jnp.inf
@@ -482,7 +484,9 @@ def _sample_alpha_jax(state, y_jax, alpha_sigma, key):
             _jax_nb_log_density_alpha(L_val, y_jax, state.eta, alpha_sigma) > log_u
         )
 
-    L_final, _ = jax.lax.while_loop(should_step_left, step_out_left, (L, jnp.float64(0.0)))
+    L_final, _ = jax.lax.while_loop(
+        should_step_left, step_out_left, (L, jnp.float64(0.0))
+    )
 
     # Step out right: expand R until log_density(R) < log_u or R hits upper_bound
     def step_out_right(carry):
@@ -496,7 +500,9 @@ def _sample_alpha_jax(state, y_jax, alpha_sigma, key):
             _jax_nb_log_density_alpha(R_val, y_jax, state.eta, alpha_sigma) > log_u
         )
 
-    R_final, _ = jax.lax.while_loop(should_step_right, step_out_right, (R, jnp.float64(0.0)))
+    R_final, _ = jax.lax.while_loop(
+        should_step_right, step_out_right, (R, jnp.float64(0.0))
+    )
 
     # --- Shrinkage ---
     # Sample from [L, R] and shrink until we find a point above log_u.
@@ -616,7 +622,7 @@ def run_chain_jax(
     W_sparse,
     W_sym_dense,
     WtW_dense,
-    W_eigs,
+    logdet_jax,
     priors,
     init,
     draws: int,
@@ -647,8 +653,11 @@ def run_chain_jax(
         Dense (W + W^T).
     WtW_dense : jax.numpy.ndarray of shape (n, n)
         Dense W^T W.
-    W_eigs : jax.numpy.ndarray of shape (n,)
-        Eigenvalues of W.
+    logdet_jax : callable
+        JAX-native function ``(rho) -> jax.numpy.ndarray`` computing
+        log|I - rho*W|.  Built by :func:`~bayespecon.logdet.make_logdet_jax_fn`.
+        Allows trace-seeded Chebyshev or other methods that avoid the
+        O(n³) eigendecomposition.
     priors : GibbsPriors
         Prior hyperparameters.
     init : GibbsState
@@ -737,7 +746,7 @@ def run_chain_jax(
         k=k,
         W_sym_dense=W_sym_dense,
         WtW_dense=WtW_dense,
-        W_eigs=W_eigs,
+        logdet_jax=logdet_jax,
         XtX_jax=XtX_jax,
         priors=priors,
         pg_n_terms=pg_n_terms,
@@ -784,7 +793,7 @@ def run_chain_jax(
                 k=k,
                 W_sym_dense=W_sym_dense,
                 WtW_dense=WtW_dense,
-                W_eigs=W_eigs,
+                logdet_jax=logdet_jax,
                 XtX_jax=XtX_jax,
                 priors=priors,
                 pg_n_terms=pg_n_terms,
