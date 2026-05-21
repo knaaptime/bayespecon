@@ -55,8 +55,8 @@ Limitations
 -----------
 - O(n³) dense Cholesky limits scalability to n ≤ ~2000.
 - PG sum-of-exponentials has ~2% mean bias (acceptable for MCMC).
-- α (NB dispersion) is updated in the Python loop using scipy's gammaln,
-  not inside the JIT step.
+- α (NB dispersion) is updated via JAX-compiled slice sampling
+  inside the JIT step, eliminating per-iteration host↔device transfers.
 
 References
 ----------
@@ -310,9 +310,9 @@ def _make_gibbs_step_with_data(
             return logdet_W - 0.5 * log_det_p_sg + 0.5 * quad_r + log_prior
 
         if use_mala:
-            # Gradient via JAX autodiff
-            grad_log_dens = jax.grad(log_density_rho)
-            g_current = grad_log_dens(rho)
+            # Gradient + value via JAX autodiff (single forward+backward pass)
+            val_and_grad = jax.value_and_grad(log_density_rho)
+            log_density_current, g_current = val_and_grad(rho)
 
             # MALA proposal: ρ* = ρ + (ε²/2) ∇log p(ρ) + ε z
             eps = mala_step_size
@@ -322,16 +322,13 @@ def _make_gibbs_step_with_data(
             rho_proposed = jnp.clip(rho_proposed, rho_lower_jax, rho_upper_jax)
 
             # MALA acceptance ratio includes proposal density
-            g_proposed = grad_log_dens(rho_proposed)
+            log_density_proposed, g_proposed = val_and_grad(rho_proposed)
             log_p_fwd = (
                 -0.5 * ((rho_proposed - rho - (eps**2 / 2.0) * g_current) / eps) ** 2
             )
             log_p_rev = (
                 -0.5 * ((rho - rho_proposed - (eps**2 / 2.0) * g_proposed) / eps) ** 2
             )
-
-            log_density_proposed = log_density_rho(rho_proposed)
-            log_density_current = log_density_rho(rho)
 
             log_alpha = (
                 log_density_proposed - log_density_current + log_p_rev - log_p_fwd
@@ -353,17 +350,182 @@ def _make_gibbs_step_with_data(
         rho_new = jnp.where(accept, rho_proposed, rho)
         rho_new = jnp.clip(rho_new, rho_lower_jax, rho_upper_jax)
 
+        # ── Block 6: α | y, η — JAX slice sampling ──
+        key_alpha, _ = jax.random.split(key_rho_accept)
+        alpha_new = _sample_alpha_jax(
+            JAXGibbsState(
+                eta=eta_new,
+                beta=beta_new,
+                sigma2=sigma2_new,
+                rho=rho_new,
+                omega=omega_new,
+                alpha=alpha,
+            ),
+            y_jax,
+            priors.alpha_sigma,
+            key_alpha,
+        )
+
         new_state = JAXGibbsState(
             eta=eta_new,
             beta=beta_new,
             sigma2=sigma2_new,
             rho=rho_new,
             omega=omega_new,
-            alpha=alpha,  # α is updated in the Python loop
+            alpha=alpha_new,
         )
         return new_state, accept
 
     return gibbs_step
+
+
+def _jax_nb_log_density_alpha(log_a, y_jax, eta, alpha_sigma):
+    """JAX-compiled NB log-density for α slice sampling.
+
+    Computes log p(log_a | y, η) up to a constant, where α = exp(log_a).
+
+    Parameters
+    ----------
+    log_a : jax.numpy.ndarray
+        Log of α (scalar).
+    y_jax : jax.numpy.ndarray
+        Integer response vector.
+    eta : jax.numpy.ndarray
+        Current latent field.
+    alpha_sigma : float
+        Prior scale for α.
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        Log-density value (scalar).
+    """
+    import jax.numpy as jnp
+    from jax.scipy.special import gammaln as jax_gammaln
+
+    a = jnp.exp(log_a)
+    mu = jnp.exp(eta)
+    # Numerically stable NB log-likelihood
+    log_mu_ratio = jnp.log(jnp.maximum(mu / (mu + a), 1e-300))
+    log_alpha_ratio = jnp.log(jnp.maximum(a / (mu + a), 1e-300))
+    log_lik = (
+        jax_gammaln(y_jax + a)
+        - jax_gammaln(a)
+        + y_jax * log_mu_ratio
+        + a * log_alpha_ratio
+    )
+    log_lik = jnp.where(jnp.isfinite(log_lik), log_lik, -1e10)
+    total_log_lik = jnp.sum(log_lik)
+    # HalfNormal prior on α: p(α) ∝ exp(-α²/(2σ²)), Jacobian for log transform
+    log_prior = -(a**2) / (2.0 * alpha_sigma**2)
+    return log_a + total_log_lik + log_prior
+
+
+def _sample_alpha_jax(state, y_jax, alpha_sigma, key):
+    """Sample α using JAX-compiled slice sampling.
+
+    This eliminates the per-iteration Python↔JAX boundary crossing
+    that ``_sample_alpha_python`` requires, keeping the entire Gibbs
+    loop inside XLA.
+
+    Uses Neal's stepping-out procedure with ``jax.lax.while_loop``
+    for the stepping-out phase, and a bounded shrinkage loop.
+
+    Parameters
+    ----------
+    state : JAXGibbsState
+        Current Gibbs state (JAX arrays).
+    y_jax : jax.numpy.ndarray
+        Integer response vector (JAX array).
+    alpha_sigma : float
+        Prior scale for α.
+    key : jax.random.PRNGKey
+        JAX random key.
+
+    Returns
+    -------
+    jax.numpy.ndarray
+        New α value (scalar JAX array).
+    """
+    import jax
+    import jax.numpy as jnp
+
+    log_alpha = jnp.log(state.alpha)
+
+    # Log-density at current point
+    log_y0 = _jax_nb_log_density_alpha(log_alpha, y_jax, state.eta, alpha_sigma)
+
+    # Draw vertical level: log(u) where u ~ Uniform(0, f(x0))
+    key, subkey = jax.random.split(key)
+    log_u = log_y0 + jnp.log(jax.random.uniform(subkey, dtype=jnp.float64))
+
+    # Slice sampling parameters
+    w = jnp.float64(1.0)  # step-out width (wider than Python version for efficiency)
+    lower_bound = jnp.float64(-10.0)
+    upper_bound = jnp.float64(10.0)
+
+    # --- Stepping out ---
+    key, subkey = jax.random.split(key)
+    u_rand = jax.random.uniform(subkey, dtype=jnp.float64)
+    L = jnp.maximum(log_alpha - u_rand * w, lower_bound)
+    R = jnp.minimum(L + w, upper_bound)
+
+    # Step out left: expand L until log_density(L) < log_u or L hits lower_bound
+    def step_out_left(carry):
+        L_val, _ = carry
+        L_new = jnp.maximum(L_val - w, lower_bound)
+        return (L_new, jnp.float64(0.0))
+
+    def should_step_left(carry):
+        L_val, _ = carry
+        return (L_val > lower_bound) & (
+            _jax_nb_log_density_alpha(L_val, y_jax, state.eta, alpha_sigma) > log_u
+        )
+
+    L_final, _ = jax.lax.while_loop(should_step_left, step_out_left, (L, jnp.float64(0.0)))
+
+    # Step out right: expand R until log_density(R) < log_u or R hits upper_bound
+    def step_out_right(carry):
+        R_val, _ = carry
+        R_new = jnp.minimum(R_val + w, upper_bound)
+        return (R_new, jnp.float64(0.0))
+
+    def should_step_right(carry):
+        R_val, _ = carry
+        return (R_val < upper_bound) & (
+            _jax_nb_log_density_alpha(R_val, y_jax, state.eta, alpha_sigma) > log_u
+        )
+
+    R_final, _ = jax.lax.while_loop(should_step_right, step_out_right, (R, jnp.float64(0.0)))
+
+    # --- Shrinkage ---
+    # Sample from [L, R] and shrink until we find a point above log_u.
+    # Use jax.lax.while_loop for proper early termination.
+    def shrink_while_cond(carry):
+        _, _, _, _, done = carry
+        return ~done
+
+    def shrink_while_body(carry):
+        L_val, R_val, key_val, x_best, _ = carry
+        key_val, subkey = jax.random.split(key_val)
+        x_new = L_val + jax.random.uniform(subkey, dtype=jnp.float64) * (R_val - L_val)
+        log_dens_new = _jax_nb_log_density_alpha(x_new, y_jax, state.eta, alpha_sigma)
+        accepted = log_dens_new > log_u
+        L_new = jnp.where(x_new < log_alpha, x_new, L_val)
+        R_new = jnp.where(x_new >= log_alpha, x_new, R_val)
+        collapsed = (R_new - L_new) < 1e-15
+        done = accepted | collapsed
+        x_best = jnp.where(accepted, x_new, x_best)
+        return (L_new, R_new, key_val, x_best, done)
+
+    # Start with current log_alpha as fallback
+    _, _, _, log_alpha_new, _ = jax.lax.while_loop(
+        shrink_while_cond,
+        shrink_while_body,
+        (L_final, R_final, key, log_alpha, jnp.bool_(False)),
+    )
+
+    return jnp.exp(log_alpha_new)
 
 
 def _sample_alpha_python(state, y, alpha_sigma, rng):
@@ -425,16 +587,27 @@ def _sample_alpha_python(state, y, alpha_sigma, rng):
 
 
 def _nb_loglik_pointwise_jax(y, eta, alpha):
-    """Compute pointwise NB log-likelihood (numpy, for storage)."""
-    from scipy.special import gammaln
+    """Compute pointwise NB log-likelihood (numpy, for storage).
 
-    mu = np.exp(eta)
+    Uses ``jax.scipy.special.gammaln`` to avoid scipy dependency.
+    """
+    import jax.numpy as jnp
+    from jax.scipy.special import gammaln as jax_gammaln
+
+    y_jax = jnp.asarray(y, dtype=jnp.float64)
+    eta_jax = jnp.asarray(eta, dtype=jnp.float64)
+    alpha_jax = jnp.float64(alpha)
+    mu = jnp.exp(eta_jax)
     # Numerically stable computation
-    log_mu_ratio = np.log(np.maximum(mu / (mu + alpha), 1e-300))
-    log_alpha_ratio = np.log(np.maximum(alpha / (mu + alpha), 1e-300))
-    return (
-        gammaln(y + alpha) - gammaln(alpha) + y * log_mu_ratio + alpha * log_alpha_ratio
+    log_mu_ratio = jnp.log(jnp.maximum(mu / (mu + alpha_jax), 1e-300))
+    log_alpha_ratio = jnp.log(jnp.maximum(alpha_jax / (mu + alpha_jax), 1e-300))
+    result = (
+        jax_gammaln(y_jax + alpha_jax)
+        - jax_gammaln(alpha_jax)
+        + y_jax * log_mu_ratio
+        + alpha_jax * log_alpha_ratio
     )
+    return np.asarray(result)
 
 
 def run_chain_jax(
@@ -452,9 +625,10 @@ def run_chain_jax(
     return_eta: bool = False,
     rng=None,
     mh_proposal_sd: float = 0.05,
-    pg_n_terms: int = 20,
-    n_probes: int = 10,
-    lanczos_deg: int = 30,
+    pg_n_terms: int = 10,
+    n_probes: int = 5,
+    lanczos_deg: int = 15,
+    use_mala: bool = True,
 ):
     """Run one chain of the full-JIT JAX Gibbs sampler.
 
@@ -497,6 +671,9 @@ def run_chain_jax(
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int
         Lanczos iteration depth.
+    use_mala : bool, default True
+        If True, use MALA (gradient-guided proposals) for the ρ update.
+        If False, use random-walk Metropolis–Hastings.
 
     Returns
     -------
@@ -526,24 +703,6 @@ def run_chain_jax(
     W_dense = W_sparse.toarray()
     W_dense_jax = jnp.asarray(W_dense, dtype=jnp.float64)
 
-    # Build the JIT-compiled Gibbs step
-    gibbs_step = _make_gibbs_step_with_data(
-        y_jax=y_jax,
-        X_jax=X_jax,
-        W_dense_jax=W_dense_jax,
-        n=n,
-        k=k,
-        W_sym_dense=W_sym_dense,
-        WtW_dense=WtW_dense,
-        W_eigs=W_eigs,
-        XtX_jax=XtX_jax,
-        priors=priors,
-        pg_n_terms=pg_n_terms,
-        mh_proposal_sd=mh_proposal_sd,
-        n_probes=n_probes,
-        lanczos_deg=lanczos_deg,
-    )
-
     # Initialize state
     state = JAXGibbsState(
         eta=jnp.asarray(init.eta, dtype=jnp.float64),
@@ -563,6 +722,31 @@ def run_chain_jax(
     eta_norm_samples = np.empty(n_keep, dtype=np.float64)
     eta_samples = np.empty((n_keep, n), dtype=np.float64) if return_eta else None
 
+    # ── MALA step-size adaptation ──
+    # During warmup, adapt mala_step_size to target ~57.4% acceptance rate
+    # (optimal for MALA; see Roberts & Tweedie 1996).  After warmup,
+    # recompile the JIT function once with the adapted step size.
+    adapted_step_size = mh_proposal_sd  # initial value
+
+    # Build the initial JIT-compiled step function
+    gibbs_step = _make_gibbs_step_with_data(
+        y_jax=y_jax,
+        X_jax=X_jax,
+        W_dense_jax=W_dense_jax,
+        n=n,
+        k=k,
+        W_sym_dense=W_sym_dense,
+        WtW_dense=WtW_dense,
+        W_eigs=W_eigs,
+        XtX_jax=XtX_jax,
+        priors=priors,
+        pg_n_terms=pg_n_terms,
+        mh_proposal_sd=adapted_step_size,
+        n_probes=n_probes,
+        lanczos_deg=lanczos_deg,
+        use_mala=use_mala,
+    )
+
     # Warmup the JIT function (first call triggers compilation)
     key = jax.random.PRNGKey(rng.integers(2**31))
     key, warmup_key = jax.random.split(key)
@@ -570,21 +754,47 @@ def run_chain_jax(
 
     # Run the chain
     accept_count = 0
+    warmup_accept_count = 0
     for i in range(total_iters):
         key, step_key = jax.random.split(key)
         state, accept = gibbs_step(state, step_key)
         accept_count += int(accept)
 
-        # Block 6: α | y, η — slice sampling (Python, not JIT)
-        alpha_new = _sample_alpha_python(state, y, priors.alpha_sigma, rng)
-        state = JAXGibbsState(
-            eta=state.eta,
-            beta=state.beta,
-            sigma2=state.sigma2,
-            rho=state.rho,
-            omega=state.omega,
-            alpha=jnp.float64(alpha_new),
-        )
+        # Track warmup acceptance for step-size adaptation
+        if i < tune:
+            warmup_accept_count += int(accept)
+
+        # At end of warmup, adapt MALA step size and recompile
+        if use_mala and i == tune - 1 and tune > 0:
+            warmup_rate = warmup_accept_count / tune
+            # Simple multiplicative adaptation:
+            # If acceptance rate > target, increase step size; if < target, decrease.
+            # Use a conservative factor to avoid overshooting.
+            target_rate = 0.574
+            if warmup_rate > 0.0 and warmup_rate < 1.0:
+                # Adaptation factor: ratio of target to observed, clamped
+                adapt_factor = min(max(target_rate / warmup_rate, 0.5), 2.0)
+                adapted_step_size = mh_proposal_sd * adapt_factor
+            # Recompile with adapted step size
+            gibbs_step = _make_gibbs_step_with_data(
+                y_jax=y_jax,
+                X_jax=X_jax,
+                W_dense_jax=W_dense_jax,
+                n=n,
+                k=k,
+                W_sym_dense=W_sym_dense,
+                WtW_dense=WtW_dense,
+                W_eigs=W_eigs,
+                XtX_jax=XtX_jax,
+                priors=priors,
+                pg_n_terms=pg_n_terms,
+                mh_proposal_sd=adapted_step_size,
+                n_probes=n_probes,
+                lanczos_deg=lanczos_deg,
+                use_mala=use_mala,
+            )
+            key, warmup_key = jax.random.split(key)
+            _ = gibbs_step(state, warmup_key)
 
         # Store post-warmup draws
         if i >= tune and (i - tune) % thin == 0:
