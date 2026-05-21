@@ -1114,9 +1114,15 @@ def make_logdet_jax_fn(
     make_logdet_numpy_vec_fn : NumPy vectorized version (for post-processing).
     """
     T = int(T)
-    _JAX_METHODS = frozenset({
-        "eigenvalue", "chebyshev", "trace_mc", "trace_xtrace", "trace_hutchpp",
-    })
+    _JAX_METHODS = frozenset(
+        {
+            "eigenvalue",
+            "chebyshev",
+            "trace_mc",
+            "trace_xtrace",
+            "trace_hutchpp",
+        }
+    )
 
     # Resolve W to eigenvalues or sparse matrix
     eigs = None

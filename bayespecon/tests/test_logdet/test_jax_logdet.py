@@ -33,7 +33,6 @@ from bayespecon.logdet import (
     make_logdet_jax_fn,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -338,9 +337,7 @@ class TestMakeLogdetJaxFn:
         """Chebyshev gradient is close to eigenvalue gradient."""
         W = _toy_w()
         fn_eig = make_logdet_jax_fn(W, method="eigenvalue")
-        fn_cheb = make_logdet_jax_fn(
-            W, method="chebyshev", rho_min=-0.5, rho_max=0.5
-        )
+        fn_cheb = make_logdet_jax_fn(W, method="chebyshev", rho_min=-0.5, rho_max=0.5)
 
         rho = jnp.float64(0.3)
         grad_eig = jax.grad(fn_eig)(rho)

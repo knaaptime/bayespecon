@@ -148,17 +148,49 @@ class SEM(SpatialModel):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         idata_kwargs: Optional[dict] = None,
+        sampler: str = "nuts",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ) -> "az.InferenceData":
-        """Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
+        """Draw samples from the posterior.
 
         Parameters
         ----------
+        draws : int, default 2000
+            Number of posterior samples per chain (after tuning).
+        tune : int, default 1000
+            Number of tuning (burn-in) steps per chain.
+        chains : int, default 4
+            Number of parallel chains.
+        target_accept : float, default 0.9
+            Target acceptance rate for NUTS.
+        random_seed : int, optional
+            Seed for reproducibility.
         idata_kwargs : dict, optional
             Passed to ``pm.sample`` for InferenceData creation. If contains
             ``log_likelihood: True``, the complete pointwise log-likelihood
             (including the Jacobian correction) is attached to the output.
-        Other parameters as in :class:`~bayespecon.models.base.SpatialModel`.
+            Only used when ``sampler="nuts"``.
+        sampler : str, default "nuts"
+            Sampling method:
+
+            - ``"nuts"``: NUTS via PyMC (default).
+            - ``"gibbs"``: 3-block Gibbs sampler (β conjugate normal,
+              σ² conjugate Inv-Γ, λ conditional slice).
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.  Only used when
+            ``sampler="gibbs"``.
+        n_jobs : int, default -1
+            Number of parallel workers for Gibbs chains.  Only used
+            when ``sampler="gibbs"``.
+        progressbar : bool, default True
+            Show per-chain progress bars.  Only used when
+            ``sampler="gibbs"``.
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample``.
+            Only used when ``sampler="nuts"``.
 
         Notes
         -----
@@ -181,6 +213,23 @@ class SEM(SpatialModel):
             - \\log(\\sigma) - \\frac{1}{2}\\log(2\\pi)
             + \\frac{1}{n} \\log |I - \\lambda W |
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+                use_mala=sample_kwargs.pop("use_mala", True),
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path (default) ---
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
@@ -235,6 +284,101 @@ class SEM(SpatialModel):
                 idata, ll_total.reshape(n_chains, n_draws_per_chain, n)
             )
 
+        return self._idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+    ) -> "az.InferenceData":
+        """Sample posterior via 3-block Gaussian Gibbs.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers. ``-1`` uses all CPUs.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        gibbs_method : str, default "numpy"
+            Execution backend: ``"numpy"`` for Python-loop Gibbs with
+            adaptive slice sampling, or ``"jax"`` for full-JIT Gibbs
+            with MALA for λ.  The JAX path requires JAX and equinox.
+        mala_step_size : float, default 0.05
+            Initial MALA step size for the JAX path.
+        use_mala : bool, default True
+            If True, use MALA for the λ update in the JAX path.
+
+        Returns
+        -------
+        az.InferenceData
+            With ``posterior``, ``log_likelihood``, and ``observed_data``
+            groups.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model uses a robust (Student-t) likelihood.
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
+        from .._samplers._gibbs_estimation import GaussianSEMGibbs
+
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSEMGibbs(
+            y=self._y,
+            X=self._X,
+            W_sparse=self._W_sparse,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=list(self._feature_names),
+            model_type="sem",
+            W_eigs=self._W_eigs.real.astype(np.float64),
+            logdet_method=self.logdet_method,
+        )
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+        )
         return self._idata
 
     def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
