@@ -869,6 +869,11 @@ def register_jax_dispatch() -> bool:
         def forward(rho, b):
             return _solve(lambda x: W_bcoo @ x, rho, b)
 
+        # NOTE: The VJP below is pure JAX, but it is only exercised by
+        # PyTensor's ``mode="JAX"`` path.  When ``nuts_sampler="blackjax"``
+        # or ``"numpyro"`` is used, PyMC calls ``jax.grad`` on the compiled
+        # log-density and JAX autodiffs through the iterative forward
+        # solve automatically (lineax.linear_solve is JAX-traceable).
         def vjp(rho, eta, g):
             # Adjoint system: A^T v = g. Left-preconditioning with
             # M^{-T} = sum_j rho^j (W^T)^j leaves the solution unchanged
@@ -949,6 +954,11 @@ def register_jax_dispatch() -> bool:
         def forward(rho, b):
             return _solve(lambda x: W_bcoo @ x, rho, b)
 
+        # NOTE: The VJP below is pure JAX, but it is only exercised by
+        # PyTensor's ``mode="JAX"`` path.  When ``nuts_sampler="blackjax"``
+        # or ``"numpyro"`` is used, PyMC calls ``jax.grad`` on the compiled
+        # log-density and JAX autodiffs through the GMRES forward
+        # automatically (jax.scipy.sparse.linalg.gmres is JAX-traceable).
         def vjp(rho, eta, g):
             # Adjoint system: (I - rho W^T) v = g
             v = _solve(lambda x: W_T_bcoo @ x, rho, g)
@@ -1011,6 +1021,13 @@ def register_jax_dispatch() -> bool:
             inv_eigs = 1.0 / (1.0 - rho * eigs_j)
             return (V_j @ (inv_eigs * (Vinv_j @ b.astype(jnp.complex128)))).real
 
+        # NOTE: The VJP below is pure JAX, but it is only exercised by
+        # PyTensor's ``mode="JAX"`` path (``pytensor.grad`` + compile
+        # with ``mode="JAX"``).  When ``nuts_sampler="blackjax"`` or
+        # ``"numpyro"`` is used, PyMC compiles the full log-density as a
+        # single JAX function and calls ``jax.grad`` on it.  JAX
+        # differentiates through the complex→real forward automatically,
+        # so the explicit VJP is bypassed in that case.
         def vjp(rho, eta, g):
             # Adjoint: v = (I - rho W^T)^{-1} g
             # (I - rho W^T)^{-1} = V^{-T} @ diag(1/(1-rho*lambda)) @ V^T g
