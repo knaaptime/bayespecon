@@ -96,6 +96,61 @@ def test_kronecker_solve_vjp_parity(small_W):
     _assert_close(f_c(0.4, -0.1, bv), f_j(0.4, -0.1, bv))
 
 
+def test_kronecker_solve_jax_autodiff_vs_manual_vjp(small_W):
+    """JAX autodiff through the pure-JAX forward must match the hand-derived VJP.
+
+    This test directly exercises ``jax.grad`` on the JIT-compiled forward
+    solve (the same function returned by ``_funcify_kron_solve``) and
+    compares the result with the C-backend reference that uses the manual
+    adjoint in :class:`_KroneckerFlowVJPOp`.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    n = small_W.shape[0]
+    W_d = jnp.asarray(small_W.toarray(), dtype=jnp.float64)
+    I = jnp.eye(n, dtype=jnp.float64)
+
+    def kron_solve(rho_d, rho_o, b):
+        Ld = I - rho_d * W_d
+        Lo = I - rho_o * W_d
+        Hb = b.reshape((n, n)).T
+        Hp = jnp.linalg.solve(Ld, Hb)
+        Z = jnp.linalg.solve(Lo, Hp.T)
+        return Z.reshape(-1)
+
+    def loss_fn(rho_d, rho_o, b):
+        eta = kron_solve(rho_d, rho_o, b)
+        return jnp.sum(eta * eta)
+
+    grad_rd = jax.grad(loss_fn, argnums=0)
+    grad_ro = jax.grad(loss_fn, argnums=1)
+    grad_b = jax.grad(loss_fn, argnums=2)
+
+    rng = np.random.default_rng(42)
+    rd_val = np.float64(0.4)
+    ro_val = np.float64(-0.1)
+    bv = rng.standard_normal(n * n)
+
+    jax_rd = float(grad_rd(rd_val, ro_val, bv))
+    jax_ro = float(grad_ro(rd_val, ro_val, bv))
+    jax_b = np.asarray(grad_b(rd_val, ro_val, bv), dtype=np.float64)
+
+    # C-backend reference via pytensor.grad + default mode
+    op = KroneckerFlowSolveOp(small_W, n)
+    rho_d, rho_o = pt.dscalars("rho_d", "rho_o")
+    b = pt.dvector("b")
+    eta = op(rho_d, rho_o, b)
+    loss = pt.sum(eta * eta)
+    grads = [pytensor.grad(loss, v) for v in (rho_d, rho_o, b)]
+    f_c = pytensor.function([rho_d, rho_o, b], grads)
+    c_rd, c_ro, c_b = f_c(rd_val, ro_val, bv)
+
+    np.testing.assert_allclose(jax_rd, float(c_rd), atol=1e-10, rtol=1e-10)
+    np.testing.assert_allclose(jax_ro, float(c_ro), atol=1e-10, rtol=1e-10)
+    np.testing.assert_allclose(jax_b, np.asarray(c_b), atol=1e-10, rtol=1e-10)
+
+
 def test_kronecker_matrix_forward_parity(small_W):
     n = small_W.shape[0]
     T = 3
@@ -122,6 +177,64 @@ def test_kronecker_matrix_vjp_parity(small_W):
     rng = np.random.default_rng(3)
     Bv = rng.standard_normal((n * n, T))
     _assert_close(f_c(0.2, 0.3, Bv), f_j(0.2, 0.3, Bv))
+
+
+def test_kronecker_matrix_jax_autodiff_vs_manual_vjp(small_W):
+    """JAX autodiff through the vmapped Kronecker forward must match manual VJP.
+
+    Same pattern as ``test_kronecker_solve_jax_autodiff_vs_manual_vjp``
+    but for the matrix (multi-column) variant.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    n = small_W.shape[0]
+    T = 2
+    W_d = jnp.asarray(small_W.toarray(), dtype=jnp.float64)
+    I = jnp.eye(n, dtype=jnp.float64)
+
+    def _solve_one(rho_d, rho_o, b):
+        Ld = I - rho_d * W_d
+        Lo = I - rho_o * W_d
+        Hb = b.reshape((n, n)).T
+        Hp = jnp.linalg.solve(Ld, Hb)
+        Z = jnp.linalg.solve(Lo, Hp.T)
+        return Z.reshape(-1)
+
+    def kron_solve_mat(rho_d, rho_o, B):
+        solver = jax.vmap(_solve_one, in_axes=(None, None, 1), out_axes=1)
+        return solver(rho_d, rho_o, B)
+
+    def loss_fn(rho_d, rho_o, B):
+        H = kron_solve_mat(rho_d, rho_o, B)
+        return jnp.sum(H * H)
+
+    grad_rd = jax.grad(loss_fn, argnums=0)
+    grad_ro = jax.grad(loss_fn, argnums=1)
+    grad_B = jax.grad(loss_fn, argnums=2)
+
+    rng = np.random.default_rng(43)
+    rd_val = np.float64(0.2)
+    ro_val = np.float64(0.3)
+    Bv = rng.standard_normal((n * n, T))
+
+    jax_rd = float(grad_rd(rd_val, ro_val, Bv))
+    jax_ro = float(grad_ro(rd_val, ro_val, Bv))
+    jax_B = np.asarray(grad_B(rd_val, ro_val, Bv), dtype=np.float64)
+
+    # C-backend reference
+    op = KroneckerFlowSolveMatrixOp(small_W, n)
+    rho_d, rho_o = pt.dscalars("rho_d", "rho_o")
+    B = pt.dmatrix("B")
+    H = op(rho_d, rho_o, B)
+    loss = pt.sum(H * H)
+    grads = [pytensor.grad(loss, v) for v in (rho_d, rho_o, B)]
+    f_c = pytensor.function([rho_d, rho_o, B], grads)
+    c_rd, c_ro, c_B = f_c(rd_val, ro_val, Bv)
+
+    np.testing.assert_allclose(jax_rd, float(c_rd), atol=1e-10, rtol=1e-10)
+    np.testing.assert_allclose(jax_ro, float(c_ro), atol=1e-10, rtol=1e-10)
+    np.testing.assert_allclose(jax_B, np.asarray(c_B), atol=1e-10, rtol=1e-10)
 
 
 def test_sparse_flow_forward_parity(kron_matrices):
@@ -373,12 +486,79 @@ def test_sparse_sar_jax_gmres_grad_parity(monkeypatch, lineax_env_reset):
         np.testing.assert_allclose(np.asarray(c), np.asarray(j), atol=1e-7, rtol=1e-7)
 
 
-def test_jax_auto_falls_to_chebyshev_when_no_lineax(monkeypatch):
+def test_sparse_sar_jax_eigen_autodiff_vs_manual_vjp(monkeypatch, lineax_env_reset):
+    """JAX autodiff through the pure-JAX eigen forward must match manual VJP.
+
+    The eigen path is pure dense JAX (complex128 eigendecomposition +
+    mat-vec).  JAX differentiates through it automatically, so this test
+    verifies that ``jax.grad`` on the forward function agrees with the
+    C-backend reference that uses the hand-derived adjoint in
+    :class:`_SparseSARVJPOp`.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "eigen")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_EIGEN_N_MAX", "1000")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _reset_jax_dispatch_caches()
+    from bayespecon._jax_dispatch import register_jax_dispatch
+
+    register_jax_dispatch()
+
+    n = 8
+    W = _line_W(n)
+    W_dense = np.asarray(W.toarray(), dtype=np.float64)
+    eigs_np, V_np = np.linalg.eig(W_dense)
+    Vinv_np = np.linalg.inv(V_np)
+    idx = np.argsort(eigs_np.real)[::-1]
+    eigs_np = eigs_np[idx]
+    V_np = V_np[:, idx]
+    Vinv_np = Vinv_np[idx, :]
+
+    eigs_j = jnp.asarray(eigs_np.astype(np.complex128))
+    V_j = jnp.asarray(V_np.astype(np.complex128))
+    Vinv_j = jnp.asarray(Vinv_np.astype(np.complex128))
+    W_j = jnp.asarray(W_dense, dtype=jnp.float64)
+
+    def eigen_solve(rho, b):
+        inv_eigs = 1.0 / (1.0 - rho * eigs_j)
+        return (V_j @ (inv_eigs * (Vinv_j @ b.astype(jnp.complex128)))).real
+
+    def loss_fn(rho, b):
+        eta = eigen_solve(rho, b)
+        return jnp.sum(eta * eta)
+
+    grad_rho = jax.grad(loss_fn, argnums=0)
+    grad_b = jax.grad(loss_fn, argnums=1)
+
+    rng = np.random.default_rng(44)
+    rho_val = np.float64(0.3)
+    b_val = rng.standard_normal(n)
+
+    jax_rho = float(grad_rho(rho_val, b_val))
+    jax_b = np.asarray(grad_b(rho_val, b_val), dtype=np.float64)
+
+    # C-backend reference via pytensor.grad + default mode
+    op = SparseSARSolveOp(W)
+    rho = pt.dscalar("rho")
+    b = pt.dvector("b")
+    eta = op(rho, b)
+    loss = pt.sum(eta * eta)
+    grads = [pytensor.grad(loss, v) for v in (rho, b)]
+    f_c = pytensor.function([rho, b], grads)
+    c_rho, c_b = f_c(rho_val, b_val)
+
+    np.testing.assert_allclose(jax_rho, float(c_rho), atol=1e-10, rtol=1e-10)
+    np.testing.assert_allclose(jax_b, np.asarray(c_b), atol=1e-10, rtol=1e-10)
+
+
+def test_jax_auto_falls_to_jax_gmres_when_no_lineax(monkeypatch):
     from bayespecon._jax_dispatch import _resolve_auto_sar_solver
 
     monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._lineax_available", lambda: False)
-    assert _resolve_auto_sar_solver(100) == "chebyshev"
+    assert _resolve_auto_sar_solver(100) == "jax_gmres"
 
 
 def test_jax_gmres_high_rho_correctness(monkeypatch, lineax_env_reset):

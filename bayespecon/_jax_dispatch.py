@@ -445,7 +445,19 @@ def register_jax_dispatch() -> bool:
         return kron_solve
 
     # ------------------------------------------------------------------
-    # Kronecker VJP — pure JAX
+    # Kronecker VJP — pure JAX (redundant for JAX samplers, required for
+    # PyTensor ``mode="JAX"`` compilation)
+    # ------------------------------------------------------------------
+    # The forward solve above is pure JAX (dense ``linalg.solve``).  When
+    # ``nuts_sampler="blackjax"`` or ``"numpyro"`` is used, PyMC compiles
+    # the full log-density as a single JAX function and calls ``jax.grad``
+    # on it.  JAX differentiates through the forward solve automatically,
+    # so the explicit VJP below is *not* exercised by JAX samplers.
+    #
+    # It is still required for PyTensor's ``mode="JAX"`` path (e.g.
+    # ``pytensor.grad`` followed by ``pytensor.function(..., mode="JAX")``),
+    # because PyTensor builds the gradient graph symbolically via ``L_op``
+    # and then looks up ``jax_funcify`` for each gradient node.
     # ------------------------------------------------------------------
 
     @jax_funcify.register(_KroneckerFlowVJPOp)
