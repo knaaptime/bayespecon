@@ -36,6 +36,7 @@ from .._samplers.pg_gibbs import GibbsCache, GibbsPriors, GibbsState, run_chain
 from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
 from ..logdet import make_logdet_numpy_fn
 from .base import SpatialModel
+from .priors import SARPriors
 
 
 class SARNegBinLatent(SpatialModel):
@@ -68,6 +69,7 @@ class SARNegBinLatent(SpatialModel):
     for α specifically and use longer runs if needed.
     """
 
+    _priors_cls = SARPriors
     _spatial_diagnostics_tests = SAR_NEGBIN_SUITE.tests
 
     def __init__(self, *args, **kwargs):

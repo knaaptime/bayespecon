@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -13,6 +13,9 @@ import pymc as pm
 import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
+
+if TYPE_CHECKING:
+    from .._backends import ProbabilisticBackend
 
 from ..logdet import (
     _auto_logdet_method,
@@ -294,17 +297,29 @@ class SpatialPanelModel(ABC):
         logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
+        backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
     ):
         if W is None:
             raise ValueError("W is required.")
 
-        self.priors = priors or {}
+        # Resolve typed priors (dataclass) and dict view.
+        from .priors import PanelBasePriors, priors_as_dict, resolve_priors
+
+        _priors_cls = getattr(self.__class__, "_priors_cls", PanelBasePriors)
+        self.priors_obj = resolve_priors(priors, _priors_cls)
+        self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
         self.model = int(model)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._W_dense_cache: Optional[np.ndarray] = None
+
+        # Resolve probabilistic backend.
+        from .._backends import resolve_backend
+
+        self.backend = resolve_backend(backend)
+        self.backend_name = self.backend.name
 
         if formula is not None:
             if data is None:
@@ -376,6 +391,16 @@ class SpatialPanelModel(ABC):
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
         # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
         self._W_eigs_cache: np.ndarray | None = None
+
+        # Resolve rho/lambda bounds from method, priors, and spectral stability.
+        from ..logdet import resolve_logdet_bounds
+
+        self._logdet_bounds = resolve_logdet_bounds(
+            self.logdet_method,
+            n=self._W_sparse.shape[0],
+            eigs=None,  # eigenvalues computed lazily
+            priors=self.priors,
+        )
 
         self._y, self._X = _demean_panel(
             self._y_raw, self._X_raw, self._N, self._T, self.model

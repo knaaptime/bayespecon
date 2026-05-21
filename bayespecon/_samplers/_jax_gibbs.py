@@ -323,14 +323,19 @@ def _make_gibbs_step_with_data(
 
             # MALA acceptance ratio includes proposal density
             g_proposed = grad_log_dens(rho_proposed)
-            log_p_fwd = -0.5 * ((rho_proposed - rho - (eps**2 / 2.0) * g_current) / eps) ** 2
-            log_p_rev = -0.5 * ((rho - rho_proposed - (eps**2 / 2.0) * g_proposed) / eps) ** 2
+            log_p_fwd = (
+                -0.5 * ((rho_proposed - rho - (eps**2 / 2.0) * g_current) / eps) ** 2
+            )
+            log_p_rev = (
+                -0.5 * ((rho - rho_proposed - (eps**2 / 2.0) * g_proposed) / eps) ** 2
+            )
 
             log_density_proposed = log_density_rho(rho_proposed)
             log_density_current = log_density_rho(rho)
 
-            log_alpha = (log_density_proposed - log_density_current
-                         + log_p_rev - log_p_fwd)
+            log_alpha = (
+                log_density_proposed - log_density_current + log_p_rev - log_p_fwd
+            )
         else:
             # RW-MH proposal
             rho_proposed = rho + mh_sd_jax * jax.random.normal(

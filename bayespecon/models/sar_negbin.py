@@ -35,6 +35,7 @@ import scipy.sparse as sp
 
 from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
 from .base import SpatialModel
+from .priors import SARPriors
 
 
 class SARNegativeBinomial(SpatialModel):
@@ -71,6 +72,7 @@ class SARNegativeBinomial(SpatialModel):
     spatial noise in the latent field by ``sigma``.
     """
 
+    _priors_cls = SARPriors
     _spatial_diagnostics_tests = SAR_NEGBIN_SUITE.tests
 
     def __init__(self, *args, **kwargs):
@@ -109,7 +111,7 @@ class SARNegativeBinomial(SpatialModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         alpha_sigma = self.priors.get("alpha_sigma", 10.0)
-        n = self._X.shape[0]
+        self._X.shape[0]
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)

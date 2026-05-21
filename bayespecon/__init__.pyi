@@ -140,6 +140,12 @@ from .models import (
     SARNegativeBinomial as SARNegativeBinomial,
 )
 from .models import (
+    SARNegativeBinomialLatent as SARNegativeBinomialLatent,
+)
+from .models import (
+    SARNegBinLatent as SARNegBinLatent,
+)
+from .models import (
     SARPanelDynamic as SARPanelDynamic,
 )
 from .models import (

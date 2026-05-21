@@ -9,6 +9,14 @@ import pytensor.tensor as pt
 from ._sampler import use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
+from .priors import (
+    PanelOLSPriors,
+    PanelSARPriors,
+    PanelSDEMPriors,
+    PanelSDMPriors,
+    PanelSEMPriors,
+    PanelSLXPriors,
+)
 
 
 class OLSPanelFE(SpatialPanelModel):
@@ -140,6 +148,8 @@ class OLSPanelFE(SpatialPanelModel):
             "Panel-Robust-LM-Error",
         ),
     ]
+
+    _priors_cls = PanelOLSPriors
 
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for pooled/FE panel regression.
@@ -321,6 +331,8 @@ class SARPanelFE(SpatialPanelModel):
             "Panel-Robust-LM-WX",
         ),
     ]
+
+    _priors_cls = PanelSARPriors
 
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for SAR panel regression.
@@ -552,6 +564,8 @@ class SEMPanelFE(SpatialPanelModel):
             "Panel-LM-WX",
         ),
     ]
+
+    _priors_cls = PanelSEMPriors
 
     def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
         """Construct the PyMC model for SEM panel regression.
@@ -885,6 +899,8 @@ class SDMPanelFE(SpatialPanelModel):
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
+    _priors_cls = PanelSDMPriors
+
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for SDM panel regression.
 
@@ -1144,6 +1160,8 @@ class SDEMPanelFE(SpatialPanelModel):
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
+    _priors_cls = PanelSDEMPriors
 
     def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
         """Construct the PyMC model for SDEM panel regression.
@@ -1500,6 +1518,8 @@ class SLXPanelFE(SpatialPanelModel):
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
+    _priors_cls = PanelSLXPriors
 
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for SLX panel regression.

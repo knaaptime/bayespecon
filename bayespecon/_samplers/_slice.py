@@ -25,10 +25,10 @@ from typing import Callable
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Adaptive width state
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SliceWidthState:
@@ -276,12 +276,16 @@ def slice_sample_1d_adaptive(
             L = max(L, lower)
             R = min(R, upper)
             steps_out_left = 0
-            while L > lower and log_density(L) > log_u and steps_out_left < max_steps_out:
+            while (
+                L > lower and log_density(L) > log_u and steps_out_left < max_steps_out
+            ):
                 L -= w
                 L = max(L, lower)
                 steps_out_left += 1
             steps_out_right = 0
-            while R < upper and log_density(R) > log_u and steps_out_right < max_steps_out:
+            while (
+                R < upper and log_density(R) > log_u and steps_out_right < max_steps_out
+            ):
                 R += w
                 R = min(R, upper)
                 steps_out_right += 1

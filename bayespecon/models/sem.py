@@ -25,6 +25,7 @@ from .base import (
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
 )
+from .priors import SEMPriors
 
 
 class SEM(SpatialModel):
@@ -104,6 +105,8 @@ class SEM(SpatialModel):
     with rate ``nu_lam`` (default 1/30, mean ≈ 30). The lower bound of 2
     ensures the variance exists.
     """
+
+    _priors_cls = SEMPriors
 
     _spatial_diagnostics_tests = [
         (

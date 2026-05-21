@@ -25,7 +25,9 @@ import pytensor.tensor as pt
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
+from .._backends import resolve_backend
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from .priors import SpatialProbitPriors, priors_as_dict, resolve_priors
 
 
 class SpatialProbit:
@@ -126,10 +128,14 @@ class SpatialProbit:
         if W is None:
             raise ValueError("W is required.")
 
-        self.priors = priors or {}
+        # Resolve typed priors and backend.
+        self.priors_obj = resolve_priors(priors, SpatialProbitPriors)
+        self.priors = priors_as_dict(self.priors_obj)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
+        self.backend = resolve_backend(None)
+        self.backend_name = self.backend.name
 
         self._W_dense = self._as_dense_region_W(W)
         self._m = self._W_dense.shape[0]

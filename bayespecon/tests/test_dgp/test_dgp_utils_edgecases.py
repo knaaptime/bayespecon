@@ -102,10 +102,10 @@ class TestRookGridWeights:
         with pytest.raises(ValueError, match="positive integer"):
             rook_grid_weights(0)
 
-    def test_n1_grid(self):
-        W, g = rook_grid_weights(1)
-        assert W.shape == (1, 1)
-        assert W[0, 0] == 0.0  # isolated unit
+    def test_n1_grid_raises(self):
+        """n_side=1 is degenerate (no rook neighbours possible)."""
+        with pytest.raises(ValueError, match="n_side=1"):
+            rook_grid_weights(1)
 
 
 # ---------------------------------------------------------------------------

@@ -52,7 +52,12 @@ import scipy.sparse.linalg as spla
 
 from .._jax_dispatch import _eqx_available
 from ._polyagamma import sample_polyagamma
-from ._slice import slice_sample_1d, SliceWidthState, slice_sample_1d_adaptive, update_slice_width
+from ._slice import (
+    SliceWidthState,
+    slice_sample_1d,
+    slice_sample_1d_adaptive,
+    update_slice_width,
+)
 from ._spatial_normal import (
     CholmodFactor,
     cg_solve,

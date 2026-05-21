@@ -105,6 +105,7 @@ from .panel_tobit import (
 )
 from .sar import SAR as SAR
 from .sar_negbin import SARNegativeBinomial as SARNegativeBinomial
+from .sar_negbin_latent import SARNegBinLatent as SARNegBinLatent
 from .sar_negbin_latent import SARNegBinLatent as SARNegativeBinomialLatent
 from .sdem import SDEM as SDEM
 from .sdm import SDM as SDM

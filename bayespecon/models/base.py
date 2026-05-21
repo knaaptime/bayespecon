@@ -6,7 +6,7 @@ import importlib
 import warnings
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -15,6 +15,9 @@ import pymc as pm
 import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
+
+if TYPE_CHECKING:
+    from .._backends import ProbabilisticBackend
 
 from ..logdet import (
     _auto_logdet_method,
@@ -246,14 +249,27 @@ class SpatialModel(ABC):
         y: Optional[Union[np.ndarray, pd.Series]] = None,
         X: Optional[Union[np.ndarray, pd.DataFrame]] = None,
         W: Optional[Union[Graph, sp.spmatrix]] = None,
-        priors: Optional[dict] = None,
+        priors: Optional[Union[dict, Any]] = None,
         logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
+        backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
     ):
-        self.priors = priors or {}
+        # Resolve typed priors (dataclass) and dict view.
+        from .priors import BasePriors, priors_as_dict, resolve_priors
+
+        _priors_cls = getattr(self.__class__, "_priors_cls", BasePriors)
+        self.priors_obj = resolve_priors(priors, _priors_cls)
+        self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
         self.robust = robust
+
+        # Resolve probabilistic backend (PyMC, NumPyro, BlackJAX, nutpie).
+        from .._backends import resolve_backend
+
+        self.backend = resolve_backend(backend)
+        self.backend_name = self.backend.name
+
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
 
@@ -326,7 +342,10 @@ class SpatialModel(ABC):
             )
             # Store a pytensor logdet callable for use in _build_pymc_model.
             self._logdet_pytensor_fn = make_logdet_fn(
-                self._W_for_logdet, method=self.logdet_method
+                self._W_for_logdet,
+                method=self.logdet_method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
             )
             self._Wy: np.ndarray = np.asarray(
                 self._W_sparse @ self._y, dtype=np.float64

@@ -21,6 +21,7 @@ from .base import (
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
 )
+from .priors import SDMPriors
 
 
 class SDM(SpatialModel):
@@ -108,6 +109,8 @@ class SDM(SpatialModel):
     where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`
     with rate ``nu_lam`` (default 1/30, mean ≈ 30).
     """
+
+    _priors_cls = SDMPriors
 
     _spatial_diagnostics_tests = [
         (

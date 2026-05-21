@@ -29,6 +29,12 @@ from pytensor import sparse as pts
 
 from ._sampler import use_jax_likelihood
 from .panel_base import SpatialPanelModel
+from .priors import (
+    PanelOLSREPriors,
+    PanelSARREPriors,
+    PanelSDEMREPriors,
+    PanelSEMREPriors,
+)
 
 
 class OLSPanelRE(SpatialPanelModel):
@@ -150,6 +156,8 @@ class OLSPanelRE(SpatialPanelModel):
             "Panel-Robust-LM-Error",
         ),
     ]
+
+    _priors_cls = PanelOLSREPriors
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)  # RE always uses raw (pooled) data
@@ -353,6 +361,8 @@ class SARPanelRE(SpatialPanelModel):
             "Panel-Robust-LM-WX",
         ),
     ]
+
+    _priors_cls = PanelSARREPriors
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -596,6 +606,8 @@ class SEMPanelRE(SpatialPanelModel):
             "Panel-LM-WX",
         ),
     ]
+
+    _priors_cls = PanelSEMREPriors
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -936,6 +948,8 @@ class SDEMPanelRE(SpatialPanelModel):
             "Panel-LM-Lag-SDEM",
         ),
     ]
+
+    _priors_cls = PanelSDEMREPriors
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)

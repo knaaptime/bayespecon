@@ -92,6 +92,9 @@ def resolve_logdet_method(method: str | None, *, n: int) -> str:
     """
     if method is None:
         return _auto_logdet_method(int(n))
+    # Accept 'mc_poly' as an alias for the canonical 'trace_mc'.
+    if method == "mc_poly":
+        method = "trace_mc"
     if method not in VALID_LOGDET_METHODS:
         valid = ", ".join(sorted(VALID_LOGDET_METHODS))
         raise ValueError(f"Unknown logdet method: {method!r}. Valid options: {valid}.")
@@ -2063,7 +2066,7 @@ def make_flow_separable_logdet(
             n * logdet_chebyshev(rho_d, coeffs, rmin=rmin_cb, rmax=rmax_cb)
             + n * logdet_chebyshev(rho_o, coeffs, rmin=rmin_cb, rmax=rmax_cb)
         )
-    elif method == "trace_mc":
+    elif method in ("trace_mc", "mc_poly"):
         traces = compute_flow_traces(
             W_sp, miter=miter, riter=riter, random_state=random_state
         )
@@ -2074,7 +2077,7 @@ def make_flow_separable_logdet(
     else:
         raise ValueError(
             f"make_flow_separable_logdet: method={method!r} not recognised. "
-            "Choose one of: 'eigenvalue', 'chebyshev', 'trace_mc'."
+            "Choose one of: 'eigenvalue', 'chebyshev', 'trace_mc', 'mc_poly'."
         )
 
 
@@ -2108,10 +2111,10 @@ def make_flow_separable_logdet_numpy(
 
     if method is None:
         method = _auto_logdet_method(n)
-    if method not in {"eigenvalue", "chebyshev", "trace_mc"}:
+    if method not in {"eigenvalue", "chebyshev", "trace_mc", "mc_poly"}:
         raise ValueError(
             f"make_flow_separable_logdet_numpy: method={method!r} not recognised. "
-            "Choose one of: 'eigenvalue', 'chebyshev', 'trace_mc'."
+            "Choose one of: 'eigenvalue', 'chebyshev', 'trace_mc', 'mc_poly'."
         )
 
     eigs = None
