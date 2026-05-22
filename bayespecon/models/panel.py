@@ -7,7 +7,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ._sampler import use_jax_likelihood
+from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 from .priors import (
@@ -185,6 +185,9 @@ class OLSPanelFE(SpatialPanelModel):
             Posterior-mean fitted values.
         """
         beta = self._posterior_mean("beta")
+        if self._intercept_dropped:
+            ni = self._beta_nonintercept_indices
+            return self._X[:, ni] @ beta
         return self._X @ beta
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
@@ -196,7 +199,7 @@ class OLSPanelFE(SpatialPanelModel):
             Direct, indirect, total effects and feature names.
         """
         beta = self._posterior_mean("beta")
-        ni = self._nonintercept_indices
+        ni = self._beta_nonintercept_indices
         return {
             "direct": beta[ni].copy(),
             "indirect": np.zeros(len(ni)),
@@ -216,7 +219,7 @@ class OLSPanelFE(SpatialPanelModel):
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
 
-        ni = self._nonintercept_indices
+        ni = self._beta_nonintercept_indices
         direct_samples = beta_draws[:, ni].copy()
         indirect_samples = np.zeros_like(direct_samples)
         total_samples = direct_samples.copy()
@@ -403,19 +406,38 @@ class SARPanelFE(SpatialPanelModel):
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
 
+        # --- NUTS path (default) ---
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
-        )
-        if "log_likelihood" in idata.groups():
-            self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
-        return idata
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        model = self._build_pymc_model()
+        self._pymc_model = model
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+
+        with model:
+            self._idata = pm.sample(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                target_accept=target_accept,
+                random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
+                **sample_kwargs,
+            )
+
+        # --- Correct log_likelihood: add Jacobian contribution ---
+        # The pm.Normal("obs") auto-captures the Gaussian part, but the
+        # Jacobian log|I - rho*W|*T (added via pm.Potential) is absent.
+        if compute_log_likelihood and hasattr(self, "_idata"):
+            self._attach_jacobian_corrected_log_likelihood(
+                self._idata, "rho", T=self._T
+            )
+
+        return self._idata
 
     def _fit_gibbs(
         self,
@@ -526,6 +548,9 @@ class SARPanelFE(SpatialPanelModel):
         """
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
+        if self._intercept_dropped:
+            ni = self._beta_nonintercept_indices
+            return rho * self._Wy + self._X[:, ni] @ beta
         return rho * self._Wy + self._X @ beta
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
@@ -538,7 +563,7 @@ class SARPanelFE(SpatialPanelModel):
         """
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
-        ni = self._nonintercept_indices
+        ni = self._beta_nonintercept_indices
         eigs = self._W_eigs
         mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
         mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
@@ -574,7 +599,7 @@ class SARPanelFE(SpatialPanelModel):
         mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
 
         # Exclude intercept from effects (it has no meaningful spatial interpretation)
-        ni = self._nonintercept_indices
+        ni = self._beta_nonintercept_indices
         direct_samples = mean_diag[:, None] * beta_draws[:, ni]  # (G, k_ni)
         total_samples = mean_row_sum[:, None] * beta_draws[:, ni]  # (G, k_ni)
         indirect_samples = total_samples - direct_samples  # (G, k_ni)
@@ -815,9 +840,11 @@ class SEMPanelFE(SpatialPanelModel):
         """Sample posterior and attach pointwise log-likelihood for IC metrics.
 
         The SEM panel model uses ``pm.Potential`` for both the Gaussian
-        error log-likelihood and the Jacobian, so neither is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, using eigenvalue-based Jacobian for efficiency.
+        error log-likelihood and the Jacobian on the default (C / Numba)
+        backend, so neither is auto-captured.  On JAX backends the model
+        is built via ``pm.CustomDist`` with an observed RV, so PyMC
+        populates ``log_likelihood`` natively.  We compute the complete
+        pointwise log-likelihood manually after sampling only when needed.
         """
         if sampler == "gibbs":
             return self._fit_gibbs(
@@ -836,62 +863,83 @@ class SEMPanelFE(SpatialPanelModel):
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
 
+        # --- NUTS path (default) ---
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        model = self._build_pymc_model(nuts_sampler=nuts_sampler)
+        self._pymc_model = model
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+
+        with model:
+            self._idata = pm.sample(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                target_accept=target_accept,
+                random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
+                **sample_kwargs,
+            )
+
+        # --- Compute complete pointwise log-likelihood ---
+        # On the default (pymc/numba) backend the model uses pm.Potential for
+        # both Gaussian and Jacobian terms, so nothing is auto-captured and
+        # we recompute from posterior draws here.  On JAX backends the model
+        # uses pm.CustomDist with an observed RV, so PyMC has already
+        # populated ``log_likelihood`` natively — skip the manual block.
+        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
+            nuts_sampler
         )
+        if needs_manual_loglik:
+            idata = self._idata
+            X = self._X
+            lam = idata.posterior["lam"].values
+            beta = idata.posterior["beta"].values
+            sigma = idata.posterior["sigma"].values
 
-        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
-            return idata
+            c, d = lam.shape
+            s = c * d
+            n = self._y.shape[0]
 
-        X = self._X
-        lam = idata.posterior["lam"].values
-        beta = idata.posterior["beta"].values
-        sigma = idata.posterior["sigma"].values
+            lam_f = lam.reshape(s)
+            beta_f = beta.reshape(s, beta.shape[-1])
+            sigma_f = sigma.reshape(s)
 
-        c, d = lam.shape
-        s = c * d
-        n = self._y.shape[0]
+            resid = self._y[None, :] - beta_f @ X.T
+            eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
 
-        lam_f = lam.reshape(s)
-        beta_f = beta.reshape(s, beta.shape[-1])
-        sigma_f = sigma.reshape(s)
+            if self.robust:
+                nu_f = idata.posterior["nu"].values.reshape(s)
+                from scipy.special import gammaln
 
-        resid = self._y[None, :] - beta_f @ X.T
-        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
+                ll = (
+                    gammaln((nu_f[:, None] + 1) / 2)
+                    - gammaln(nu_f[:, None] / 2)
+                    - 0.5 * np.log(nu_f[:, None] * np.pi)
+                    - np.log(sigma_f[:, None])
+                    - ((nu_f[:, None] + 1) / 2)
+                    * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
+                )
+            else:
+                ll = -0.5 * (
+                    (eps / sigma_f[:, None]) ** 2
+                    + np.log(2.0 * np.pi)
+                    + 2.0 * np.log(sigma_f[:, None])
+                )
 
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
+            # Jacobian (respects logdet_method)
+            jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
+            ll = ll + jac[:, None] / n
 
-            ll = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - ((nu_f[:, None] + 1) / 2)
-                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            )
-        else:
-            ll = -0.5 * (
-                (eps / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
-            )
+            ll = ll.reshape(c, d, n)
+            _write_log_likelihood_to_idata(idata, ll)
 
-        # Jacobian (respects logdet_method)
-        jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
-        ll = ll + jac[:, None] / n
-
-        ll = ll.reshape(c, d, n)
-        _write_log_likelihood_to_idata(idata, ll)
-        return idata
+        return self._idata
 
     def _fit_gibbs(
         self,
@@ -1000,6 +1048,9 @@ class SEMPanelFE(SpatialPanelModel):
             Posterior-mean fitted values.
         """
         beta = self._posterior_mean("beta")
+        if self._intercept_dropped:
+            ni = self._beta_nonintercept_indices
+            return self._X[:, ni] @ beta
         return self._X @ beta
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
@@ -1011,7 +1062,7 @@ class SEMPanelFE(SpatialPanelModel):
             Direct, indirect, total effects and feature names.
         """
         beta = self._posterior_mean("beta")
-        ni = self._nonintercept_indices
+        ni = self._beta_nonintercept_indices
         return {
             "direct": beta[ni].copy(),
             "indirect": np.zeros(len(ni)),
@@ -1031,7 +1082,7 @@ class SEMPanelFE(SpatialPanelModel):
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
 
-        ni = self._nonintercept_indices
+        ni = self._beta_nonintercept_indices
         direct_samples = beta_draws[:, ni].copy()
         indirect_samples = np.zeros_like(direct_samples)
         total_samples = direct_samples.copy()
@@ -1136,6 +1187,8 @@ class SDMPanelFE(SpatialPanelModel):
         ),
     ]
 
+    _has_wx_in_beta = True
+
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
@@ -1181,6 +1234,10 @@ class SDMPanelFE(SpatialPanelModel):
         target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
+        sampler: str = "nuts",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ):
         """Sample posterior and attach Jacobian-corrected log-likelihood.
@@ -1190,19 +1247,167 @@ class SDMPanelFE(SpatialPanelModel):
         Jacobian term that is not captured.  When ``log_likelihood=True``
         is requested, the Jacobian correction is added post-sampling.
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+                use_mala=sample_kwargs.pop("use_mala", True),
+                chain_method=sample_kwargs.pop("chain_method", None),
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path (default) ---
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        model = self._build_pymc_model()
+        self._pymc_model = model
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+
+        with model:
+            self._idata = pm.sample(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                target_accept=target_accept,
+                random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
+                **sample_kwargs,
+            )
+
+        # --- Correct log_likelihood: add Jacobian contribution ---
+        # The pm.Normal("obs") auto-captures the Gaussian part, but the
+        # Jacobian log|I - rho*W|*T (added via pm.Potential) is absent.
+        if compute_log_likelihood and hasattr(self, "_idata"):
+            self._attach_jacobian_corrected_log_likelihood(
+                self._idata, "rho", T=self._T
+            )
+
+        return self._idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
+        """Sample posterior via 3-block Gaussian Gibbs.
+
+        The SDM panel model is equivalent to SAR panel with Z = [X, WX]
+        as the design matrix.  The β block covers both direct and
+        indirect coefficients.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers for the NumPy path.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        gibbs_method : str, default "numpy"
+            Execution backend: ``"numpy"`` or ``"jax"``.
+        mala_step_size : float, default 0.05
+            Initial MALA step size for the JAX path.
+        use_mala : bool, default True
+            If True, use MALA for the ρ update in the JAX path.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+
+        Returns
+        -------
+        az.InferenceData
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
+        from .._samplers._gibbs_estimation import GaussianSARGibbs
+
+        # Drop intercept column for FE models (demeaning zeros it out)
+        ni = self._nonintercept_indices
+        if len(ni) < self._X.shape[1]:
+            X_gibbs = self._X[:, ni]
+            WX_gibbs = self._WX
+            feature_names = [self._feature_names[i] for i in ni] + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
+        else:
+            X_gibbs = self._X
+            WX_gibbs = self._WX
+            feature_names = list(self._feature_names) + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
+        Z = np.hstack([X_gibbs, WX_gibbs])
+
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSARGibbs(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse_NT,
+            Wy=self._Wy,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type="sdm",
+            W_eigs=self._W_eigs.real.astype(np.float64),
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+
+        self._idata = gibbs.fit(
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            chain_method=chain_method,
         )
-        if "log_likelihood" in idata.groups():
-            self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
-        return idata
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean parameters.
@@ -1214,7 +1419,11 @@ class SDMPanelFE(SpatialPanelModel):
         """
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
-        Z = np.hstack([self._X, self._WX])
+        if self._intercept_dropped:
+            ni = self._beta_nonintercept_indices
+            Z = np.hstack([self._X[:, ni], self._WX])
+        else:
+            Z = np.hstack([self._X, self._WX])
         return rho * self._Wy + Z @ beta
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
@@ -1227,7 +1436,10 @@ class SDMPanelFE(SpatialPanelModel):
         """
         rho = float(self._posterior_mean("rho"))
         beta = self._posterior_mean("beta")
-        k = self._X.shape[1]
+        if self._intercept_dropped:
+            k = len(self._beta_nonintercept_indices)
+        else:
+            k = self._X.shape[1]
         kw = self._WX.shape[1]
         beta1, beta2 = beta[:k], beta[k : k + kw]
 
@@ -1238,16 +1450,14 @@ class SDMPanelFE(SpatialPanelModel):
         rho_arr = np.array([rho])
         mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
         mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
+        wx_idx = self._beta_wx_column_indices
         direct = np.array(
-            [
-                beta1[j] * mean_diag_M + b2 * mean_diag_MW
-                for j, b2 in zip(self._wx_column_indices, beta2)
-            ]
+            [beta1[j] * mean_diag_M + b2 * mean_diag_MW for j, b2 in zip(wx_idx, beta2)]
         )
         total = np.array(
             [
                 beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-                for j, b2 in zip(self._wx_column_indices, beta2)
+                for j, b2 in zip(wx_idx, beta2)
             ]
         )
         indirect = total - direct
@@ -1274,7 +1484,10 @@ class SDMPanelFE(SpatialPanelModel):
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
         rho_draws.shape[0]
-        k = self._X.shape[1]
+        if self._intercept_dropped:
+            k = len(self._beta_nonintercept_indices)
+        else:
+            k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
@@ -1287,7 +1500,7 @@ class SDMPanelFE(SpatialPanelModel):
         mean_row_sum_M = self._batch_mean_row_sum(rho_draws)  # (G,)
         mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)  # (G,)
 
-        wx_idx = self._wx_column_indices
+        wx_idx = self._beta_wx_column_indices
         direct_samples = (
             mean_diag_M[:, None] * beta1_draws[:, wx_idx]
             + mean_diag_MW[:, None] * beta2_draws
@@ -1397,6 +1610,8 @@ class SDEMPanelFE(SpatialPanelModel):
             "Panel-LM-Lag-SDEM",
         ),
     ]
+
+    _has_wx_in_beta = True
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
@@ -1514,71 +1729,224 @@ class SDEMPanelFE(SpatialPanelModel):
         target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
+        sampler: str = "nuts",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics.
 
         The SDEM panel model uses ``pm.Potential`` for both the Gaussian
-        error log-likelihood and the Jacobian, so neither is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, using eigenvalue-based Jacobian for efficiency.
+        error log-likelihood and the Jacobian on the default (C / Numba)
+        backend, so neither is auto-captured.  On JAX backends the model
+        is built via ``pm.CustomDist`` with an observed RV, so PyMC
+        populates ``log_likelihood`` natively.  We compute the complete
+        pointwise log-likelihood manually after sampling only when needed.
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+                use_mala=sample_kwargs.pop("use_mala", True),
+                chain_method=sample_kwargs.pop("chain_method", None),
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path (default) ---
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        model = self._build_pymc_model(nuts_sampler=nuts_sampler)
+        self._pymc_model = model
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+
+        with model:
+            self._idata = pm.sample(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                target_accept=target_accept,
+                random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
+                **sample_kwargs,
+            )
+
+        # --- Compute complete pointwise log-likelihood ---
+        # On the default (pymc/numba) backend the model uses pm.Potential for
+        # both Gaussian and Jacobian terms, so nothing is auto-captured and
+        # we recompute from posterior draws here.  On JAX backends the model
+        # uses pm.CustomDist with an observed RV, so PyMC has already
+        # populated ``log_likelihood`` natively — skip the manual block.
+        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
+            nuts_sampler
+        )
+        if needs_manual_loglik:
+            idata = self._idata
+            Z = np.hstack([self._X, self._WX])
+            lam = idata.posterior["lam"].values
+            beta = idata.posterior["beta"].values
+            sigma = idata.posterior["sigma"].values
+
+            c, d = lam.shape
+            s = c * d
+            n = self._y.shape[0]
+
+            lam_f = lam.reshape(s)
+            beta_f = beta.reshape(s, beta.shape[-1])
+            sigma_f = sigma.reshape(s)
+
+            resid = self._y[None, :] - beta_f @ Z.T
+            eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
+
+            if self.robust:
+                nu_f = idata.posterior["nu"].values.reshape(s)
+                from scipy.special import gammaln
+
+                ll = (
+                    gammaln((nu_f[:, None] + 1) / 2)
+                    - gammaln(nu_f[:, None] / 2)
+                    - 0.5 * np.log(nu_f[:, None] * np.pi)
+                    - np.log(sigma_f[:, None])
+                    - ((nu_f[:, None] + 1) / 2)
+                    * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
+                )
+            else:
+                ll = -0.5 * (
+                    (eps / sigma_f[:, None]) ** 2
+                    + np.log(2.0 * np.pi)
+                    + 2.0 * np.log(sigma_f[:, None])
+                )
+
+            # Jacobian (respects logdet_method)
+            jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
+            ll = ll + jac[:, None] / n
+
+            ll = ll.reshape(c, d, n)
+            _write_log_likelihood_to_idata(idata, ll)
+
+        return self._idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
+        """Sample posterior via 3-block Gaussian Gibbs.
+
+        The SDEM panel model is equivalent to SEM panel with Z = [X, WX]
+        as the design matrix.  The β block covers both direct and
+        indirect coefficients.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers for the NumPy path.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        gibbs_method : str, default "numpy"
+            Execution backend: ``"numpy"`` or ``"jax"``.
+        mala_step_size : float, default 0.05
+            Initial MALA step size for the JAX path.
+        use_mala : bool, default True
+            If True, use MALA for the λ update in the JAX path.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+
+        Returns
+        -------
+        az.InferenceData
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
+        from .._samplers._gibbs_estimation import GaussianSEMGibbs
+
+        # Drop intercept column for FE models (demeaning zeros it out)
+        ni = self._nonintercept_indices
+        if len(ni) < self._X.shape[1]:
+            X_gibbs = self._X[:, ni]
+            feature_names = [self._feature_names[i] for i in ni] + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
+        else:
+            X_gibbs = self._X
+            feature_names = list(self._feature_names) + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
+        Z = np.hstack([X_gibbs, self._WX])
+
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSEMGibbs(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse_NT,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type="sdem",
+            W_eigs=self._W_eigs.real.astype(np.float64),
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+
+        self._idata = gibbs.fit(
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            chain_method=chain_method,
         )
-
-        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
-            return idata
-
-        Z = np.hstack([self._X, self._WX])
-        lam = idata.posterior["lam"].values
-        beta = idata.posterior["beta"].values
-        sigma = idata.posterior["sigma"].values
-
-        c, d = lam.shape
-        s = c * d
-        n = self._y.shape[0]
-
-        lam_f = lam.reshape(s)
-        beta_f = beta.reshape(s, beta.shape[-1])
-        sigma_f = sigma.reshape(s)
-
-        resid = self._y[None, :] - beta_f @ Z.T
-        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
-
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-
-            ll = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - ((nu_f[:, None] + 1) / 2)
-                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            )
-        else:
-            ll = -0.5 * (
-                (eps / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
-            )
-
-        # Jacobian (respects logdet_method)
-        jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
-        ll = ll + jac[:, None] / n
-
-        ll = ll.reshape(c, d, n)
-        _write_log_likelihood_to_idata(idata, ll)
-        return idata
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean coefficients.
@@ -1589,7 +1957,11 @@ class SDEMPanelFE(SpatialPanelModel):
             Posterior-mean fitted values.
         """
         beta = self._posterior_mean("beta")
-        Z = np.hstack([self._X, self._WX])
+        if self._intercept_dropped:
+            ni = self._beta_nonintercept_indices
+            Z = np.hstack([self._X[:, ni], self._WX])
+        else:
+            Z = np.hstack([self._X, self._WX])
         return Z @ beta
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
@@ -1601,13 +1973,17 @@ class SDEMPanelFE(SpatialPanelModel):
             Direct, indirect, total effects and feature names.
         """
         beta = self._posterior_mean("beta")
-        k = self._X.shape[1]
+        if self._intercept_dropped:
+            k = len(self._beta_nonintercept_indices)
+        else:
+            k = self._X.shape[1]
         kw = self._WX.shape[1]
         beta1, beta2 = beta[:k], beta[k : k + kw]
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-        direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
-        total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
+        wx_idx = self._beta_wx_column_indices
+        direct = beta1[wx_idx] + beta2 * mean_diag_w
+        total = beta1[wx_idx] + beta2 * mean_row_sum_w
         return {
             "direct": direct,
             "indirect": total - direct,
@@ -1627,7 +2003,10 @@ class SDEMPanelFE(SpatialPanelModel):
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
         beta_draws.shape[0]
-        k = self._X.shape[1]
+        if self._intercept_dropped:
+            k = len(self._beta_nonintercept_indices)
+        else:
+            k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
@@ -1636,7 +2015,7 @@ class SDEMPanelFE(SpatialPanelModel):
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
-        wx_idx = self._wx_column_indices
+        wx_idx = self._beta_wx_column_indices
         direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
         total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)
@@ -1756,6 +2135,8 @@ class SLXPanelFE(SpatialPanelModel):
         ),
     ]
 
+    _has_wx_in_beta = True
+
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
@@ -1798,7 +2179,11 @@ class SLXPanelFE(SpatialPanelModel):
             Posterior-mean fitted values.
         """
         beta = self._posterior_mean("beta")
-        Z = np.hstack([self._X, self._WX])
+        if self._intercept_dropped:
+            ni = self._beta_nonintercept_indices
+            Z = np.hstack([self._X[:, ni], self._WX])
+        else:
+            Z = np.hstack([self._X, self._WX])
         return Z @ beta
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
@@ -1810,15 +2195,19 @@ class SLXPanelFE(SpatialPanelModel):
             Direct, indirect, total effects and feature names.
         """
         beta = self._posterior_mean("beta")
-        k = self._X.shape[1]
+        if self._intercept_dropped:
+            k = len(self._beta_nonintercept_indices)
+        else:
+            k = self._X.shape[1]
         kw = self._WX.shape[1]
         beta1, beta2 = beta[:k], beta[k : k + kw]
 
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
-        direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
-        total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
+        wx_idx = self._beta_wx_column_indices
+        direct = beta1[wx_idx] + beta2 * mean_diag_w
+        total = beta1[wx_idx] + beta2 * mean_row_sum_w
         indirect = total - direct
 
         return {
@@ -1840,7 +2229,10 @@ class SLXPanelFE(SpatialPanelModel):
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
         beta_draws.shape[0]
-        k = self._X.shape[1]
+        if self._intercept_dropped:
+            k = len(self._beta_nonintercept_indices)
+        else:
+            k = self._X.shape[1]
         kw = self._WX.shape[1]
 
         beta1_draws = beta_draws[:, :k]  # (G, k)
@@ -1849,7 +2241,7 @@ class SLXPanelFE(SpatialPanelModel):
         mean_diag_w = float(self._W_sparse.diagonal().mean())
         mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
 
-        wx_idx = self._wx_column_indices
+        wx_idx = self._beta_wx_column_indices
         direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
         total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
         indirect_samples = total_samples - direct_samples  # (G, kw)

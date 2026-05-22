@@ -325,14 +325,13 @@ def _make_gaussian_gibbs_step(
                 yty_star = y_star @ y_star
 
                 # RSS = y*ᵀy* - y*ᵀX* (X*ᵀX*)⁻¹ X*ᵀy*
-                # Single Cholesky for both solve and log-determinant
-                L = jnp.linalg.cholesky(XtX_star)
-                v = jnp.linalg.solve(L, Xty_star)
-                rss = yty_star - jnp.dot(v, v)
+                # Use solve for numerical stability
+                XtX_star_inv_Xty = jnp.linalg.solve(XtX_star, Xty_star)
+                rss = yty_star - Xty_star @ XtX_star_inv_Xty
                 rss = jnp.maximum(rss, 1e-300)
 
                 logdet = logdet_jax(param_val)
-                logdet_XtX = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+                logdet_XtX = jnp.linalg.slogdet(XtX_star)[1]
 
                 log_prior = jnp.where(
                     (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),

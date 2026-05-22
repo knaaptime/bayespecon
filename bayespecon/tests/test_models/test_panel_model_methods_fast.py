@@ -188,11 +188,16 @@ def test_sem_panel_fe_fit_adds_log_likelihood_when_missing(monkeypatch):
     }
     fake_idata = az.from_dict(posterior=posterior)
 
-    def _fake_super_fit(self, **kwargs):
-        return fake_idata
+    import pymc as pm
 
-    monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
-    out = model.fit(draws=2, tune=1, chains=1, progressbar=False)
+    monkeypatch.setattr(pm, "sample", lambda **kw: fake_idata)
+    out = model.fit(
+        draws=2,
+        tune=1,
+        chains=1,
+        progressbar=False,
+        idata_kwargs={"log_likelihood": True},
+    )
 
     assert "log_likelihood" in out.groups()
     assert "obs" in out.log_likelihood
@@ -212,11 +217,16 @@ def test_sem_panel_fe_fit_returns_early_when_log_likelihood_exists(monkeypatch):
         log_likelihood={"obs": np.zeros((1, 2, n), dtype=float)},
     )
 
-    def _fake_super_fit(self, **kwargs):
-        return fake_idata
+    import pymc as pm
 
-    monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
-    out = model.fit(draws=2, tune=1, chains=1, progressbar=False)
+    monkeypatch.setattr(pm, "sample", lambda **kw: fake_idata)
+    out = model.fit(
+        draws=2,
+        tune=1,
+        chains=1,
+        progressbar=False,
+        idata_kwargs={"log_likelihood": True},
+    )
 
     assert out is fake_idata
 
@@ -232,22 +242,23 @@ def test_sdem_panel_fe_fit_adds_log_likelihood_when_missing(monkeypatch):
     }
     fake_idata = az.from_dict(posterior=posterior)
 
-    def _fake_super_fit(self, **kwargs):
-        return fake_idata
+    import pymc as pm
 
-    monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
-    out = model.fit(draws=2, tune=1, chains=1, progressbar=False)
+    monkeypatch.setattr(pm, "sample", lambda **kw: fake_idata)
+    out = model.fit(
+        draws=2,
+        tune=1,
+        chains=1,
+        progressbar=False,
+        idata_kwargs={"log_likelihood": True},
+    )
 
     assert "log_likelihood" in out.groups()
     assert "obs" in out.log_likelihood
 
 
-def test_sar_panel_fe_fit_applies_jacobian_when_loglik_group_present(monkeypatch):
-    """Jacobian correction should run when idata already has log_likelihood.
-
-    This should hold even when the caller does not explicitly pass
-    idata_kwargs={"log_likelihood": True}.
-    """
+def test_sar_panel_fe_fit_applies_jacobian_when_loglik_requested(monkeypatch):
+    """Jacobian correction should run when log_likelihood is requested."""
     y, X, W, N, T = _panel_data(seed=67)
     model = SARPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
 
@@ -263,7 +274,9 @@ def test_sar_panel_fe_fit_applies_jacobian_when_loglik_group_present(monkeypatch
 
     called = {"ok": False}
 
-    def _fake_super_fit(self, **kwargs):
+    import pymc as pm
+
+    def _fake_sample(**kw):
         return fake_idata
 
     def _fake_attach(idata, spatial_param, T):
@@ -271,12 +284,18 @@ def test_sar_panel_fe_fit_applies_jacobian_when_loglik_group_present(monkeypatch
         assert spatial_param == "rho"
         assert T == model._T
 
-    monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
+    monkeypatch.setattr(pm, "sample", _fake_sample)
     monkeypatch.setattr(
         model, "_attach_jacobian_corrected_log_likelihood", _fake_attach
     )
 
-    out = model.fit(draws=2, tune=1, chains=1, progressbar=False)
+    out = model.fit(
+        draws=2,
+        tune=1,
+        chains=1,
+        progressbar=False,
+        idata_kwargs={"log_likelihood": True},
+    )
 
     assert out is fake_idata
     assert called["ok"]

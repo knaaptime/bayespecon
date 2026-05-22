@@ -281,6 +281,10 @@ class SpatialPanelModel(ABC):
     # weight matrices. Tests may monkeypatch this value.
     _DENSE_W_WARN_BYTES: int = 100 * 1024 * 1024
 
+    # Subclasses that include WX coefficients in the posterior beta
+    # vector (SDM, SDEM, SLX) should set this to True.
+    _has_wx_in_beta: bool = False
+
     def __init__(
         self,
         formula: Optional[str] = None,
@@ -652,6 +656,10 @@ class SpatialPanelModel(ABC):
     def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
 
+        Uses the N×N cross-sectional weights matrix (not the (N*T)×(N*T)
+        Kronecker product), because spatial effects are defined in terms
+        of the cross-sectional spatial multiplier.
+
         For row-standardised W this is the scalar ``1/(1 - rho)``.
         For non-row-standardised W the eigenvalue decomposition is used:
         ``mean_row_sum = (1/n) * ones' V diag(1/(1-rho*omega)) V^{-1} ones``,
@@ -670,25 +678,29 @@ class SpatialPanelModel(ABC):
         if self._is_row_std:
             return 1.0 / (1.0 - rho_draws)
 
-        # Eigenvalue-based computation: precompute c = V^{-1} @ ones once.
-        if not hasattr(self, "_eig_inv_ones"):
-            W_dense = self._W_dense
-            eigs, V = np.linalg.eig(W_dense)
-            self._W_eigs_full = eigs.real.astype(np.float64)
-            self._V_full = V.real.astype(np.float64)
-            self._eig_inv_ones = np.linalg.solve(
-                self._V_full, np.ones(W_dense.shape[0])
-            )
+        # Eigenvalue-based computation on the N×N cross-sectional W matrix.
+        # Spatial effects are defined per cross-sectional unit, so we use
+        # the N×N W (not the (N*T)×(N*T) Kronecker product).
+        if not hasattr(self, "_eig_inv_ones_N"):
+            Wn = self._W_sparse.toarray().astype(np.float64)
+            eigs, V = np.linalg.eig(Wn)
+            self._W_eigs_N = eigs.real.astype(np.float64)
+            self._V_N = V.real.astype(np.float64)
+            self._eig_inv_ones_N = np.linalg.solve(self._V_N, np.ones(Wn.shape[0]))
 
-        c = self._eig_inv_ones
-        eigs = self._W_eigs_full
-        V_col_sums = self._V_full.sum(axis=0)  # (n,)
+        c = self._eig_inv_ones_N
+        eigs = self._W_eigs_N
+        V_col_sums = self._V_N.sum(axis=0)  # (N,)
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         return _chunked_eig_means(rho_draws, eigs, weights=V_col_sums * c)
 
     def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} W for each posterior draw.
+
+        Uses the N×N cross-sectional weights matrix (not the (N*T)×(N*T)
+        Kronecker product), because spatial effects are defined in terms
+        of the cross-sectional spatial multiplier.
 
         For row-standardised W this equals ``1/(1 - rho)`` (same as
         ``_batch_mean_row_sum``) because row sums of M@W = row sums of M
@@ -710,13 +722,13 @@ class SpatialPanelModel(ABC):
         if self._is_row_std:
             return 1.0 / (1.0 - rho_draws)
 
-        # Ensure eigenvalue decomposition is available
-        if not hasattr(self, "_eig_inv_ones"):
+        # Ensure N×N eigenvalue decomposition is available
+        if not hasattr(self, "_eig_inv_ones_N"):
             _ = self._batch_mean_row_sum(rho_draws[:1])
 
-        c = self._eig_inv_ones
-        eigs = self._W_eigs_full
-        V_col_sums = self._V_full.sum(axis=0)  # (n,)
+        c = self._eig_inv_ones_N
+        eigs = self._W_eigs_N
+        V_col_sums = self._V_N.sum(axis=0)  # (N,)
         from ..diagnostics.spatial_effects import _chunked_eig_means
 
         return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
@@ -752,6 +764,68 @@ class SpatialPanelModel(ABC):
             Feature names excluding intercept/constant columns.
         """
         return [self._feature_names[i] for i in self._nonintercept_indices]
+
+    @property
+    def _intercept_dropped(self) -> bool:
+        """Whether the intercept column was dropped from the posterior beta.
+
+        Checks the actual posterior beta dimension against the design
+        matrix.  When Gibbs sampling is used with FE models, the
+        intercept column (all zeros after demeaning) is dropped, so
+        the posterior beta has fewer columns than the full design.
+        NUTS samplers keep the full design matrix, so dimensions match.
+
+        Returns True when the posterior beta has exactly the number of
+        columns expected if the intercept was dropped.
+        """
+        n_intercept = self._X.shape[1] - len(self._nonintercept_indices)
+        if n_intercept == 0:
+            return False
+        if not hasattr(self, "_idata") or self._idata is None:
+            return False
+        try:
+            beta = self._idata.posterior["beta"]
+            beta_cols = beta.shape[-1]
+        except (KeyError, AttributeError):
+            return False
+        # Compute expected beta sizes with and without intercept.
+        # Models with WX in beta (SDM, SDEM, SLX) include the WX block.
+        kw = self._WX.shape[1] if self._has_wx_in_beta else 0
+        expected_with = self._X.shape[1] + kw
+        expected_without = len(self._nonintercept_indices) + kw
+        return beta_cols == expected_without and beta_cols < expected_with
+
+    @property
+    def _beta_nonintercept_indices(self) -> list[int]:
+        """Indices into the *posterior beta* for non-intercept columns.
+
+        When the intercept is present in beta (NUTS or pooled models),
+        these are the same as ``_nonintercept_indices``.
+        When the intercept was dropped (Gibbs + FE), the indices are
+        shifted to account for the missing column.
+        """
+        if not self._intercept_dropped:
+            return list(self._nonintercept_indices)
+        # Intercept was dropped: recompute indices relative to the
+        # smaller beta vector by counting how many intercept/constant
+        # columns precede each non-intercept column.
+        ni = self._nonintercept_indices
+        n_const = ni[0] if ni else 0  # number of constant cols before first non-const
+        return [i - n_const for i in ni]
+
+    @property
+    def _beta_wx_column_indices(self) -> list[int]:
+        """Indices into the *posterior beta1* (first k cols of beta) for WX columns.
+
+        When the intercept is present in beta1, these are the same as
+        ``_wx_column_indices``.  When the intercept was dropped (Gibbs + FE),
+        the indices are shifted to account for the missing column.
+        """
+        if not self._intercept_dropped:
+            return list(self._wx_column_indices)
+        ni = self._nonintercept_indices
+        n_const = ni[0] if ni else 0
+        return [i - n_const for i in self._wx_column_indices]
 
     @staticmethod
     def _spatial_lag_column_indices(
