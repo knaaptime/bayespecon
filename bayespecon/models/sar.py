@@ -184,7 +184,7 @@ class SAR(SpatialModel):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         idata_kwargs: Optional[dict] = None,
-        sampler: str = "nuts",
+        sampler: str = "gibbs",
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,

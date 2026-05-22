@@ -1019,6 +1019,7 @@ class TestSpatialDiagnosticsMethod:
         obj._WX = WX
         obj._Wy = Wy
         obj._W_sparse = W_sparse
+        obj._feature_names = [f"x{i}" for i in range(k)]
         # Eager-fill the lazy cached properties used by ``base.Model._W_dense``
         # and ``base.Model._T_ww`` so the new robust-after-naive tests
         # (which require dense W) work on these mock objects.  We set

@@ -409,6 +409,84 @@ class SARPanelRE(SpatialPanelModel):
 
         return model
 
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+    ) -> "az.InferenceData":
+        """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², ρ).
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers. ``-1`` uses all CPUs.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+
+        Returns
+        -------
+        az.InferenceData
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._re_gibbs import REGibbsPriors
+        from .._samplers._re_gibbs_estimation import GaussianSARREGibbs
+
+        priors = REGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            sigma_alpha_sigma=self.priors.get("sigma_alpha_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSARREGibbs(
+            y=self._y,
+            X=self._X,
+            W_sparse=self._W_sparse_NT,
+            Wy=self._Wy,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=list(self._feature_names),
+            N=self._N,
+            T=self._T,
+            unit_idx=self._unit_idx,
+            W_eigs=self._W_eigs.real.astype(np.float64),
+            logdet_method=self.logdet_method,
+        )
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+        )
+        return self._idata
+
     def fit(
         self,
         draws: int = 2000,
@@ -417,15 +495,59 @@ class SARPanelRE(SpatialPanelModel):
         target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
+        sampler: str = "gibbs",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ):
-        """Sample posterior and attach Jacobian-corrected log-likelihood.
+        """Sample posterior for SAR panel RE model.
 
-        The SAR panel RE model uses ``pm.Normal("obs", observed=y)`` which
-        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
-        Jacobian term that is not captured.  When ``log_likelihood=True``
-        is requested, the Jacobian correction is added post-sampling.
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup draws per chain (NUTS) or burn-in draws
+            (Gibbs).
+        chains : int, default 4
+            Number of independent chains.
+        target_accept : float, default 0.9
+            NUTS target acceptance probability. Ignored for Gibbs.
+        random_seed : int or None
+            Seed for reproducibility.
+        idata_kwargs : dict or None
+            Extra kwargs for InferenceData (NUTS only).
+        sampler : str, default "gibbs"
+            Sampler to use: ``"gibbs"`` for 5-block Gibbs or ``"nuts"``
+            for PyMC NUTS.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup (Gibbs only).
+        n_jobs : int, default -1
+            Number of parallel workers (Gibbs only).
+        progressbar : bool, default True
+            Show per-chain progress bars (Gibbs only).
+        **sample_kwargs
+            Extra keyword arguments forwarded to PyMC (NUTS only).
+
+        Returns
+        -------
+        az.InferenceData
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path ---
         idata_kwargs = idata_kwargs or {}
         idata = super().fit(
             draws=draws,
@@ -724,6 +846,83 @@ class SEMPanelRE(SpatialPanelModel):
 
         return model
 
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+    ) -> "az.InferenceData":
+        """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², λ).
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers. ``-1`` uses all CPUs.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+
+        Returns
+        -------
+        az.InferenceData
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._re_gibbs import REGibbsPriors
+        from .._samplers._re_gibbs_estimation import GaussianSEMREGibbs
+
+        priors = REGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            sigma_alpha_sigma=self.priors.get("sigma_alpha_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSEMREGibbs(
+            y=self._y,
+            X=self._X,
+            W_sparse=self._W_sparse_NT,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=list(self._feature_names),
+            N=self._N,
+            T=self._T,
+            unit_idx=self._unit_idx,
+            W_eigs=self._W_eigs.real.astype(np.float64),
+            logdet_method=self.logdet_method,
+        )
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+        )
+        return self._idata
+
     def fit(
         self,
         draws: int = 2000,
@@ -732,15 +931,59 @@ class SEMPanelRE(SpatialPanelModel):
         target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
+        sampler: str = "gibbs",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
+        """Sample posterior for SEM panel RE model.
 
-        The SEM panel RE model uses ``pm.Potential`` for both the Gaussian
-        error log-likelihood and the Jacobian, so neither is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, including the random effects ``alpha[unit_idx]``.
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup draws per chain (NUTS) or burn-in draws
+            (Gibbs).
+        chains : int, default 4
+            Number of independent chains.
+        target_accept : float, default 0.9
+            NUTS target acceptance probability. Ignored for Gibbs.
+        random_seed : int or None
+            Seed for reproducibility.
+        idata_kwargs : dict or None
+            Extra kwargs for InferenceData (NUTS only).
+        sampler : str, default "gibbs"
+            Sampler to use: ``"gibbs"`` for 5-block Gibbs or ``"nuts"``
+            for PyMC NUTS.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup (Gibbs only).
+        n_jobs : int, default -1
+            Number of parallel workers (Gibbs only).
+        progressbar : bool, default True
+            Show per-chain progress bars (Gibbs only).
+        **sample_kwargs
+            Extra keyword arguments forwarded to PyMC (NUTS only).
+
+        Returns
+        -------
+        az.InferenceData
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path ---
         idata_kwargs = idata_kwargs or {}
         idata = super().fit(
             draws=draws,

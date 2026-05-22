@@ -215,19 +215,45 @@ def _mx_cross(X: np.ndarray, U: np.ndarray, V: np.ndarray) -> np.ndarray:
 
 
 def _resolve_X_for_beta(model, beta_draws: np.ndarray) -> np.ndarray:
-    """Return ``model._X`` augmented with ``model._WX`` iff ``beta`` covers both blocks.
+    """Return the design matrix matching the posterior beta dimensions.
 
-    Centralises the auto-detect-WX hstack pattern used by the cross-sectional
-    LM-lag/LM-error tests where the same code path must accept residuals from
-    OLS, SLX, SDM and SDEM posteriors.
+    When Gibbs sampling drops the intercept column for FE models,
+    ``beta_draws`` has fewer columns than ``model._X``.  This function
+    auto-detects that case and returns the appropriate sub-matrix.
+
+    For models with WX coefficients (SDM, SDEM, SLX), the design
+    matrix is ``[X, WX]`` (or ``[X[:, ni], WX]`` when the intercept
+    is dropped).
     """
     k_beta = beta_draws.shape[1]
+    ni = model._nonintercept_indices
+    intercept_dropped = len(ni) < model._X.shape[1] and k_beta < model._X.shape[1]
+
+    if intercept_dropped:
+        X_base = model._X[:, ni]
+    else:
+        X_base = model._X
+
+    # Check whether beta covers both X and WX blocks
+    if (
+        hasattr(model, "_WX")
+        and model._WX.shape[1] > 0
+        and k_beta == X_base.shape[1] + model._WX.shape[1]
+    ):
+        return np.hstack([X_base, model._WX])
+
+    # Beta covers only the X block (or X_base already matches)
+    if k_beta == X_base.shape[1]:
+        return X_base
+
+    # Fallback: try full X with WX
     if (
         hasattr(model, "_WX")
         and model._WX.shape[1] > 0
         and k_beta == model._X.shape[1] + model._WX.shape[1]
     ):
         return np.hstack([model._X, model._WX])
+
     return model._X
 
 
@@ -339,9 +365,16 @@ def _compute_residuals(
     if use_Z:
         Z = _resolve_X_for_beta(model, beta_draws)
     else:
-        Z = model.__dict__.get("_X")
-        if Z is None:
-            Z = model.__dict__.get("_X_design")
+        # When the intercept was dropped (Gibbs + FE), use the
+        # sub-matrix that matches the posterior beta dimensions.
+        ni = model._nonintercept_indices
+        X_full = model.__dict__.get("_X")
+        if X_full is None:
+            X_full = model.__dict__.get("_X_design")
+        if len(ni) < X_full.shape[1] and beta_draws.shape[1] < X_full.shape[1]:
+            Z = X_full[:, ni]
+        else:
+            Z = X_full
 
     fitted = beta_draws @ Z.T  # (draws, n)
     resid = y[None, :] - fitted  # (draws, n)
