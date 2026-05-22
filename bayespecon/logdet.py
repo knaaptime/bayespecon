@@ -1744,6 +1744,7 @@ def make_logdet_numpy_fn(
     method: str | None,
     rho_min: float = -1.0,
     rho_max: float = 1.0,
+    T: int = 1,
 ):
     """Return a **pure-numpy** ``(rho: float) -> float`` logdet evaluator.
 
@@ -1764,12 +1765,17 @@ def make_logdet_numpy_fn(
         Lower bound (used for chebyshev/spline precomputation).
     rho_max : float, default 1.0
         Upper bound.
+    T : int, default 1
+        Panel time-period count.  The returned log-determinant is
+        multiplied by *T*.
 
     Returns
     -------
     callable
-        Function ``(rho: float) -> float`` computing log|I - rho*W|.
+        Function ``(rho: float) -> float`` computing log|I - rho*W|
+        (or T * log|I - rho*W| for panel models).
     """
+    T = int(T)
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
     method = resolve_logdet_method(method, n=n)
 
@@ -1779,7 +1785,9 @@ def make_logdet_numpy_fn(
                 np.asarray(W_sparse.toarray(), dtype=np.float64)
             ).real
         _eigs = eigs.real.astype(np.float64)
-        return lambda r: float(np.sum(np.log(np.abs(1.0 - r * _eigs))))
+        if T == 1:
+            return lambda r: float(np.sum(np.log(np.abs(1.0 - r * _eigs))))
+        return lambda r: T * float(np.sum(np.log(np.abs(1.0 - r * _eigs))))
 
     elif method == "chebyshev":
         # Pass precomputed eigs to skip the redundant toarray + eigvals
@@ -1802,7 +1810,8 @@ def make_logdet_numpy_fn(
                 b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
                 b_next = b_curr
                 b_curr = b_new
-            return float(coeffs[0]) + x * b_curr - b_next
+            val = float(coeffs[0]) + x * b_curr - b_next
+            return val if T == 1 else T * val
 
         return _cheb_numpy
 
@@ -1830,7 +1839,8 @@ def make_logdet_numpy_fn(
                 b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
                 b_next = b_curr
                 b_curr = b_new
-            return float(coeffs[0]) + x * b_curr - b_next
+            val = float(coeffs[0]) + x * b_curr - b_next
+            return val if T == 1 else T * val
 
         return _mc_cheb_numpy
 
@@ -1860,7 +1870,8 @@ def make_logdet_numpy_fn(
                 b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
                 b_next = b_curr
                 b_curr = b_new
-            return float(coeffs[0]) + x * b_curr - b_next
+            val = float(coeffs[0]) + x * b_curr - b_next
+            return val if T == 1 else T * val
 
         return _traceax_cheb_numpy
 
@@ -1874,14 +1885,18 @@ def make_logdet_numpy_fn(
             rho_max,
             clamp_nonnegative=True,
         )
-        return lambda r: float(spl(float(r)))
+        if T == 1:
+            return lambda r: float(spl(float(r)))
+        return lambda r: T * float(spl(float(r)))
 
     else:
         # Fallback: exact numpy slogdet (slow but always correct)
         W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
         n_mat = W_dense.shape[0]
         I = np.eye(n_mat)
-        return lambda r: float(np.linalg.slogdet(I - r * W_dense)[1])
+        if T == 1:
+            return lambda r: float(np.linalg.slogdet(I - r * W_dense)[1])
+        return lambda r: T * float(np.linalg.slogdet(I - r * W_dense)[1])
 
 
 def make_logdet_numpy_vec_fn(
@@ -1890,6 +1905,7 @@ def make_logdet_numpy_vec_fn(
     method: str | None,
     rho_min: float = -1.0,
     rho_max: float = 1.0,
+    T: int = 1,
 ):
     """Return a **vectorized** numpy ``(rho_arr: np.ndarray) -> np.ndarray`` logdet evaluator.
 
@@ -1907,12 +1923,17 @@ def make_logdet_numpy_vec_fn(
         Same as :func:`make_logdet_numpy_fn`.
     rho_min : float, default -1.0
     rho_max : float, default 1.0
+    T : int, default 1
+        Panel time-period count.  The returned log-determinant is
+        multiplied by *T*.
 
     Returns
     -------
     callable
-        Function ``(rho_arr: np.ndarray) -> np.ndarray`` of shape ``(G,)``.
+        Function ``(rho_arr: np.ndarray) -> np.ndarray`` of shape ``(G,)``
+        computing log|I - rho*W| (or T * log|I - rho*W| for panel models).
     """
+    T = int(T)
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
     method = resolve_logdet_method(method, n=n)
 
@@ -1925,9 +1946,10 @@ def make_logdet_numpy_vec_fn(
 
         def _vec_eigenvalue(rho_arr: np.ndarray) -> np.ndarray:
             rho_arr = np.asarray(rho_arr, dtype=np.float64)
-            return np.sum(
+            val = np.sum(
                 np.log(np.abs(1.0 - rho_arr[:, None] * _eigs[None, :])), axis=1
             )
+            return val if T == 1 else T * val
 
         return _vec_eigenvalue
 
@@ -1953,7 +1975,8 @@ def make_logdet_numpy_vec_fn(
                 b_new = 2.0 * x * b_curr - b_next + coeffs[k]
                 b_next = b_curr
                 b_curr = b_new
-            return coeffs[0] + x * b_curr - b_next
+            val = coeffs[0] + x * b_curr - b_next
+            return val if T == 1 else T * val
 
         return _vec_chebyshev
 
@@ -1981,7 +2004,8 @@ def make_logdet_numpy_vec_fn(
                 b_new = 2.0 * x * b_curr - b_next + coeffs[k]
                 b_next = b_curr
                 b_curr = b_new
-            return coeffs[0] + x * b_curr - b_next
+            val = coeffs[0] + x * b_curr - b_next
+            return val if T == 1 else T * val
 
         return _vec_mc_cheb
 
@@ -2009,7 +2033,8 @@ def make_logdet_numpy_vec_fn(
                 b_new = 2.0 * x * b_curr - b_next + coeffs[k]
                 b_next = b_curr
                 b_curr = b_new
-            return coeffs[0] + x * b_curr - b_next
+            val = coeffs[0] + x * b_curr - b_next
+            return val if T == 1 else T * val
 
         return _vec_traceax_cheb
 
@@ -2025,7 +2050,8 @@ def make_logdet_numpy_vec_fn(
 
         def _vec_grid(rho_arr: np.ndarray) -> np.ndarray:
             rho_arr = np.asarray(rho_arr, dtype=np.float64)
-            return np.asarray(spl(rho_arr), dtype=np.float64)
+            val = np.asarray(spl(rho_arr), dtype=np.float64)
+            return val if T == 1 else T * val
 
         return _vec_grid
 
@@ -2037,7 +2063,8 @@ def make_logdet_numpy_vec_fn(
     def _vec_exact(rho_arr: np.ndarray) -> np.ndarray:
         rho_arr = np.asarray(rho_arr, dtype=np.float64)
         mats = I[None, :, :] - rho_arr[:, None, None] * W_dense[None, :, :]
-        return np.linalg.slogdet(mats)[1]
+        val = np.linalg.slogdet(mats)[1]
+        return val if T == 1 else T * val
 
     return _vec_exact
 

@@ -372,6 +372,10 @@ class SARPanelFE(SpatialPanelModel):
         target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
+        sampler: str = "nuts",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ):
         """Sample posterior and attach Jacobian-corrected log-likelihood.
@@ -381,6 +385,23 @@ class SARPanelFE(SpatialPanelModel):
         Jacobian term that is not captured.  When ``log_likelihood=True``
         is requested, the Jacobian correction is added post-sampling.
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+                use_mala=sample_kwargs.pop("use_mala", True),
+                chain_method=sample_kwargs.pop("chain_method", None),
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
         idata_kwargs = idata_kwargs or {}
         idata = super().fit(
             draws=draws,
@@ -394,6 +415,103 @@ class SARPanelFE(SpatialPanelModel):
         if "log_likelihood" in idata.groups():
             self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
         return idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
+        """Sample posterior via 3-block Gaussian Gibbs.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers for the NumPy path.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        gibbs_method : str, default "numpy"
+            Execution backend: ``"numpy"`` or ``"jax"``.
+        mala_step_size : float, default 0.05
+            Initial MALA step size for the JAX path.
+        use_mala : bool, default True
+            If True, use MALA for the ρ update in the JAX path.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+
+        Returns
+        -------
+        az.InferenceData
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
+        from .._samplers._gibbs_estimation import GaussianSARGibbs
+
+        # Drop intercept column for FE models (demeaning zeros it out)
+        ni = self._nonintercept_indices
+        X_gibbs = self._X[:, ni] if len(ni) < self._X.shape[1] else self._X
+        feature_names_gibbs = [self._feature_names[i] for i in ni] if ni else list(self._feature_names)
+
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSARGibbs(
+            y=self._y,
+            X=X_gibbs,
+            W_sparse=self._W_sparse_NT,
+            Wy=self._Wy,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names_gibbs,
+            model_type="sar",
+            W_eigs=self._W_eigs.real.astype(np.float64),
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            chain_method=chain_method,
+        )
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean parameters.
@@ -685,6 +803,10 @@ class SEMPanelFE(SpatialPanelModel):
         target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
+        sampler: str = "nuts",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics.
@@ -694,6 +816,23 @@ class SEMPanelFE(SpatialPanelModel):
         We compute the complete pointwise log-likelihood manually after
         sampling, using eigenvalue-based Jacobian for efficiency.
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+                use_mala=sample_kwargs.pop("use_mala", True),
+                chain_method=sample_kwargs.pop("chain_method", None),
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
         idata_kwargs = idata_kwargs or {}
         idata = super().fit(
             draws=draws,
@@ -750,6 +889,102 @@ class SEMPanelFE(SpatialPanelModel):
         ll = ll.reshape(c, d, n)
         _write_log_likelihood_to_idata(idata, ll)
         return idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
+        """Sample posterior via 3-block Gaussian Gibbs.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers for the NumPy path.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        gibbs_method : str, default "numpy"
+            Execution backend: ``"numpy"`` or ``"jax"``.
+        mala_step_size : float, default 0.05
+            Initial MALA step size for the JAX path.
+        use_mala : bool, default True
+            If True, use MALA for the λ update in the JAX path.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+
+        Returns
+        -------
+        az.InferenceData
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
+        from .._samplers._gibbs_estimation import GaussianSEMGibbs
+
+        # Drop intercept column for FE models (demeaning zeros it out)
+        ni = self._nonintercept_indices
+        X_gibbs = self._X[:, ni] if len(ni) < self._X.shape[1] else self._X
+        feature_names_gibbs = [self._feature_names[i] for i in ni] if ni else list(self._feature_names)
+
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSEMGibbs(
+            y=self._y,
+            X=X_gibbs,
+            W_sparse=self._W_sparse_NT,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names_gibbs,
+            model_type="sem",
+            W_eigs=self._W_eigs.real.astype(np.float64),
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            chain_method=chain_method,
+        )
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean coefficients.

@@ -79,6 +79,7 @@ class GibbsEstimation:
         model_type: str,
         W_eigs: np.ndarray | None = None,
         logdet_method: str | None = None,
+        T: int = 1,
     ):
         self.y = y
         self.X = X
@@ -91,6 +92,7 @@ class GibbsEstimation:
         self.model_type = model_type
         self.W_eigs = W_eigs
         self.logdet_method = logdet_method
+        self.T = int(T)
         self.n, self.k = X.shape
 
     def fit(
@@ -461,6 +463,7 @@ class GibbsEstimation:
             method=self.logdet_method,
             rho_min=self.priors.rho_lower,
             rho_max=self.priors.rho_upper,
+            T=self.T,
         )
 
     def _build_cache(self) -> GaussianGibbsCache:
@@ -578,6 +581,7 @@ class GaussianSARGibbs(GibbsEstimation):
         model_type: str = "sar",
         W_eigs: np.ndarray | None = None,
         logdet_method: str | None = None,
+        T: int = 1,
     ):
         super().__init__(
             y=y,
@@ -591,6 +595,7 @@ class GaussianSARGibbs(GibbsEstimation):
             model_type=model_type,
             W_eigs=W_eigs,
             logdet_method=logdet_method,
+            T=T,
         )
 
     def _spatial_param_name(self) -> str:
@@ -625,6 +630,8 @@ class GaussianSEMGibbs(GibbsEstimation):
         Real eigenvalues of W (for JAX logdet).
     logdet_method : str or None
         Logdet method for JAX path (auto-selected when None).
+    T : int, default 1
+        Panel time-period count.
     """
 
     def __init__(
@@ -639,6 +646,7 @@ class GaussianSEMGibbs(GibbsEstimation):
         model_type: str = "sem",
         W_eigs: np.ndarray | None = None,
         logdet_method: str | None = None,
+        T: int = 1,
     ):
         super().__init__(
             y=y,
@@ -652,6 +660,7 @@ class GaussianSEMGibbs(GibbsEstimation):
             model_type=model_type,
             W_eigs=W_eigs,
             logdet_method=logdet_method,
+            T=T,
         )
 
     def _spatial_param_name(self) -> str:

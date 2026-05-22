@@ -549,7 +549,7 @@ class SpatialPanelModel(ABC):
                 else None
             )
             self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
-                self._W_sparse, eigs, method=self.logdet_method
+                self._W_sparse, eigs, method=self.logdet_method, T=self._T
             )
         return self._logdet_numpy_fn_cache
 
@@ -563,7 +563,7 @@ class SpatialPanelModel(ABC):
                 else None
             )
             self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
-                self._W_sparse, eigs, method=self.logdet_method
+                self._W_sparse, eigs, method=self.logdet_method, T=self._T
             )
         return self._logdet_numpy_vec_fn_cache
 
