@@ -115,16 +115,19 @@ def resolve_logdet_bounds(
     method: str | None,
     *,
     n: int,
-    eigs: np.ndarray | None = None,
     priors: Mapping[str, Any] | None = None,
     rho_min: float | None = None,
     rho_max: float | None = None,
-    eps: float = 1e-6,
 ) -> LogdetBounds:
     """Resolve method-specific rho bounds from defaults, priors, or overrides.
 
     Resolution precedence is: explicit overrides, prior-derived bounds,
     method defaults.
+
+    For row-standardised W the spectral stability interval is always
+    approximately (-1, 1), so the default bounds are sufficient without
+    computing eigenvalues.  Pass explicit ``rho_min``/``rho_max`` when
+    using non-row-standardised W.
     """
     resolved_method = method if method is not None else _auto_logdet_method(int(n))
     source = "default"
@@ -169,25 +172,6 @@ def resolve_logdet_bounds(
         lo = 1e-5
         if hi <= lo:
             hi = 1.0
-
-    if eigs is not None:
-        eigs_r = np.asarray(eigs, dtype=np.float64).real
-        pos = eigs_r[eigs_r > 0.0]
-        neg = eigs_r[eigs_r < 0.0]
-        lo_stable = -np.inf if neg.size == 0 else float(1.0 / np.max(neg))
-        hi_stable = np.inf if pos.size == 0 else float(1.0 / np.min(pos))
-
-        lo_clip = lo_stable + eps if np.isfinite(lo_stable) else lo
-        hi_clip = hi_stable - eps if np.isfinite(hi_stable) else hi
-
-        if source == "override" and (lo < lo_clip or hi > hi_clip):
-            raise ValueError(
-                "Explicit rho bounds fall outside the spectral stability interval "
-                f"({lo_clip:.6g}, {hi_clip:.6g})."
-            )
-
-        lo = max(lo, lo_clip)
-        hi = min(hi, hi_clip)
 
     if hi <= lo:
         raise ValueError(
@@ -1181,12 +1165,15 @@ def make_logdet_jax_fn(
         return _jax_chebyshev
 
     if method in ("trace_mc", "trace_xtrace", "trace_hutchpp"):
-        W_sp = W_sparse  # already a csr_matrix from resolution above
+        # When eigenvalues are available, use them for Chebyshev
+        # coefficient computation (exact and fast).  Only pass the
+        # sparse matrix when eigenvalues are not available.
+        W_sp = W_sparse if eigs is None else None
         # All trace-based methods use trace-seeded Chebyshev for
         # near-minimax accuracy.  chebyshev() internally selects the
         # appropriate trace estimator (flow, xtrace, hutch++) based
         # on n and available libraries, so we delegate to it.
-        out = chebyshev(W_sp, order=20, rmin=rho_min, rmax=rho_max)
+        out = chebyshev(W_sp, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
         coeffs = out["coeffs"].astype(np.float64)
         rmin_cb = float(out["rmin"])
         rmax_cb = float(out["rmax"])

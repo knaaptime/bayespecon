@@ -286,17 +286,24 @@ class SpatialModel(ABC):
             # Validate W and store as CSR sparse matrix.
             # Dense conversion is deferred to _W_dense (lazy property).
             self._W_sparse, self._is_row_std = _parse_W(W, len(self._y))
-            # Pre-compute eigenvalues of the N×N matrix once (O(n³)) so that
-            # logdet and effect calculations can use O(n) eigenvalue formulas.
-            self._W_eigs: np.ndarray = np.linalg.eigvals(
-                self._W_sparse.toarray().astype(np.float64)
+            # Eigenvalues are computed lazily via the _W_eigs cached property
+            # to avoid the O(n³) eigendecomposition for large n where trace
+            # or Chebyshev methods are used instead.
+            self._W_eigs_cache: np.ndarray | None = None
+            # Resolve the logdet method up-front so the lazy property
+            # accessors know whether eigenvalues are required.
+            self._resolved_logdet_method = (
+                self.logdet_method
+                if self.logdet_method is not None
+                else _auto_logdet_method(self._W_sparse.shape[0])
             )
-            # Resolve rho/lambda bounds from method, priors, and spectral
-            # stability.  Used by _build_pymc_model() to set Uniform priors.
+            # Resolve rho/lambda bounds from method and priors.
+            # For row-standardised W the spectral stability interval is
+            # always approximately (-1, 1), so no eigenvalue computation
+            # is needed here.
             self._logdet_bounds = resolve_logdet_bounds(
                 self.logdet_method,
                 n=len(self._y),
-                eigs=self._W_eigs.real,
                 priors=self.priors,
             )
             self._wx_column_indices = self._spatial_lag_column_indices(
@@ -317,36 +324,15 @@ class SpatialModel(ABC):
             self._wx_feature_names = [
                 self._feature_names[i] for i in self._wx_column_indices
             ]
-            # Pre-compute spatial lags using sparse matmul (no dense materialisation).
-            # Store a numpy logdet callable for post-sampling LL Jacobians.
-            self._logdet_numpy_fn = make_logdet_numpy_fn(
-                self._W_sparse, self._W_eigs.real, method=self.logdet_method
-            )
-            # Vectorized version: evaluates logdet over an array of rho draws in one call.
-            self._logdet_numpy_vec_fn = make_logdet_numpy_vec_fn(
-                self._W_sparse, self._W_eigs.real, method=self.logdet_method
-            )
-            # Store the correct W argument for logdet calls.
-            # For eigenvalue method (explicit or auto-selected for n ≤ 2000),
-            # pass 1-D eigenvalues to avoid O(n²) dense materialisation.
-            # For other methods, pass the 2-D dense matrix.
-            _resolved_logdet = (
-                self.logdet_method
-                if self.logdet_method is not None
-                else _auto_logdet_method(self._W_sparse.shape[0])
-            )
-            self._W_for_logdet: np.ndarray = (
-                self._W_eigs.real.astype(np.float64)
-                if _resolved_logdet in ("eigenvalue", "chebyshev")
-                else self._W_sparse.toarray().astype(np.float64)
-            )
-            # Store a pytensor logdet callable for use in _build_pymc_model.
-            self._logdet_pytensor_fn = make_logdet_fn(
-                self._W_for_logdet,
-                method=self.logdet_method,
-                rho_min=self._logdet_bounds.rho_min,
-                rho_max=self._logdet_bounds.rho_max,
-            )
+            # Logdet builders are constructed lazily on first access — see
+            # the _logdet_numpy_fn, _logdet_numpy_vec_fn and
+            # _logdet_pytensor_fn properties.  Caches are seeded as None so
+            # that init never triggers the underlying eigendecomposition for
+            # chebyshev / trace methods.
+            self._logdet_numpy_fn_cache = None
+            self._logdet_numpy_vec_fn_cache = None
+            self._logdet_pytensor_fn_cache = None
+            self._W_for_logdet_cache = None
             self._Wy: np.ndarray = np.asarray(
                 self._W_sparse @ self._y, dtype=np.float64
             )
@@ -361,7 +347,7 @@ class SpatialModel(ABC):
             # W-free mode: no spatial structure; spec tests require W to be supplied.
             self._W_sparse = None
             self._is_row_std = False
-            self._W_eigs = None
+            self._W_eigs_cache = None
             self._wx_column_indices: list[int] = []
             self._wx_feature_names: list[str] = []
             self._Wy = np.zeros(len(self._y), dtype=np.float64)
@@ -401,6 +387,79 @@ class SpatialModel(ABC):
         from ..graph import sparse_trace_WtW_plus_WW
 
         return sparse_trace_WtW_plus_WW(self._W_sparse)
+
+    @cached_property
+    def _W_eigs(self) -> np.ndarray | None:
+        """Eigenvalues of W (complex), computed lazily on first access.
+
+        For large n this is O(n³), so it is only computed when needed
+        (e.g. by the eigenvalue logdet method).  Trace and Chebyshev
+        methods never trigger this computation.
+        """
+        if self._W_eigs_cache is not None:
+            return self._W_eigs_cache
+        if self._W_sparse is None:
+            return None
+        self._W_eigs_cache = np.linalg.eigvals(
+            self._W_sparse.toarray().astype(np.float64)
+        )
+        return self._W_eigs_cache
+
+    @property
+    def _W_for_logdet(self):
+        """Argument passed to ``make_logdet_fn`` — eigenvalues or dense W.
+
+        Computed lazily so that init never forces an eigendecomposition for
+        chebyshev / trace methods.
+        """
+        if self._W_for_logdet_cache is None:
+            if self._resolved_logdet_method == "eigenvalue":
+                self._W_for_logdet_cache = self._W_eigs.real.astype(np.float64)
+            else:
+                self._W_for_logdet_cache = self._W_sparse.toarray().astype(
+                    np.float64
+                )
+        return self._W_for_logdet_cache
+
+    @property
+    def _logdet_numpy_fn(self):
+        """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
+        if self._logdet_numpy_fn_cache is None:
+            eigs = (
+                self._W_eigs.real
+                if self._resolved_logdet_method == "eigenvalue"
+                else None
+            )
+            self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
+                self._W_sparse, eigs, method=self.logdet_method
+            )
+        return self._logdet_numpy_fn_cache
+
+    @property
+    def _logdet_numpy_vec_fn(self):
+        """Vectorised pure-numpy logdet evaluator (lazy)."""
+        if self._logdet_numpy_vec_fn_cache is None:
+            eigs = (
+                self._W_eigs.real
+                if self._resolved_logdet_method == "eigenvalue"
+                else None
+            )
+            self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
+                self._W_sparse, eigs, method=self.logdet_method
+            )
+        return self._logdet_numpy_vec_fn_cache
+
+    @property
+    def _logdet_pytensor_fn(self):
+        """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
+        if self._logdet_pytensor_fn_cache is None:
+            self._logdet_pytensor_fn_cache = make_logdet_fn(
+                self._W_for_logdet,
+                method=self.logdet_method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
+            )
+        return self._logdet_pytensor_fn_cache
 
     @cached_property
     def _W_eigendecomposition(self):

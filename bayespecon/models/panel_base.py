@@ -396,13 +396,15 @@ class SpatialPanelModel(ABC):
         # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
         self._W_eigs_cache: np.ndarray | None = None
 
-        # Resolve rho/lambda bounds from method, priors, and spectral stability.
+        # Resolve rho/lambda bounds from method and priors.
+        # For row-standardised W the spectral stability interval is
+        # always approximately (-1, 1), so no eigenvalue computation
+        # is needed here.
         from ..logdet import resolve_logdet_bounds
 
         self._logdet_bounds = resolve_logdet_bounds(
             self.logdet_method,
             n=self._W_sparse.shape[0],
-            eigs=None,  # eigenvalues computed lazily
             priors=self.priors,
         )
 
