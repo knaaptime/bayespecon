@@ -17,11 +17,15 @@ Subclasses implement model-specific logic:
 
 from __future__ import annotations
 
+import logging
+import time
 from abc import abstractmethod
 
 import arviz as az
 import numpy as np
 import scipy.sparse as sp
+
+_log = logging.getLogger(__name__)
 
 from ._chain_runner import run_chains
 from ._gaussian_gibbs import (
@@ -101,6 +105,7 @@ class GibbsEstimation:
         gibbs_method: str = "numpy",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
+        chain_method: str | None = None,
     ) -> az.InferenceData:
         """Run Gibbs chains and assemble InferenceData.
 
@@ -117,7 +122,11 @@ class GibbsEstimation:
         thin : int, default 1
             Keep every ``thin``-th draw after warmup.
         n_jobs : int, default -1
-            Number of parallel workers. ``-1`` uses all CPUs.
+            Number of parallel workers for the NumPy path.
+            ``-1`` uses all CPUs.  When ``n_jobs=1``, chains run
+            sequentially with progress bars.  When ``n_jobs>1``
+            (or ``-1``), chains run in parallel via ``joblib``.
+            Ignored for the JAX path (use ``chain_method`` instead).
         progressbar : bool, default True
             Show per-chain progress bars.
         gibbs_method : str, default "numpy"
@@ -131,6 +140,15 @@ class GibbsEstimation:
             If True, use MALA (gradient-guided proposals) for the
             ρ/λ update in the JAX path.  If False, use random-walk
             Metropolis–Hastings.  Ignored when ``gibbs_method="numpy"``.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+            ``"vectorized"`` uses ``jax.vmap`` for JAX-native
+            parallelism (all chains on one device).  ``"sequential"``
+            runs chains one after another with progress bars.
+            ``"parallel"`` is not supported for the JAX path.
+            If None, defaults to ``"vectorized"`` when
+            ``gibbs_method="jax"``.  Ignored for the NumPy path
+            (use ``n_jobs`` to control parallelism instead).
 
         Returns
         -------
@@ -138,6 +156,10 @@ class GibbsEstimation:
             With ``posterior``, ``log_likelihood``, and ``observed_data``
             groups.
         """
+        # Default chain_method for JAX path
+        if chain_method is None:
+            chain_method = "vectorized" if gibbs_method == "jax" else None
+
         if gibbs_method == "jax":
             return self._fit_jax(
                 draws=draws,
@@ -149,11 +171,16 @@ class GibbsEstimation:
                 progressbar=progressbar,
                 mala_step_size=mala_step_size,
                 use_mala=use_mala,
+                chain_method=chain_method,
             )
 
         # ── NumPy path (default) ──
         # Build cache
         cache = self._build_cache()
+
+        spatial_param = self._spatial_param_name()
+        _log.info(f"Gibbs sampling ({chains} chains, 3-block: β, σ², {spatial_param})")
+        t_start = time.time()
 
         # Derive per-chain seeds
         if random_seed is not None:
@@ -164,7 +191,7 @@ class GibbsEstimation:
         seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
 
         # Define per-chain function
-        def _run_one_chain(chain_id, seed):
+        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
             rng = np.random.default_rng(seed)
             init = _initialize_gaussian_gibbs(
                 self.y,
@@ -183,19 +210,33 @@ class GibbsEstimation:
                 tune=tune,
                 thin=thin,
                 rng=rng,
+                progressbar=progressbar,
+                chain_id=chain_id_kw if chain_id_kw is not None else chain_id,
+                progress_manager=progress_manager,
             )
 
-        # Run chains
+        # Run chains: n_jobs=1 → sequential, n_jobs≠1 → parallel via joblib
+        parallel = n_jobs != 1
         chain_results = run_chains(
             chain_fn=_run_one_chain,
             n_chains=chains,
             seeds=seeds,
             n_jobs=n_jobs,
             progressbar=progressbar,
+            parallel=parallel,
+            draws=draws,
+            tune=tune,
+            model_type=self.model_type,
         )
 
         # Assemble InferenceData
         idata = self._assemble_idata(chain_results)
+        elapsed = time.time() - t_start
+        _log.info(
+            f"Sampling {chains} chains for {tune} tune and {draws} draw "
+            f"iterations ({chains * tune:,} + {chains * draws:,} draws total) "
+            f"took {elapsed:.0f} seconds."
+        )
         return idata
 
     def _fit_jax(
@@ -205,10 +246,11 @@ class GibbsEstimation:
         chains: int = 4,
         random_seed: int | None = None,
         thin: int = 1,
-        n_jobs: int = -1,
+        n_jobs: int = 1,
         progressbar: bool = True,
         mala_step_size: float = 0.05,
         use_mala: bool = True,
+        chain_method: str = "vectorized",
     ) -> az.InferenceData:
         """Run JAX JIT Gibbs chains and assemble InferenceData.
 
@@ -227,23 +269,109 @@ class GibbsEstimation:
             Seed for reproducibility.
         thin : int, default 1
             Keep every ``thin``-th draw after warmup.
-        n_jobs : int, default -1
-            Number of parallel workers.
+        n_jobs : int, default 1
+            Number of parallel workers. Default is ``1`` (sequential)
+            because JAX multithreading is incompatible with process
+            forking. Use ``chain_method='vectorized'`` for JAX-native
+            parallelism instead.
         progressbar : bool, default True
             Show per-chain progress bars.
         mala_step_size : float, default 0.05
             Initial MALA step size.
         use_mala : bool, default True
             If True, use MALA for the ρ/λ update.
+        chain_method : str, default "vectorized"
+            How to run multiple chains. ``"sequential"`` runs chains
+            one after another with progress bars. ``"vectorized"``
+            uses ``jax.vmap`` for JAX-native parallelism (all chains
+            on one device). ``"parallel"`` is not supported for the
+            JAX path.
 
         Returns
         -------
         az.InferenceData
         """
-        from ._jax_gaussian_gibbs import run_chain_jax_gaussian
+        from ._jax_gaussian_gibbs import (
+            run_chain_jax_gaussian,
+            run_chains_jax_gibbs_vectorized,
+        )
 
         # Build JAX-native logdet function
         logdet_jax = self._build_logdet_jax()
+
+        spatial_param = self._spatial_param_name()
+        sampler_name = "MALA" if use_mala else "RW-MH"
+        method_str = f" ({chain_method})" if chain_method != "sequential" else ""
+        _log.info(
+            f"JAX Gibbs sampling{method_str} ({chains} chains, {sampler_name}, "
+            f"3-block: β, σ², {spatial_param})"
+        )
+        t_start = time.time()
+
+        # ── Vectorized path: jax.vmap ──
+        if chain_method == "vectorized":
+            # Derive per-chain seeds
+            if random_seed is not None:
+                parent_ss = np.random.SeedSequence(random_seed)
+            else:
+                parent_ss = np.random.SeedSequence()
+            child_seeds = parent_ss.spawn(chains)
+            seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
+
+            # Build cache for initialization
+            cache = self._build_cache()
+
+            # Initialize per-chain states
+            inits = []
+            for seed in seeds:
+                rng = np.random.default_rng(seed)
+                init = _initialize_gaussian_gibbs(
+                    self.y,
+                    self.X,
+                    cache.XtX_inv,
+                    self.priors,
+                    rng,
+                )
+                inits.append(init)
+
+            chain_results = run_chains_jax_gibbs_vectorized(
+                y=self.y,
+                X=self.X,
+                W_sparse=self.W_sparse,
+                Wy=self.Wy,
+                logdet_jax=logdet_jax,
+                logdet_vec_fn=self.logdet_vec_fn,
+                priors=self.priors,
+                inits=inits,
+                draws=draws,
+                tune=tune,
+                thin=thin,
+                jax_seeds=seeds,
+                model_type=self.model_type,
+                mala_step_size=mala_step_size,
+                use_mala=use_mala,
+                progressbar=progressbar,
+            )
+
+            # Assemble InferenceData
+            idata = self._assemble_idata(chain_results)
+            elapsed = time.time() - t_start
+            mean_accept = np.mean([r["mh_accept_rate"] for r in chain_results])
+            _log.info(
+                f"Sampling {chains} chains for {tune} tune and {draws} draw "
+                f"iterations ({chains * tune:,} + {chains * draws:,} draws total) "
+                f"took {elapsed:.0f} seconds."
+            )
+            _log.info(
+                f"{sampler_name} acceptance rate: {mean_accept:.3f} (target: 0.574)"
+            )
+            return idata
+
+        if chain_method == "parallel":
+            raise NotImplementedError(
+                "chain_method='parallel' is not supported for the JAX path. "
+                "Use chain_method='vectorized' for JAX-native parallelism."
+            )
 
         # Derive per-chain seeds
         if random_seed is not None:
@@ -257,7 +385,7 @@ class GibbsEstimation:
         cache = self._build_cache()
 
         # Define per-chain function
-        def _run_one_chain(chain_id, seed):
+        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
             rng = np.random.default_rng(seed)
             init = _initialize_gaussian_gibbs(
                 self.y,
@@ -282,19 +410,34 @@ class GibbsEstimation:
                 model_type=self.model_type,
                 mala_step_size=mala_step_size,
                 use_mala=use_mala,
+                progressbar=progressbar,
+                chain_id=chain_id_kw if chain_id_kw is not None else chain_id,
+                progress_manager=progress_manager,
             )
 
-        # Run chains
+        # Run chains sequentially (JAX sequential path)
         chain_results = run_chains(
             chain_fn=_run_one_chain,
             n_chains=chains,
             seeds=seeds,
-            n_jobs=n_jobs,
+            n_jobs=1,
             progressbar=progressbar,
+            parallel=False,
+            draws=draws,
+            tune=tune,
+            model_type=self.model_type,
         )
 
         # Assemble InferenceData
         idata = self._assemble_idata(chain_results)
+        elapsed = time.time() - t_start
+        mean_accept = np.mean([r["mh_accept_rate"] for r in chain_results])
+        _log.info(
+            f"Sampling {chains} chains for {tune} tune and {draws} draw "
+            f"iterations ({chains * tune:,} + {chains * draws:,} draws total) "
+            f"took {elapsed:.0f} seconds."
+        )
+        _log.info(f"{sampler_name} acceptance rate: {mean_accept:.3f} (target: 0.574)")
         return idata
 
     def _build_logdet_jax(self) -> callable:

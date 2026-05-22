@@ -30,13 +30,18 @@ where RSS(ρ) uses the Woodbury form:
     \text{RSS}(\rho) = r^\top r - (X^\top r)^\top (X^\top X)^{-1}(X^\top r),
     \quad r = y - \rho W y
 
-For SEM/SDEM, the λ log-density is *un-collapsed* (conditional on
-current β and σ²):
+For SEM/SDEM, the λ log-density is also *collapsed* (β and σ² integrated out):
 
 .. math::
 
-    \log p(\lambda \mid \beta, \sigma^2, y) = \log|I - \lambda W|
-    - \frac{1}{2\sigma^2}\|(I - \lambda W)(y - X\beta)\|^2 + \text{const}
+    \log p(\lambda \mid y) = \log|I - \lambda W|
+    - \frac{1}{2}\log|X^{*\top} X^*|
+    - \frac{n-k}{2}\log\text{RSS}(\lambda) + \text{const}
+
+where :math:`y^* = (I - \lambda W)y`, :math:`X^* = (I - \lambda W)X`, and
+:math:`\text{RSS}(\lambda) = y^{*\top} y^* - y^{*\top} X^* (X^{*\top} X^*)^{-1} X^{*\top} y^*`.
+The extra term :math:`-\frac{1}{2}\log|X^{*\top} X^*|` appears because :math:`X^*`
+depends on :math:`\lambda` (unlike SAR where :math:`X` is fixed).
 
 MALA proposal
 ~~~~~~~~~~~~~
@@ -61,9 +66,6 @@ mean shifted by the gradient drift.
 Limitations
 -----------
 - O(k³) dense Cholesky limits scalability to k ≤ ~2000.
-- For SEM/SDEM, the un-collapsed λ log-density may mix more slowly
-  than a collapsed version, but the penalty is small for a scalar
-  parameter.
 
 References
 ----------
@@ -100,13 +102,23 @@ def _check_jax_available() -> None:
 # JAX Gaussian Gibbs state (equinox Module)
 # ---------------------------------------------------------------------------
 
+_JAX_GAUSSIAN_GIBBS_STATE_CLS = None
+
 
 def _make_jax_gaussian_gibbs_state():
-    """Create the JAXGaussianGibbsState equinox Module class.
+    """Create (or return cached) JAXGaussianGibbsState equinox Module class.
 
     Returns the class (not an instance) so that JAX/equinox imports
-    are deferred until first use.
+    are deferred until first use.  The class is cached as a module-level
+    singleton to ensure that all callers share the **same** Python type,
+    which is required by ``jax.lax.scan`` (carry input and output must
+    have identical pytree structure).
     """
+    global _JAX_GAUSSIAN_GIBBS_STATE_CLS
+
+    if _JAX_GAUSSIAN_GIBBS_STATE_CLS is not None:
+        return _JAX_GAUSSIAN_GIBBS_STATE_CLS
+
     import equinox as eqx
     import jax.numpy as jnp
 
@@ -128,6 +140,7 @@ def _make_jax_gaussian_gibbs_state():
         sigma2: jnp.ndarray
         rho: jnp.ndarray
 
+    _JAX_GAUSSIAN_GIBBS_STATE_CLS = JAXGaussianGibbsState
     return JAXGaussianGibbsState
 
 
@@ -148,7 +161,6 @@ def _make_gaussian_gibbs_step(
     XtX_inv_jax,
     priors,
     model_type: str,
-    mala_step_size: float = 0.05,
     use_mala: bool = True,
 ):
     """Build a JIT-compiled Gaussian Gibbs step with data bound into the closure.
@@ -156,6 +168,11 @@ def _make_gaussian_gibbs_step(
     Creates a ``@eqx.filter_jit``-compiled function that performs one
     complete 3-block Gibbs sweep (β, σ², ρ/λ MALA/RW-MH) in a single
     XLA kernel call, eliminating all Python→JAX dispatch overhead.
+
+    The step size ``mala_eps`` is a **runtime argument** to the
+    returned function, not a closure variable.  This enables
+    ``jax.lax.scan`` (no Python-side recompilation for adaptation)
+    and ``jax.vmap`` across chains.
 
     Parameters
     ----------
@@ -183,8 +200,6 @@ def _make_gaussian_gibbs_step(
         Prior hyperparameters.
     model_type : str
         One of "sar", "sem", "sdm", "sdem".
-    mala_step_size : float, default 0.05
-        Step size for MALA proposal (or RW-MH proposal sd).
     use_mala : bool, default True
         If True, use MALA (gradient-guided proposals) for the ρ/λ update.
         If False, use random-walk Metropolis–Hastings.
@@ -194,10 +209,10 @@ def _make_gaussian_gibbs_step(
     gibbs_step : callable
         A JIT-compiled function with signature::
 
-            gibbs_step(state, key) -> (new_state, accept)
+            gibbs_step(state, key, mala_eps) -> (new_state, accept)
 
-        where ``state`` is a ``JAXGaussianGibbsState`` and ``key`` is a
-        JAX PRNG key.
+        where ``state`` is a ``JAXGaussianGibbsState``, ``key`` is a
+        JAX PRNG key, and ``mala_eps`` is a ``jnp.float64`` step size.
     """
     import equinox as eqx
     import jax
@@ -217,13 +232,12 @@ def _make_gaussian_gibbs_step(
     sigma_sigma_jax = jnp.float64(priors.sigma_sigma)
     rho_lower_jax = jnp.float64(priors.rho_lower)
     rho_upper_jax = jnp.float64(priors.rho_upper)
-    mala_eps = jnp.float64(mala_step_size)
 
     # Prior precision for beta
     beta_prior_prec = jnp.diag(1.0 / beta_sigma2_jax)
 
     @eqx.filter_jit
-    def gibbs_step(state, key):
+    def gibbs_step(state, key, mala_eps):
         """One complete 3-block Gibbs sweep: β → σ² → ρ/λ (MALA).
 
         Parameters
@@ -232,6 +246,10 @@ def _make_gaussian_gibbs_step(
             Current state.
         key : jax.random.PRNGKey
             JAX random key.
+        mala_eps : jax.numpy.float64
+            Step size for MALA proposal (or RW-MH proposal sd).
+            Passed as a runtime argument to avoid recompilation
+            when adapting step size.
 
         Returns
         -------
@@ -248,11 +266,16 @@ def _make_gaussian_gibbs_step(
         # ── Block 1: β | ρ, σ², y — conjugate normal ──
         if is_sar:
             r = y_jax - rho * Wy_jax
+            X_eff = X_jax
+            XtX_eff = XtX_jax
         else:
-            r = y_jax  # SEM: residuals are just y (no ρWy term)
+            # SEM: transform y and X by (I - λW)
+            r = y_jax - rho * (W_dense_jax @ y_jax)
+            X_eff = X_jax - rho * (W_dense_jax @ X_jax)
+            XtX_eff = X_eff.T @ X_eff
 
-        Sigma_beta_inv = XtX_jax / sigma2 + beta_prior_prec
-        rhs_beta = beta_mu_jax / beta_sigma2_jax + X_jax.T @ r / sigma2
+        Sigma_beta_inv = XtX_eff / sigma2 + beta_prior_prec
+        rhs_beta = beta_mu_jax / beta_sigma2_jax + X_eff.T @ r / sigma2
         L_beta = jnp.linalg.cholesky(Sigma_beta_inv)
         m_beta = jnp.linalg.solve(L_beta.T, jnp.linalg.solve(L_beta, rhs_beta))
         z_beta = jax.random.normal(key_beta, shape=(k,), dtype=jnp.float64)
@@ -265,8 +288,11 @@ def _make_gaussian_gibbs_step(
             resid_raw = y_jax - X_jax @ beta_new
             resid = resid_raw - rho * (W_dense_jax @ resid_raw)
 
-        a_post = jnp.float64(n / 2.0 + 1.0)  # from HalfNormal prior
-        b_post = jnp.float64(resid @ resid / 2.0 + sigma_sigma_jax**2 / 2.0)
+        # Weakly informative Jeffreys prior: p(σ²) ∝ 1/σ²
+        # Approximated as Inv-Γ(ε, ε) with ε = 1e-3
+        EPS = jnp.float64(1e-3)
+        a_post = jnp.float64(n / 2.0 + EPS)
+        b_post = jnp.float64(resid @ resid / 2.0 + EPS)
         sigma2_inv = jax.random.gamma(key_sigma2, a_post) / b_post
         sigma2_new = jnp.maximum(1.0 / sigma2_inv, 1e-10)
 
@@ -289,18 +315,35 @@ def _make_gaussian_gibbs_step(
 
             log_density_fn = log_density_spatial
         else:
-            # Un-collapsed conditional: log p(λ | β, σ², y)
+            # Collapsed log-density for SEM/SDEM:
+            # log p(λ | y) = log|I-λW| - 0.5*log|X*ᵀX*| - (n-k)/2 * log RSS(λ)
             def log_density_spatial(param_val):
-                resid_raw = y_jax - X_jax @ beta_new
-                eps = resid_raw - param_val * (W_dense_jax @ resid_raw)
-                ss = eps @ eps
+                y_star = y_jax - param_val * (W_dense_jax @ y_jax)
+                X_star = X_jax - param_val * (W_dense_jax @ X_jax)
+                XtX_star = X_star.T @ X_star
+                Xty_star = X_star.T @ y_star
+                yty_star = y_star @ y_star
+
+                # RSS = y*ᵀy* - y*ᵀX* (X*ᵀX*)⁻¹ X*ᵀy*
+                # Use solve for numerical stability
+                XtX_star_inv_Xty = jnp.linalg.solve(XtX_star, Xty_star)
+                rss = yty_star - Xty_star @ XtX_star_inv_Xty
+                rss = jnp.maximum(rss, 1e-300)
+
                 logdet = logdet_jax(param_val)
+                logdet_XtX = jnp.linalg.slogdet(XtX_star)[1]
+
                 log_prior = jnp.where(
                     (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),
                     0.0,
                     -jnp.inf,
                 )
-                return logdet - 0.5 * ss / sigma2_new + log_prior
+                return (
+                    logdet
+                    - 0.5 * logdet_XtX
+                    - 0.5 * (n - k) * jnp.log(rss)
+                    + log_prior
+                )
 
             log_density_fn = log_density_spatial
 
@@ -356,6 +399,74 @@ def _make_gaussian_gibbs_step(
 
 
 # ---------------------------------------------------------------------------
+# jax.lax.scan-based chain runner
+# ---------------------------------------------------------------------------
+
+
+def _run_chain_jax_gibbs_scanned(
+    gibbs_step,
+    init_state,
+    key,
+    n_iters,
+    mala_eps,
+):
+    """Run a single chain using ``jax.lax.scan``.
+
+    All outputs are JAX arrays — no Python side effects.  This
+    function is compatible with ``jax.vmap`` for vectorized
+    multi-chain execution.
+
+    Parameters
+    ----------
+    gibbs_step : callable
+        JIT-compiled step function with signature
+        ``(state, key, mala_eps) -> (new_state, accept)``.
+    init_state : JAXGaussianGibbsState
+        Initial state.
+    key : jax.random.PRNGKey
+        JAX random key.
+    n_iters : int
+        Number of iterations to run.
+    mala_eps : jax.numpy.float64
+        Step size for MALA/RW-MH proposals.
+
+    Returns
+    -------
+    final_state : JAXGaussianGibbsState
+        State after ``n_iters`` steps.
+    rhos : jax.numpy.ndarray of shape (n_iters,)
+        Trace of ρ/λ values.
+    betas : jax.numpy.ndarray of shape (n_iters, k)
+        Trace of β values.
+    sigma2s : jax.numpy.ndarray of shape (n_iters,)
+        Trace of σ² values.
+    accept_rate : jax.numpy.float64
+        Fraction of MALA/MH steps accepted.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    def scan_body(carry, _):
+        state, key, accept_sum = carry
+        key, step_key = jax.random.split(key)
+        state, accept = gibbs_step(state, step_key, mala_eps)
+        return (
+            (state, key, accept_sum + accept),
+            (state.rho, state.beta, state.sigma2, accept),
+        )
+
+    (final_state, _, total_accept), (rhos, betas, sigma2s, accepts) = jax.lax.scan(
+        scan_body,
+        (init_state, key, jnp.float64(0.0)),
+        None,
+        length=n_iters,
+    )
+
+    accept_rate = total_accept / jnp.float64(n_iters)
+    return final_state, rhos, betas, sigma2s, accept_rate
+
+
+# ---------------------------------------------------------------------------
 # Chain runner
 # ---------------------------------------------------------------------------
 
@@ -376,6 +487,9 @@ def run_chain_jax_gaussian(
     model_type: str = "sar",
     mala_step_size: float = 0.05,
     use_mala: bool = True,
+    progressbar: bool = True,
+    chain_id: int = 0,
+    progress_manager: object | None = None,
 ):
     """Run one chain of the full-JIT JAX Gaussian Gibbs sampler.
 
@@ -416,6 +530,13 @@ def run_chain_jax_gaussian(
         Initial MALA step size (or RW-MH proposal sd).
     use_mala : bool, default True
         If True, use MALA for the ρ/λ update.
+    progressbar : bool, default True
+        Show progress bar for this chain.
+    chain_id : int, default 0
+        Chain index (0-based) for progress bar display.
+    progress_manager : object or None
+        ``GibbsProgressBarManager`` instance. If provided,
+        ``update()`` is called after each iteration.
 
     Returns
     -------
@@ -472,7 +593,7 @@ def run_chain_jax_gaussian(
     # ── MALA step-size adaptation ──
     adapted_step_size = mala_step_size
 
-    # Build the initial JIT-compiled step function
+    # Build the JIT-compiled step function (mala_eps is a runtime arg)
     gibbs_step = _make_gaussian_gibbs_step(
         y_jax=y_jax,
         X_jax=X_jax,
@@ -485,62 +606,59 @@ def run_chain_jax_gaussian(
         XtX_inv_jax=XtX_inv_jax,
         priors=priors,
         model_type=model_type,
-        mala_step_size=adapted_step_size,
         use_mala=use_mala,
     )
 
-    # Warmup the JIT function (first call triggers compilation)
     key = jax.random.PRNGKey(rng.integers(2**31))
-    key, warmup_key = jax.random.split(key)
-    _ = gibbs_step(state, warmup_key)
 
-    # Run the chain
-    accept_count = 0
-    warmup_accept_count = 0
-    for i in range(total_iters):
-        key, step_key = jax.random.split(key)
-        state, accept = gibbs_step(state, step_key)
-        accept_count += int(accept)
+    # ── Phase 1: Warmup via jax.lax.scan ──
+    if tune > 0:
+        key, warmup_key = jax.random.split(key)
+        state, _, _, _, warmup_accept_rate = _run_chain_jax_gibbs_scanned(
+            gibbs_step,
+            state,
+            warmup_key,
+            tune,
+            jnp.float64(adapted_step_size),
+        )
 
-        # Track warmup acceptance for step-size adaptation
-        if i < tune:
-            warmup_accept_count += int(accept)
-
-        # At end of warmup, adapt MALA step size and recompile
-        if use_mala and i == tune - 1 and tune > 0:
-            warmup_rate = warmup_accept_count / tune
-            # Simple multiplicative adaptation targeting ~57.4% acceptance
-            # (optimal for MALA; see Roberts & Tweedie 1996).
+        # Adapt MALA step size in Python (no recompilation needed)
+        if use_mala:
+            warmup_rate = float(warmup_accept_rate)
             target_rate = 0.574
             if 0.0 < warmup_rate < 1.0:
                 adapt_factor = min(max(target_rate / warmup_rate, 0.5), 2.0)
                 adapted_step_size = mala_step_size * adapt_factor
-            # Recompile with adapted step size
-            gibbs_step = _make_gaussian_gibbs_step(
-                y_jax=y_jax,
-                X_jax=X_jax,
-                Wy_jax=Wy_jax,
-                W_dense_jax=W_dense_jax,
-                n=n,
-                k=k,
-                logdet_jax=logdet_jax,
-                XtX_jax=XtX_jax,
-                XtX_inv_jax=XtX_inv_jax,
-                priors=priors,
-                model_type=model_type,
-                mala_step_size=adapted_step_size,
-                use_mala=use_mala,
-            )
-            key, warmup_key = jax.random.split(key)
-            _ = gibbs_step(state, warmup_key)
 
-        # Store post-warmup draws
-        if i >= tune and (i - tune) % thin == 0:
-            idx = (i - tune) // thin
-            if idx < n_keep:
-                rho_samples[idx] = float(state.rho)
-                beta_samples[idx] = np.asarray(state.beta)
-                sigma_samples[idx] = np.sqrt(float(state.sigma2))
+        # Update progress bar for warmup phase
+        if progress_manager is not None:
+            for i in range(tune):
+                progress_manager.update(chain_id, i, tuning=True, accept=None)
+            progress_manager.refresh()
+
+    # ── Phase 2: Post-warmup draws via jax.lax.scan ──
+    key, draw_key = jax.random.split(key)
+    state, rhos, betas, sigma2s, draw_accept_rate = _run_chain_jax_gibbs_scanned(
+        gibbs_step,
+        state,
+        draw_key,
+        draws,
+        jnp.float64(adapted_step_size),
+    )
+
+    # Apply thinning and convert to NumPy
+    thin_slice = slice(None, None, thin) if thin > 1 else slice(None)
+    rho_samples = np.asarray(rhos[thin_slice])
+    beta_samples = np.asarray(betas[thin_slice])
+    sigma_samples = np.sqrt(np.asarray(sigma2s[thin_slice]))
+
+    # Update progress bar for draw phase
+    if progress_manager is not None:
+        for i in range(tune, total_iters):
+            progress_manager.update(chain_id, i, tuning=False, accept=None)
+        # Set the aggregate MALA/MH accept rate for this chain
+        progress_manager.set_accept_rate(chain_id, float(draw_accept_rate))
+        progress_manager.refresh()
 
     # ── Post-chain: vectorized pointwise log-likelihood ──
     # Compute after the chain completes using stored posterior draws,
@@ -575,7 +693,261 @@ def run_chain_jax_gaussian(
         "beta": beta_samples,
         "sigma": sigma_samples,
         "log_lik": log_lik,
-        "mh_accept_rate": accept_count / total_iters,
+        "mh_accept_rate": float(draw_accept_rate),
     }
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Vectorized multi-chain runner (jax.vmap)
+# ---------------------------------------------------------------------------
+
+
+def run_chains_jax_gibbs_vectorized(
+    y: np.ndarray,
+    X: np.ndarray,
+    W_sparse,
+    Wy: np.ndarray | None,
+    logdet_jax,
+    logdet_vec_fn,
+    priors,
+    inits: list,
+    draws: int,
+    tune: int,
+    thin: int = 1,
+    jax_seeds: list[int] | None = None,
+    model_type: str = "sar",
+    mala_step_size: float = 0.05,
+    use_mala: bool = True,
+    progressbar: bool = True,
+) -> list[dict]:
+    """Run multiple JAX Gibbs chains via ``jax.vmap``.
+
+    All chains run in parallel on a single device via vectorized
+    map.  This avoids Python multiprocessing entirely and is the
+    recommended way to run multiple JAX chains.
+
+    Parameters
+    ----------
+    y : ndarray of shape (n,)
+        Response vector.
+    X : ndarray of shape (n, k)
+        Design matrix.
+    W_sparse : csr_matrix
+        Spatial weights matrix.
+    Wy : ndarray of shape (n,) or None
+        W @ y (precomputed, for SAR/SDM).  None for SEM/SDEM.
+    logdet_jax : callable
+        JAX-native logdet function.
+    logdet_vec_fn : callable
+        Vectorized numpy logdet callable for post-chain LL computation.
+    priors : GaussianGibbsPriors
+        Prior hyperparameters.
+    inits : list of GaussianGibbsState
+        Per-chain initial states.
+    draws : int
+        Number of post-warmup draws per chain.
+    tune : int
+        Number of warmup draws per chain.
+    thin : int, default 1
+        Keep every thin-th draw.
+    jax_seeds : list of int, optional
+        Per-chain JAX PRNG seeds.
+    model_type : str, default "sar"
+        One of "sar", "sem", "sdm", "sdem".
+    mala_step_size : float, default 0.05
+        Initial MALA step size.
+    use_mala : bool, default True
+        If True, use MALA for the ρ/λ update.
+    progressbar : bool, default True
+        Show per-chain progress bars.
+
+    Returns
+    -------
+    list of dict
+        One dict per chain, each containing posterior sample arrays
+        and ``mh_accept_rate``.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    jax.config.update("jax_enable_x64", True)
+
+    from ._gaussian_loglik import (
+        sar_pointwise_loglik_vectorized,
+        sem_pointwise_loglik_vectorized,
+    )
+
+    chains = len(inits)
+    n, k = X.shape
+    is_sar = model_type in ("sar", "sdm")
+
+    # Convert data to JAX arrays
+    y_jax = jnp.asarray(y, dtype=jnp.float64)
+    X_jax = jnp.asarray(X, dtype=jnp.float64)
+    XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
+    XtX_inv_jax = jnp.asarray(np.linalg.inv(X.T @ X), dtype=jnp.float64)
+
+    if is_sar:
+        Wy_jax = jnp.asarray(Wy, dtype=jnp.float64)
+        W_dense_jax = None
+    else:
+        Wy_jax = None
+        W_dense_jax = jnp.asarray(W_sparse.toarray(), dtype=jnp.float64)
+
+    # Build the JIT-compiled step function (shared across all chains)
+    gibbs_step = _make_gaussian_gibbs_step(
+        y_jax=y_jax,
+        X_jax=X_jax,
+        Wy_jax=Wy_jax,
+        W_dense_jax=W_dense_jax,
+        n=n,
+        k=k,
+        logdet_jax=logdet_jax,
+        XtX_jax=XtX_jax,
+        XtX_inv_jax=XtX_inv_jax,
+        priors=priors,
+        model_type=model_type,
+        use_mala=use_mala,
+    )
+
+    JAXGaussianGibbsState = _make_jax_gaussian_gibbs_state()
+
+    # Convert NumPy initial states to JAX states, then batch into a
+    # vmappable pytree by stacking each leaf.
+    jax_inits = [
+        JAXGaussianGibbsState(
+            beta=jnp.asarray(init.beta, dtype=jnp.float64),
+            sigma2=jnp.float64(init.sigma2),
+            rho=jnp.float64(init.rho),
+        )
+        for init in inits
+    ]
+    init_states = jax.tree.map(lambda *a: jnp.stack(a), *jax_inits)
+
+    # Batch PRNG keys
+    if jax_seeds is None:
+        jax_seeds = list(range(chains))
+    master_key = jax.random.PRNGKey(jax_seeds[0])
+    keys = jax.random.split(master_key, chains)
+
+    from ._progress import GibbsProgressBarManager
+
+    with GibbsProgressBarManager(
+        chains=chains,
+        draws=draws,
+        tune=tune,
+        progressbar=progressbar,
+        model_type=model_type,
+    ) as pm:
+        # Record start times for all chains (they run simultaneously via vmap)
+        if pm is not None:
+            for c in range(chains):
+                pm.start_chain(c)
+
+        # ── Phase 1: Warmup via vmap ──
+        if tune > 0:
+            warmup_keys = keys
+
+            def run_warmup(state, key):
+                return _run_chain_jax_gibbs_scanned(
+                    gibbs_step, state, key, tune, jnp.float64(mala_step_size)
+                )
+
+            final_states, _, _, _, warmup_rates = jax.vmap(run_warmup)(
+                init_states, warmup_keys
+            )
+
+            # Adapt step size per-chain using individual warmup acceptance rates
+            if use_mala:
+                target_rate = 0.574
+                # Per-chain adaptation: each chain gets its own step size
+                # based on its own acceptance rate during warmup.
+                # Chains with acceptance rate outside (0, 1) keep the
+                # initial step size (no adaptation).
+                safe_rates = jnp.where(
+                    (warmup_rates > 0) & (warmup_rates < 1),
+                    warmup_rates,
+                    jnp.float64(target_rate),
+                )
+                adapt_factors = jnp.clip(target_rate / safe_rates, 0.5, 2.0)
+                adapted_step_sizes = jnp.float64(mala_step_size) * adapt_factors
+            else:
+                adapted_step_sizes = jnp.full(chains, jnp.float64(mala_step_size))
+
+            # Update progress bar for warmup phase (all chains at once)
+            if pm is not None:
+                for c in range(chains):
+                    for i in range(tune):
+                        pm.update(c, i, tuning=True, accept=None)
+                pm.refresh()
+        else:
+            final_states = init_states
+            adapted_step_sizes = jnp.full(chains, jnp.float64(mala_step_size))
+
+        # ── Phase 2: Post-warmup draws via vmap ──
+        draw_keys = jax.random.split(jax.random.fold_in(master_key, 1), chains)
+
+        def run_draws(state, key, step_size):
+            return _run_chain_jax_gibbs_scanned(
+                gibbs_step, state, key, draws, step_size
+            )
+
+        _, rhos, betas, sigma2s, accept_rates = jax.vmap(run_draws)(
+            final_states, draw_keys, adapted_step_sizes
+        )
+
+        # Update progress bar for draw phase (all chains at once)
+        if pm is not None:
+            for c in range(chains):
+                for i in range(tune, tune + draws):
+                    pm.update(c, i, tuning=False, accept=None)
+                # Set the aggregate MALA/MH accept rate for this chain
+                pm.set_accept_rate(c, float(accept_rates[c]))
+            pm.refresh()
+
+    # Convert to NumPy and assemble per-chain results
+    thin_slice = slice(None, None, thin) if thin > 1 else slice(None)
+    results = []
+    for c in range(chains):
+        rho_c = np.asarray(rhos[c][thin_slice])
+        beta_c = np.asarray(betas[c][thin_slice])
+        sigma_c = np.sqrt(np.asarray(sigma2s[c][thin_slice]))
+
+        # Pointwise log-likelihood
+        if is_sar:
+            log_lik = sar_pointwise_loglik_vectorized(
+                rho_draws=rho_c,
+                beta_draws=beta_c,
+                sigma_draws=sigma_c,
+                y=y,
+                X=X,
+                Wy=Wy,
+                logdet_vec_fn=logdet_vec_fn,
+                n=n,
+            )
+        else:
+            log_lik = sem_pointwise_loglik_vectorized(
+                lam_draws=rho_c,
+                beta_draws=beta_c,
+                sigma_draws=sigma_c,
+                y=y,
+                X=X,
+                W_sparse=W_sparse,
+                logdet_vec_fn=logdet_vec_fn,
+                n=n,
+            )
+
+        param_name = "rho" if is_sar else "lam"
+        results.append(
+            {
+                param_name: rho_c,
+                "beta": beta_c,
+                "sigma": sigma_c,
+                "log_lik": log_lik,
+                "mh_accept_rate": float(accept_rates[c]),
+            }
+        )
+
+    return results

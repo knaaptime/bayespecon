@@ -1,15 +1,84 @@
 """Parallel chain dispatch for Gibbs samplers.
 
-Uses joblib for process-based parallelism with SeedSequence-derived RNGs.
-Each chain runs independently in its own process, with its own
-``numpy.random.Generator`` seeded from a parent ``SeedSequence``.
+Supports sequential execution with rich progress bars, process-based
+parallelism via ``multiprocessing.Pool`` (with safe start-method
+detection), and JAX vectorized chains via ``jax.vmap``.
 """
 
 from __future__ import annotations
 
+import importlib.util
+import logging
+import multiprocessing
+import platform
+import warnings
 from typing import Callable
 
 import numpy as np
+
+_log = logging.getLogger(__name__)
+
+
+def _initialize_multiprocessing_context(
+    mp_ctx: str | None = None,
+    *,
+    quiet: bool = False,
+) -> multiprocessing.context.BaseContext:
+    """Pick a safe multiprocessing start method.
+
+    Detects JAX and auto-switches from ``'fork'`` to
+    ``'forkserver'``/``'spawn'`` to avoid deadlocks from forking
+    a multithreaded JAX runtime.
+
+    Mimics PyMC's ``_initialize_multiprocessing_context`` pattern.
+
+    Parameters
+    ----------
+    mp_ctx : str or None
+        Requested start method. If None, a platform-appropriate
+        default is chosen.
+    quiet : bool
+        Suppress auto-switch log messages.
+
+    Returns
+    -------
+    multiprocessing.context.BaseContext
+        A multiprocessing context with a safe start method.
+    """
+    user_specified = mp_ctx is not None
+    jax_available = importlib.util.find_spec("jax") is not None
+
+    if mp_ctx is None:
+        if platform.system() == "Darwin" and platform.processor() == "arm":
+            mp_ctx = "fork"  # fastest on macOS ARM
+        else:
+            mp_ctx = "forkserver"
+
+    ctx = multiprocessing.get_context(mp_ctx)
+
+    if jax_available and ctx.get_start_method() == "fork":
+        if user_specified:
+            warnings.warn(
+                "Using multiprocessing start method 'fork' with JAX installed "
+                "is unsafe and may deadlock. Consider passing mp_ctx='forkserver' "
+                "or mp_ctx='spawn'.",
+                UserWarning,
+                stacklevel=2,
+            )
+        else:
+            new_method = (
+                "forkserver"
+                if "forkserver" in multiprocessing.get_all_start_methods()
+                else "spawn"
+            )
+            ctx = multiprocessing.get_context(new_method)
+            if not quiet:
+                _log.debug(
+                    f"Auto-switched multiprocessing from 'fork' to '{new_method}' "
+                    "because JAX is installed."
+                )
+
+    return ctx
 
 
 def run_chains(
@@ -18,24 +87,38 @@ def run_chains(
     seeds: list[int] | None = None,
     n_jobs: int = -1,
     progressbar: bool = True,
+    parallel: bool = False,
+    draws: int = 2000,
+    tune: int = 1000,
+    model_type: str = "sar",
 ) -> list[dict]:
-    """Run n_chains independent Gibbs chains in parallel.
+    """Run n_chains independent Gibbs chains.
 
     Parameters
     ----------
     chain_fn : callable
-        Function with signature ``(chain_id, seed) -> dict`` that
-        runs a single chain and returns a dict of arrays.
+        Function with signature
+        ``(chain_id, seed, progress_manager=None, chain_id=0) -> dict``
+        that runs a single chain and returns a dict of arrays.
     n_chains : int
         Number of independent chains.
     seeds : list of int, optional
         Per-chain seeds. If None, derived from a parent
         ``numpy.random.SeedSequence``.
     n_jobs : int, default -1
-        Number of joblib workers. ``-1`` uses all CPUs. ``1`` runs
-        sequentially (useful for debugging).
+        Number of parallel workers when ``parallel=True``.
+        ``-1`` uses all CPUs. Ignored when ``parallel=False``.
     progressbar : bool, default True
-        Show per-chain progress bars.
+        Show per-chain progress bars (sequential only).
+    parallel : bool, default False
+        If True, run chains in parallel via ``joblib.Parallel``.
+        If False, run chains sequentially with progress bars.
+    draws : int, default 2000
+        Post-warmup draws per chain (used for progress bar setup).
+    tune : int, default 1000
+        Warmup draws per chain (used for progress bar setup).
+    model_type : str, default "sar"
+        Model type (used for progress bar display).
 
     Returns
     -------
@@ -43,7 +126,6 @@ def run_chains(
         One dict per chain, each containing parameter trace arrays.
     """
     if seeds is None:
-        # Derive per-chain seeds from a parent SeedSequence
         parent_ss = np.random.SeedSequence()
         child_seeds = parent_ss.spawn(n_chains)
         seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
@@ -52,19 +134,35 @@ def run_chains(
             f"len(seeds) must equal n_chains, got {len(seeds)} != {n_chains}."
         )
 
-    if n_jobs == 1:
-        # Sequential execution for debugging
-        results = []
-        for chain_id, seed in enumerate(seeds):
-            if progressbar:
-                print(f"Chain {chain_id + 1}/{n_chains} (seed={seed})")
-            result = chain_fn(chain_id, seed)
-            results.append(result)
-        return results
-    else:
+    if parallel:
+        # Process-based parallelism via joblib (handles closures)
         from joblib import Parallel, delayed
 
-        results = Parallel(n_jobs=n_jobs, backend="loky")(
+        n_workers = n_jobs if n_jobs > 0 else -1  # joblib uses -1 for all CPUs
+        results = Parallel(n_jobs=n_workers)(
             delayed(chain_fn)(chain_id, seed) for chain_id, seed in enumerate(seeds)
         )
         return list(results)
+
+    # Sequential execution with progress bars
+    from ._progress import GibbsProgressBarManager
+
+    with GibbsProgressBarManager(
+        chains=n_chains,
+        draws=draws,
+        tune=tune,
+        progressbar=progressbar,
+        model_type=model_type,
+    ) as pm:
+        results = []
+        for chain_id, seed in enumerate(seeds):
+            if pm is not None:
+                pm.start_chain(chain_id)
+            result = chain_fn(
+                chain_id,
+                seed,
+                progress_manager=pm,
+                chain_id_kw=chain_id,
+            )
+            results.append(result)
+        return results

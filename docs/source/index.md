@@ -21,7 +21,9 @@ Supported Models <models>
 :caption: User Guide
 :maxdepth: 1
 
+Quickstart <user-guide/quickstart>
 Cross Sectional Models <user-guide/pedagogical_spatial_models>
+Gibbs Sampler <user-guide/gibbs_sampler>
 Panel Models <user-guide/pedagogical_panel_models>
 Nonlinear Models <user-guide/nonlinear_models>
 Nonlinear Panel Models <user-guide/nonlinear_panel_models>

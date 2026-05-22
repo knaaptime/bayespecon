@@ -183,8 +183,11 @@ class SEM(SpatialModel):
             Keep every ``thin``-th draw after warmup.  Only used when
             ``sampler="gibbs"``.
         n_jobs : int, default -1
-            Number of parallel workers for Gibbs chains.  Only used
-            when ``sampler="gibbs"``.
+            Number of parallel workers for Gibbs chains.  ``-1`` uses
+            all CPUs.  When ``n_jobs=1``, chains run sequentially with
+            progress bars.  When ``n_jobs>1`` (or ``-1``), chains run
+            in parallel via ``joblib``.  Only used when
+            ``sampler="gibbs"`` with ``gibbs_method="numpy"``.
         progressbar : bool, default True
             Show per-chain progress bars.  Only used when
             ``sampler="gibbs"``.
@@ -225,6 +228,7 @@ class SEM(SpatialModel):
                 gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
                 mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
                 use_mala=sample_kwargs.pop("use_mala", True),
+                chain_method=sample_kwargs.pop("chain_method", None),
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
@@ -298,6 +302,7 @@ class SEM(SpatialModel):
         gibbs_method: str = "numpy",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
+        chain_method: str | None = None,
     ) -> "az.InferenceData":
         """Sample posterior via 3-block Gaussian Gibbs.
 
@@ -314,7 +319,11 @@ class SEM(SpatialModel):
         thin : int, default 1
             Keep every ``thin``-th draw after warmup.
         n_jobs : int, default -1
-            Number of parallel workers. ``-1`` uses all CPUs.
+            Number of parallel workers for the NumPy path. ``-1`` uses
+            all CPUs.  When ``n_jobs=1``, chains run sequentially with
+            progress bars.  When ``n_jobs>1`` (or ``-1``), chains run
+            in parallel via ``joblib``.  Ignored for the JAX path
+            (use ``chain_method`` instead).
         progressbar : bool, default True
             Show per-chain progress bars.
         gibbs_method : str, default "numpy"
@@ -325,6 +334,15 @@ class SEM(SpatialModel):
             Initial MALA step size for the JAX path.
         use_mala : bool, default True
             If True, use MALA for the λ update in the JAX path.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+            ``"vectorized"`` uses ``jax.vmap`` for JAX-native
+            parallelism (all chains on one device).  ``"sequential"``
+            runs chains one after another with progress bars.
+            ``"parallel"`` is not supported for the JAX path.
+            If None, defaults to ``"vectorized"`` when
+            ``gibbs_method="jax"``.  Ignored for the NumPy path
+            (use ``n_jobs`` to control parallelism instead).
 
         Returns
         -------
@@ -378,6 +396,7 @@ class SEM(SpatialModel):
             gibbs_method=gibbs_method,
             mala_step_size=mala_step_size,
             use_mala=use_mala,
+            chain_method=chain_method,
         )
         return self._idata
 

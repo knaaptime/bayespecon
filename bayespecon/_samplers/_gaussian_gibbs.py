@@ -75,8 +75,12 @@ class GaussianGibbsPriors:
     beta_sigma : float or ndarray
         Prior standard deviation for β.  Scalar is broadcast.
     sigma_sigma : float
-        HalfNormal scale for σ (so σ ~ HalfNormal(sigma_sigma)).
-        Converted to Inv-Γ shape/scale for the σ² block.
+        **Deprecated / unused.**  The σ² block now uses a weakly
+        informative Jeffreys prior p(σ²) ∝ 1/σ² (approximated as
+        Inv-Γ(ε, ε) with ε = 1e-3) so that the posterior is dominated
+        by the likelihood and agrees with the NUTS posterior.  Kept
+        for backward compatibility with existing code that passes
+        ``sigma_sigma``.
     rho_lower : float
         Lower bound for ρ/λ (from spectral stability).
     rho_upper : float
@@ -176,38 +180,37 @@ def _sample_beta_sar(
 
 
 def _sample_beta_sem(
-    beta: np.ndarray,
+    lam: float,
     sigma2: float,
     y: np.ndarray,
     X: np.ndarray,
-    XtX: np.ndarray,
+    W_sparse: sp.csr_matrix,
     priors: GaussianGibbsPriors,
     rng: np.random.Generator,
 ) -> np.ndarray:
     """Sample β from conjugate normal posterior (SEM/SDEM).
 
-    For SEM, the model in reduced form is:
-        y = X β + u,  u = λ W u + ε
-    Conditional on λ and σ², the GLS posterior for β is:
-        Σ_β = (X^T X / σ² + Λ₀⁻¹)⁻¹
-        β̂ = Σ_β (X^T y / σ² + Λ₀⁻¹ μ₀)
+    For SEM, conditional on λ and σ², the model is:
+        y* = X* β + ε,  ε ~ N(0, σ² I)
+    where y* = (I - λW)y and X* = (I - λW)X.
 
-    This is the same as OLS because the SEM error covariance
-    Σ_λ = σ² (I - λW)⁻¹(I - λW^T)⁻¹ cancels in the conditional
-    when we condition on the current residuals (un-collapsed approach).
+    The posterior is:
+        β | λ, σ², y ~ N(β̂, Σ_β)
+        Σ_β = (X*^T X* / σ² + Λ₀⁻¹)⁻¹
+        β̂ = Σ_β (X*^T y* / σ² + Λ₀⁻¹ μ₀)
 
     Parameters
     ----------
-    beta : ndarray of shape (k,)
-        Current β (unused for SEM, kept for API consistency).
+    lam : float
+        Current spatial error parameter λ.
     sigma2 : float
         Current residual variance.
     y : ndarray of shape (n,)
         Response vector.
     X : ndarray of shape (n, k)
         Design matrix.
-    XtX : ndarray of shape (k, k)
-        X^T X (precomputed).
+    W_sparse : csr_matrix
+        Sparse spatial weights matrix.
     priors : GaussianGibbsPriors
         Prior hyperparameters.
     rng : numpy.random.Generator
@@ -218,7 +221,11 @@ def _sample_beta_sem(
     beta : ndarray of shape (k,)
         New draw from the conditional posterior.
     """
-    return _sample_beta_conjugate(y, X, XtX, sigma2, priors, rng)
+    # Transform y and X by (I - λW)
+    y_star = y - lam * (W_sparse @ y)
+    X_star = X - lam * (W_sparse @ X)
+    XtX_star = X_star.T @ X_star
+    return _sample_beta_conjugate(y_star, X_star, XtX_star, sigma2, priors, rng)
 
 
 def _sample_beta_conjugate(
@@ -285,21 +292,24 @@ def _sample_sigma2(
 ) -> float:
     """Sample σ² from conjugate inverse-gamma posterior.
 
+    Uses a weakly informative prior p(σ²) ∝ 1/σ² (improper Jeffreys prior),
+    approximated as Inv-Γ(ε, ε) with ε = 1e-3 for numerical stability.
+    This ensures the posterior is dominated by the likelihood and matches
+    the NUTS posterior (which uses HalfNormal(10) on σ — nearly flat for
+    typical σ values).
+
     For SAR/SDM:
         resid = y - ρ W y - X β
         σ² | · ~ Inv-Γ(a_post, b_post)
-        a_post = n/2 + 1
-        b_post = ||resid||² / 2 + σ_prior² / 2
+        a_post = n/2 + ε
+        b_post = ||resid||² / 2 + ε
 
     For SEM/SDEM:
         resid_raw = y - X β
         ε = (I - λ W) resid_raw
         σ² | · ~ Inv-Γ(a_post, b_post)
-        a_post = n/2 + 1
-        b_post = ||ε||² / 2 + σ_prior² / 2
-
-    The HalfNormal(σ_prior) prior on σ translates to
-    Inv-Γ(1, σ_prior²/2) on σ².
+        a_post = n/2 + ε
+        b_post = ||ε||² / 2 + ε
 
     Parameters
     ----------
@@ -337,9 +347,11 @@ def _sample_sigma2(
         eps = resid_raw - rho * (W_sparse @ resid_raw)
         ss = np.dot(eps, eps)
 
-    # HalfNormal(σ_prior) on σ → Inv-Γ(1, σ_prior²/2) on σ²
-    a_post = n / 2 + 1
-    b_post = ss / 2 + priors.sigma_sigma**2 / 2
+    # Weakly informative Jeffreys prior: p(σ²) ∝ 1/σ²
+    # Approximated as Inv-Γ(ε, ε) with ε = 1e-3 for numerical stability
+    EPS = 1e-3
+    a_post = n / 2 + EPS
+    b_post = ss / 2 + EPS
 
     # Sample from Inv-Γ(a_post, b_post)
     # σ² = 1 / Gamma(a_post, 1/b_post)
@@ -409,7 +421,82 @@ def _sar_collapsed_log_density(
 
 
 # ---------------------------------------------------------------------------
-# Un-collapsed λ log-density (SEM/SDEM)
+# Collapsed λ log-density (SEM/SDEM)
+# ---------------------------------------------------------------------------
+
+
+def _sem_collapsed_log_density(
+    lam: float,
+    y: np.ndarray,
+    X: np.ndarray,
+    W_sparse: sp.csr_matrix,
+    logdet_fn: Callable[[float], float],
+    n: int,
+    k: int,
+) -> float:
+    """Collapsed log p(λ | y) for SEM/SDEM Gaussian model.
+
+    Integrates out β and σ² analytically.  The collapsed density is:
+
+        log p(λ | y) = log|I - λW|
+                       - (1/2) log|X*^T X*|
+                       - (n-k)/2 · log RSS(λ) + const
+
+    where y* = (I - λW)y, X* = (I - λW)X, and
+    RSS(λ) = y*^T y* - y*^T X* (X*^T X*)^{-1} X*^T y*.
+
+    The extra term -(1/2) log|X*^T X*| appears because X* depends on λ
+    (unlike SAR where X is fixed).
+
+    Parameters
+    ----------
+    lam : float
+        Spatial error parameter.
+    y : ndarray of shape (n,)
+        Response vector.
+    X : ndarray of shape (n, k)
+        Design matrix.
+    W_sparse : csr_matrix
+        Sparse spatial weights matrix.
+    logdet_fn : callable
+        log|I - lam*W| callable.
+    n : int
+        Number of observations.
+    k : int
+        Number of regressors (including intercept).
+
+    Returns
+    -------
+    log_density : float
+        Collapsed log-density of λ (up to a constant).
+    """
+    # Transform y and X by (I - λW)
+    y_star = y - lam * (W_sparse @ y)
+    X_star = X - lam * (W_sparse @ X)
+
+    # Compute RSS(λ) using Woodbury form
+    XtX_star = X_star.T @ X_star
+    Xty_star = X_star.T @ y_star
+    yty_star = np.dot(y_star, y_star)
+
+    # RSS = y*^T y* - y*^T X* (X*^T X*)^{-1} X*^T y*
+    try:
+        XtX_star_inv = np.linalg.inv(XtX_star)
+    except np.linalg.LinAlgError:
+        # Fallback to pseudo-inverse for numerical stability
+        XtX_star_inv = np.linalg.pinv(XtX_star)
+
+    rss = yty_star - Xty_star @ XtX_star_inv @ Xty_star
+    rss = max(rss, 1e-300)  # Prevent log(0)
+
+    logdet = logdet_fn(lam)
+    logdet_XtX = np.linalg.slogdet(XtX_star)[1]
+
+    return logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * np.log(rss)
+
+
+# ---------------------------------------------------------------------------
+# Un-collapsed λ log-density (SEM/SDEM) — kept for backward compatibility
 # ---------------------------------------------------------------------------
 
 
@@ -536,17 +623,22 @@ def _sample_rho_sar(
     return rho_new, log_density_new
 
 
-def _sample_lam_sem(
+def _sample_lam_sem_collapsed(
     state: GaussianGibbsState,
     cache: GaussianGibbsCache,
     priors: GaussianGibbsPriors,
     y: np.ndarray,
     X: np.ndarray,
+    n: int,
+    k: int,
     rng: np.random.Generator,
     slice_state: SliceWidthState,
     log_density_current: float | None = None,
 ) -> tuple[float, float]:
-    """Slice sample λ from the un-collapsed SEM/SDEM log-density.
+    """Slice sample λ from the collapsed SEM/SDEM log-density.
+
+    Uses the collapsed density that integrates out β and σ² analytically,
+    giving much better mixing than the un-collapsed conditional approach.
 
     Parameters
     ----------
@@ -560,6 +652,10 @@ def _sample_lam_sem(
         Response vector.
     X : ndarray of shape (n, k)
         Design matrix.
+    n : int
+        Number of observations.
+    k : int
+        Number of regressors.
     rng : numpy.random.Generator
         Random state.
     slice_state : SliceWidthState
@@ -576,14 +672,14 @@ def _sample_lam_sem(
     """
 
     def log_density(lam_val):
-        return _sem_conditional_log_density(
+        return _sem_collapsed_log_density(
             lam_val,
-            state.beta,
-            state.sigma2,
             y,
             X,
             cache.W_sparse,
             cache.logdet_fn,
+            n,
+            k,
         )
 
     lam_new, log_density_new, _, _ = slice_sample_1d_adaptive(
@@ -658,6 +754,9 @@ def run_gaussian_chain(
     tune: int,
     thin: int = 1,
     rng: np.random.Generator | None = None,
+    progressbar: bool = True,
+    chain_id: int = 0,
+    progress_manager: object | None = None,
 ) -> dict[str, np.ndarray]:
     """Run one chain of the Gaussian spatial Gibbs sampler.
 
@@ -681,6 +780,13 @@ def run_gaussian_chain(
         Keep every thin-th draw after warmup.
     rng : numpy.random.Generator, optional
         Random state.
+    progressbar : bool, default True
+        Show progress bar for this chain.
+    chain_id : int, default 0
+        Chain index (0-based) for progress bar display.
+    progress_manager : object or None
+        ``GibbsProgressBarManager`` instance. If provided,
+        ``update()`` is called after each iteration.
 
     Returns
     -------
@@ -735,11 +841,11 @@ def run_gaussian_chain(
             )
         else:  # sem, sdem
             state.beta = _sample_beta_sem(
-                state.beta,
+                state.rho,
                 state.sigma2,
                 y,
                 X,
-                cache.XtX,
+                cache.W_sparse,
                 priors,
                 rng,
             )
@@ -773,12 +879,14 @@ def run_gaussian_chain(
                 log_density_rho,
             )
         else:  # sem, sdem
-            state.rho, log_density_rho = _sample_lam_sem(
+            state.rho, log_density_rho = _sample_lam_sem_collapsed(
                 state,
                 cache,
                 priors,
                 y,
                 X,
+                n,
+                k,
                 rng,
                 slice_state,
                 log_density_rho,
@@ -816,6 +924,10 @@ def run_gaussian_chain(
             # Clamp for numerical stability
             ll = np.where(np.isfinite(ll), ll, -1e10)
             log_lik_samples[j] = ll
+
+        # Update progress bar
+        if progress_manager is not None:
+            progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
 
     # Name the spatial parameter appropriately
     param_name = "rho" if model_type in ("sar", "sdm") else "lam"
