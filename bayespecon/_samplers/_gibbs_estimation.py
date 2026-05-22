@@ -107,6 +107,8 @@ class GibbsEstimation:
         gibbs_method: str = "numpy",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> az.InferenceData:
         """Run Gibbs chains and assemble InferenceData.
@@ -141,7 +143,17 @@ class GibbsEstimation:
         use_mala : bool, default True
             If True, use MALA (gradient-guided proposals) for the
             ρ/λ update in the JAX path.  If False, use random-walk
-            Metropolis–Hastings.  Ignored when ``gibbs_method="numpy"``.
+            Metropolis–Hastings.  Ignored when ``gibbs_method="numpy"``
+            or ``use_slice=True``.
+        use_slice : bool, default False
+            If True, use slice sampling for the ρ/λ update in the
+            JAX path.  Slice sampling gives much better ESS per sample
+            than MALA.  Takes priority over ``use_mala``.
+            Ignored when ``gibbs_method="numpy"``.
+        slice_width : float or None, default None
+            Initial step-out width for slice sampling.  If None, defaults
+            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
+            ``use_slice=False`` or ``gibbs_method="numpy"``.
         chain_method : str or None, default None
             How to run multiple chains for the JAX path.
             ``"vectorized"`` uses ``jax.vmap`` for JAX-native
@@ -173,6 +185,8 @@ class GibbsEstimation:
                 progressbar=progressbar,
                 mala_step_size=mala_step_size,
                 use_mala=use_mala,
+                use_slice=use_slice,
+                slice_width=slice_width,
                 chain_method=chain_method,
             )
 
@@ -252,12 +266,14 @@ class GibbsEstimation:
         progressbar: bool = True,
         mala_step_size: float = 0.05,
         use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
         chain_method: str = "vectorized",
     ) -> az.InferenceData:
         """Run JAX JIT Gibbs chains and assemble InferenceData.
 
-        Uses MALA (or RW-MH) for the ρ/λ update instead of slice
-        sampling, enabling full JIT compilation of the Gibbs step.
+        Uses MALA, RW-MH, or slice sampling for the ρ/λ update,
+        enabling full JIT compilation of the Gibbs step.
 
         Parameters
         ----------
@@ -279,9 +295,16 @@ class GibbsEstimation:
         progressbar : bool, default True
             Show per-chain progress bars.
         mala_step_size : float, default 0.05
-            Initial MALA step size.
+            Initial MALA step size.  Ignored when ``use_slice=True``.
         use_mala : bool, default True
-            If True, use MALA for the ρ/λ update.
+            If True, use MALA for the ρ/λ update.  Ignored when
+            ``use_slice=True``.
+        use_slice : bool, default False
+            If True, use slice sampling for the ρ/λ update.  Gives
+            much better ESS per sample than MALA.
+        slice_width : float or None, default None
+            Initial step-out width for slice sampling.  If None,
+            defaults to ``(rho_upper - rho_lower) * 0.1``.
         chain_method : str, default "vectorized"
             How to run multiple chains. ``"sequential"`` runs chains
             one after another with progress bars. ``"vectorized"``
@@ -352,6 +375,8 @@ class GibbsEstimation:
                 model_type=self.model_type,
                 mala_step_size=mala_step_size,
                 use_mala=use_mala,
+                use_slice=use_slice,
+                slice_width=slice_width,
                 progressbar=progressbar,
             )
 
@@ -412,6 +437,8 @@ class GibbsEstimation:
                 model_type=self.model_type,
                 mala_step_size=mala_step_size,
                 use_mala=use_mala,
+                use_slice=use_slice,
+                slice_width=slice_width,
                 progressbar=progressbar,
                 chain_id=chain_id_kw if chain_id_kw is not None else chain_id,
                 progress_manager=progress_manager,

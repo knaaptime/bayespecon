@@ -256,6 +256,8 @@ class SDM(SpatialModel):
                 gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
                 mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
                 use_mala=sample_kwargs.pop("use_mala", True),
+                use_slice=sample_kwargs.pop("use_slice", True),
+                slice_width=sample_kwargs.pop("slice_width", None),
                 chain_method=sample_kwargs.pop("chain_method", None),
             )
         elif sampler != "nuts":
@@ -329,6 +331,8 @@ class SDM(SpatialModel):
         gibbs_method: str = "numpy",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> "az.InferenceData":
         """Sample posterior via 3-block Gaussian Gibbs.
@@ -363,8 +367,18 @@ class SDM(SpatialModel):
             with MALA for ρ.  The JAX path requires JAX and equinox.
         mala_step_size : float, default 0.05
             Initial MALA step size for the JAX path.
+            Ignored when ``use_slice=True``.
         use_mala : bool, default True
             If True, use MALA for the ρ update in the JAX path.
+            Ignored when ``use_slice=True``.
+        use_slice : bool, default True
+            If True, use slice sampling for the ρ update in the
+            JAX path.  Slice sampling gives much better ESS per sample
+            than MALA.  Ignored when ``gibbs_method="numpy"``.
+        slice_width : float or None, default None
+            Initial step-out width for slice sampling.  If None, defaults
+            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
+            ``use_slice=False`` or ``gibbs_method="numpy"``.
         chain_method : str or None, default None
             How to run multiple chains for the JAX path.
             ``"vectorized"`` uses ``jax.vmap`` for JAX-native
@@ -433,6 +447,8 @@ class SDM(SpatialModel):
             gibbs_method=gibbs_method,
             mala_step_size=mala_step_size,
             use_mala=use_mala,
+            use_slice=use_slice,
+            slice_width=slice_width,
             chain_method=chain_method,
         )
         return self._idata
