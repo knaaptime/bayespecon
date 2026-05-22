@@ -409,12 +409,19 @@ def lanczos_logdet(
 
     References
     ----------
-    .. [1] Ubaru, S. & Saad, Y. (2016). Fast methods for estimating
-       the trace of the inverse of a sparse matrix. *Journal of
-       Computational Physics*, 322, 10–21.
-    .. [2] Bai, Z., Fahey, G., & Golub, G. (1996). Some large-scale
+    .. [1] Ubaru, S., & Saad, Y. (2018). Applications of Trace Estimation
+       Techniques. In T. Kozubek, M. Čermák, P. Tichý, R. Blaheta, J. Šístek,
+       D. Lukáš, & J. Jaroš (Eds.), High Performance Computing in Science
+       and Engineering (pp. 19–33). Springer International Publishing.
+       https://doi.org/10.1007/978-3-319-97136-0_2
+
+    .. [2] Ubaru, S., & Saad, Y. (2016). Fast methods for estimating the
+       Numerical rank of large matrices.
+
+    .. [3] Bai, Z., Fahey, G., & Golub, G. (1996). Some large-scale
        matrix computation problems.
     """
+
     if rng is None:
         rng = np.random.default_rng()
 
@@ -711,13 +718,14 @@ def chebyshev_sample(
 
     References
     ----------
-    .. [1] Parker, D.S. & Fox, P. (2012). Using Chebyshev polynomials
-       for the numerical evaluation of matrix functions and their
-       application to the sampling of multivariate normal distributions.
-       *Computational Statistics*, 27, 739–756.
+    .. [1] Fox, C., & Parker, A. (2014). Convergence in Variance of Chebyshev
+       Accelerated Gibbs Samplers. SIAM Journal on Scientific Computing, 36(1),
+       A124–A147. https://doi.org/10.1137/120900940
+
     .. [2] Saad, Y. (2003). *Iterative Methods for Sparse Linear Systems*.
        2nd ed. SIAM. (Background on Chebyshev polynomial iteration.)
     """
+
     if rng is None:
         rng = np.random.default_rng()
 
@@ -914,11 +922,6 @@ def jax_lanczos_logdet(
     into a single XLA kernel, eliminating Python-loop overhead and
     enabling XLA fusion across the matvec + orthogonalisation steps.
 
-    Benchmarks (Apple M1, CPU):
-        n=500:  numpy=24ms, JAX=5.9ms (4.2×)
-        n=1000: numpy=49ms, JAX=13ms (3.8×)
-        n=2000: numpy=95ms, JAX=29ms (3.3×)
-        n=5000: numpy=238ms, JAX=187ms (1.3×)
     """
     _check_jax_available()
     import jax
@@ -1058,11 +1061,6 @@ def jax_chebyshev_sample(
     The ``n_draws`` parameter must be a compile-time constant (not
     traced by JAX).  This is because ``jax.vmap`` needs to know the
     batch size at trace time.
-
-    Benchmarks (Apple M1, CPU, n=1000):
-        1 draw:  scipy=4.9ms, JAX=6.8ms (0.72× — slower!)
-        4 draws: scipy=19.6ms, JAX=12.4ms (1.58× per draw)
-        10 draws: scipy=49ms, JAX=13.7ms (3.57× per draw)
     """
     _check_jax_available()
     import jax
