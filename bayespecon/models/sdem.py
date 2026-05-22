@@ -18,6 +18,11 @@ import pymc as pm
 import pytensor.tensor as pt
 
 from ..diagnostics.lmtests import SDEM_SUITE
+from ._sampler import (
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+    use_jax_likelihood,
+)
 from .base import (
     SpatialModel,
     _pointwise_gaussian_loglik,
@@ -79,8 +84,8 @@ class SDEM(SpatialModel):
     logdet_method : str, optional
         How to compute :math:`\\log|I - \\lambda W|`. ``None`` (default)
         auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
-        ``"chebyshev"``. Other options: ``"exact"``, ``"grid_dense"``,
-        ``"grid_sparse"``, ``"sparse_spline"``, ``"grid_mc"``, ``"grid_ilu"``.
+        ``"chebyshev"``. Other options: ``"exact"``, ``"dense_grid"``,
+        ``"sparse_grid"``, ``"spline"``, ``"mc"``, ``"ilu"``.
     robust : bool, default False
         If True, replace the Normal disturbance with Student-t. See
         *Robust regression* below.
@@ -122,17 +127,54 @@ class SDEM(SpatialModel):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         idata_kwargs: Optional[dict] = None,
+        sampler: str = "gibbs",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ) -> "az.InferenceData":
-        """Draw samples from the posterior. Accepts ``idata_kwargs`` for ArviZ compatibility.
+        """Draw samples from the posterior.
 
         Parameters
         ----------
+        draws : int, default 2000
+            Number of posterior samples per chain (after tuning).
+        tune : int, default 1000
+            Number of tuning (burn-in) steps per chain.
+        chains : int, default 4
+            Number of parallel chains.
+        target_accept : float, default 0.9
+            Target acceptance rate for NUTS.
+        random_seed : int, optional
+            Seed for reproducibility.
         idata_kwargs : dict, optional
             Passed to ``pm.sample`` for InferenceData creation. If contains
             ``log_likelihood: True``, the complete pointwise log-likelihood
             (including the Jacobian correction) is attached to the output.
-        Other parameters as in :class:`~bayespecon.models.base.SpatialModel`.
+            Only used when ``sampler="nuts"``.
+        sampler : str, default "nuts"
+            Sampling method:
+
+            - ``"nuts"``: NUTS via PyMC (default).
+            - ``"gibbs"``: 3-block Gibbs sampler (β conjugate normal,
+              σ² conjugate Inv-Γ, λ conditional slice).  The design
+              matrix is Z = [X, WX] and β covers both direct and
+              indirect coefficients.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.  Only used when
+            ``sampler="gibbs"``.
+        n_jobs : int, default -1
+            Number of parallel workers for Gibbs chains.  ``-1`` uses
+            all CPUs.  When ``n_jobs=1``, chains run sequentially with
+            progress bars.  When ``n_jobs>1`` (or ``-1``), chains run
+            in parallel via ``joblib``.  Only used when
+            ``sampler="gibbs"`` with ``gibbs_method="numpy"``.
+        progressbar : bool, default True
+            Show per-chain progress bars.  Only used when
+            ``sampler="gibbs"``.
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample``.
+            Only used when ``sampler="nuts"``.
 
         Notes
         -----
@@ -161,17 +203,34 @@ class SDEM(SpatialModel):
         same per-observation density is registered via :class:`pymc.CustomDist`
         so PyMC populates ``log_likelihood`` natively.
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+                use_mala=sample_kwargs.pop("use_mala", True),
+                use_slice=sample_kwargs.pop("use_slice", True),
+                slice_width=sample_kwargs.pop("slice_width", None),
+                chain_method=sample_kwargs.pop("chain_method", None),
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path (default) ---
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", None)
-        nuts_sampler = self.backend.resolve_nuts_sampler(nuts_sampler)
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
         model = self._build_pymc_model(nuts_sampler=nuts_sampler)
         self._pymc_model = model
-        idata_kwargs = self.backend.prepare_idata_kwargs(
-            idata_kwargs, model, nuts_sampler
-        )
-        sample_kwargs = self.backend.prepare_sample_kwargs(sample_kwargs, nuts_sampler)
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -189,8 +248,8 @@ class SDEM(SpatialModel):
         # Gaussian and Jacobian terms, so nothing is auto-captured.  On JAX
         # backends the model is built via pm.CustomDist with an observed RV,
         # so PyMC has already populated ``log_likelihood`` natively.
-        needs_manual_loglik = (
-            compute_log_likelihood and not self.backend.use_jax_likelihood(nuts_sampler)
+        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
+            nuts_sampler
         )
         if needs_manual_loglik:
             idata = self._idata
@@ -218,6 +277,141 @@ class SDEM(SpatialModel):
                 idata, ll_total.reshape(n_chains, n_draws_per_chain, n)
             )
 
+        return self._idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
+        """Sample posterior via 3-block Gaussian Gibbs.
+
+        The SDEM model is equivalent to SEM with Z = [X, WX] as the
+        design matrix.  The β block covers both direct and indirect
+        coefficients.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers for the NumPy path. ``-1`` uses
+            all CPUs.  When ``n_jobs=1``, chains run sequentially with
+            progress bars.  When ``n_jobs>1`` (or ``-1``), chains run
+            in parallel via ``joblib``.  Ignored for the JAX path
+            (use ``chain_method`` instead).
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        gibbs_method : str, default "numpy"
+            Execution backend: ``"numpy"`` for Python-loop Gibbs with
+            adaptive slice sampling, or ``"jax"`` for full-JIT Gibbs
+            with MALA for λ.  The JAX path requires JAX and equinox.
+        mala_step_size : float, default 0.05
+            Initial MALA step size for the JAX path.
+            Ignored when ``use_slice=True``.
+        use_mala : bool, default True
+            If True, use MALA for the λ update in the JAX path.
+            Ignored when ``use_slice=True``.
+        use_slice : bool, default True
+            If True, use slice sampling for the λ update in the
+            JAX path.  Slice sampling gives much better ESS per sample
+            than MALA.  Ignored when ``gibbs_method="numpy"``.
+        slice_width : float or None, default None
+            Initial step-out width for slice sampling.  If None, defaults
+            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
+            ``use_slice=False`` or ``gibbs_method="numpy"``.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+            ``"vectorized"`` uses ``jax.vmap`` for JAX-native
+            parallelism (all chains on one device).  ``"sequential"``
+            runs chains one after another with progress bars.
+            ``"parallel"`` is not supported for the JAX path.
+            If None, defaults to ``"vectorized"`` when
+            ``gibbs_method="jax"``.  Ignored for the NumPy path
+            (use ``n_jobs`` to control parallelism instead).
+
+        Returns
+        -------
+        az.InferenceData
+            With ``posterior``, ``log_likelihood``, and ``observed_data``
+            groups.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model uses a robust (Student-t) likelihood.
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
+        from .._samplers._gibbs_estimation import GaussianSEMGibbs
+
+        Z = np.hstack([self._X, self._WX])  # (n, 2k)
+        feature_names = list(self._feature_names) + [
+            f"W*{name}" for name in self._wx_feature_names
+        ]
+
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSEMGibbs(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type="sdem",
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+        )
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            use_slice=use_slice,
+            slice_width=slice_width,
+            chain_method=chain_method,
+        )
         return self._idata
 
     def _beta_names(self) -> list[str]:
@@ -249,9 +443,8 @@ class SDEM(SpatialModel):
             )
         Z = np.hstack([self._X, self._WX])  # (n, 2k)
 
-        bounds = self._logdet_bounds
-        lam_lower = bounds.rho_min
-        lam_upper = bounds.rho_max
+        lam_lower = self.priors.get("lam_lower", -1.0)
+        lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
@@ -266,7 +459,7 @@ class SDEM(SpatialModel):
         WZ = self._WZ_sdem_cache
 
         n_obs = int(self._y.shape[0])
-        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
+        jax_logp = use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)

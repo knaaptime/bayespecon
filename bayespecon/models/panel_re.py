@@ -22,6 +22,7 @@ the convention used by all other panel classes in this package.
 
 from __future__ import annotations
 
+import arviz as az
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
@@ -33,6 +34,7 @@ from ..diagnostics.lmtests import (
     SDEM_PANEL_SUITE,
     SEM_PANEL_SUITE,
 )
+from ._sampler import use_jax_likelihood
 from .panel_base import SpatialPanelModel
 from .priors import (
     PanelOLSREPriors,
@@ -122,9 +124,9 @@ class OLSPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _priors_cls = PanelOLSREPriors
-
     _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
+
+    _priors_cls = PanelOLSREPriors
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)  # RE always uses raw (pooled) data
@@ -308,9 +310,9 @@ class SARPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _priors_cls = PanelSARREPriors
-
     _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
+
+    _priors_cls = PanelSARREPriors
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -357,6 +359,86 @@ class SARPanelRE(SpatialPanelModel):
 
         return model
 
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+    ) -> "az.InferenceData":
+        """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², ρ).
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers. ``-1`` uses all CPUs.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+
+        Returns
+        -------
+        az.InferenceData
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._re_gibbs import REGibbsPriors
+        from .._samplers._re_gibbs_estimation import GaussianSARREGibbs
+
+        priors = REGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            sigma_alpha_sigma=self.priors.get("sigma_alpha_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSARREGibbs(
+            y=self._y,
+            X=self._X,
+            W_sparse=self._W_sparse_NT,
+            Wy=self._Wy,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=list(self._feature_names),
+            N=self._N,
+            T=self._T,
+            unit_idx=self._unit_idx,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+        )
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+        )
+        return self._idata
+
     def fit(
         self,
         draws: int = 2000,
@@ -365,15 +447,59 @@ class SARPanelRE(SpatialPanelModel):
         target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
+        sampler: str = "gibbs",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ):
-        """Sample posterior and attach Jacobian-corrected log-likelihood.
+        """Sample posterior for SAR panel RE model.
 
-        The SAR panel RE model uses ``pm.Normal("obs", observed=y)`` which
-        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
-        Jacobian term that is not captured.  When ``log_likelihood=True``
-        is requested, the Jacobian correction is added post-sampling.
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup draws per chain (NUTS) or burn-in draws
+            (Gibbs).
+        chains : int, default 4
+            Number of independent chains.
+        target_accept : float, default 0.9
+            NUTS target acceptance probability. Ignored for Gibbs.
+        random_seed : int or None
+            Seed for reproducibility.
+        idata_kwargs : dict or None
+            Extra kwargs for InferenceData (NUTS only).
+        sampler : str, default "gibbs"
+            Sampler to use: ``"gibbs"`` for 5-block Gibbs or ``"nuts"``
+            for PyMC NUTS.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup (Gibbs only).
+        n_jobs : int, default -1
+            Number of parallel workers (Gibbs only).
+        progressbar : bool, default True
+            Show per-chain progress bars (Gibbs only).
+        **sample_kwargs
+            Extra keyword arguments forwarded to PyMC (NUTS only).
+
+        Returns
+        -------
+        az.InferenceData
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path ---
         idata_kwargs = idata_kwargs or {}
         idata = super().fit(
             draws=draws,
@@ -518,11 +644,74 @@ class SEMPanelRE(SpatialPanelModel):
         If True, replace the Normal innovation with Student-t. See
         *Robust regression* below.
 
+    mundlak : bool, default False
+        If True, use the Mundlak (1978) correlated random effects
+        specification.  This augments the design matrix with unit-level
+        time-averages of the regressors, modelling the correlation
+        between :math:`\\alpha_i` and :math:`X` explicitly.  See
+        *Mundlak / Correlated Random Effects* below for details.
+
     Notes
     -----
     The base-class ``model`` argument is not exposed; pooled mean
     structure (``model=0``) is used because unit heterogeneity is
     captured by the random effect rather than by within-unit demeaning.
+
+    **Identification of λ in SEM-RE models**
+
+    The spatial error parameter :math:`\\lambda` is **weakly identified**
+    when random effects :math:`\\alpha_i` are present.  The random effects
+    absorb spatial correlation across units, making it difficult for the
+    data to distinguish between :math:`\\lambda` (spatial error dependence)
+    and :math:`\\sigma_\\alpha^2` (between-unit variance).  Both Gibbs and
+    NUTS samplers will tend to estimate :math:`\\lambda` near zero even when
+    the true value is moderate, because the posterior genuinely
+    concentrates there.  This is a model identification issue, not a
+    sampler bug.
+
+    Possible remedies include:
+
+    - Use fixed effects (``SEMPanelFE``) instead of random effects
+    - Use a Spatial Durbin model (``SDMPanelRE``) that includes WX terms
+    - Use longer panels (:math:`T \\to \\infty`) which provide more
+      information to separate :math:`\\lambda` from :math:`\\alpha`
+    - Use the Mundlak specification (``mundlak=True``) to test for
+      RE-regressor correlation, though note this does not resolve
+      the :math:`\\lambda` identification issue itself
+
+    **Mundlak / Correlated Random Effects**
+
+    The Mundlak (1978) approach models the correlation between
+    :math:`\\alpha_i` and the regressors by decomposing the random effect:
+
+    .. math::
+
+        \\alpha_i = \\bar{X}_i \\gamma + \\eta_i, \\quad \\eta_i \\sim N(0, \\sigma_\\eta^2)
+
+    where :math:`\\bar{X}_i = T^{-1} \\sum_t X_{it}` are the unit-level
+    means of the time-varying regressors.  Substituting into the model
+    yields an augmented regression with :math:`[X, \\bar{X}]` as
+    regressors, where :math:`\\gamma` is estimated alongside
+    :math:`\\beta` and the residual random effect :math:`\\eta_i`
+    captures only orthogonal unit heterogeneity.
+
+    **Important**: The Mundlak specification addresses RE-regressor
+    correlation but does **not** resolve the :math:`\\lambda`
+    identification issue described above.  Even with Mundlak
+    augmentation, :math:`\\lambda` remains weakly identified because
+    :math:`\\eta_i` can still absorb spatial correlation.  The Mundlak
+    approach is primarily useful for:
+
+    - Testing whether :math:`\\alpha_i` is correlated with regressors
+      (LR test of :math:`\\gamma = 0`)
+    - Obtaining consistent :math:`\\beta` estimates when RE are
+      correlated with :math:`X`
+    - Reducing :math:`\\sigma_\\alpha^2` by absorbing the explained
+      between-unit variation into :math:`\\gamma`
+
+    Following Baltagi (2023), the Mundlak approach does *not* yield
+    the same estimates as fixed effects for spatial models (unlike
+    the non-spatial case), but MLE/Gibbs estimation remains valid.
 
     **Robust regression**
 
@@ -540,14 +729,95 @@ class SEMPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _priors_cls = PanelSEMREPriors
-
     _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
-    def __init__(self, **kwargs):
+    _priors_cls = PanelSEMREPriors
+
+    def __init__(self, mundlak: bool = False, **kwargs):
         kwargs.pop("model", None)
         super().__init__(model=0, **kwargs)
         self._unit_idx = np.arange(self._N * self._T) % self._N
+        self._mundlak = mundlak
+
+        if mundlak:
+            self._build_mundlak_augmentation()
+
+    def _build_mundlak_augmentation(self):
+        """Compute unit-level means of X and augment the design matrix.
+
+        The Mundlak (1978) approach models correlated random effects as:
+
+            α_i = X̄_i γ + η_i
+
+        where X̄_i = T⁻¹ Σ_t X_{it} are unit-level time averages.
+        Substituting into the model yields an augmented regression with
+        [X, X̄_expanded] as regressors, where γ is estimated alongside β
+        and the residual random effect η_i captures only orthogonal
+        unit heterogeneity.
+
+        This addresses RE-regressor correlation but does NOT resolve
+        the α-λ identification issue in SEM-RE models — η_i can still
+        absorb spatial correlation.  The Mundlak approach is primarily
+        useful for testing RE-regressor correlation (LR test of γ=0)
+        and obtaining consistent β estimates when RE are correlated
+        with X.
+
+        Following Baltagi (2023), the Mundlak approach does *not* yield
+        the same estimates as fixed effects for spatial models (unlike
+        the non-spatial case), but MLE/Gibbs estimation remains valid.
+
+        Note: Constant/intercept columns are excluded from the Mundlak
+        means because their unit-level averages are collinear with the
+        original intercept.
+        """
+        X = self._X
+        N, _T = self._N, self._T
+        unit_idx = self._unit_idx
+
+        # Identify non-constant columns for Mundlak means
+        # Constant columns have unit means equal to the constant itself,
+        # creating perfect collinearity with the original intercept.
+        nonconst_idx = self._nonintercept_indices
+        if len(nonconst_idx) == 0:
+            # No time-varying regressors — Mundlak has nothing to add
+            return
+
+        # Compute unit-level means for non-constant columns only
+        counts = np.bincount(unit_idx, minlength=N)
+        X_bar = np.zeros((N, len(nonconst_idx)))
+        for j_idx, j in enumerate(nonconst_idx):
+            X_bar[:, j_idx] = (
+                np.bincount(unit_idx, weights=X[:, j], minlength=N) / counts
+            )
+
+        # Expand to observation level: repeat each unit's means T times
+        X_bar_expanded = X_bar[unit_idx]  # shape (NT, len(nonconst_idx))
+
+        # Store original X and feature names for reference
+        self._X_original = X.copy()
+        self._feature_names_original = list(self._feature_names)
+
+        # Augment X: [X, X̄_expanded]
+        self._X = np.column_stack([X, X_bar_expanded])
+
+        # Augment feature names (only for non-constant columns)
+        mundlak_names = [
+            f"mundlak_{self._feature_names_original[j]}" for j in nonconst_idx
+        ]
+        self._feature_names = list(self._feature_names_original) + mundlak_names
+
+    @property
+    def mundlak(self) -> bool:
+        """Whether the Mundlak correlated RE specification is active."""
+        return self._mundlak
+
+    @property
+    def mundlak_names(self) -> list[str] | None:
+        """Names of the Mundlak augmentation columns, or None if inactive."""
+        if not self._mundlak:
+            return None
+        k_orig = len(self._feature_names_original)
+        return list(self._feature_names[k_orig:])
 
     def _model_coords(self) -> dict:
         coords = super()._model_coords()
@@ -582,7 +852,7 @@ class SEMPanelRE(SpatialPanelModel):
 
         n_obs = int(self._y.shape[0])
         inv_n = 1.0 / n_obs  # _logdet_pytensor_fn already includes T multiplier
-        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
+        jax_logp = use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -659,6 +929,85 @@ class SEMPanelRE(SpatialPanelModel):
 
         return model
 
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+    ) -> "az.InferenceData":
+        """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², λ).
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers. ``-1`` uses all CPUs.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+
+        Returns
+        -------
+        az.InferenceData
+        """
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        from .._samplers._re_gibbs import REGibbsPriors
+        from .._samplers._re_gibbs_estimation import GaussianSEMREGibbs
+
+        priors = REGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            sigma_alpha_sigma=self.priors.get("sigma_alpha_sigma", 10.0),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs = GaussianSEMREGibbs(
+            y=self._y,
+            X=self._X,
+            W_sparse=self._W_sparse_NT,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=list(self._feature_names),
+            N=self._N,
+            T=self._T,
+            unit_idx=self._unit_idx,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+        )
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+        )
+        return self._idata
+
     def fit(
         self,
         draws: int = 2000,
@@ -667,15 +1016,59 @@ class SEMPanelRE(SpatialPanelModel):
         target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
+        sampler: str = "gibbs",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
         **sample_kwargs,
     ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
+        """Sample posterior for SEM panel RE model.
 
-        The SEM panel RE model uses ``pm.Potential`` for both the Gaussian
-        error log-likelihood and the Jacobian, so neither is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, including the random effects ``alpha[unit_idx]``.
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup draws per chain (NUTS) or burn-in draws
+            (Gibbs).
+        chains : int, default 4
+            Number of independent chains.
+        target_accept : float, default 0.9
+            NUTS target acceptance probability. Ignored for Gibbs.
+        random_seed : int or None
+            Seed for reproducibility.
+        idata_kwargs : dict or None
+            Extra kwargs for InferenceData (NUTS only).
+        sampler : str, default "gibbs"
+            Sampler to use: ``"gibbs"`` for 5-block Gibbs or ``"nuts"``
+            for PyMC NUTS.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup (Gibbs only).
+        n_jobs : int, default -1
+            Number of parallel workers (Gibbs only).
+        progressbar : bool, default True
+            Show per-chain progress bars (Gibbs only).
+        **sample_kwargs
+            Extra keyword arguments forwarded to PyMC (NUTS only).
+
+        Returns
+        -------
+        az.InferenceData
         """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path ---
         idata_kwargs = idata_kwargs or {}
         idata = super().fit(
             draws=draws,
@@ -875,9 +1268,9 @@ class SDEMPanelRE(SpatialPanelModel):
     captured by the random effect rather than by within-unit demeaning.
     """
 
-    _priors_cls = PanelSDEMREPriors
-
     _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
+
+    _priors_cls = PanelSDEMREPriors
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -924,7 +1317,7 @@ class SDEMPanelRE(SpatialPanelModel):
 
         n_obs = int(self._y.shape[0])
         inv_n = 1.0 / n_obs  # _logdet_pytensor_fn already includes T multiplier
-        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
+        jax_logp = use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)

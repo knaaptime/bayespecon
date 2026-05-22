@@ -44,6 +44,12 @@ class BasePriors:
         Normal prior on regression coefficients.
     sigma_sigma
         Half-normal scale on the observation-noise standard deviation.
+        **NUTS only.**  When ``sampler="gibbs"`` the σ² block uses a
+        fixed weakly informative Jeffreys prior p(σ²) ∝ 1/σ²
+        (approximated as Inv-Γ(ε, ε) with ε = 1e-3) so that the
+        posterior is dominated by the likelihood and agrees with the
+        NUTS posterior.  The ``sigma_sigma`` value is ignored by the
+        Gibbs sampler.
     nu_lam
         Rate of the Exponential prior on Student-t degrees of freedom when
         ``robust=True``.  Mean ``1/nu_lam`` (default mean ≈ 30).

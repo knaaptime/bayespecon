@@ -499,7 +499,8 @@ def bayesian_panel_robust_lm_lag_test(
 
     # Information matrix for lag test
     beta_mean = np.mean(beta_draws, axis=0)
-    y_hat = X @ beta_mean
+    X_beta = _resolve_X_for_beta(model, beta_draws)
+    y_hat = X_beta @ beta_mean
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
     M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
     WbMWb = float(Wy_hat @ M_Wy)
@@ -591,7 +592,8 @@ def bayesian_panel_robust_lm_error_test(
 
     # Information matrix for lag test
     beta_mean = np.mean(beta_draws, axis=0)
-    y_hat = X @ beta_mean
+    X_beta = _resolve_X_for_beta(model, beta_draws)
+    y_hat = X_beta @ beta_mean
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
     M_Wy = Wy_hat - X @ (XtX_inv @ (X.T @ Wy_hat))
     WbMWb = float(Wy_hat @ M_Wy)
@@ -772,7 +774,8 @@ def bayesian_panel_lm_sdm_joint_test(
     # Information matrix (panel-adjusted)
     beta_mean = np.mean(beta_draws, axis=0)
     _, sigma2_mean = _posterior_mean_sigma2(idata)
-    y_hat = X @ beta_mean
+    X_beta = _resolve_X_for_beta(model, beta_draws)
+    y_hat = X_beta @ beta_mean
 
     info = _panel_info_matrix_blocks(
         X,
@@ -974,6 +977,7 @@ def bayesian_panel_robust_lm_lag_sdm_test(
     beta_mean = np.mean(beta_draws, axis=0)
     _, sigma2_mean = _posterior_mean_sigma2(idata)
     W_NT = sp.kron(sp.identity(T, format="csr"), W_sp, format="csr")
+    Z_beta = _resolve_X_for_beta(model, beta_draws)
     blocks = _info_matrix_blocks_slx_robust(
         X=X,
         WX=WX,
@@ -981,6 +985,7 @@ def bayesian_panel_robust_lm_lag_sdm_test(
         sigma2=sigma2_mean,
         beta_slx_mean=beta_mean,
         T_ww=T * model._T_ww,
+        Z_beta=Z_beta,
     )
     J_rr = blocks["J_rho_rho"]
     J_ll = blocks["J_lam_lam"]
@@ -1083,7 +1088,8 @@ def bayesian_panel_robust_lm_wx_test(
     beta_mean = np.mean(beta_draws, axis=0)
     rho_mean = float(np.mean(rho_draws))
     _, sigma2_mean = _posterior_mean_sigma2(idata)
-    y_hat = rho_mean * Wy + X @ beta_mean
+    X_beta = _resolve_X_for_beta(model, beta_draws)
+    y_hat = rho_mean * Wy + X_beta @ beta_mean
     Wy_hat = _panel_spatial_lag(W_sp, y_hat, N, T)
 
     info = _panel_info_matrix_blocks(
@@ -1178,6 +1184,7 @@ def bayesian_panel_robust_lm_error_sdem_test(
     beta_mean = np.mean(beta_draws, axis=0)
     _, sigma2_mean = _posterior_mean_sigma2(idata)
     W_NT = sp.kron(sp.identity(T, format="csr"), W_sp, format="csr")
+    Z_beta = _resolve_X_for_beta(model, beta_draws)
     blocks = _info_matrix_blocks_slx_robust(
         X=X,
         WX=WX,
@@ -1185,6 +1192,7 @@ def bayesian_panel_robust_lm_error_sdem_test(
         sigma2=sigma2_mean,
         beta_slx_mean=beta_mean,
         T_ww=T * model._T_ww,
+        Z_beta=Z_beta,
     )
     J_rr = blocks["J_rho_rho"]
     J_ll = blocks["J_lam_lam"]

@@ -195,3 +195,33 @@ $$y_t = X_t\beta + u_t, \quad u_t = \lambda_d W_d u_t + \lambda_o W_o u_t + \lam
 ### SEMFlowSeparablePanel
 
 $$y_t = X_t\beta + u_t, \quad u_t = \lambda_d W_d u_t + \lambda_o W_o u_t - \lambda_d \lambda_o W_w u_t + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0, \sigma^2 I_N)$$
+
+## Sampling Backends
+
+### NUTS (default)
+
+All models support NUTS (No-U-Turn Sampler) via PyMC by default. NUTS handles arbitrary posterior geometries but can be slow for spatial models due to the banana-shaped posterior created by the spatial Jacobian.
+
+### Gibbs Sampler (Gaussian models only)
+
+Gaussian cross-sectional models (SAR, SEM, SDM, SDEM) support a custom block-Gibbs sampler via `sampler="gibbs"`:
+
+```python
+model = SAR(y=y, X=X, W=W)
+idata = model.fit(sampler="gibbs", draws=2000, tune=1000, chains=4)
+```
+
+The Gibbs sampler exploits conditional conjugacy with a 3-block strategy:
+
+| Block | Full conditional | Update |
+|---|---|---|
+| β \| ρ, σ², y | Normal | Direct draw (conjugate) |
+| σ² \| β, ρ, y | Inverse-Gamma | Direct draw (conjugate) |
+| ρ/λ \| β, σ², y | 1-D non-conjugate | Slice sampling or MALA |
+
+Two execution backends are available:
+
+- **NumPy** (`gibbs_method="numpy"`, default): Adaptive slice sampling for ρ/λ. Pure Python/NumPy, no JAX dependency.
+- **JAX** (`gibbs_method="jax"`): Full-JIT compilation via `@eqx.filter_jit`. Uses MALA (gradient-guided) or RW-MH for ρ/λ. Requires JAX and equinox.
+
+See the [Gibbs Sampler User Guide](user-guide/gibbs_sampler.ipynb) for details.

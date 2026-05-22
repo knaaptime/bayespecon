@@ -60,15 +60,15 @@ class TestParseW:
         return _W_to_graph(_rook_W(4))
 
     def test_accepts_graph(self, W_graph):
-        result = _parse_W(W_graph, n=4)
-        assert isinstance(result, Graph)
-        assert result.sparse.shape == (4, 4)
+        W_csr, is_row_std = _parse_W(W_graph, n=4)
+        assert sp.issparse(W_csr)
+        assert W_csr.shape == (4, 4)
 
     def test_accepts_sparse_matrix(self):
         W_sp = sp.csr_matrix(_rook_W(4))
-        result = _parse_W(W_sp, n=4)
-        assert isinstance(result, Graph)
-        assert result.sparse.shape == (4, 4)
+        W_csr, is_row_std = _parse_W(W_sp, n=4)
+        assert sp.issparse(W_csr)
+        assert W_csr.shape == (4, 4)
 
     def test_rejects_legacy_libpysal_W(self):
         """A mock object with .sparse and .transform should raise TypeError."""

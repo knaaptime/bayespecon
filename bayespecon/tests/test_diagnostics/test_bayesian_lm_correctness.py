@@ -669,6 +669,7 @@ def _mock_panel_ols(y, X, WX, Wn_sp, T_ww, beta_hat, sigma_hat, N, T, draws=1):
     model._T_ww = T_ww
     model._N = N
     model._T = T
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = _idata(
         beta=np.tile(beta_hat, (draws, 1)),
         sigma=np.full(draws, sigma_hat),
@@ -687,6 +688,7 @@ def _mock_panel_sar(y, X, WX, Wn_sp, T_ww, beta_hat, rho_hat, sigma_hat, N, T, d
     model._T_ww = T_ww
     model._N = N
     model._T = T
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = _idata(
         beta=np.tile(beta_hat, (draws, 1)),
         rho=np.full(draws, rho_hat),
@@ -708,6 +710,7 @@ def _mock_panel_sdm(y, X, WX, Wn_sp, T_ww, beta_hat, rho_hat, sigma_hat, N, T, d
     model._T_ww = T_ww
     model._N = N
     model._T = T
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = _idata(
         beta=np.tile(beta_hat, (draws, 1)),
         rho=np.full(draws, rho_hat),
@@ -731,6 +734,7 @@ def _mock_panel_sdem(
     model._T_ww = T_ww
     model._N = N
     model._T = T
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = _idata(
         beta=np.tile(beta_hat, (draws, 1)),
         lam=np.full(draws, lam_hat),

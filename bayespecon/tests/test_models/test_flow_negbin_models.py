@@ -201,13 +201,13 @@ class TestNegativeBinomialFlowRecovery:
         rho_w_hat = float(idata.posterior["rho_w"].mean())
         alpha_hat = float(idata.posterior["alpha"].mean())
 
-        assert abs(rho_d_hat - rho_d_true) < 0.25, (
+        assert abs(rho_d_hat - rho_d_true) < 0.20, (
             f"rho_d: {rho_d_hat:.3f} vs {rho_d_true}"
         )
-        assert abs(rho_o_hat - rho_o_true) < 0.25, (
+        assert abs(rho_o_hat - rho_o_true) < 0.20, (
             f"rho_o: {rho_o_hat:.3f} vs {rho_o_true}"
         )
-        assert abs(rho_w_hat - rho_w_true) < 0.25, (
+        assert abs(rho_w_hat - rho_w_true) < 0.20, (
             f"rho_w: {rho_w_hat:.3f} vs {rho_w_true}"
         )
         assert abs(alpha_hat - alpha_true) < 1.5, (
@@ -255,10 +255,10 @@ class TestNegativeBinomialFlowRecovery:
 
         # Separable NB with ADVI exhibits materially higher Monte-Carlo variability
         # than the unrestricted NB flow recovery case on this small synthetic sample.
-        assert abs(rho_d_hat - rho_d_true) < 0.60, (
+        assert abs(rho_d_hat - rho_d_true) < 0.45, (
             f"rho_d: {rho_d_hat:.3f} vs {rho_d_true}"
         )
-        assert abs(rho_o_hat - rho_o_true) < 0.40, (
+        assert abs(rho_o_hat - rho_o_true) < 0.30, (
             f"rho_o: {rho_o_hat:.3f} vs {rho_o_true}"
         )
         assert abs(alpha_hat - alpha_true) < 1.5, (
@@ -316,13 +316,13 @@ class TestNegativeBinomialPanelFlowRecovery:
         rho_w_hat = float(idata.posterior["rho_w"].mean())
         alpha_hat = float(idata.posterior["alpha"].mean())
 
-        assert abs(rho_d_hat - rho_d_true) < 0.30, (
+        assert abs(rho_d_hat - rho_d_true) < 0.25, (
             f"rho_d: {rho_d_hat:.3f} vs {rho_d_true}"
         )
-        assert abs(rho_o_hat - rho_o_true) < 0.30, (
+        assert abs(rho_o_hat - rho_o_true) < 0.25, (
             f"rho_o: {rho_o_hat:.3f} vs {rho_o_true}"
         )
-        assert abs(rho_w_hat - rho_w_true) < 0.30, (
+        assert abs(rho_w_hat - rho_w_true) < 0.25, (
             f"rho_w: {rho_w_hat:.3f} vs {rho_w_true}"
         )
         assert abs(alpha_hat - alpha_true) < 1.5, (
@@ -373,10 +373,10 @@ class TestNegativeBinomialPanelFlowRecovery:
 
         # Panel separable NB recovery is noisier under mean-field ADVI; keep this
         # as a coarse calibration test rather than a tight parameter-recovery check.
-        assert abs(rho_d_hat - rho_d_true) < 0.40, (
+        assert abs(rho_d_hat - rho_d_true) < 0.35, (
             f"rho_d: {rho_d_hat:.3f} vs {rho_d_true}"
         )
-        assert abs(rho_o_hat - rho_o_true) < 0.35, (
+        assert abs(rho_o_hat - rho_o_true) < 0.30, (
             f"rho_o: {rho_o_hat:.3f} vs {rho_o_true}"
         )
         assert abs(alpha_hat - alpha_true) < 1.5, (

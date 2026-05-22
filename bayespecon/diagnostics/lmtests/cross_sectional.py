@@ -708,6 +708,7 @@ def _info_matrix_blocks_slx_robust(
     sigma2: float,
     beta_slx_mean: np.ndarray,
     T_ww: float | None = None,
+    Z_beta: np.ndarray | None = None,
 ) -> dict:
     r"""Compute the (ρ, λ) raw-score variance blocks at the SLX null.
 
@@ -766,6 +767,12 @@ def _info_matrix_blocks_slx_robust(
         dimension as ``W_sparse``.  Computed if not supplied.  For panel
         callers using ``W_NT = I_T ⊗ W`` and a cross-sectional
         ``model._T_ww``, pass ``T * model._T_ww``.
+    Z_beta : np.ndarray or None, optional
+        Design matrix matching the dimensions of ``beta_slx_mean``.
+        When the intercept column was dropped by Gibbs sampling (FE
+        models), this should be ``[X[:, ni], WX]`` where ``ni`` are the
+        non-intercept column indices.  If None, defaults to
+        ``np.hstack([X, WX])`` (the full design including intercept).
 
     Returns
     -------
@@ -777,6 +784,12 @@ def _info_matrix_blocks_slx_robust(
     # Use pseudo-inverse to handle the (rare) case of collinear WX
     # columns; equivalent to np.linalg.inv when ZtZ is full rank.
     ZtZ_inv = np.linalg.pinv(ZtZ)
+
+    # When the intercept was dropped (Gibbs + FE), Z_beta is the
+    # sub-matrix matching the posterior beta dimensions.  Use Z for
+    # projection calculations (M_Z) and Z_beta for WZ @ beta_mean.
+    if Z_beta is None:
+        Z_beta = Z
 
     if T_ww is None:
         T_ww = float(W_sparse.power(2).sum() + W_sparse.multiply(W_sparse.T).sum())
@@ -817,8 +830,10 @@ def _info_matrix_blocks_slx_robust(
     tr_PZ_W_PZ_Wt = float(np.trace(A_ZtWZ @ A_ZtWtZ))
     tr_MZWMZWt = tr_WtW - tr_PZ_WWt - tr_PZ_WtW + tr_PZ_W_PZ_Wt
 
-    # M_Z W Z β̄
-    Wybeta = WZ @ beta_slx_mean  # (n,)
+    # M_Z W Z β̄  (use Z_beta for the beta multiplication when intercept
+    # was dropped, but keep full Z for the M_Z projection).
+    WZ_beta = np.asarray(W_sparse @ Z_beta)  # (n, k_beta)
+    Wybeta = WZ_beta @ beta_slx_mean  # (n,)
     proj = Z @ (ZtZ_inv @ (Z.T @ Wybeta))
     mz_quad = float(np.dot(Wybeta, Wybeta - proj))
 

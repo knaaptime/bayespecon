@@ -1194,7 +1194,7 @@ class KroneckerFlowSolveOp(pt.Op):
 
         Hb = b.reshape(n, n, order="F")
         Hp = np.asarray(lu_d.solve(np.asarray(Hb, dtype=np.float64)), dtype=np.float64)
-        Z = np.asarray(lu_o.solve(Hp.T, trans="T"), dtype=np.float64)
+        Z = np.asarray(lu_o.solve(Hp.T), dtype=np.float64)
         outputs[0][0] = Z.T.ravel(order="F").astype(np.float64)
 
     def infer_shape(self, fgraph, node, input_shapes):
@@ -1302,16 +1302,18 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
             [pt.dscalar(), pt.dscalar(), pt.dmatrix()],
         )
 
-    def _kron_solve(self, lu_o, lu_d, rhs, *, transpose_d=False):
+    def _kron_solve(self, lu_o, lu_d, rhs, *, transpose_d=False, transpose_o=True):
         """Two-step Kronecker solve used for both forward and adjoint passes.
 
         Both ``(Lo⊗Ld) η = B`` (forward) and ``(Lo^T⊗Ld^T) v = G`` (adjoint)
-        use one LU factorisation per Kronecker factor. The second step always
-        solves against ``Lo^T`` via ``trans='T'`` on the LU of ``Lo``.
+        use one LU factorisation per Kronecker factor. The second step solves
+        against ``Lo`` for the forward path (``transpose_o=False``) and against
+        ``Lo^T`` for the adjoint path (``transpose_o=True``, the default for
+        backward compatibility with the VJP).
 
         For each period t the system ``L_first H'_t = H_b_t`` is solved
         simultaneously for all T periods via a single (n, n*T) RHS.
-        The second step ``Lo_T Z_t = H'_t^T`` is likewise batched.
+        The second step ``L_second Z_t = H'_t^T`` is likewise batched.
 
         Parameters
         ----------
@@ -1323,6 +1325,10 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
             Right-hand-side matrix.
         transpose_d : bool, default False
             If True, solve the first step against ``Ld^T``.
+        transpose_o : bool, default True
+            If True (default, adjoint convention), solve the second step
+            against ``Lo^T``. Set to False for the forward solve, which
+            needs ``Lo^{-1}`` (consistent with the single-vector forward).
 
         Returns
         -------
@@ -1339,14 +1345,18 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
             dtype=np.float64,
         )
         Hp3 = Hp.reshape(n, n, T, order="F")  # (n, n, T): Hp3[:,:,t] = H'_t
-        # Step 2: Lo_T Z_t = H'_t^T  (batch: (n, n*T) solve)
+        # Step 2: L_second Z_t = H'_t^T  (batch: (n, n*T) solve)
         # Pack RHS so that col t*n+j = H'_t[j,:] (j-th row of H'_t = j-th col of H'_t^T)
         # Hp3.transpose(2,0,1) shape (T,n,n): result[t,j,:] = H'_t[j,:]
         # C-order reshape to (T*n, n): result_2d[t*n+j, i] = H'_t[j, i]
         # Transpose to (n, T*n): RHS2[:, t*n+j] = H'_t[j, :] ✓
         RHS2 = Hp3.transpose(2, 0, 1).reshape(T * n, n).T  # (n, n*T)
         Z_h = np.asarray(
-            lu_o.solve(np.asarray(RHS2, dtype=np.float64), trans="T"), dtype=np.float64
+            lu_o.solve(
+                np.asarray(RHS2, dtype=np.float64),
+                trans="T" if transpose_o else "N",
+            ),
+            dtype=np.float64,
         )
         Z3 = Z_h.reshape(n, n, T, order="F")  # (n, n, T): Z3[:,:,t] = Z_t
         # result[:, t] = Z_t^T.ravel('F') = H_eta_t.ravel('F')
@@ -1472,11 +1482,14 @@ class KroneckerFlowSolveMatrixOp(pt.Op):
         lu_o = _factor_kron_factor(self._W_dense, self._W, ro, n, self._I_dense)
 
         # Forward: (Lo⊗Ld) η = b  →  Ld H' Lo^T = H_b
-        # Step 1: Ld H' = R;  Step 2: Lo^T Z = H'^T (batched over T)
+        # Step 1: Ld H' = R;  Step 2: Lo H_eta^T = H'^T (batched over T)
+        # transpose_o=False makes step 2 use Lo (not Lo^T), matching the
+        # single-vector forward in KroneckerFlowSolveOp.perform.
         result = self._vjp_op._kron_solve(
             lu_o,
             lu_d,
             np.asarray(B, dtype=np.float64),
+            transpose_o=False,
         )
         outputs[0][0] = np.asarray(result, dtype=np.float64)
 
@@ -1540,11 +1553,12 @@ class _SparseSARVJPOp(pt.Op):
 
     __props__ = ("_op_id",)
 
-    def __init__(self, W: sp.csr_matrix) -> None:
+    def __init__(self, W: sp.csr_matrix, eigendecomposition=None) -> None:
         self._W = W.tocsr().astype(np.float64)
         self._n = W.shape[0]
         self._I = sp.eye(self._n, format="csr", dtype=np.float64)
         self._W_dense = W.toarray() if self._n <= _kron_dense_max() else None
+        self._eigendecomposition = eigendecomposition
         self._cached_rho: float | None = None
         self._cached_backend: str | None = None
         self._cached_solver = None
@@ -1691,7 +1705,7 @@ class SparseSARSolveOp(pt.Op):
 
     __props__ = ("_op_id",)
 
-    def __init__(self, W: sp.csr_matrix) -> None:
+    def __init__(self, W: sp.csr_matrix, eigendecomposition=None) -> None:
         self._W = W.tocsr().astype(np.float64)
         self._n = W.shape[0]
         self._I = sp.eye(self._n, format="csr", dtype=np.float64)
@@ -1701,10 +1715,15 @@ class SparseSARSolveOp(pt.Op):
         self._I_dense = (
             np.eye(self._n, dtype=np.float64) if self._W_dense is not None else None
         )
+        # Shared eigendecomposition cache (eigs, V, Vinv) in complex128,
+        # consumed from the model's _W_eigendecomposition property.
+        # When provided, _build_eigen_sar_paths reuses it instead of
+        # computing its own decomposition.
+        self._eigendecomposition = eigendecomposition
         self._cached_rho: float | None = None
         self._cached_backend: str | None = None
         self._cached_solver = None
-        self._vjp_op = _SparseSARVJPOp(self._W)
+        self._vjp_op = _SparseSARVJPOp(self._W, eigendecomposition=eigendecomposition)
         self._op_id = next(_op_id_counter)
         super().__init__()
 

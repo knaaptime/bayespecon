@@ -13,6 +13,24 @@ from . import (
 from . import (
     ops as ops,
 )
+from ._samplers._gaussian_gibbs import (
+    GaussianGibbsCache as GaussianGibbsCache,
+)
+from ._samplers._gaussian_gibbs import (
+    GaussianGibbsPriors as GaussianGibbsPriors,
+)
+from ._samplers._gaussian_gibbs import (
+    GaussianGibbsState as GaussianGibbsState,
+)
+from ._samplers._gibbs_estimation import (
+    GaussianSARGibbs as GaussianSARGibbs,
+)
+from ._samplers._gibbs_estimation import (
+    GaussianSEMGibbs as GaussianSEMGibbs,
+)
+from ._samplers._gibbs_estimation import (
+    GibbsEstimation as GibbsEstimation,
+)
 from .config import (
     enable_compile_cache as enable_compile_cache,
 )
@@ -138,6 +156,12 @@ from .models import (
 )
 from .models import (
     SARNegativeBinomial as SARNegativeBinomial,
+)
+from .models import (
+    SARNegativeBinomialLatent as SARNegativeBinomialLatent,
+)
+from .models import (
+    SARNegBinLatent as SARNegBinLatent,
 )
 from .models import (
     SARPanelDynamic as SARPanelDynamic,

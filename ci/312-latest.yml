@@ -22,3 +22,11 @@ dependencies:
   - lazy_loader
   - fastprogress
   - nutpie
+  - polyagamma
+  - scikit-umfpack
+  - scikit-sparse
+  - optimistix
+
+  - pip:
+    - klujax
+    - traceax 

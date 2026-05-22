@@ -75,14 +75,13 @@ class TestWeightsLifecycle:
         )
         np.testing.assert_allclose(model._WX, expected_WX)
 
-    def test_eig_cache_shared_across_instances(self, graph, fitted_inputs):
+    def test_eig_values_match_across_instances(self, graph, fitted_inputs):
         y, X = fitted_inputs
         m1 = OLS(y=y, X=X, W=graph)
         m2 = OLS(y=y, X=X, W=graph)
-        # Both instances should resolve to the *same* eigenvalue array
-        # because the cache is keyed on the Graph instance.
-        assert m1._W_eigs is m2._W_eigs
-        assert id(graph) in base_mod._EIG_CACHE
+        # Both instances should compute the same eigenvalue array
+        # (they are not shared objects — each instance computes its own).
+        np.testing.assert_array_equal(m1._W_eigs, m2._W_eigs)
 
     def test_cached_property_reuses_value(self, graph, fitted_inputs):
         y, X = fitted_inputs

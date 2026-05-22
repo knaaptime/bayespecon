@@ -76,12 +76,9 @@ def test_make_logdet_fn_int_mc_reject_negative_rho_min_for_matrix_input():
 
 
 def test_resolve_logdet_bounds_uses_prior_by_default():
-    W = _toy_w(5)
-    eigs = np.linalg.eigvals(W).real
     out = logdet.resolve_logdet_bounds(
         "chebyshev",
-        n=W.shape[0],
-        eigs=eigs,
+        n=5,
         priors={"rho_lower": -0.7, "rho_upper": 0.8},
     )
     assert out.method == "chebyshev"
@@ -94,13 +91,10 @@ def test_resolve_logdet_bounds_autoclamps_negative_prior_for_spline_mc():
     """Prior/default-source negative lower bounds are silently clamped to
     the supported positive sub-interval for positive-only methods.
     Explicit overrides still raise (see test below)."""
-    W = _toy_w(5)
-    eigs = np.linalg.eigvals(W).real
     for method in ("sparse_spline", "grid_mc"):
         out = logdet.resolve_logdet_bounds(
             method,
-            n=W.shape[0],
-            eigs=eigs,
+            n=5,
             priors={"rho_lower": -0.5, "rho_upper": 0.8},
         )
         assert out.method == method
@@ -109,26 +103,20 @@ def test_resolve_logdet_bounds_autoclamps_negative_prior_for_spline_mc():
 
 
 def test_resolve_logdet_bounds_rejects_negative_override_for_spline_mc():
-    W = _toy_w(5)
-    eigs = np.linalg.eigvals(W).real
     with pytest.raises(ValueError, match="nonnegative rho"):
         logdet.resolve_logdet_bounds(
             "sparse_spline",
-            n=W.shape[0],
-            eigs=eigs,
+            n=5,
             rho_min=-0.5,
             rho_max=0.8,
         )
 
 
 def test_resolve_logdet_bounds_rejects_bad_override_pair():
-    W = _toy_w(5)
-    eigs = np.linalg.eigvals(W).real
     with pytest.raises(ValueError, match="provided together"):
         logdet.resolve_logdet_bounds(
             "chebyshev",
-            n=W.shape[0],
-            eigs=eigs,
+            n=5,
             rho_min=-0.5,
             rho_max=None,
         )
