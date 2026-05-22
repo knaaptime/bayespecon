@@ -103,7 +103,7 @@ Mundlak, Y. (1978). On the pooling of time series and cross section data.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
@@ -111,12 +111,9 @@ import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve
 
 from ._gaussian_gibbs import (
-    GaussianGibbsCache,
-    GaussianGibbsPriors,
     SliceWidthState,
     slice_sample_1d_adaptive,
 )
-
 
 # ---------------------------------------------------------------------------
 # State and configuration dataclasses
@@ -1030,7 +1027,7 @@ def run_re_chain(
     Wy = cache.Wy
 
     # Precompute group counts for α sampling
-    group_counts = np.bincount(unit_idx, minlength=N)
+    np.bincount(unit_idx, minlength=N)
 
     for i in range(total_iters):
         # Expand α to observation level

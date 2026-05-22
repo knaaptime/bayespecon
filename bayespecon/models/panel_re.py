@@ -22,6 +22,7 @@ the convention used by all other panel classes in this package.
 
 from __future__ import annotations
 
+import arviz as az
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt

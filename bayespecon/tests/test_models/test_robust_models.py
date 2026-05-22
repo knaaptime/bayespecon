@@ -110,7 +110,7 @@ class TestRobustCrossSectional:
     def test_robust_builds_and_samples(self, request, cls, data_fixture, extra_var):
         y, X, W = request.getfixturevalue(data_fixture)
         W_graph = W_to_graph(W)
-        model = cls(y=y, X=X, W=W_graph, robust=True, sampler='nuts')
+        model = cls(y=y, X=X, W=W_graph, robust=True, sampler="nuts")
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior
         assert extra_var in idata.posterior

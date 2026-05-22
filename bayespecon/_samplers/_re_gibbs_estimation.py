@@ -21,12 +21,10 @@ import scipy.sparse as sp
 _log = logging.getLogger(__name__)
 
 from ._chain_runner import run_chains
-from ._gaussian_gibbs import SliceWidthState
 from ._idata import gibbs_to_inference_data
 from ._re_gibbs import (
     REGibbsCache,
     REGibbsPriors,
-    REGibbsState,
     _initialize_re_gibbs,
     run_re_chain,
 )
