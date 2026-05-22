@@ -34,7 +34,7 @@ from typing import Callable
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.linalg import cho_factor, cho_solve
+from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 from ._slice import (
     SliceWidthState,
@@ -282,7 +282,7 @@ def _sample_beta_conjugate(
     L, lower = cho_factor(post_prec)
     post_mean = cho_solve((L, lower), rhs)
     z = rng.standard_normal(k)
-    beta = post_mean + cho_solve((L, lower), z, overwrite_b=True)
+    beta = post_mean + solve_triangular(L, z, lower=lower, trans="T")
     return beta
 
 

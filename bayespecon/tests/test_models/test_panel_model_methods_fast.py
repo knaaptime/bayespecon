@@ -66,7 +66,7 @@ def test_panel_fe_fitted_values_and_effects_with_mock_posteriors():
 
     # FE models drop the intercept column, so beta has k-1 elements
     # (slope only) for OLS/SAR/SEM, and (k-1 + kw) for SDM/SDEM/SLX.
-    beta_1 = np.array([0.9])           # slope only (intercept dropped)
+    beta_1 = np.array([0.9])  # slope only (intercept dropped)
     beta_2_fe = np.array([0.9, 0.15])  # slope + WX (intercept dropped)
 
     ols = OLSPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)

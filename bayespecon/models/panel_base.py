@@ -420,8 +420,10 @@ class SpatialPanelModel(ABC):
                 # Build a mapping: for each original column index, how many
                 # dropped (constant) columns precede it?
                 dropped = sorted(set(range(self._X.shape[1])) - set(ni))
-                shift = {orig: orig - sum(d < orig for d in dropped)
-                         for orig in range(self._X.shape[1])}
+                shift = {
+                    orig: orig - sum(d < orig for d in dropped)
+                    for orig in range(self._X.shape[1])
+                }
                 self._X = self._X[:, ni]
                 self._feature_names = [self._feature_names[i] for i in ni]
                 # Shift spatial-lag column indices to account for dropped cols.

@@ -52,7 +52,9 @@ from bayespecon.tests.helpers import (
 pytestmark = [pytest.mark.slow, pytest.mark.recovery]
 
 # Minimal sampling for build/smoke tests — just need posterior to exist
-QUICK_KWARGS = dict(tune=100, draws=100, chains=2, random_seed=42, progressbar=False, sampler='nuts')
+QUICK_KWARGS = dict(
+    tune=100, draws=100, chains=2, random_seed=42, progressbar=False, sampler="nuts"
+)
 
 SIDE = 6  # 36 cross-sectional units
 
