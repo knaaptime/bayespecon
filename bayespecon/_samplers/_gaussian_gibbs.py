@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
+import scipy.linalg as la
 import scipy.sparse as sp
 
 from ._slice import (
@@ -270,12 +271,22 @@ def _sample_beta_conjugate(
     prior_mean = np.full(k, float(priors.beta_mu))
 
     post_prec = XtX / sigma2 + prior_prec
-    post_cov = np.linalg.inv(post_prec)
     Xtr = X.T @ r
-    post_mean = post_cov @ (Xtr / sigma2 + prior_prec @ prior_mean)
+    rhs = Xtr / sigma2 + prior_prec @ prior_mean
 
-    # Sample from N(post_mean, post_cov)
-    beta = rng.multivariate_normal(post_mean, post_cov)
+    # Cholesky-based draw:  P = L L^T,  μ = P^{-1} rhs,  β = μ + L^{-T} z
+    try:
+        L = la.cholesky(post_prec, lower=True)
+    except la.LinAlgError:
+        # Fallback to inv-based path for near-singular precision
+        post_cov = np.linalg.inv(post_prec)
+        post_mean = post_cov @ rhs
+        beta = rng.multivariate_normal(post_mean, post_cov)
+        return beta
+
+    post_mean = la.cho_solve((L, True), rhs)
+    z = rng.standard_normal(k)
+    beta = post_mean + la.solve_triangular(L.T, z, lower=False)
     return beta
 
 
@@ -474,24 +485,34 @@ def _sem_collapsed_log_density(
     y_star = y - lam * (W_sparse @ y)
     X_star = X - lam * (W_sparse @ X)
 
-    # Compute RSS(λ) using Woodbury form
+    # Compute RSS(λ) using Cholesky factorisation
     XtX_star = X_star.T @ X_star
     Xty_star = X_star.T @ y_star
     yty_star = np.dot(y_star, y_star)
 
-    # RSS = y*^T y* - y*^T X* (X*^T X*)^{-1} X*^T y*
     try:
-        XtX_star_inv = np.linalg.inv(XtX_star)
-    except np.linalg.LinAlgError:
-        # Fallback to pseudo-inverse for numerical stability
-        XtX_star_inv = np.linalg.pinv(XtX_star)
+        L = la.cholesky(XtX_star, lower=True)
+    except la.LinAlgError:
+        # Fallback to inv-based path for near-singular XtX_star
+        try:
+            XtX_star_inv = np.linalg.inv(XtX_star)
+        except np.linalg.LinAlgError:
+            XtX_star_inv = np.linalg.pinv(XtX_star)
+        rss = yty_star - Xty_star @ XtX_star_inv @ Xty_star
+        rss = max(rss, 1e-300)
+        logdet_XtX = np.linalg.slogdet(XtX_star)[1]
+        logdet = logdet_fn(lam)
+        return logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * np.log(rss)
 
-    rss = yty_star - Xty_star @ XtX_star_inv @ Xty_star
+    # RSS = y*ᵀy* - ||L^{-1} X*ᵀy*||²
+    v = la.solve_triangular(L, Xty_star, lower=True)
+    rss = yty_star - np.dot(v, v)
     rss = max(rss, 1e-300)  # Prevent log(0)
 
-    logdet = logdet_fn(lam)
-    logdet_XtX = np.linalg.slogdet(XtX_star)[1]
+    # log|X*ᵀX*| = 2 Σ log(diag(L))
+    logdet_XtX = 2.0 * np.sum(np.log(np.diag(L)))
 
+    logdet = logdet_fn(lam)
     return logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * np.log(rss)
 
 
