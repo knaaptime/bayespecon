@@ -475,7 +475,9 @@ class SARPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sar",
-            W_eigs=self._W_eigs.real.astype(np.float64) if self._resolved_logdet_method == "eigenvalue" else None,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
             logdet_method=self.logdet_method,
             T=self._T,
         )
@@ -971,7 +973,9 @@ class SEMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sem",
-            W_eigs=self._W_eigs.real.astype(np.float64) if self._resolved_logdet_method == "eigenvalue" else None,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
             logdet_method=self.logdet_method,
             T=self._T,
         )
@@ -1338,7 +1342,9 @@ class SDMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdm",
-            W_eigs=self._W_eigs.real.astype(np.float64) if self._resolved_logdet_method == "eigenvalue" else None,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
             logdet_method=self.logdet_method,
             T=self._T,
         )
@@ -1876,7 +1882,9 @@ class SDEMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdem",
-            W_eigs=self._W_eigs.real.astype(np.float64) if self._resolved_logdet_method == "eigenvalue" else None,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
             logdet_method=self.logdet_method,
             T=self._T,
         )

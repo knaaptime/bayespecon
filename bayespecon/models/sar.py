@@ -415,7 +415,9 @@ class SAR(SpatialModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sar",
-            W_eigs=self._W_eigs.real.astype(np.float64) if self._resolved_logdet_method == "eigenvalue" else None,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
             logdet_method=self.logdet_method,
         )
 

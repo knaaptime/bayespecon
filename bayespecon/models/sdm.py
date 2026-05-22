@@ -432,7 +432,9 @@ class SDM(SpatialModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdm",
-            W_eigs=self._W_eigs.real.astype(np.float64) if self._resolved_logdet_method == "eigenvalue" else None,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
             logdet_method=self.logdet_method,
         )
 

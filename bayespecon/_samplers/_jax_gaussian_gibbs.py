@@ -361,7 +361,10 @@ def _make_gaussian_gibbs_step(
                         -jnp.inf,
                     )
                     return (
-                        logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * jnp.log(rss) + log_prior
+                        logdet
+                        - 0.5 * logdet_XtX
+                        - 0.5 * (n - k) * jnp.log(rss)
+                        + log_prior
                     )
 
             # Always pass persistent interval (JAX arrays, never None).

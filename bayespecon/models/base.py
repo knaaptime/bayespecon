@@ -416,9 +416,7 @@ class SpatialModel(ABC):
             if self._resolved_logdet_method == "eigenvalue":
                 self._W_for_logdet_cache = self._W_eigs.real.astype(np.float64)
             else:
-                self._W_for_logdet_cache = self._W_sparse.toarray().astype(
-                    np.float64
-                )
+                self._W_for_logdet_cache = self._W_sparse.toarray().astype(np.float64)
         return self._W_for_logdet_cache
 
     @property
