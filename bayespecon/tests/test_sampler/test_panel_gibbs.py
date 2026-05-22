@@ -49,11 +49,15 @@ class TestPanelGibbsDispatch:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sar_data(
-            rng, W_dense, PANEL_N, PANEL_T, rho=0.4, beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            rho=0.4,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=50,
@@ -78,11 +82,15 @@ class TestPanelGibbsDispatch:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sem_data(
-            rng, W_dense, PANEL_N, PANEL_T, lam=0.3, beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            lam=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=50,
@@ -106,11 +114,15 @@ class TestPanelGibbsDispatch:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sar_data(
-            rng, W_dense, PANEL_N, PANEL_T, rho=0.4, beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            rho=0.4,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=30,
@@ -129,11 +141,15 @@ class TestPanelGibbsDispatch:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sem_data(
-            rng, W_dense, PANEL_N, PANEL_T, lam=0.3, beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            lam=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=30,
@@ -156,7 +172,13 @@ class TestPanelGibbsEdgeCases:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sar_data(
-            rng, W_dense, PANEL_N, PANEL_T, rho=0.4, beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            rho=0.4,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
         model = SARPanelFE(
             y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True
@@ -177,7 +199,13 @@ class TestPanelGibbsEdgeCases:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sem_data(
-            rng, W_dense, PANEL_N, PANEL_T, lam=0.3, beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            lam=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
         model = SEMPanelFE(
             y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True
@@ -198,11 +226,15 @@ class TestPanelGibbsEdgeCases:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sar_data(
-            rng, W_dense, PANEL_N, PANEL_T, rho=0.4, beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            rho=0.4,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=60,
@@ -223,11 +255,15 @@ class TestPanelGibbsEdgeCases:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sem_data(
-            rng, W_dense, PANEL_N, PANEL_T, lam=0.3, beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            lam=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=60,
@@ -258,12 +294,15 @@ class TestPanelGibbsRecovery:
         W_dense, W_graph = _make_panel_W()
         rho_true = 0.4
         y, X, _ = make_panel_sar_data(
-            rng, W_dense, PANEL_N, PANEL_T, rho=rho_true,
-            beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            rho=rho_true,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=500,
@@ -286,12 +325,15 @@ class TestPanelGibbsRecovery:
         W_dense, W_graph = _make_panel_W()
         lam_true = 0.3
         y, X, _ = make_panel_sem_data(
-            rng, W_dense, PANEL_N, PANEL_T, lam=lam_true,
-            beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            lam=lam_true,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=500,
@@ -318,13 +360,16 @@ class TestPanelGibbsVsNUTS:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sar_data(
-            rng, W_dense, PANEL_N, PANEL_T, rho=0.4,
-            beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            rho=0.4,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
 
-        model_nuts = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model_nuts = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata_nuts = model_nuts.fit(
             draws=300,
             tune=300,
@@ -334,9 +379,7 @@ class TestPanelGibbsVsNUTS:
             progressbar=False,
         )
 
-        model_gibbs = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model_gibbs = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata_gibbs = model_gibbs.fit(
             sampler="gibbs",
             draws=300,
@@ -367,13 +410,16 @@ class TestPanelGibbsVsNUTS:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sem_data(
-            rng, W_dense, PANEL_N, PANEL_T, lam=0.3,
-            beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            lam=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
 
-        model_nuts = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model_nuts = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata_nuts = model_nuts.fit(
             draws=300,
             tune=300,
@@ -383,9 +429,7 @@ class TestPanelGibbsVsNUTS:
             progressbar=False,
         )
 
-        model_gibbs = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model_gibbs = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata_gibbs = model_gibbs.fit(
             sampler="gibbs",
             draws=300,
@@ -426,12 +470,15 @@ class TestPanelGibbsJAX:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sar_data(
-            rng, W_dense, PANEL_N, PANEL_T, rho=0.4,
-            beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            rho=0.4,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=30,
@@ -456,12 +503,15 @@ class TestPanelGibbsJAX:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sem_data(
-            rng, W_dense, PANEL_N, PANEL_T, lam=0.3,
-            beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            lam=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=30,
@@ -486,12 +536,15 @@ class TestPanelGibbsJAX:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sar_data(
-            rng, W_dense, PANEL_N, PANEL_T, rho=0.4,
-            beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            rho=0.4,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=20,
@@ -513,12 +566,15 @@ class TestPanelGibbsJAX:
         rng = np.random.default_rng(42)
         W_dense, W_graph = _make_panel_W()
         y, X, _ = make_panel_sem_data(
-            rng, W_dense, PANEL_N, PANEL_T, lam=0.3,
-            beta=np.array([1.0, 2.0]), sigma=0.8
+            rng,
+            W_dense,
+            PANEL_N,
+            PANEL_T,
+            lam=0.3,
+            beta=np.array([1.0, 2.0]),
+            sigma=0.8,
         )
-        model = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1
-        )
+        model = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1)
         idata = model.fit(
             sampler="gibbs",
             draws=20,

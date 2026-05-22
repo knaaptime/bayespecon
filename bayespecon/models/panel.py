@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import arviz as az
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
@@ -473,7 +474,9 @@ class SARPanelFE(SpatialPanelModel):
         # Drop intercept column for FE models (demeaning zeros it out)
         ni = self._nonintercept_indices
         X_gibbs = self._X[:, ni] if len(ni) < self._X.shape[1] else self._X
-        feature_names_gibbs = [self._feature_names[i] for i in ni] if ni else list(self._feature_names)
+        feature_names_gibbs = (
+            [self._feature_names[i] for i in ni] if ni else list(self._feature_names)
+        )
 
         priors = GaussianGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
@@ -947,7 +950,9 @@ class SEMPanelFE(SpatialPanelModel):
         # Drop intercept column for FE models (demeaning zeros it out)
         ni = self._nonintercept_indices
         X_gibbs = self._X[:, ni] if len(ni) < self._X.shape[1] else self._X
-        feature_names_gibbs = [self._feature_names[i] for i in ni] if ni else list(self._feature_names)
+        feature_names_gibbs = (
+            [self._feature_names[i] for i in ni] if ni else list(self._feature_names)
+        )
 
         priors = GaussianGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),

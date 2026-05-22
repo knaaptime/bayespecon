@@ -229,7 +229,7 @@ def _make_gaussian_gibbs_step(
     beta_sigma2_jax = jnp.broadcast_to(
         jnp.asarray(priors.beta_sigma, dtype=jnp.float64) ** 2, (k,)
     )
-    sigma_sigma_jax = jnp.float64(priors.sigma_sigma)
+    jnp.float64(priors.sigma_sigma)
     rho_lower_jax = jnp.float64(priors.rho_lower)
     rho_upper_jax = jnp.float64(priors.rho_upper)
 
@@ -340,10 +340,7 @@ def _make_gaussian_gibbs_step(
                     -jnp.inf,
                 )
                 return (
-                    logdet
-                    - 0.5 * logdet_XtX
-                    - 0.5 * (n - k) * jnp.log(rss)
-                    + log_prior
+                    logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * jnp.log(rss) + log_prior
                 )
 
             log_density_fn = log_density_spatial
