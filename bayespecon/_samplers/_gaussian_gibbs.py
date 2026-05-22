@@ -34,6 +34,7 @@ from typing import Callable
 
 import numpy as np
 import scipy.sparse as sp
+from scipy.linalg import cho_factor, cho_solve
 
 from ._slice import (
     SliceWidthState,
@@ -102,8 +103,10 @@ class GaussianGibbsCache:
     ----------
     XtX : ndarray of shape (k, k)
         X^T X matrix.
-    XtX_inv : ndarray of shape (k, k)
-        (X^T X)^{-1} matrix.
+    XtX_cho : tuple of (ndarray, bool)
+        Cholesky factor of X^T X from ``scipy.linalg.cho_factor``.
+        Used for solving linear systems and quadratic forms involving
+        (X^T X)^{-1} without forming the explicit inverse.
     logdet_fn : callable
         log|I - rho*W| callable (numpy scalar).
     logdet_vec_fn : callable
@@ -121,7 +124,7 @@ class GaussianGibbsCache:
     """
 
     XtX: np.ndarray
-    XtX_inv: np.ndarray
+    XtX_cho: tuple  # Cholesky factor from cho_factor(XtX)
     logdet_fn: Callable[[float], float]
     logdet_vec_fn: Callable
     rho_lower: float
@@ -270,12 +273,16 @@ def _sample_beta_conjugate(
     prior_mean = np.full(k, float(priors.beta_mu))
 
     post_prec = XtX / sigma2 + prior_prec
-    post_cov = np.linalg.inv(post_prec)
     Xtr = X.T @ r
-    post_mean = post_cov @ (Xtr / sigma2 + prior_prec @ prior_mean)
+    rhs = Xtr / sigma2 + prior_prec @ prior_mean
 
-    # Sample from N(post_mean, post_cov)
-    beta = rng.multivariate_normal(post_mean, post_cov)
+    # Cholesky factorisation: post_prec = L Lᵀ (SPD by construction)
+    # post_mean = post_prec⁻¹ @ rhs via two triangular solves
+    # β = post_mean + L⁻ᵀ z,  z ~ N(0, I)  avoids forming inv(post_prec)
+    L, lower = cho_factor(post_prec)
+    post_mean = cho_solve((L, lower), rhs)
+    z = rng.standard_normal(k)
+    beta = post_mean + cho_solve((L, lower), z, overwrite_b=True)
     return beta
 
 
@@ -369,7 +376,7 @@ def _sar_collapsed_log_density(
     y: np.ndarray,
     Wy: np.ndarray,
     X: np.ndarray,
-    XtX_inv: np.ndarray,
+    XtX_cho: tuple,
     logdet_fn: Callable[[float], float],
     n: int,
     k: int,
@@ -399,8 +406,8 @@ def _sar_collapsed_log_density(
         W @ y (precomputed).
     X : ndarray of shape (n, k)
         Design matrix.
-    XtX_inv : ndarray of shape (k, k)
-        (X^T X)^{-1} (precomputed).
+    XtX_cho : tuple of (ndarray, bool)
+        Cholesky factor of X^T X from ``scipy.linalg.cho_factor``.
     logdet_fn : callable
         log|I - rho*W| callable.
     n : int
@@ -415,7 +422,7 @@ def _sar_collapsed_log_density(
     """
     r = y - rho * Wy
     Xtr = X.T @ r  # (k,) — X^T r
-    rss = np.dot(r, r) - Xtr @ XtX_inv @ Xtr
+    rss = np.dot(r, r) - Xtr @ cho_solve(XtX_cho, Xtr)
     logdet = logdet_fn(rho)
     return logdet - 0.5 * (n - k) * np.log(rss)
 
@@ -480,13 +487,16 @@ def _sem_collapsed_log_density(
     yty_star = np.dot(y_star, y_star)
 
     # RSS = y*^T y* - y*^T X* (X*^T X*)^{-1} X*^T y*
+    # Use Cholesky for the SPD happy path; fall back to pinv for
+    # rank-deficient X*^T X* (e.g. near-collinear WX columns).
     try:
-        XtX_star_inv = np.linalg.inv(XtX_star)
+        L, lower = cho_factor(XtX_star)
+        sol = cho_solve((L, lower), Xty_star)
+        rss = yty_star - Xty_star @ sol
     except np.linalg.LinAlgError:
-        # Fallback to pseudo-inverse for numerical stability
+        # Cholesky failed — matrix is not SPD, use pseudo-inverse
         XtX_star_inv = np.linalg.pinv(XtX_star)
-
-    rss = yty_star - Xty_star @ XtX_star_inv @ Xty_star
+        rss = yty_star - Xty_star @ XtX_star_inv @ Xty_star
     rss = max(rss, 1e-300)  # Prevent log(0)
 
     logdet = logdet_fn(lam)
@@ -605,7 +615,7 @@ def _sample_rho_sar(
             y,
             Wy,
             X,
-            cache.XtX_inv,
+            cache.XtX_cho,
             cache.logdet_fn,
             n,
             k,
@@ -702,7 +712,7 @@ def _sample_lam_sem_collapsed(
 def _initialize_gaussian_gibbs(
     y: np.ndarray,
     X: np.ndarray,
-    XtX_inv: np.ndarray,
+    XtX_cho: tuple,
     priors: GaussianGibbsPriors,
     rng: np.random.Generator,
 ) -> GaussianGibbsState:
@@ -714,8 +724,8 @@ def _initialize_gaussian_gibbs(
         Response vector.
     X : ndarray of shape (n, k)
         Design matrix.
-    XtX_inv : ndarray of shape (k, k)
-        (X^T X)^{-1}.
+    XtX_cho : tuple of (ndarray, bool)
+        Cholesky factor of X^T X from ``scipy.linalg.cho_factor``.
     priors : GaussianGibbsPriors
         Prior hyperparameters.
     rng : numpy.random.Generator
@@ -726,7 +736,7 @@ def _initialize_gaussian_gibbs(
     GaussianGibbsState
         Initial state with OLS-based starting values.
     """
-    beta_ols = XtX_inv @ (X.T @ y)
+    beta_ols = cho_solve(XtX_cho, X.T @ y)
     resid = y - X @ beta_ols
     sigma2_ols = np.dot(resid, resid) / len(y)
     # Start ρ/λ at 0 (no spatial effect)

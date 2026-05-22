@@ -198,7 +198,7 @@ class GibbsEstimation:
             init = _initialize_gaussian_gibbs(
                 self.y,
                 self.X,
-                cache.XtX_inv,
+                cache.XtX_cho,
                 self.priors,
                 rng,
             )
@@ -330,7 +330,7 @@ class GibbsEstimation:
                 init = _initialize_gaussian_gibbs(
                     self.y,
                     self.X,
-                    cache.XtX_inv,
+                    cache.XtX_cho,
                     self.priors,
                     rng,
                 )
@@ -392,7 +392,7 @@ class GibbsEstimation:
             init = _initialize_gaussian_gibbs(
                 self.y,
                 self.X,
-                cache.XtX_inv,
+                cache.XtX_cho,
                 self.priors,
                 rng,
             )
@@ -468,12 +468,14 @@ class GibbsEstimation:
 
     def _build_cache(self) -> GaussianGibbsCache:
         """Build the GibbsCache from model data."""
+        from scipy.linalg import cho_factor
+
         XtX = self.X.T @ self.X
-        XtX_inv = np.linalg.inv(XtX)
+        XtX_cho = cho_factor(XtX)
 
         return GaussianGibbsCache(
             XtX=XtX,
-            XtX_inv=XtX_inv,
+            XtX_cho=XtX_cho,
             logdet_fn=self.logdet_fn,
             logdet_vec_fn=self.logdet_vec_fn,
             rho_lower=self.priors.rho_lower,

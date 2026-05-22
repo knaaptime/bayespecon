@@ -103,11 +103,13 @@ def _build_cache(W_dense, X, model_type="sar", Wy=None, method="eigenvalue"):
         W_sparse, eigs=eigs, method=method, rho_min=rho_min, rho_max=rho_max
     )
     XtX = X.T @ X
-    XtX_inv = np.linalg.inv(XtX)
+    from scipy.linalg import cho_factor
+
+    XtX_cho = cho_factor(XtX)
 
     return GaussianGibbsCache(
         XtX=XtX,
-        XtX_inv=XtX_inv,
+        XtX_cho=XtX_cho,
         logdet_fn=logdet_fn,
         logdet_vec_fn=logdet_vec_fn,
         rho_lower=rho_min,
@@ -132,7 +134,7 @@ class TestSARCollapsedLogDensity:
         cache = _build_cache(W_dense, X, model_type="sar", Wy=Wy)
         k = X.shape[1]
         result = _sar_collapsed_log_density(
-            0.3, y, Wy, X, cache.XtX_inv, cache.logdet_fn, n, k
+            0.3, y, Wy, X, cache.XtX_cho, cache.logdet_fn, n, k
         )
         assert np.isscalar(result) or result.ndim == 0
 
@@ -147,7 +149,7 @@ class TestSARCollapsedLogDensity:
         rho_grid = np.linspace(cache.rho_lower + 0.01, cache.rho_upper - 0.01, 50)
         log_dens = [
             _sar_collapsed_log_density(
-                r, y, Wy, X, cache.XtX_inv, cache.logdet_fn, n, k
+                r, y, Wy, X, cache.XtX_cho, cache.logdet_fn, n, k
             )
             for r in rho_grid
         ]
@@ -163,10 +165,10 @@ class TestSARCollapsedLogDensity:
         k = X.shape[1]
 
         ld_mid = _sar_collapsed_log_density(
-            0.0, y, Wy, X, cache.XtX_inv, cache.logdet_fn, n, k
+            0.0, y, Wy, X, cache.XtX_cho, cache.logdet_fn, n, k
         )
         ld_near_upper = _sar_collapsed_log_density(
-            cache.rho_upper - 0.01, y, Wy, X, cache.XtX_inv, cache.logdet_fn, n, k
+            cache.rho_upper - 0.01, y, Wy, X, cache.XtX_cho, cache.logdet_fn, n, k
         )
         # Near the boundary, log|I-ρW| → -∞, so density should be lower
         assert ld_near_upper < ld_mid
@@ -182,10 +184,13 @@ class TestSARCollapsedLogDensity:
         # Woodbury form (used in the function)
         r = y - rho * Wy
         Xtr = X.T @ r
-        rss_woodbury = np.dot(r, r) - Xtr @ cache.XtX_inv @ Xtr
+        from scipy.linalg import cho_solve
+
+        rss_woodbury = np.dot(r, r) - Xtr @ cho_solve(cache.XtX_cho, Xtr)
 
         # Direct M_X form
-        MX = np.eye(n) - X @ cache.XtX_inv @ X.T
+        XtX_inv = np.linalg.inv(X.T @ X)
+        MX = np.eye(n) - X @ XtX_inv @ X.T
         rss_direct = r @ MX @ r
 
         np.testing.assert_allclose(rss_woodbury, rss_direct, rtol=1e-10)
@@ -534,10 +539,12 @@ class TestInitialization:
 
     def test_ols_warm_start(self):
         y, X, W_dense, n = _make_sar_data()
-        XtX_inv = np.linalg.inv(X.T @ X)
+        from scipy.linalg import cho_factor
+
+        XtX_cho = cho_factor(X.T @ X)
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
-        state = _initialize_gaussian_gibbs(y, X, XtX_inv, priors, rng)
+        state = _initialize_gaussian_gibbs(y, X, XtX_cho, priors, rng)
 
         assert isinstance(state, GaussianGibbsState)
         assert state.beta.shape == (X.shape[1],)
@@ -546,10 +553,12 @@ class TestInitialization:
 
     def test_ols_beta_close_to_lstsq(self):
         y, X, W_dense, n = _make_sar_data()
-        XtX_inv = np.linalg.inv(X.T @ X)
+        from scipy.linalg import cho_factor
+
+        XtX_cho = cho_factor(X.T @ X)
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
-        state = _initialize_gaussian_gibbs(y, X, XtX_inv, priors, rng)
+        state = _initialize_gaussian_gibbs(y, X, XtX_cho, priors, rng)
 
         beta_lstsq = np.linalg.lstsq(X, y, rcond=None)[0]
         np.testing.assert_allclose(state.beta, beta_lstsq, rtol=1e-10)
@@ -569,7 +578,7 @@ class TestChainRunner:
         cache = _build_cache(W_dense, X, model_type="sar", Wy=Wy)
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
-        init = _initialize_gaussian_gibbs(y, X, cache.XtX_inv, priors, rng)
+        init = _initialize_gaussian_gibbs(y, X, cache.XtX_cho, priors, rng)
 
         result = run_gaussian_chain(
             y=y,
@@ -599,7 +608,7 @@ class TestChainRunner:
         cache = _build_cache(W_dense, X, model_type="sem")
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
-        init = _initialize_gaussian_gibbs(y, X, cache.XtX_inv, priors, rng)
+        init = _initialize_gaussian_gibbs(y, X, cache.XtX_cho, priors, rng)
 
         result = run_gaussian_chain(
             y=y,
@@ -628,7 +637,7 @@ class TestChainRunner:
         cache = _build_cache(W_dense, X, model_type="sar", Wy=Wy)
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
-        init = _initialize_gaussian_gibbs(y, X, cache.XtX_inv, priors, rng)
+        init = _initialize_gaussian_gibbs(y, X, cache.XtX_cho, priors, rng)
 
         result = run_gaussian_chain(
             y=y,
@@ -1364,9 +1373,11 @@ class TestChainParallelism:
             rho_min=priors.rho_lower,
             rho_max=priors.rho_upper,
         )
+        from scipy.linalg import cho_factor
+
         cache = GaussianGibbsCache(
             XtX=X.T @ X,
-            XtX_inv=np.linalg.inv(X.T @ X),
+            XtX_cho=cho_factor(X.T @ X),
             logdet_fn=logdet_fn,
             logdet_vec_fn=logdet_vec_fn,
             rho_lower=priors.rho_lower,
@@ -1381,7 +1392,7 @@ class TestChainParallelism:
         inits = []
         for i in range(chains):
             rng = np.random.default_rng(42 + i)
-            inits.append(_initialize_gaussian_gibbs(y, X, cache.XtX_inv, priors, rng))
+            inits.append(_initialize_gaussian_gibbs(y, X, cache.XtX_cho, priors, rng))
 
         logdet_jax = make_logdet_jax_fn(
             W=W_dense,

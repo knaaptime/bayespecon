@@ -61,9 +61,10 @@ def test_ols_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     model = OLSPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    # Under unit-FE demeaning the intercept is wiped; check the slope
-    assert abs(beta_hat[1] - BETA_TRUE[1]) < ABS_TOL_BETA, (
-        f"OLSPanelFE beta[1]: expected ≈{BETA_TRUE[1]}, got {beta_hat[1]:.3f}"
+    # Under unit-FE demeaning the intercept is dropped from the design
+    # matrix, so beta_hat[0] is the slope coefficient.
+    assert abs(beta_hat[0] - BETA_TRUE[1]) < ABS_TOL_BETA, (
+        f"OLSPanelFE beta[0]: expected ≈{BETA_TRUE[1]}, got {beta_hat[0]:.3f}"
     )
 
 
@@ -129,8 +130,9 @@ def test_sar_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     model = SARPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    assert abs(beta_hat[1] - BETA_TRUE[1]) < ABS_TOL_BETA, (
-        f"SARPanelFE beta[1]: expected ≈{BETA_TRUE[1]}, got {beta_hat[1]:.3f}"
+    # Intercept is dropped for FE models; beta_hat[0] is the slope.
+    assert abs(beta_hat[0] - BETA_TRUE[1]) < ABS_TOL_BETA, (
+        f"SARPanelFE beta[0]: expected ≈{BETA_TRUE[1]}, got {beta_hat[0]:.3f}"
     )
 
 
@@ -172,8 +174,9 @@ def test_sem_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     model = SEMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    assert abs(beta_hat[1] - BETA_TRUE[1]) < ABS_TOL_BETA, (
-        f"SEMPanelFE beta[1]: expected ≈{BETA_TRUE[1]}, got {beta_hat[1]:.3f}"
+    # Intercept is dropped for FE models; beta_hat[0] is the slope.
+    assert abs(beta_hat[0] - BETA_TRUE[1]) < ABS_TOL_BETA, (
+        f"SEMPanelFE beta[0]: expected ≈{BETA_TRUE[1]}, got {beta_hat[0]:.3f}"
     )
 
 
@@ -217,9 +220,10 @@ def test_sdm_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     model = SDMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    # beta covers [X, WX]; check the X slope (index 1)
-    assert abs(beta_hat[1] - BETA_TRUE[1]) < ABS_TOL_BETA, (
-        f"SDMPanelFE beta[1]: expected ≈{BETA_TRUE[1]}, got {beta_hat[1]:.3f}"
+    # Intercept is dropped for FE models; beta covers [X, WX].
+    # beta_hat[0] is the X slope.
+    assert abs(beta_hat[0] - BETA_TRUE[1]) < ABS_TOL_BETA, (
+        f"SDMPanelFE beta[0]: expected ≈{BETA_TRUE[1]}, got {beta_hat[0]:.3f}"
     )
 
 
@@ -263,9 +267,10 @@ def test_sdem_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     model = SDEMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    # beta covers [X, WX]; check the X slope (index 1)
-    assert abs(beta_hat[1] - BETA_TRUE[1]) < ABS_TOL_BETA, (
-        f"SDEMPanelFE beta[1]: expected ≈{BETA_TRUE[1]}, got {beta_hat[1]:.3f}"
+    # Intercept is dropped for FE models; beta covers [X, WX].
+    # beta_hat[0] is the X slope.
+    assert abs(beta_hat[0] - BETA_TRUE[1]) < ABS_TOL_BETA, (
+        f"SDEMPanelFE beta[0]: expected ≈{BETA_TRUE[1]}, got {beta_hat[0]:.3f}"
     )
 
 
@@ -289,7 +294,8 @@ def test_slx_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     model = SLXPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
     beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    # beta covers [X, WX]; check the X slope (index 1)
-    assert abs(beta_hat[1] - BETA_TRUE[1]) < ABS_TOL_BETA, (
-        f"SLXPanelFE beta[1]: expected ≈{BETA_TRUE[1]}, got {beta_hat[1]:.3f}"
+    # Intercept is dropped for FE models; beta covers [X, WX].
+    # beta_hat[0] is the X slope.
+    assert abs(beta_hat[0] - BETA_TRUE[1]) < ABS_TOL_BETA, (
+        f"SLXPanelFE beta[0]: expected ≈{BETA_TRUE[1]}, got {beta_hat[0]:.3f}"
     )

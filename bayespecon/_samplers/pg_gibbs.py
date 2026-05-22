@@ -840,11 +840,14 @@ def _sample_rho(
         )
     else:
         # --- Adaptive width slice sampling ---
-        # Initialise width state on first call if not present
-        if cache.rho_slice_width_state is None:
+        # The width state is created in GibbsCache and mutated in-place.
+        # SliceWidthState is a mutable dataclass, so updates to its
+        # fields (w, L, R) persist across calls.
+        width_state = cache.rho_slice_width_state
+        if width_state is None:
+            # Fallback: should not happen if GibbsCache is constructed
+            # correctly, but provides a safe default.
             width_state = SliceWidthState(w=0.2)
-        else:
-            width_state = cache.rho_slice_width_state
 
         rho_new, log_density_new, steps_left, steps_right = slice_sample_1d_adaptive(
             log_density=log_density,

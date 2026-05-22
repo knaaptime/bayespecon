@@ -17,6 +17,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
+from ..diagnostics.lmtests import SDEM_SUITE
 from ._sampler import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
@@ -116,20 +117,7 @@ class SDEM(SpatialModel):
 
     _priors_cls = SDEMPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_lag_sdem_test"
-            ),
-            "LM-Lag-SDEM",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_lag_sdem_test"
-            ),
-            "Robust-LM-Lag-SDEM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SDEM_SUITE.tests
 
     def fit(
         self,

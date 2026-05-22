@@ -85,9 +85,11 @@ enters the model directly (Wy), providing more information to separate
 
 Possible remedies for SEM-RE identification:
 - Use fixed effects (within transform) instead of random effects
-- Use a Mundlak/Correlated RE specification: α_i = X̄_i γ + η_i
 - Use a Spatial Durbin (SDM) specification that includes WX terms
 - Use longer panels (T → ∞) which provide more information
+- Use the Mundlak specification (α_i = X̄_i γ + η_i) to test for
+  RE-regressor correlation, though this does not resolve the λ
+  identification issue itself
 
 References
 ----------
@@ -187,8 +189,10 @@ class REGibbsCache:
     ----------
     XtX : ndarray of shape (k, k)
         X^T X matrix.
-    XtX_inv : ndarray of shape (k, k)
-        (X^T X)^{-1} matrix.
+    XtX_cho : tuple of (ndarray, bool)
+        Cholesky factor of X^T X from ``scipy.linalg.cho_factor``.
+        Used for solving linear systems and quadratic forms involving
+        (X^T X)^{-1} without forming the explicit inverse.
     logdet_fn : callable
         log|I - rho*W| callable (numpy scalar).
     logdet_vec_fn : callable
@@ -209,12 +213,10 @@ class REGibbsCache:
         Number of time periods.
     unit_idx : ndarray of shape (n,)
         Maps observation index to unit index (obs i → unit i % N).
-    XtX_inv : ndarray of shape (k, k)
-        (X^T X)^{-1} (precomputed).
     """
 
     XtX: np.ndarray
-    XtX_inv: np.ndarray
+    XtX_cho: tuple  # Cholesky factor from cho_factor(XtX)
     logdet_fn: Callable[[float], float]
     logdet_vec_fn: Callable
     rho_lower: float
@@ -320,11 +322,16 @@ def _sample_beta_conjugate(
     prior_mean = np.full(k, float(priors.beta_mu))
 
     post_prec = XtX / sigma2 + prior_prec
-    post_cov = np.linalg.inv(post_prec)
     Xtr = X.T @ r
-    post_mean = post_cov @ (Xtr / sigma2 + prior_prec @ prior_mean)
+    rhs = Xtr / sigma2 + prior_prec @ prior_mean
 
-    beta = rng.multivariate_normal(post_mean, post_cov)
+    # Cholesky factorisation: post_prec = L Lᵀ (SPD by construction)
+    # post_mean = post_prec⁻¹ @ rhs via two triangular solves
+    # β = post_mean + L⁻ᵀ z,  z ~ N(0, I)  avoids forming inv(post_prec)
+    L, lower = cho_factor(post_prec)
+    post_mean = cho_solve((L, lower), rhs)
+    z = rng.standard_normal(k)
+    beta = post_mean + cho_solve((L, lower), z, overwrite_b=True)
     return beta
 
 
@@ -489,13 +496,14 @@ def _sample_alpha_re(
     BtB = B.T @ B  # N × N
     # Precision matrix
     prec_alpha = (1.0 / sigma2) * BtB + (1.0 / sigma_alpha2) * np.eye(N)
-    # Posterior covariance
-    cov_alpha = np.linalg.inv(prec_alpha)
-    # Posterior mean
-    mean_alpha = cov_alpha @ ((1.0 / sigma2) * DtAtAr)
-
-    # Sample from multivariate normal
-    alpha = rng.multivariate_normal(mean_alpha, cov_alpha)
+    # Cholesky factorisation: prec_alpha = L Lᵀ (SPD by construction)
+    # mean_alpha = prec_alpha⁻¹ @ rhs via two triangular solves
+    # α = mean_alpha + L⁻ᵀ z,  z ~ N(0, I)  avoids forming inv(prec_alpha)
+    rhs_alpha = (1.0 / sigma2) * DtAtAr
+    L, lower = cho_factor(prec_alpha)
+    mean_alpha = cho_solve((L, lower), rhs_alpha)
+    z = rng.standard_normal(N)
+    alpha = mean_alpha + cho_solve((L, lower), z, overwrite_b=True)
     return alpha
 
 
@@ -530,7 +538,7 @@ def _sar_re_collapsed_log_density(
     y: np.ndarray,
     Wy: np.ndarray,
     X: np.ndarray,
-    XtX_inv: np.ndarray,
+    XtX_cho: tuple,
     logdet_fn: Callable[[float], float],
     n: int,
     k: int,
@@ -567,7 +575,7 @@ def _sar_re_collapsed_log_density(
     ----------
     rho : float
         Spatial autoregressive parameter.
-    y, Wy, X, XtX_inv, logdet_fn, n, k
+    y, Wy, X, XtX_cho, logdet_fn, n, k
         As in the FE collapsed density.
     N : int
         Number of cross-sectional units.
@@ -772,12 +780,12 @@ def _sample_rho_re_sar(
     # Use cached log-density if available, otherwise compute it
     if log_density_rho is None:
         log_density_rho = _sar_re_collapsed_log_density(
-            state.rho, y, Wy, X, cache.XtX_inv, cache.logdet_fn, n, k, N, T, unit_idx
+            state.rho, y, Wy, X, cache.XtX_cho, cache.logdet_fn, n, k, N, T, unit_idx
         )
 
     new_rho, new_log_density, _, _ = slice_sample_1d_adaptive(
         lambda rho: _sar_re_collapsed_log_density(
-            rho, y, Wy, X, cache.XtX_inv, cache.logdet_fn, n, k, N, T, unit_idx
+            rho, y, Wy, X, cache.XtX_cho, cache.logdet_fn, n, k, N, T, unit_idx
         ),
         state.rho,
         lower=cache.rho_lower,
@@ -872,7 +880,7 @@ def _sample_lam_re_sem(
 def _initialize_re_gibbs(
     y: np.ndarray,
     X: np.ndarray,
-    XtX_inv: np.ndarray,
+    XtX_cho: tuple,
     N: int,
     T: int,
     unit_idx: np.ndarray,
@@ -887,8 +895,8 @@ def _initialize_re_gibbs(
         Response vector.
     X : ndarray of shape (n, k)
         Design matrix.
-    XtX_inv : ndarray of shape (k, k)
-        (X^T X)^{-1}.
+    XtX_cho : tuple of (ndarray, bool)
+        Cholesky factor of X^T X from ``scipy.linalg.cho_factor``.
     N : int
         Number of cross-sectional units.
     T : int
@@ -906,7 +914,7 @@ def _initialize_re_gibbs(
         Initial state with OLS-based starting values.
     """
     # Pooled OLS for β
-    beta_ols = XtX_inv @ (X.T @ y)
+    beta_ols = cho_solve(XtX_cho, X.T @ y)
     resid = y - X @ beta_ols
 
     # Unit means as initial α

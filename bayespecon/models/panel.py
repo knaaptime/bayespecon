@@ -7,6 +7,14 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
+from ..diagnostics.lmtests import (
+    OLS_PANEL_SUITE,
+    SAR_PANEL_SUITE,
+    SDEM_PANEL_SUITE,
+    SDM_PANEL_SUITE,
+    SEM_PANEL_SUITE,
+    SLX_PANEL_SUITE,
+)
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
@@ -110,45 +118,7 @@ class OLSPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
-            ),
-            "Panel-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_sdm_joint_test"
-            ),
-            "Panel-LM-SDM-Joint",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_lm_slx_error_joint_test",
-            ),
-            "Panel-LM-SLX-Error-Joint",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_lag_test"
-            ),
-            "Panel-Robust-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_error_test"
-            ),
-            "Panel-Robust-LM-Error",
-        ),
-    ]
+    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
 
     _priors_cls = PanelOLSPriors
 
@@ -315,26 +285,7 @@ class SARPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_test"
-            ),
-            "Panel-LM-WX",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_wx_test"
-            ),
-            "Panel-Robust-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
 
     _priors_cls = PanelSARPriors
 
@@ -493,13 +444,6 @@ class SARPanelFE(SpatialPanelModel):
         from .._samplers._gaussian_gibbs import GaussianGibbsPriors
         from .._samplers._gibbs_estimation import GaussianSARGibbs
 
-        # Drop intercept column for FE models (demeaning zeros it out)
-        ni = self._nonintercept_indices
-        X_gibbs = self._X[:, ni] if len(ni) < self._X.shape[1] else self._X
-        feature_names_gibbs = (
-            [self._feature_names[i] for i in ni] if ni else list(self._feature_names)
-        )
-
         priors = GaussianGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
@@ -510,13 +454,13 @@ class SARPanelFE(SpatialPanelModel):
 
         gibbs = GaussianSARGibbs(
             y=self._y,
-            X=X_gibbs,
+            X=self._X,
             W_sparse=self._W_sparse_NT,
             Wy=self._Wy,
             priors=priors,
             logdet_fn=self._logdet_numpy_fn,
             logdet_vec_fn=self._logdet_numpy_vec_fn,
-            feature_names=feature_names_gibbs,
+            feature_names=list(self._feature_names),
             model_type="sar",
             W_eigs=self._W_eigs.real.astype(np.float64),
             logdet_method=self.logdet_method,
@@ -696,20 +640,7 @@ class SEMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
-            ),
-            "Panel-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_sem_test"
-            ),
-            "Panel-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
     _priors_cls = PanelSEMPriors
 
@@ -995,13 +926,6 @@ class SEMPanelFE(SpatialPanelModel):
         from .._samplers._gaussian_gibbs import GaussianGibbsPriors
         from .._samplers._gibbs_estimation import GaussianSEMGibbs
 
-        # Drop intercept column for FE models (demeaning zeros it out)
-        ni = self._nonintercept_indices
-        X_gibbs = self._X[:, ni] if len(ni) < self._X.shape[1] else self._X
-        feature_names_gibbs = (
-            [self._feature_names[i] for i in ni] if ni else list(self._feature_names)
-        )
-
         priors = GaussianGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
@@ -1012,12 +936,12 @@ class SEMPanelFE(SpatialPanelModel):
 
         gibbs = GaussianSEMGibbs(
             y=self._y,
-            X=X_gibbs,
+            X=self._X,
             W_sparse=self._W_sparse_NT,
             priors=priors,
             logdet_fn=self._logdet_numpy_fn,
             logdet_vec_fn=self._logdet_numpy_vec_fn,
-            feature_names=feature_names_gibbs,
+            feature_names=list(self._feature_names),
             model_type="sem",
             W_eigs=self._W_eigs.real.astype(np.float64),
             logdet_method=self.logdet_method,
@@ -1178,14 +1102,7 @@ class SDMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_sdm_test"
-            ),
-            "Panel-LM-Error-SDM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
 
     _has_wx_in_beta = True
 
@@ -1355,21 +1272,10 @@ class SDMPanelFE(SpatialPanelModel):
         from .._samplers._gaussian_gibbs import GaussianGibbsPriors
         from .._samplers._gibbs_estimation import GaussianSARGibbs
 
-        # Drop intercept column for FE models (demeaning zeros it out)
-        ni = self._nonintercept_indices
-        if len(ni) < self._X.shape[1]:
-            X_gibbs = self._X[:, ni]
-            WX_gibbs = self._WX
-            feature_names = [self._feature_names[i] for i in ni] + [
-                f"W*{name}" for name in self._wx_feature_names
-            ]
-        else:
-            X_gibbs = self._X
-            WX_gibbs = self._WX
-            feature_names = list(self._feature_names) + [
-                f"W*{name}" for name in self._wx_feature_names
-            ]
-        Z = np.hstack([X_gibbs, WX_gibbs])
+        Z = np.hstack([self._X, self._WX])
+        feature_names = list(self._feature_names) + [
+            f"W*{name}" for name in self._wx_feature_names
+        ]
 
         priors = GaussianGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
@@ -1602,14 +1508,7 @@ class SDEMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
-            ),
-            "Panel-LM-Lag-SDEM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
 
     _has_wx_in_beta = True
 
@@ -1897,19 +1796,10 @@ class SDEMPanelFE(SpatialPanelModel):
         from .._samplers._gaussian_gibbs import GaussianGibbsPriors
         from .._samplers._gibbs_estimation import GaussianSEMGibbs
 
-        # Drop intercept column for FE models (demeaning zeros it out)
-        ni = self._nonintercept_indices
-        if len(ni) < self._X.shape[1]:
-            X_gibbs = self._X[:, ni]
-            feature_names = [self._feature_names[i] for i in ni] + [
-                f"W*{name}" for name in self._wx_feature_names
-            ]
-        else:
-            X_gibbs = self._X
-            feature_names = list(self._feature_names) + [
-                f"W*{name}" for name in self._wx_feature_names
-            ]
-        Z = np.hstack([X_gibbs, self._WX])
+        Z = np.hstack([self._X, self._WX])
+        feature_names = list(self._feature_names) + [
+            f"W*{name}" for name in self._wx_feature_names
+        ]
 
         priors = GaussianGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
@@ -2106,34 +1996,7 @@ class SLXPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
-            ),
-            "Panel-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_robust_lm_lag_sdm_test",
-            ),
-            "Panel-Robust-LM-Lag-SDM",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_robust_lm_error_sdem_test",
-            ),
-            "Panel-Robust-LM-Error-SDEM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SLX_PANEL_SUITE.tests
 
     _has_wx_in_beta = True
 

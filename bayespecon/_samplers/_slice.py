@@ -266,8 +266,11 @@ def slice_sample_1d_adaptive(
         left_ok = L <= lower or log_density(L) < log_u
         right_ok = R >= upper or log_density(R) < log_u
         if left_ok and right_ok:
-            steps_out_left = 0
-            steps_out_right = 0
+            # Interval was reused — signal to skip width update.
+            # Returning -1 tells update_slice_width that no fresh
+            # stepping-out occurred, so the width should not be shrunk.
+            steps_out_left = -1
+            steps_out_right = -1
         else:
             # Fall back to fresh stepping-out from x0
             u_rand = rng.uniform()
@@ -361,6 +364,12 @@ def update_slice_width(
     steps_out_right : int
         Number of right step-out steps from the last draw.
     """
+    # Skip width update when the persistent interval was reused
+    # (signaled by steps_out == -1).  Reusing the interval means the
+    # width was already adequate — shrinking would be incorrect.
+    if steps_out_left < 0 or steps_out_right < 0:
+        return
+
     max_steps = max(steps_out_left, steps_out_right)
 
     if max_steps > width_state.target_steps:

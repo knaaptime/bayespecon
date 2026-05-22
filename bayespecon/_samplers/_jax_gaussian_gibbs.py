@@ -158,7 +158,7 @@ def _make_gaussian_gibbs_step(
     k,
     logdet_jax,
     XtX_jax,
-    XtX_inv_jax,
+    XtX_cho_jax,
     priors,
     model_type: str,
     use_mala: bool = True,
@@ -194,8 +194,10 @@ def _make_gaussian_gibbs_step(
         log|I - rho*W|.  Built by :func:`~bayespecon.logdet.make_logdet_jax_fn`.
     XtX_jax : jax.numpy.ndarray of shape (k, k)
         Precomputed X^T X.
-    XtX_inv_jax : jax.numpy.ndarray of shape (k, k)
-        Precomputed (X^T X)^{-1}.
+    XtX_cho_jax : tuple of (jax.numpy.ndarray, bool)
+        Cholesky factor of X^T X from ``jax.scipy.linalg.cho_factor``.
+        Used for solving linear systems and quadratic forms involving
+        (X^T X)^{-1} without forming the explicit inverse.
     priors : GaussianGibbsPriors
         Prior hyperparameters.
     model_type : str
@@ -304,7 +306,7 @@ def _make_gaussian_gibbs_step(
             def log_density_spatial(param_val):
                 r = y_jax - param_val * Wy_jax
                 Xtr = X_jax.T @ r
-                rss = r @ r - Xtr @ XtX_inv_jax @ Xtr
+                rss = r @ r - Xtr @ jax.scipy.linalg.cho_solve(XtX_cho_jax, Xtr)
                 logdet = logdet_jax(param_val)
                 log_prior = jnp.where(
                     (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),
@@ -565,7 +567,7 @@ def run_chain_jax_gaussian(
     y_jax = jnp.asarray(y, dtype=jnp.float64)
     X_jax = jnp.asarray(X, dtype=jnp.float64)
     XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
-    XtX_inv_jax = jnp.asarray(np.linalg.inv(X.T @ X), dtype=jnp.float64)
+    XtX_cho_jax = jax.scipy.linalg.cho_factor(XtX_jax)
 
     if is_sar:
         Wy_jax = jnp.asarray(Wy, dtype=jnp.float64)
@@ -584,7 +586,7 @@ def run_chain_jax_gaussian(
 
     # Pre-allocate storage
     rho_samples = np.empty(n_keep, dtype=np.float64)
-    beta_samples = np.empty((n_keep, k), dtype=np.float64)
+    beta_samples = np.empty((n_keep, k), dtype=jnp.float64)
     sigma_samples = np.empty(n_keep, dtype=np.float64)
 
     # ── MALA step-size adaptation ──
@@ -600,7 +602,7 @@ def run_chain_jax_gaussian(
         k=k,
         logdet_jax=logdet_jax,
         XtX_jax=XtX_jax,
-        XtX_inv_jax=XtX_inv_jax,
+        XtX_cho_jax=XtX_cho_jax,
         priors=priors,
         model_type=model_type,
         use_mala=use_mala,
@@ -784,7 +786,7 @@ def run_chains_jax_gibbs_vectorized(
     y_jax = jnp.asarray(y, dtype=jnp.float64)
     X_jax = jnp.asarray(X, dtype=jnp.float64)
     XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
-    XtX_inv_jax = jnp.asarray(np.linalg.inv(X.T @ X), dtype=jnp.float64)
+    XtX_cho_jax = jax.scipy.linalg.cho_factor(XtX_jax)
 
     if is_sar:
         Wy_jax = jnp.asarray(Wy, dtype=jnp.float64)
@@ -803,7 +805,7 @@ def run_chains_jax_gibbs_vectorized(
         k=k,
         logdet_jax=logdet_jax,
         XtX_jax=XtX_jax,
-        XtX_inv_jax=XtX_inv_jax,
+        XtX_cho_jax=XtX_cho_jax,
         priors=priors,
         model_type=model_type,
         use_mala=use_mala,

@@ -28,6 +28,12 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..diagnostics.lmtests import (
+    OLS_PANEL_SUITE,
+    SAR_PANEL_SUITE,
+    SDEM_PANEL_SUITE,
+    SEM_PANEL_SUITE,
+)
 from ._sampler import use_jax_likelihood
 from .panel_base import SpatialPanelModel
 from .priors import (
@@ -118,45 +124,7 @@ class OLSPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
-            ),
-            "Panel-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_sdm_joint_test"
-            ),
-            "Panel-LM-SDM-Joint",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests",
-                "bayesian_panel_lm_slx_error_joint_test",
-            ),
-            "Panel-LM-SLX-Error-Joint",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_lag_test"
-            ),
-            "Panel-Robust-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_error_test"
-            ),
-            "Panel-Robust-LM-Error",
-        ),
-    ]
+    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
 
     _priors_cls = PanelOLSREPriors
 
@@ -342,26 +310,7 @@ class SARPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_error_test"
-            ),
-            "Panel-LM-Error",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_test"
-            ),
-            "Panel-LM-WX",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_robust_lm_wx_test"
-            ),
-            "Panel-Robust-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
 
     _priors_cls = PanelSARREPriors
 
@@ -693,11 +642,74 @@ class SEMPanelRE(SpatialPanelModel):
         If True, replace the Normal innovation with Student-t. See
         *Robust regression* below.
 
+    mundlak : bool, default False
+        If True, use the Mundlak (1978) correlated random effects
+        specification.  This augments the design matrix with unit-level
+        time-averages of the regressors, modelling the correlation
+        between :math:`\\alpha_i` and :math:`X` explicitly.  See
+        *Mundlak / Correlated Random Effects* below for details.
+
     Notes
     -----
     The base-class ``model`` argument is not exposed; pooled mean
     structure (``model=0``) is used because unit heterogeneity is
     captured by the random effect rather than by within-unit demeaning.
+
+    **Identification of λ in SEM-RE models**
+
+    The spatial error parameter :math:`\\lambda` is **weakly identified**
+    when random effects :math:`\\alpha_i` are present.  The random effects
+    absorb spatial correlation across units, making it difficult for the
+    data to distinguish between :math:`\\lambda` (spatial error dependence)
+    and :math:`\\sigma_\\alpha^2` (between-unit variance).  Both Gibbs and
+    NUTS samplers will tend to estimate :math:`\\lambda` near zero even when
+    the true value is moderate, because the posterior genuinely
+    concentrates there.  This is a model identification issue, not a
+    sampler bug.
+
+    Possible remedies include:
+
+    - Use fixed effects (``SEMPanelFE``) instead of random effects
+    - Use a Spatial Durbin model (``SDMPanelRE``) that includes WX terms
+    - Use longer panels (:math:`T \\to \\infty`) which provide more
+      information to separate :math:`\\lambda` from :math:`\\alpha`
+    - Use the Mundlak specification (``mundlak=True``) to test for
+      RE-regressor correlation, though note this does not resolve
+      the :math:`\\lambda` identification issue itself
+
+    **Mundlak / Correlated Random Effects**
+
+    The Mundlak (1978) approach models the correlation between
+    :math:`\\alpha_i` and the regressors by decomposing the random effect:
+
+    .. math::
+
+        \\alpha_i = \\bar{X}_i \\gamma + \\eta_i, \\quad \\eta_i \\sim N(0, \\sigma_\\eta^2)
+
+    where :math:`\\bar{X}_i = T^{-1} \\sum_t X_{it}` are the unit-level
+    means of the time-varying regressors.  Substituting into the model
+    yields an augmented regression with :math:`[X, \\bar{X}]` as
+    regressors, where :math:`\\gamma` is estimated alongside
+    :math:`\\beta` and the residual random effect :math:`\\eta_i`
+    captures only orthogonal unit heterogeneity.
+
+    **Important**: The Mundlak specification addresses RE-regressor
+    correlation but does **not** resolve the :math:`\\lambda`
+    identification issue described above.  Even with Mundlak
+    augmentation, :math:`\\lambda` remains weakly identified because
+    :math:`\\eta_i` can still absorb spatial correlation.  The Mundlak
+    approach is primarily useful for:
+
+    - Testing whether :math:`\\alpha_i` is correlated with regressors
+      (LR test of :math:`\\gamma = 0`)
+    - Obtaining consistent :math:`\\beta` estimates when RE are
+      correlated with :math:`X`
+    - Reducing :math:`\\sigma_\\alpha^2` by absorbing the explained
+      between-unit variation into :math:`\\gamma`
+
+    Following Baltagi (2023), the Mundlak approach does *not* yield
+    the same estimates as fixed effects for spatial models (unlike
+    the non-spatial case), but MLE/Gibbs estimation remains valid.
 
     **Robust regression**
 
@@ -715,27 +727,95 @@ class SEMPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_test"
-            ),
-            "Panel-LM-Lag",
-        ),
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_wx_sem_test"
-            ),
-            "Panel-LM-WX",
-        ),
-    ]
+    _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
     _priors_cls = PanelSEMREPriors
 
-    def __init__(self, **kwargs):
+    def __init__(self, mundlak: bool = False, **kwargs):
         kwargs.pop("model", None)
         super().__init__(model=0, **kwargs)
         self._unit_idx = np.arange(self._N * self._T) % self._N
+        self._mundlak = mundlak
+
+        if mundlak:
+            self._build_mundlak_augmentation()
+
+    def _build_mundlak_augmentation(self):
+        """Compute unit-level means of X and augment the design matrix.
+
+        The Mundlak (1978) approach models correlated random effects as:
+
+            α_i = X̄_i γ + η_i
+
+        where X̄_i = T⁻¹ Σ_t X_{it} are unit-level time averages.
+        Substituting into the model yields an augmented regression with
+        [X, X̄_expanded] as regressors, where γ is estimated alongside β
+        and the residual random effect η_i captures only orthogonal
+        unit heterogeneity.
+
+        This addresses RE-regressor correlation but does NOT resolve
+        the α-λ identification issue in SEM-RE models — η_i can still
+        absorb spatial correlation.  The Mundlak approach is primarily
+        useful for testing RE-regressor correlation (LR test of γ=0)
+        and obtaining consistent β estimates when RE are correlated
+        with X.
+
+        Following Baltagi (2023), the Mundlak approach does *not* yield
+        the same estimates as fixed effects for spatial models (unlike
+        the non-spatial case), but MLE/Gibbs estimation remains valid.
+
+        Note: Constant/intercept columns are excluded from the Mundlak
+        means because their unit-level averages are collinear with the
+        original intercept.
+        """
+        X = self._X
+        N, _T = self._N, self._T
+        unit_idx = self._unit_idx
+
+        # Identify non-constant columns for Mundlak means
+        # Constant columns have unit means equal to the constant itself,
+        # creating perfect collinearity with the original intercept.
+        nonconst_idx = self._nonintercept_indices
+        if len(nonconst_idx) == 0:
+            # No time-varying regressors — Mundlak has nothing to add
+            return
+
+        # Compute unit-level means for non-constant columns only
+        counts = np.bincount(unit_idx, minlength=N)
+        X_bar = np.zeros((N, len(nonconst_idx)))
+        for j_idx, j in enumerate(nonconst_idx):
+            X_bar[:, j_idx] = (
+                np.bincount(unit_idx, weights=X[:, j], minlength=N) / counts
+            )
+
+        # Expand to observation level: repeat each unit's means T times
+        X_bar_expanded = X_bar[unit_idx]  # shape (NT, len(nonconst_idx))
+
+        # Store original X and feature names for reference
+        self._X_original = X.copy()
+        self._feature_names_original = list(self._feature_names)
+
+        # Augment X: [X, X̄_expanded]
+        self._X = np.column_stack([X, X_bar_expanded])
+
+        # Augment feature names (only for non-constant columns)
+        mundlak_names = [
+            f"mundlak_{self._feature_names_original[j]}" for j in nonconst_idx
+        ]
+        self._feature_names = list(self._feature_names_original) + mundlak_names
+
+    @property
+    def mundlak(self) -> bool:
+        """Whether the Mundlak correlated RE specification is active."""
+        return self._mundlak
+
+    @property
+    def mundlak_names(self) -> list[str] | None:
+        """Names of the Mundlak augmentation columns, or None if inactive."""
+        if not self._mundlak:
+            return None
+        k_orig = len(self._feature_names_original)
+        return list(self._feature_names[k_orig:])
 
     def _model_coords(self) -> dict:
         coords = super()._model_coords()
@@ -1184,14 +1264,7 @@ class SDEMPanelRE(SpatialPanelModel):
     captured by the random effect rather than by within-unit demeaning.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialPanelModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_panel_lm_lag_sdem_test"
-            ),
-            "Panel-LM-Lag-SDEM",
-        ),
-    ]
+    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
 
     _priors_cls = PanelSDEMREPriors
 

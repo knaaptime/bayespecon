@@ -15,6 +15,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
+from ..diagnostics.lmtests import SAR_SUITE
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 from .base import (
     SpatialModel,
@@ -108,32 +109,7 @@ class SAR(SpatialModel):
 
     _priors_cls = SARPriors
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_error_from_sar_test"
-            ),
-            "LM-Error",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_wx_test"
-            ),
-            "LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_wx_test"
-            ),
-            "Robust-LM-WX",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_error_sar_test"
-            ),
-            "Robust-LM-Error",
-        ),
-    ]
+    _spatial_diagnostics_tests = SAR_SUITE.tests
 
     def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
         """Construct the PyMC model for SAR regression.

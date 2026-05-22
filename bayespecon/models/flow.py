@@ -40,6 +40,7 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
+from ..diagnostics.lmtests import FLOW_INTRA_SUITE, FLOW_SUITE
 from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from ..logdet import (
     _flow_logdet_poly_coeffs,
@@ -715,7 +716,6 @@ class FlowModel(ABC):
         RuntimeError
             If the model has not been fit yet.
         """
-        from .base import SpatialModel
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
@@ -781,6 +781,28 @@ class FlowModel(ABC):
         if extra:
             coords.update(extra)
         return coords
+
+    @property
+    def _nonintercept_indices(self) -> list[int]:
+        """Return indices of non-constant (non-intercept) columns in X.
+
+        This is used to exclude the intercept from impact measures, since
+        the intercept has no meaningful spatial effect interpretation.
+
+        Returns
+        -------
+        list[int]
+            Column indices of X that are not constant/intercept columns.
+        """
+        X = self._X_design
+        indices: list[int] = []
+        for j, name in enumerate(self._feature_names):
+            column = X[:, j]
+            is_named_intercept = name.lower() == "intercept"
+            is_constant = np.allclose(column, column[0])
+            if not (is_named_intercept or is_constant):
+                indices.append(j)
+        return indices
 
     # ------------------------------------------------------------------
     # Pointwise log-likelihood (with Jacobian correction for SAR variants)
@@ -1130,32 +1152,7 @@ class SARFlow(FlowModel):
         - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_dest_test"
-            ),
-            "Robust-LM-Flow-Dest",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_orig_test"
-            ),
-            "Robust-LM-Flow-Orig",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_robust_lm_flow_network_test"
-            ),
-            "Robust-LM-Flow-Network",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_intra_test"
-            ),
-            "LM-Flow-Intra",
-        ),
-    ]
+    _spatial_diagnostics_tests = FLOW_SUITE.tests
 
     def _build_pymc_model(self) -> pm.Model:
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -1934,38 +1931,7 @@ class OLSFlow(FlowModel):
     is required and ``logdet_method`` is ignored if passed.
     """
 
-    _spatial_diagnostics_tests = [
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_dest_test"
-            ),
-            "LM-Flow-Dest",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_orig_test"
-            ),
-            "LM-Flow-Orig",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_network_test"
-            ),
-            "LM-Flow-Network",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_joint_test"
-            ),
-            "LM-Flow-Joint",
-        ),
-        (
-            SpatialModel._lazy_lm_test(
-                "bayespecon.diagnostics.lmtests", "bayesian_lm_flow_intra_test"
-            ),
-            "LM-Flow-Intra",
-        ),
-    ]
+    _spatial_diagnostics_tests = FLOW_INTRA_SUITE.tests
 
     def __init__(self, y, G, X, **kwargs):
         # Skip log-determinant precomputation: A = I_N has |A| = 1.

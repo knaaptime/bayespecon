@@ -31,6 +31,7 @@ import scipy.sparse as sp
 from .._samplers._chain_runner import run_chains
 from .._samplers._idata import gibbs_to_inference_data
 from .._samplers._jax_gibbs import run_chain_jax
+from .._samplers._slice import SliceWidthState
 from .._samplers._spatial_normal import CholmodFactor, has_cholmod
 from .._samplers.pg_gibbs import GibbsCache, GibbsPriors, GibbsState, run_chain
 from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
@@ -400,7 +401,7 @@ class SARNegBinLatent(SpatialModel):
             rho_mode_update_freq=5,  # recompute mode every 5 sweeps during burn-in
             rho_mode_w_factor=2.0,
             rho_adaptive_width=True,
-            rho_slice_width_state=None,
+            rho_slice_width_state=SliceWidthState(w=0.2),
         )
 
         # Derive per-chain seeds
@@ -417,7 +418,7 @@ class SARNegBinLatent(SpatialModel):
         # eliminating Python→JAX dispatch overhead (~30ms/call × 6 calls).
         _use_jax_full = sample_method == "jax_dense"
 
-        def _run_one_chain(chain_id, seed):
+        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
             rng = np.random.default_rng(seed)
             init = self._initialize_from_glm(rng)
             if _use_jax_full:

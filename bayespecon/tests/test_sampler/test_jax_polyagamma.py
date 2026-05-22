@@ -32,7 +32,7 @@ from bayespecon._samplers._jax_polyagamma import (
 
 # Try to import polyagamma for reference comparisons
 try:
-    from polyagamma import polyagamma as pg_ref
+    from polyagamma import random_polyagamma as pg_ref_draw
 
     HAS_POLYAGAMMA = True
 except ImportError:
@@ -435,8 +435,8 @@ class TestPolyaGammaReferenceComparison:
             keys
         )
 
-        # Reference draws
-        ref_draws = np.array([pg_ref(1, z_val) for _ in range(n_draws)])
+        # Reference draws (vectorized)
+        ref_draws = pg_ref_draw(1, z_val, size=n_draws)
 
         jax_mean = float(jnp.mean(jax_draws))
         ref_mean = float(np.mean(ref_draws))
@@ -457,8 +457,8 @@ class TestPolyaGammaReferenceComparison:
         keys = jax.random.split(key, n_draws)
         jax_draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
 
-        # Reference draws
-        ref_draws = np.array([pg_ref(h_val, z_val) for _ in range(n_draws)])
+        # Reference draws (vectorized)
+        ref_draws = pg_ref_draw(h_val, z_val, size=n_draws)
 
         jax_mean = float(jnp.mean(jax_draws))
         ref_mean = float(np.mean(ref_draws))
@@ -481,7 +481,8 @@ class TestPolyaGammaReferenceComparison:
                 lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20)
             )(keys)
 
-            ref_draws = np.array([pg_ref(h_val, z_val) for _ in range(n_draws)])
+            # Reference draws (vectorized)
+            ref_draws = pg_ref_draw(h_val, z_val, size=n_draws)
 
             jax_mean = float(jnp.mean(jax_draws))
             ref_mean = float(np.mean(ref_draws))

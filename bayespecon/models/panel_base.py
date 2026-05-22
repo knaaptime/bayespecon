@@ -410,6 +410,26 @@ class SpatialPanelModel(ABC):
             self._y_raw, self._X_raw, self._N, self._T, self.model
         )
 
+        # For FE models (model != 0), demeaning zeros out intercept/constant
+        # columns.  Drop them from the design matrix so that both NUTS and
+        # Gibbs see the same X, and the posterior beta has a consistent
+        # dimension regardless of sampler.
+        if self.model != 0:
+            ni = self._nonintercept_indices
+            if len(ni) < self._X.shape[1]:
+                # Build a mapping: for each original column index, how many
+                # dropped (constant) columns precede it?
+                dropped = sorted(set(range(self._X.shape[1])) - set(ni))
+                shift = {orig: orig - sum(d < orig for d in dropped)
+                         for orig in range(self._X.shape[1])}
+                self._X = self._X[:, ni]
+                self._feature_names = [self._feature_names[i] for i in ni]
+                # Shift spatial-lag column indices to account for dropped cols.
+                self._wx_column_indices = [shift[j] for j in self._wx_column_indices]
+                self._wx_feature_names = [
+                    self._feature_names[j] for j in self._wx_column_indices
+                ]
+
         # Resolve the logdet method up-front so the lazy property accessors
         # know whether eigenvalues are required.
         self._resolved_logdet_method = (

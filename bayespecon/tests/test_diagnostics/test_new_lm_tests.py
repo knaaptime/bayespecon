@@ -93,6 +93,7 @@ def _make_ols_mock(n: int = 20, k: int = 2, draws: int = 50):
     model._Wy = Wy
     model._W_sparse = W_sp
     model._T_ww = T_ww
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = idata
 
     return model
@@ -149,6 +150,7 @@ def _make_sdm_mock(n: int = 20, k: int = 2, draws: int = 50):
     model._Wy = Wy
     model._W_sparse = W_sp
     model._T_ww = T_ww
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = idata
 
     return model
@@ -205,6 +207,7 @@ def _make_sdem_mock(n: int = 20, k: int = 2, draws: int = 50):
     model._W_sparse = W_sp
     model._W_dense = W
     model._T_ww = T_ww
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = idata
 
     return model
@@ -263,6 +266,7 @@ def _make_panel_sdm_mock(N: int = 5, T: int = 4, k: int = 2, draws: int = 50):
     model._T_ww = T_ww
     model._N = N
     model._T = T
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = idata
 
     return model
@@ -322,6 +326,7 @@ def _make_panel_sdem_mock(N: int = 5, T: int = 4, k: int = 2, draws: int = 50):
     model._T_ww = T_ww
     model._N = N
     model._T = T
+    model._nonintercept_indices = list(range(X.shape[1]))
     model.inference_data = idata
 
     return model
