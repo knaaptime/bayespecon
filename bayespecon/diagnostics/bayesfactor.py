@@ -344,9 +344,15 @@ def _nearest_pos_def(A: np.ndarray) -> np.ndarray:
 
     B = (A + A.T) / 2
     eigvals, eigvecs = eigh(B)
-    if np.all(eigvals > 0):
-        return A
-    eigvals = np.maximum(eigvals, 1e-10)
+    # Floor eigenvalues so the result is *strictly* positive-definite under
+    # scipy's check.  ``scipy.stats._multivariate._PSD`` treats eigenvalues
+    # below ``max(M.shape) * eps * max(|eigvals|)`` as zero; we floor an
+    # order of magnitude above that threshold so the Cholesky path in
+    # ``multivariate_normal.logpdf`` succeeds reliably.
+    max_eig = float(eigvals.max())
+    scipy_threshold = B.shape[0] * np.finfo(B.dtype).eps * max(max_eig, 1.0)
+    floor = max(1e3 * scipy_threshold, 1e-12)
+    eigvals = np.maximum(eigvals, floor)
     return eigvecs @ np.diag(eigvals) @ eigvecs.T
 
 
@@ -660,8 +666,15 @@ def _bridge_logml(
     # --- 5. Evaluate log densities for posterior samples ---
     q11 = np.array([log_posterior(samples_4_iter[j]) for j in range(N1)])
 
-    # q12: log proposal density at posterior samples (second half)
-    q12 = multivariate_normal.logpdf(samples_4_iter, mean=mu, cov=cov)
+    # q12: log proposal density at posterior samples (second half).
+    # ``cov`` has already been floored to strict positive-definiteness by
+    # ``_nearest_pos_def`` above; ``allow_singular=True`` is a belt-and-braces
+    # guard against scipy's PSD check rejecting matrices whose smallest
+    # eigenvalue lands at its rejection threshold (scipy always uses SVD
+    # internally regardless of this flag, so there is no performance cost).
+    q12 = multivariate_normal.logpdf(
+        samples_4_iter, mean=mu, cov=cov, allow_singular=True
+    )
 
     # --- 6. Run bridge sampling with repetitions ---
     logml_reps = []
@@ -674,7 +687,9 @@ def _bridge_logml(
         prop_samples = rng.multivariate_normal(mu, cov, size=N2)
 
         # q22: log proposal density at proposal samples
-        q22 = multivariate_normal.logpdf(prop_samples, mean=mu, cov=cov)
+        q22 = multivariate_normal.logpdf(
+            prop_samples, mean=mu, cov=cov, allow_singular=True
+        )
 
         # q21: log unnormalized posterior at proposal samples
         q21 = np.array([log_posterior(prop_samples[j]) for j in range(N2)])
@@ -930,6 +945,7 @@ def bayes_factor_compare_models(
     method: str = "bridge",
     prior_note: str = None,
     return_diagnostics: bool = False,
+    log: bool = False,
     **kwargs,
 ) -> Union[pd.DataFrame, tuple[pd.DataFrame, dict]]:
     """Compute all pairwise Bayes factors for a set of Bayesian models.
@@ -986,6 +1002,10 @@ def bayes_factor_compare_models(
         Optional string describing the priors used (for reporting).
     return_diagnostics : bool, default False
         If True, also return a dict of diagnostics for each model.
+    log : bool, default False
+        If True, return **log** Bayes factors (i.e. ``logml_i - logml_j``)
+        instead of Bayes factors.  Useful when the marginal-likelihood
+        differences are large enough to overflow ``exp`` (|Δlogml| > ~709).
     **kwargs
         Additional keyword arguments forwarded to the marginal-likelihood
         estimator.  For ``method='bridge'``, the following are accepted:
@@ -1274,12 +1294,25 @@ def bayes_factor_compare_models(
                 diagnostics[label] = None
 
     n = len(logmls)
-    bf_mat = np.ones((n, n))
+    log_bf_mat = np.zeros((n, n))
     for i in range(n):
         for j in range(n):
             if i != j:
-                bf_mat[i, j] = np.exp(logmls[i] - logmls[j])
-    df = pd.DataFrame(bf_mat, index=model_labels, columns=model_labels)
+                log_bf_mat[i, j] = logmls[i] - logmls[j]
+
+    if log:
+        df = pd.DataFrame(log_bf_mat, index=model_labels, columns=model_labels)
+    else:
+        with np.errstate(over="ignore"):
+            bf_mat = np.exp(log_bf_mat)
+        if np.any(np.isinf(bf_mat)):
+            warnings.warn(
+                "Some Bayes factors overflowed to inf because the log "
+                "marginal-likelihood differences exceed ~709. Pass "
+                "``log=True`` to return log Bayes factors instead.",
+                stacklevel=2,
+            )
+        df = pd.DataFrame(bf_mat, index=model_labels, columns=model_labels)
     if prior_note:
         warnings.warn(f"Bayes factors computed with priors: {prior_note}", stacklevel=2)
     if return_diagnostics:

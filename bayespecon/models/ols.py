@@ -64,10 +64,17 @@ class OLS(SpatialModel):
     priors : dict, optional
         Override default priors.  Supported keys:
 
-        - ``beta_mu`` (float, default 0): Prior mean for :math:`\\beta`.
-        - ``beta_sigma`` (float, default 1e6): Prior std for :math:`\\beta`.
-        - ``sigma_sigma`` (float, default 10): Scale for HalfNormal prior
-          on :math:`\\sigma`.
+        - ``beta_mu`` (array or float, optional): Prior mean for
+          :math:`\beta`. Default is Gelman et al. (2008) weakly-informative
+          mean (``mean(y)`` for intercept/constant columns, 0 for slopes).
+        - ``beta_sigma`` (array or float, optional): Prior std for
+          :math:`\beta`. Default is Gelman et al. (2008) weakly-informative
+          scale: ``2.5 * sd(y)`` for intercept/constant columns and
+          ``2.5 * sd(y) / sd(x_j)`` for each slope.
+        - ``sigma2_alpha`` (float, default 2.0): Shape of the
+          InverseGamma prior on :math:`\\sigma^2`.
+        - ``sigma2_beta`` (float, default ``Var(y)``): Scale of the
+          InverseGamma prior on :math:`\\sigma^2`.
         - ``nu_lam`` (float, default 1/30): Rate for Exponential prior on
           :math:`\\nu` (only used when ``robust=True``).
 
@@ -88,13 +95,18 @@ class OLS(SpatialModel):
             Compiled probabilistic model object with Normal or Student-t
             likelihood depending on ``self.robust``.
         """
-        beta_mu = self.priors.get("beta_mu", 0.0)
-        beta_sigma = self.priors.get("beta_sigma", 1e6)
-        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            self._X, list(self._feature_names)
+        )
+        beta_mu = self.priors.get("beta_mu", default_beta_mu)
+        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
+        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
+        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
 
         with pm.Model(coords=self._model_coords()) as model:
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
+            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
             mu = pt.dot(self._X, beta)
             if self.robust:
                 self._add_nu_prior(model)

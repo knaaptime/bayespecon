@@ -337,7 +337,12 @@ class TestBetaBlock:
 
 
 class TestSigma2Block:
-    """Tests for conjugate Inv-Γ σ² draw."""
+    """Tests for the σ² conjugate Inverse-Gamma update.
+
+    With prior ``σ² ~ InverseGamma(α, β)`` and Gaussian likelihood the
+    full conditional is ``InverseGamma(α + n/2, β + ss/2)`` — drawn
+    exactly in one step.
+    """
 
     def test_sample_sigma2_sar_positive(self):
         y, X, W_dense, n = _make_sar_data()
@@ -347,6 +352,7 @@ class TestSigma2Block:
         beta = np.array([1.0, 2.0])
         sigma2 = _sample_sigma2(0.3, beta, y, Wy, None, X, priors, "sar", rng)
         assert sigma2 > 0
+        assert isinstance(sigma2, float)
 
     def test_sample_sigma2_sem_positive(self):
         y, X, W_dense, n = _make_sem_data()
@@ -356,9 +362,10 @@ class TestSigma2Block:
         beta = np.array([1.0, 2.0])
         sigma2 = _sample_sigma2(0.3, beta, y, None, W_sparse, X, priors, "sem", rng)
         assert sigma2 > 0
+        assert isinstance(sigma2, float)
 
     def test_sigma2_draws_converge_to_analytical(self):
-        """Mean of many σ² draws should be close to analytical posterior mean."""
+        """Mean of σ² draws matches the analytical Inv-Γ posterior mean."""
         rng = np.random.default_rng(42)
         n = 50
         X = np.column_stack([np.ones(n), rng.standard_normal(n)])
@@ -366,22 +373,20 @@ class TestSigma2Block:
         y = X @ beta_true + 0.5 * rng.standard_normal(n)
         resid = y - X @ beta_true
         Wy = np.zeros(n)  # ρ=0 so Wy doesn't matter, but must be provided
-        priors = GaussianGibbsPriors()  # prior on σ² is now Jeffreys (weak)
+        priors = GaussianGibbsPriors(sigma2_alpha=2.0, sigma2_beta=1.0)
 
-        # Analytical: Inv-Γ(a_post, b_post), mean = b_post / (a_post - 1)
-        EPS = 1e-3
-        a_post = n / 2 + EPS
-        b_post = np.dot(resid, resid) / 2 + EPS
+        # Posterior: Inv-Γ(α + n/2, β + ss/2), mean = b_post / (a_post - 1).
+        a_post = priors.sigma2_alpha + n / 2.0
+        b_post = priors.sigma2_beta + 0.5 * np.dot(resid, resid)
         expected_mean = b_post / (a_post - 1)
 
-        draws = np.array(
-            [
-                _sample_sigma2(0.0, beta_true, y, Wy, None, X, priors, "sar", rng)
-                for _ in range(5000)
-            ]
-        )
+        draws = np.empty(5000)
+        for i in range(5000):
+            draws[i] = _sample_sigma2(
+                0.0, beta_true, y, Wy, None, X, priors, "sar", rng
+            )
 
-        np.testing.assert_allclose(draws.mean(), expected_mean, rtol=0.1)
+        np.testing.assert_allclose(draws.mean(), expected_mean, rtol=0.05)
 
 
 # ===================================================================

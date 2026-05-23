@@ -318,8 +318,10 @@ def _sample_beta_conjugate(
           β̂ = Σ_β (X^T r / σ² + Λ₀⁻¹ μ₀)
     """
     k = X.shape[1]
-    prior_prec = np.diag(1.0 / np.full(k, priors.beta_sigma) ** 2)
-    prior_mean = np.full(k, float(priors.beta_mu))
+    beta_sigma_arr = np.broadcast_to(np.asarray(priors.beta_sigma, dtype=float), (k,))
+    beta_mu_arr = np.broadcast_to(np.asarray(priors.beta_mu, dtype=float), (k,))
+    prior_prec = np.diag(1.0 / beta_sigma_arr**2)
+    prior_mean = np.array(beta_mu_arr, dtype=float)
 
     post_prec = XtX / sigma2 + prior_prec
     Xtr = X.T @ r
@@ -1151,18 +1153,25 @@ def run_re_chain(
             alpha_samples[j] = state.alpha
             sigma_alpha_samples[j] = np.sqrt(state.sigma_alpha2)
 
-            # Log-likelihood
+            # Log-likelihood (Gaussian + Jacobian / N·T correction so
+            # that the per-obs contributions sum to the joint log-density
+            # used by NUTS).  Matches the convention in
+            # ``run_gaussian_chain`` and the SAR NUTS post-sample path.
             alpha_exp = state.alpha[unit_idx]
             if model_type in ("sar", "sdm"):
                 resid = y - state.rho * Wy - X @ state.beta - alpha_exp
             else:
                 resid_raw = y - X @ state.beta - alpha_exp
                 resid = resid_raw - state.rho * (cache.W_sparse @ resid_raw)
-            log_lik_samples[j] = -0.5 * (
-                (resid / np.sqrt(state.sigma2)) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(np.sqrt(state.sigma2))
-            )
+            sigma = np.sqrt(state.sigma2)
+            ll = -0.5 * (resid / sigma) ** 2 - np.log(sigma) - 0.5 * np.log(2.0 * np.pi)
+            # T·log|I - ρ W_N| spread across all n = N·T observations.
+            # ``cache.logdet_fn`` was built with the panel's T, so this
+            # returns the total log-Jacobian.
+            jacobian = cache.logdet_fn(state.rho)
+            ll = ll + jacobian / n
+            ll = np.where(np.isfinite(ll), ll, -1e10)
+            log_lik_samples[j] = ll
 
         # Progress bar
         if progressbar and progress_manager is None:

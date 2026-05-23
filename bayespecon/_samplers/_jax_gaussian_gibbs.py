@@ -251,7 +251,8 @@ def _make_gaussian_gibbs_step(
     beta_sigma2_jax = jnp.broadcast_to(
         jnp.asarray(priors.beta_sigma, dtype=jnp.float64) ** 2, (k,)
     )
-    jnp.float64(priors.sigma_sigma)
+    sigma2_alpha_jax = jnp.float64(priors.sigma2_alpha)
+    sigma2_beta_jax = jnp.float64(priors.sigma2_beta)
     rho_lower_jax = jnp.float64(priors.rho_lower)
     rho_upper_jax = jnp.float64(priors.rho_upper)
 
@@ -303,18 +304,20 @@ def _make_gaussian_gibbs_step(
         z_beta = jax.random.normal(key_beta, shape=(k,), dtype=jnp.float64)
         beta_new = m_beta + jnp.linalg.solve(L_beta.T, z_beta)
 
-        # ── Block 2: σ² | β, ρ/λ, y — conjugate inverse-Gamma ──
+        # ── Block 2: σ² | β, ρ/λ, y — conjugate InverseGamma draw ──
+        # Prior: σ² ~ InverseGamma(α, β).  Full conditional:
+        #   σ² | rest ~ InverseGamma(α + n/2, β + ss/2)
+        # Matches the InverseGamma prior used by the NUTS path so the two
+        # samplers target identical posteriors (LeSage 2009 convention).
         if is_sar:
             resid = y_jax - rho * Wy_jax - X_jax @ beta_new
         else:
             resid_raw = y_jax - X_jax @ beta_new
             resid = resid_raw - rho * (W_dense_jax @ resid_raw)
 
-        # Weakly informative Jeffreys prior: p(σ²) ∝ 1/σ²
-        # Approximated as Inv-Γ(ε, ε) with ε = 1e-3
-        EPS = jnp.float64(1e-3)
-        a_post = jnp.float64(n / 2.0 + EPS)
-        b_post = jnp.float64(resid @ resid / 2.0 + EPS)
+        ss = resid @ resid
+        a_post = sigma2_alpha_jax + jnp.float64(n / 2.0)
+        b_post = sigma2_beta_jax + 0.5 * ss
         sigma2_inv = jax.random.gamma(key_sigma2, a_post) / b_post
         sigma2_new = jnp.maximum(1.0 / sigma2_inv, 1e-10)
 

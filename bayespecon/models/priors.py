@@ -41,23 +41,50 @@ class BasePriors:
     Attributes
     ----------
     beta_mu, beta_sigma
-        Normal prior on regression coefficients.
+        Normal prior on regression coefficients.  Both default to ``None``,
+        which means the model resolves a *weakly-informative, data-scaled*
+        Gelman et al. (2008) prior at construction:
+
+        * Intercept columns get ``mu = mean(y)`` and ``sigma = 2.5 * sd(y)``.
+        * Slope columns get ``mu = 0`` and ``sigma = 2.5 * sd(y) / sd(x_j)``.
+
+        Either field may be set explicitly as a scalar (broadcast to all
+        coefficients) or as a vector of length ``p`` matching the design
+        matrix used by ``beta``.  Setting these to large finite values
+        (e.g. ``beta_sigma = 1e6``) reproduces the legacy near-improper
+        prior but is not recommended — it produces Bartlett-Lindley
+        penalties of tens of nats in Bayes-factor model comparison and
+        causes posterior-sampling problems on collinear designs.
+    sigma2_alpha, sigma2_beta
+        Inverse-gamma prior on the observation-noise variance σ²:
+        ``σ² ~ InverseGamma(sigma2_alpha, sigma2_beta)``.  Used by the
+        Gaussian models (OLS, SAR, SEM, SDM, SDEM) for **both** NUTS and
+        Gibbs paths so that posteriors agree exactly.  Following LeSage
+        (2009) the conjugate Inv-Γ keeps the σ² Gibbs block in closed
+        form.  Default ``alpha=2.0`` gives a finite-mean weakly
+        informative prior; if ``sigma2_beta`` is ``None`` the model
+        resolves it to ``Var(y)`` at construction so the prior mean is
+        scale-aware (~ Var(y)).
     sigma_sigma
-        Half-normal scale on the observation-noise standard deviation.
-        **NUTS only.**  When ``sampler="gibbs"`` the σ² block uses a
-        fixed weakly informative Jeffreys prior p(σ²) ∝ 1/σ²
-        (approximated as Inv-Γ(ε, ε) with ε = 1e-3) so that the
-        posterior is dominated by the likelihood and agrees with the
-        NUTS posterior.  The ``sigma_sigma`` value is ignored by the
-        Gibbs sampler.
+        Half-normal scale on σ.  **Tobit/Probit models only.**  Ignored
+        by the Gaussian path, which uses ``sigma2_alpha`` /
+        ``sigma2_beta``.
     nu_lam
         Rate of the Exponential prior on Student-t degrees of freedom when
         ``robust=True``.  Mean ``1/nu_lam`` (default mean ≈ 30).
+
+    References
+    ----------
+    Gelman, A., Jakulin, A., Pittau, M. G., & Su, Y.-S. (2008).
+    *A weakly informative default prior distribution for logistic and
+    other regression models.* Annals of Applied Statistics, 2(4), 1360-1383.
     """
 
-    beta_mu: float = 0.0
-    beta_sigma: float = 1e6
-    sigma_sigma: float = 10.0
+    beta_mu: float | Any = None
+    beta_sigma: float | Any = None
+    sigma2_alpha: float = 2.0
+    sigma2_beta: float | None = None
+    sigma_sigma: float = 10.0  # Tobit/Probit only.
     nu_lam: float = 1.0 / 30.0
 
 
@@ -207,8 +234,12 @@ def priors_as_dict(priors: Any) -> dict[str, Any]:
 
     Provided so that existing model code that relies on ``self.priors.get(...)``
     continues to function unchanged while migration to typed access proceeds.
+
+    Fields whose value is ``None`` are omitted so that ``dict.get(key, default)``
+    falls through to the caller-supplied default (e.g. a data-driven prior scale
+    computed from ``y``).
     """
-    return asdict(priors)
+    return {k: v for k, v in asdict(priors).items() if v is not None}
 
 
 # ---------------------------------------------------------------------------
@@ -226,13 +257,24 @@ class PanelBasePriors:
     Attributes
     ----------
     beta_mu, beta_sigma
-        Normal prior on regression coefficients.
+        Normal prior on regression coefficients.  Both default to
+        ``None``, which means the model resolves a weakly-informative,
+        data-scaled Gelman et al. (2008) prior at construction (see
+        :class:`BasePriors` for the formula).
+    sigma2_alpha, sigma2_beta
+        Inverse-gamma prior on the observation-noise variance
+        :math:`\\sigma^2`.  Default ``alpha=2.0``; ``sigma2_beta`` defaults
+        to ``Var(y)`` when ``None``.
     sigma_sigma
-        Half-normal scale on the observation-noise standard deviation.
+        Half-normal scale on :math:`\\sigma`.  Retained for backward
+        compatibility with callers that still pass it; unused by the
+        Gaussian path, which uses ``sigma2_alpha`` / ``sigma2_beta``.
     """
 
-    beta_mu: float = 0.0
-    beta_sigma: float = 1e6
+    beta_mu: float | Any = None
+    beta_sigma: float | Any = None
+    sigma2_alpha: float = 2.0
+    sigma2_beta: float | None = None
     sigma_sigma: float = 10.0
 
 

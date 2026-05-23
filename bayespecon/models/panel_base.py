@@ -24,7 +24,7 @@ from ..logdet import (
     make_logdet_numpy_vec_fn,
 )
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
-from .base import _is_row_standardized_csr
+from .base import _is_row_standardized_csr, gelman_default_beta_prior
 
 
 def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
@@ -459,6 +459,19 @@ class SpatialPanelModel(ABC):
             self._WX = self._sparse_panel_lag(self._X[:, self._wx_column_indices])
         else:
             self._WX = np.empty((self._X.shape[0], 0), dtype=float)
+
+    def _gelman_default_beta_prior(
+        self,
+        design: np.ndarray,
+        feature_names: list[str],
+        scale: float = 2.5,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Weakly-informative default Gaussian prior on regression coefficients.
+
+        Thin wrapper around :func:`bayespecon.models.base.gelman_default_beta_prior`
+        that uses ``self._y`` as the response.
+        """
+        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
 
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
         """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
