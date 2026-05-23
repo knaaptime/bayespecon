@@ -68,17 +68,13 @@ ABS_TOL_THETA = 0.40
 
 
 def _fit(model_cls, y, X, W_panel_graph):
-    model = model_cls(
-        y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=0
-    )
+    model = model_cls(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=0)
     return model.fit(**SAMPLE_KWARGS)
 
 
 def _assert_scalar(idata, name, true, tol, label):
     hat = float(idata.posterior[name].mean())
-    assert abs(hat - true) < tol, (
-        f"{label} {name}: expected ≈{true}, got {hat:.3f}"
-    )
+    assert abs(hat - true) < tol, f"{label} {name}: expected ≈{true}, got {hat:.3f}"
 
 
 def _assert_beta(idata, label):
@@ -96,9 +92,14 @@ def _assert_beta(idata, label):
 
 def test_dlm_panel_fe_recovers_phi_and_beta(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_dlm_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        phi=PHI_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        phi=PHI_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     idata = _fit(OLSPanelDynamic, y, X, W_panel_graph)
     _assert_scalar(idata, "phi", PHI_TRUE, ABS_TOL_PHI, "OLSPanelDynamic")
@@ -112,9 +113,15 @@ def test_dlm_panel_fe_recovers_phi_and_beta(rng, W_panel_dense, W_panel_graph):
 
 def test_sdmr_panel_fe_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sdmr_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, phi=PHI_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        phi=PHI_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     idata = _fit(SDMRPanelDynamic, y, X, W_panel_graph)
     _assert_scalar(idata, "rho", RHO_TRUE, ABS_TOL_SPATIAL, "SDMRPanelDynamic")
@@ -129,9 +136,16 @@ def test_sdmr_panel_fe_recovers_all(rng, W_panel_dense, W_panel_graph):
 
 def test_sdmu_panel_fe_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sdmu_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, phi=PHI_TRUE, theta=THETA_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        phi=PHI_TRUE,
+        theta=THETA_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     idata = _fit(SDMUPanelDynamic, y, X, W_panel_graph)
     _assert_scalar(idata, "rho", RHO_TRUE, ABS_TOL_SPATIAL, "SDMUPanelDynamic")
@@ -147,9 +161,15 @@ def test_sdmu_panel_fe_recovers_all(rng, W_panel_dense, W_panel_graph):
 
 def test_sar_panel_de_dynamic_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sar_dynamic_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, phi=PHI_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        phi=PHI_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     idata = _fit(SARPanelDynamic, y, X, W_panel_graph)
     _assert_scalar(idata, "rho", RHO_TRUE, ABS_TOL_SPATIAL, "SARPanelDynamic")
@@ -164,9 +184,15 @@ def test_sar_panel_de_dynamic_recovers_all(rng, W_panel_dense, W_panel_graph):
 
 def test_sem_panel_de_dynamic_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sem_dynamic_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        lam=LAM_TRUE, phi=PHI_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        phi=PHI_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     idata = _fit(SEMPanelDynamic, y, X, W_panel_graph)
     _assert_scalar(idata, "lam", LAM_TRUE, ABS_TOL_SPATIAL, "SEMPanelDynamic")
@@ -181,9 +207,15 @@ def test_sem_panel_de_dynamic_recovers_all(rng, W_panel_dense, W_panel_graph):
 
 def test_sdem_panel_de_dynamic_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sdem_dynamic_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        lam=LAM_TRUE, phi=PHI_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        phi=PHI_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     idata = _fit(SDEMPanelDynamic, y, X, W_panel_graph)
     _assert_scalar(idata, "lam", LAM_TRUE, ABS_TOL_SPATIAL, "SDEMPanelDynamic")
@@ -196,13 +228,16 @@ def test_sdem_panel_de_dynamic_recovers_all(rng, W_panel_dense, W_panel_graph):
 # ---------------------------------------------------------------------------
 
 
-def test_slx_panel_de_dynamic_recovers_phi_and_beta(
-    rng, W_panel_dense, W_panel_graph
-):
+def test_slx_panel_de_dynamic_recovers_phi_and_beta(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_slx_dynamic_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        phi=PHI_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        phi=PHI_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     idata = _fit(SLXPanelDynamic, y, X, W_panel_graph)
     _assert_scalar(idata, "phi", PHI_TRUE, ABS_TOL_PHI, "SLXPanelDynamic")

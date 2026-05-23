@@ -40,8 +40,11 @@ def test_spatialprobit_recovery_and_fitted_probs(rng):
     W_dense = make_line_W(M_REGIONS)
     W_graph = W_to_graph(W_dense)
     y, X, region_ids = make_spatial_probit_data(
-        rng, W_dense,
-        rho=RHO_TRUE, beta=BETA_TRUE, sigma_a=SIGMA_A_TRUE,
+        rng,
+        W_dense,
+        rho=RHO_TRUE,
+        beta=BETA_TRUE,
+        sigma_a=SIGMA_A_TRUE,
         n_per_region=N_PER_REGION,
     )
     model = SpatialProbit(y=y, X=X, W=W_graph, region_ids=region_ids)

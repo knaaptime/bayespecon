@@ -6,10 +6,9 @@ import numpy as np
 import pytest
 from libpysal.graph import Graph
 
-from bayespecon.diagnostics import SpatialCVResult, spatial_kfold
 from bayespecon.dgp import simulate_sar
+from bayespecon.diagnostics import SpatialCVResult, spatial_kfold
 from bayespecon.models import OLS, SAR
-
 
 FIT_KW = dict(draws=20, tune=20, chains=1, random_seed=0, progressbar=False)
 
@@ -50,9 +49,7 @@ def test_spatial_kfold_spatial_lag_with_geometry(sar_grid):
     """SAR path: KMeans fold construction + spatial-precision predictive."""
     gdf, W = sar_grid
     model = SAR(formula="y ~ X_1", data=gdf, W=W, logdet_method="eigenvalue")
-    res = spatial_kfold(
-        model, geometry=gdf.geometry, n_blocks=3, **FIT_KW
-    )
+    res = spatial_kfold(model, geometry=gdf.geometry, n_blocks=3, **FIT_KW)
     assert res.method == "kmeans"
     assert res.n_folds == 3
     assert np.isfinite(res.elpd)
@@ -77,6 +74,4 @@ def test_spatial_kfold_requires_at_least_two_folds(sar_grid):
     gdf, W = sar_grid
     model = OLS(formula="y ~ X_1", data=gdf, W=W)
     with pytest.raises(ValueError, match="at least 2 folds"):
-        spatial_kfold(
-            model, fold_ids=np.zeros(len(gdf), dtype=int), **FIT_KW
-        )
+        spatial_kfold(model, fold_ids=np.zeros(len(gdf), dtype=int), **FIT_KW)

@@ -15,7 +15,6 @@ import pytest
 from bayespecon import SDEM, SDM, SEM, SLX
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
-
 _EXPECTED_EFFECT_COLUMNS = {
     "direct",
     "direct_ci_lower",

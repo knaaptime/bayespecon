@@ -298,9 +298,7 @@ def spatial_kfold(
     unique_folds = np.unique(fold_ids)
     n_folds = unique_folds.shape[0]
     if n_folds < 2:
-        raise ValueError(
-            f"spatial_kfold requires at least 2 folds (got {n_folds})."
-        )
+        raise ValueError(f"spatial_kfold requires at least 2 folds (got {n_folds}).")
 
     kind = _model_kind(model)
     y_full = np.asarray(model._y, dtype=np.float64)

@@ -52,35 +52,45 @@ def _assert_beta(idata, label):
 
 def _assert_scalar(idata, name, true, tol, label):
     hat = float(idata.posterior[name].mean())
-    assert abs(hat - true) < tol, (
-        f"{label} {name}: expected ≈{true}, got {hat:.3f}"
-    )
+    assert abs(hat - true) < tol, f"{label} {name}: expected ≈{true}, got {hat:.3f}"
 
 
 def test_ols_panel_re_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_ols_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        beta=BETA_TRUE, sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = OLSPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
     idata = model.fit(**SAMPLE_KWARGS)
     _assert_beta(idata, "OLSPanelRE")
-    _assert_scalar(idata, "sigma_alpha", SIGMA_ALPHA_TRUE,
-                   ABS_TOL_SIGMA_ALPHA, "OLSPanelRE")
+    _assert_scalar(
+        idata, "sigma_alpha", SIGMA_ALPHA_TRUE, ABS_TOL_SIGMA_ALPHA, "OLSPanelRE"
+    )
 
 
 def test_sar_panel_re_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sar_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = SARPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
     idata = model.fit(**SAMPLE_KWARGS)
     _assert_scalar(idata, "rho", RHO_TRUE, ABS_TOL_SPATIAL, "SARPanelRE")
     _assert_beta(idata, "SARPanelRE")
-    _assert_scalar(idata, "sigma_alpha", SIGMA_ALPHA_TRUE,
-                   ABS_TOL_SIGMA_ALPHA, "SARPanelRE")
+    _assert_scalar(
+        idata, "sigma_alpha", SIGMA_ALPHA_TRUE, ABS_TOL_SIGMA_ALPHA, "SARPanelRE"
+    )
 
 
 def test_sem_panel_re_recovers_all(rng, W_panel_dense, W_panel_graph):
@@ -93,13 +103,19 @@ def test_sem_panel_re_recovers_all(rng, W_panel_dense, W_panel_graph):
     A wider tolerance is used to reflect this inherent difficulty.
     """
     y, X, _ = make_panel_sem_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        lam=LAM_TRUE, beta=BETA_TRUE,
-        sigma=SIGMA_TRUE, sigma_alpha=SIGMA_ALPHA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=SIGMA_ALPHA_TRUE,
     )
     model = SEMPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
     idata = model.fit(**SAMPLE_KWARGS)
     _assert_scalar(idata, "lam", LAM_TRUE, ABS_TOL_SPATIAL, "SEMPanelRE")
     _assert_beta(idata, "SEMPanelRE")
-    _assert_scalar(idata, "sigma_alpha", SIGMA_ALPHA_TRUE,
-                   ABS_TOL_SIGMA_ALPHA_SEM_RE, "SEMPanelRE")
+    _assert_scalar(
+        idata, "sigma_alpha", SIGMA_ALPHA_TRUE, ABS_TOL_SIGMA_ALPHA_SEM_RE, "SEMPanelRE"
+    )

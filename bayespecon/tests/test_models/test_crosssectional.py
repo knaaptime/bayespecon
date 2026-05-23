@@ -53,9 +53,7 @@ def _assert_beta(idata, true_beta, label, tol_wx=ABS_TOL_WX):
 
 def _assert_scalar(idata, name, true, tol, label):
     hat = float(idata.posterior[name].mean())
-    assert abs(hat - true) < tol, (
-        f"{label} {name}: expected ≈{true}, got {hat:.3f}"
-    )
+    assert abs(hat - true) < tol, f"{label} {name}: expected ≈{true}, got {hat:.3f}"
 
 
 def test_sar_recovers_rho_and_beta(rng, W_dense, W_graph):

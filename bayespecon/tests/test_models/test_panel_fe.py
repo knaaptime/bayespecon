@@ -58,9 +58,7 @@ def _assert_slope(idata, label):
 
 def _assert_scalar(idata, name, true, tol, label):
     hat = float(idata.posterior[name].mean())
-    assert abs(hat - true) < tol, (
-        f"{label} {name}: expected ≈{true}, got {hat:.3f}"
-    )
+    assert abs(hat - true) < tol, f"{label} {name}: expected ≈{true}, got {hat:.3f}"
 
 
 def test_ols_panel_fe_recovers_beta_and_sigma(rng, W_panel_dense, W_panel_graph):
@@ -71,8 +69,13 @@ def test_ols_panel_fe_recovers_beta_and_sigma(rng, W_panel_dense, W_panel_graph)
     DGP has no unit effects and the model sigma matches the DGP sigma.
     """
     y, X, _ = make_panel_ols_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        beta=BETA_TRUE, sigma=SIGMA_TRUE, sigma_alpha=0.0,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
+        sigma_alpha=0.0,
     )
     model = OLSPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
@@ -82,8 +85,13 @@ def test_ols_panel_fe_recovers_beta_and_sigma(rng, W_panel_dense, W_panel_graph)
 
 def test_sar_panel_fe_recovers_rho_and_beta(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sar_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
     )
     model = SARPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
@@ -93,8 +101,13 @@ def test_sar_panel_fe_recovers_rho_and_beta(rng, W_panel_dense, W_panel_graph):
 
 def test_sem_panel_fe_recovers_lam_and_beta(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sem_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        lam=LAM_TRUE, beta=BETA_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta=BETA_TRUE,
+        sigma=SIGMA_TRUE,
     )
     model = SEMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
@@ -104,8 +117,14 @@ def test_sem_panel_fe_recovers_lam_and_beta(rng, W_panel_dense, W_panel_graph):
 
 def test_sdm_panel_fe_recovers_rho_and_beta(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sdm_fe_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=RHO_TRUE, beta1=BETA_TRUE, beta2=BETA2_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=RHO_TRUE,
+        beta1=BETA_TRUE,
+        beta2=BETA2_TRUE,
+        sigma=SIGMA_TRUE,
     )
     model = SDMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
@@ -115,8 +134,14 @@ def test_sdm_panel_fe_recovers_rho_and_beta(rng, W_panel_dense, W_panel_graph):
 
 def test_sdem_panel_fe_recovers_lam_and_beta(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sdem_fe_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        lam=LAM_TRUE, beta1=BETA_TRUE, beta2=BETA2_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        lam=LAM_TRUE,
+        beta1=BETA_TRUE,
+        beta2=BETA2_TRUE,
+        sigma=SIGMA_TRUE,
     )
     model = SDEMPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
@@ -127,8 +152,14 @@ def test_sdem_panel_fe_recovers_lam_and_beta(rng, W_panel_dense, W_panel_graph):
 def test_slx_panel_fe_recovers_beta(rng, W_panel_dense, W_panel_graph):
     """SLXPanelFE: rho=0 SDM-style DGP provides WX signal only."""
     y, X, _ = make_panel_sdm_fe_data(
-        rng, W_panel_dense, PANEL_N, PANEL_T,
-        rho=0.0, beta1=BETA_TRUE, beta2=BETA2_TRUE, sigma=SIGMA_TRUE,
+        rng,
+        W_panel_dense,
+        PANEL_N,
+        PANEL_T,
+        rho=0.0,
+        beta1=BETA_TRUE,
+        beta2=BETA2_TRUE,
+        sigma=SIGMA_TRUE,
     )
     model = SLXPanelFE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=1)
     idata = model.fit(**SAMPLE_KWARGS)
