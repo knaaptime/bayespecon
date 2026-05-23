@@ -75,13 +75,16 @@ class GaussianGibbsPriors:
         Prior mean for β.  Scalar is broadcast to all coefficients.
     beta_sigma : float or ndarray
         Prior standard deviation for β.  Scalar is broadcast.
-    sigma_sigma : float
-        **Deprecated / unused.**  The σ² block now uses a weakly
-        informative Jeffreys prior p(σ²) ∝ 1/σ² (approximated as
-        Inv-Γ(ε, ε) with ε = 1e-3) so that the posterior is dominated
-        by the likelihood and agrees with the NUTS posterior.  Kept
-        for backward compatibility with existing code that passes
-        ``sigma_sigma``.
+    sigma2_alpha : float
+        Shape hyperparameter of the ``InverseGamma(sigma2_alpha,
+        sigma2_beta)`` prior on σ².  Matches the NUTS path exactly so
+        that posteriors — and therefore LOO/WAIC — agree between the two
+        samplers.  Conjugate with the Gaussian likelihood, so the σ²
+        block is an exact closed-form draw (LeSage 2009 convention).
+    sigma2_beta : float
+        Scale (rate) hyperparameter of the InverseGamma prior on σ².
+        Models typically resolve this to ``Var(y)`` at construction so
+        the prior mean is scale-aware.
     rho_lower : float
         Lower bound for ρ/λ (from spectral stability).
     rho_upper : float
@@ -90,9 +93,14 @@ class GaussianGibbsPriors:
 
     beta_mu: float | np.ndarray = 0.0
     beta_sigma: float | np.ndarray = 1e6
-    sigma_sigma: float = 10.0
+    sigma2_alpha: float = 2.0
+    sigma2_beta: float = 1.0
     rho_lower: float = -0.999
     rho_upper: float = 0.999
+    # Accepted for backward compatibility with callers that still pass
+    # ``sigma_sigma=...`` (e.g. panel models).  Ignored by the sampler;
+    # use ``sigma2_alpha`` / ``sigma2_beta`` instead.
+    sigma_sigma: float = 10.0
 
 
 @dataclass
@@ -269,17 +277,23 @@ def _sample_beta_conjugate(
         New draw from the conditional posterior.
     """
     k = X.shape[1]
-    prior_prec = np.diag(1.0 / np.full(k, priors.beta_sigma) ** 2)
-    prior_mean = np.full(k, float(priors.beta_mu))
+    beta_sigma_arr = np.broadcast_to(np.asarray(priors.beta_sigma, dtype=float), (k,))
+    beta_mu_arr = np.broadcast_to(np.asarray(priors.beta_mu, dtype=float), (k,))
+    prior_prec = np.diag(1.0 / beta_sigma_arr**2)
+    prior_mean = np.array(beta_mu_arr, dtype=float)
 
     post_prec = XtX / sigma2 + prior_prec
     Xtr = X.T @ r
     rhs = Xtr / sigma2 + prior_prec @ prior_mean
 
-    # Cholesky factorisation: post_prec = L Lᵀ (SPD by construction)
+    # Cholesky factorisation: post_prec = L Lᵀ (SPD, lower-triangular L)
     # post_mean = post_prec⁻¹ @ rhs via two triangular solves
     # β = post_mean + L⁻ᵀ z,  z ~ N(0, I)  avoids forming inv(post_prec)
-    L, lower = cho_factor(post_prec)
+    # Cov(L⁻ᵀ z) = L⁻ᵀ L⁻¹ = (L Lᵀ)⁻¹ = post_prec⁻¹  ✓
+    # NB: must request lower=True; the scipy default returns the *upper*
+    # Cholesky U (A = UᵀU), in which case solve_triangular(U, z, trans='T')
+    # yields U⁻ᵀ z whose covariance is U⁻ᵀ U⁻¹ ≠ A⁻¹ — a silent bug.
+    L, lower = cho_factor(post_prec, lower=True)
     post_mean = cho_solve((L, lower), rhs)
     z = rng.standard_normal(k)
     beta = post_mean + solve_triangular(L, z, lower=lower, trans="T")
@@ -297,26 +311,26 @@ def _sample_sigma2(
     model_type: str,
     rng: np.random.Generator,
 ) -> float:
-    """Sample σ² from conjugate inverse-gamma posterior.
+    """Sample σ² from its conjugate Inverse-Gamma full conditional.
 
-    Uses a weakly informative prior p(σ²) ∝ 1/σ² (improper Jeffreys prior),
-    approximated as Inv-Γ(ε, ε) with ε = 1e-3 for numerical stability.
-    This ensures the posterior is dominated by the likelihood and matches
-    the NUTS posterior (which uses HalfNormal(10) on σ — nearly flat for
-    typical σ values).
+    With prior ``σ² ~ InverseGamma(α, β)`` and Gaussian likelihood the
+    full conditional is
 
-    For SAR/SDM:
-        resid = y - ρ W y - X β
-        σ² | · ~ Inv-Γ(a_post, b_post)
-        a_post = n/2 + ε
-        b_post = ||resid||² / 2 + ε
+    .. math::
 
-    For SEM/SDEM:
-        resid_raw = y - X β
-        ε = (I - λ W) resid_raw
-        σ² | · ~ Inv-Γ(a_post, b_post)
-        a_post = n/2 + ε
-        b_post = ||ε||² / 2 + ε
+        \\sigma^2 \\mid \\beta, \\rho, y
+            \\sim
+            \\mathrm{InverseGamma}\\!\\left(\\alpha + \\tfrac{n}{2},\\;
+                \\beta + \\tfrac{1}{2} \\lVert \\varepsilon \\rVert^2\\right),
+
+    where the residual depends on the model:
+
+    - SAR/SDM:   ε = y - ρ W y - X β
+    - SEM/SDEM:  ε = (I - λ W)(y - X β)
+
+    This is the standard LeSage (2009) / Anselin Bayesian-spatial Gibbs
+    update.  The same prior is placed on σ² in the NUTS path so the two
+    samplers target identical posteriors.
 
     Parameters
     ----------
@@ -333,7 +347,8 @@ def _sample_sigma2(
     X : ndarray of shape (n, k)
         Design matrix.
     priors : GaussianGibbsPriors
-        Prior hyperparameters.
+        Prior hyperparameters.  Uses ``sigma2_alpha`` (shape) and
+        ``sigma2_beta`` (scale/rate) for the InverseGamma prior.
     model_type : str
         One of "sar", "sem", "sdm", "sdem".
     rng : numpy.random.Generator
@@ -342,7 +357,7 @@ def _sample_sigma2(
     Returns
     -------
     sigma2 : float
-        New draw from the conditional posterior.
+        Draw from the full conditional.
     """
     n = len(y)
 
@@ -354,16 +369,9 @@ def _sample_sigma2(
         eps = resid_raw - rho * (W_sparse @ resid_raw)
         ss = np.dot(eps, eps)
 
-    # Weakly informative Jeffreys prior: p(σ²) ∝ 1/σ²
-    # Approximated as Inv-Γ(ε, ε) with ε = 1e-3 for numerical stability
-    EPS = 1e-3
-    a_post = n / 2 + EPS
-    b_post = ss / 2 + EPS
-
-    # Sample from Inv-Γ(a_post, b_post)
-    # σ² = 1 / Gamma(a_post, 1/b_post)
-    sigma2 = 1.0 / rng.gamma(a_post, 1.0 / b_post)
-    return sigma2
+    a_post = priors.sigma2_alpha + n / 2.0
+    b_post = priors.sigma2_beta + ss / 2.0
+    return 1.0 / rng.gamma(a_post, 1.0 / b_post)
 
 
 # ---------------------------------------------------------------------------
@@ -860,7 +868,7 @@ def run_gaussian_chain(
                 rng,
             )
 
-        # --- Block 2: σ² | β, ρ/λ, y ---
+        # --- Block 2: σ² | β, ρ/λ, y (conjugate Inv-Γ draw) ---
         state.sigma2 = _sample_sigma2(
             state.rho,
             state.beta,

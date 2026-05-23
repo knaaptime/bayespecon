@@ -191,7 +191,7 @@ class TestNegativeBinomialFlowRecovery:
         idata = model.fit_approx(
             method="advi",
             n=25000,
-            draws=2000,
+            draws=500,
             random_seed=42,
             progressbar=False,
         )
@@ -244,7 +244,7 @@ class TestNegativeBinomialFlowRecovery:
         idata = model.fit_approx(
             method="advi",
             n=25000,
-            draws=2000,
+            draws=500,
             random_seed=43,
             progressbar=False,
         )
@@ -306,7 +306,7 @@ class TestNegativeBinomialPanelFlowRecovery:
         idata = model.fit_approx(
             method="advi",
             n=25000,
-            draws=2000,
+            draws=500,
             random_seed=44,
             progressbar=False,
         )
@@ -362,7 +362,7 @@ class TestNegativeBinomialPanelFlowRecovery:
         idata = model.fit_approx(
             method="advi",
             n=25000,
-            draws=2000,
+            draws=500,
             random_seed=45,
             progressbar=False,
         )

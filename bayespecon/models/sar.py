@@ -68,8 +68,10 @@ class SAR(SpatialModel):
           :math:`\\beta`.
         - ``beta_sigma`` (float, default 1e6): Normal prior std for
           :math:`\\beta`.
-        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
-          for :math:`\\sigma`.
+        - ``sigma2_alpha`` (float, default 2.0): Shape of the
+          InverseGamma prior on :math:`\\sigma^2`.
+        - ``sigma2_beta`` (float, default ``Var(y)``): Scale of the
+          InverseGamma prior on :math:`\\sigma^2`.
         - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)
           prior on :math:`\\nu` (only used when ``robust=True``).
 
@@ -129,14 +131,19 @@ class SAR(SpatialModel):
 
         rho_lower = self.priors.get("rho_lower", -1.0)
         rho_upper = self.priors.get("rho_upper", 1.0)
-        beta_mu = self.priors.get("beta_mu", 0.0)
-        beta_sigma = self.priors.get("beta_sigma", 1e6)
-        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            self._X, list(self._feature_names)
+        )
+        beta_mu = self.priors.get("beta_mu", default_beta_mu)
+        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
+        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
+        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
+            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
 
             # mu = rho*Wy + X@beta  (Wy is fixed observed data here)
             mu = rho * self._Wy + pt.dot(self._X, beta)
@@ -397,10 +404,14 @@ class SAR(SpatialModel):
         from .._samplers._gaussian_gibbs import GaussianGibbsPriors
         from .._samplers._gibbs_estimation import GaussianSARGibbs
 
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            self._X, list(self._feature_names)
+        )
         priors = GaussianGibbsPriors(
-            beta_mu=self.priors.get("beta_mu", 0.0),
-            beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
             rho_lower=self._logdet_bounds.rho_min,
             rho_upper=self._logdet_bounds.rho_max,
         )

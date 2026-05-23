@@ -19,3 +19,9 @@ from .mcmc_efficiency import (
 from .mcmc_efficiency import (
     spatial_mcmc_diagnostic as spatial_mcmc_diagnostic,
 )
+from .spatial_cv import (
+    SpatialCVResult as SpatialCVResult,
+)
+from .spatial_cv import (
+    spatial_kfold as spatial_kfold,
+)

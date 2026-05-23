@@ -1,8 +1,8 @@
 """Parameter recovery tests for spatial panel random-effects models.
 
 Each test generates balanced panel data (including unit random effects),
-fits the RE model, and checks that the posterior mean of key parameters
-is within tolerance of the true value.
+fits the RE model once, and asserts that **all** posterior means are within
+tolerance of the true values.
 
 Run with::
 
@@ -42,13 +42,20 @@ ABS_TOL_SIGMA_ALPHA = 0.30
 ABS_TOL_SIGMA_ALPHA_SEM_RE = 0.40
 
 
-# ---------------------------------------------------------------------------
-# OLS Panel RE
-# ---------------------------------------------------------------------------
+def _assert_beta(idata, label):
+    beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
+    for j, (bhat, btrue) in enumerate(zip(beta_hat, BETA_TRUE)):
+        assert abs(bhat - btrue) < ABS_TOL_BETA, (
+            f"{label} beta[{j}]: expected ≈{btrue}, got {bhat:.3f}"
+        )
 
 
-def test_ols_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
-    """OLSPanelRE posterior means of beta should match truth."""
+def _assert_scalar(idata, name, true, tol, label):
+    hat = float(idata.posterior[name].mean())
+    assert abs(hat - true) < tol, f"{label} {name}: expected ≈{true}, got {hat:.3f}"
+
+
+def test_ols_panel_re_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_ols_data(
         rng,
         W_panel_dense,
@@ -60,39 +67,13 @@ def test_ols_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
     )
     model = OLSPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
     idata = model.fit(**SAMPLE_KWARGS)
-    beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    for j, (bhat, btrue) in enumerate(zip(beta_hat, BETA_TRUE)):
-        assert abs(bhat - btrue) < ABS_TOL_BETA, (
-            f"OLSPanelRE beta[{j}]: expected ≈{btrue}, got {bhat:.3f}"
-        )
-
-
-def test_ols_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
-    """OLSPanelRE posterior mean of sigma_alpha should be close to the true value."""
-    y, X, _ = make_panel_ols_data(
-        rng,
-        W_panel_dense,
-        PANEL_N,
-        PANEL_T,
-        beta=BETA_TRUE,
-        sigma=SIGMA_TRUE,
-        sigma_alpha=SIGMA_ALPHA_TRUE,
-    )
-    model = OLSPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
-    idata = model.fit(**SAMPLE_KWARGS)
-    sa_hat = float(idata.posterior["sigma_alpha"].mean())
-    assert abs(sa_hat - SIGMA_ALPHA_TRUE) < ABS_TOL_SIGMA_ALPHA, (
-        f"OLSPanelRE sigma_alpha: expected ≈{SIGMA_ALPHA_TRUE}, got {sa_hat:.3f}"
+    _assert_beta(idata, "OLSPanelRE")
+    _assert_scalar(
+        idata, "sigma_alpha", SIGMA_ALPHA_TRUE, ABS_TOL_SIGMA_ALPHA, "OLSPanelRE"
     )
 
 
-# ---------------------------------------------------------------------------
-# SAR Panel RE
-# ---------------------------------------------------------------------------
-
-
-def test_sar_panel_re_recovers_rho(rng, W_panel_dense, W_panel_graph):
-    """SARPanelRE posterior mean of rho should be close to the true rho."""
+def test_sar_panel_re_recovers_all(rng, W_panel_dense, W_panel_graph):
     y, X, _ = make_panel_sar_data(
         rng,
         W_panel_dense,
@@ -105,101 +86,15 @@ def test_sar_panel_re_recovers_rho(rng, W_panel_dense, W_panel_graph):
     )
     model = SARPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
     idata = model.fit(**SAMPLE_KWARGS)
-    rho_hat = float(idata.posterior["rho"].mean())
-    assert abs(rho_hat - RHO_TRUE) < ABS_TOL_SPATIAL, (
-        f"SARPanelRE rho: expected ≈{RHO_TRUE}, got {rho_hat:.3f}"
+    _assert_scalar(idata, "rho", RHO_TRUE, ABS_TOL_SPATIAL, "SARPanelRE")
+    _assert_beta(idata, "SARPanelRE")
+    _assert_scalar(
+        idata, "sigma_alpha", SIGMA_ALPHA_TRUE, ABS_TOL_SIGMA_ALPHA, "SARPanelRE"
     )
 
 
-def test_sar_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
-    """SARPanelRE posterior means of beta should match truth."""
-    y, X, _ = make_panel_sar_data(
-        rng,
-        W_panel_dense,
-        PANEL_N,
-        PANEL_T,
-        rho=RHO_TRUE,
-        beta=BETA_TRUE,
-        sigma=SIGMA_TRUE,
-        sigma_alpha=SIGMA_ALPHA_TRUE,
-    )
-    model = SARPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
-    idata = model.fit(**SAMPLE_KWARGS)
-    beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    for j, (bhat, btrue) in enumerate(zip(beta_hat, BETA_TRUE)):
-        assert abs(bhat - btrue) < ABS_TOL_BETA, (
-            f"SARPanelRE beta[{j}]: expected ≈{btrue}, got {bhat:.3f}"
-        )
-
-
-def test_sar_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
-    """SARPanelRE posterior mean of sigma_alpha should be close to the true value."""
-    y, X, _ = make_panel_sar_data(
-        rng,
-        W_panel_dense,
-        PANEL_N,
-        PANEL_T,
-        rho=RHO_TRUE,
-        beta=BETA_TRUE,
-        sigma=SIGMA_TRUE,
-        sigma_alpha=SIGMA_ALPHA_TRUE,
-    )
-    model = SARPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
-    idata = model.fit(**SAMPLE_KWARGS)
-    sa_hat = float(idata.posterior["sigma_alpha"].mean())
-    assert abs(sa_hat - SIGMA_ALPHA_TRUE) < ABS_TOL_SIGMA_ALPHA, (
-        f"SARPanelRE sigma_alpha: expected ≈{SIGMA_ALPHA_TRUE}, got {sa_hat:.3f}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# SEM Panel RE
-# ---------------------------------------------------------------------------
-
-
-def test_sem_panel_re_recovers_lam(rng, W_panel_dense, W_panel_graph):
-    """SEMPanelRE posterior mean of lambda should be close to the true value."""
-    y, X, _ = make_panel_sem_data(
-        rng,
-        W_panel_dense,
-        PANEL_N,
-        PANEL_T,
-        lam=LAM_TRUE,
-        beta=BETA_TRUE,
-        sigma=SIGMA_TRUE,
-        sigma_alpha=SIGMA_ALPHA_TRUE,
-    )
-    model = SEMPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
-    idata = model.fit(**SAMPLE_KWARGS)
-    lam_hat = float(idata.posterior["lam"].mean())
-    assert abs(lam_hat - LAM_TRUE) < ABS_TOL_SPATIAL, (
-        f"SEMPanelRE lam: expected ≈{LAM_TRUE}, got {lam_hat:.3f}"
-    )
-
-
-def test_sem_panel_re_recovers_beta(rng, W_panel_dense, W_panel_graph):
-    """SEMPanelRE posterior means of beta should match truth."""
-    y, X, _ = make_panel_sem_data(
-        rng,
-        W_panel_dense,
-        PANEL_N,
-        PANEL_T,
-        lam=LAM_TRUE,
-        beta=BETA_TRUE,
-        sigma=SIGMA_TRUE,
-        sigma_alpha=SIGMA_ALPHA_TRUE,
-    )
-    model = SEMPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
-    idata = model.fit(**SAMPLE_KWARGS)
-    beta_hat = idata.posterior["beta"].mean(("chain", "draw")).values
-    for j, (bhat, btrue) in enumerate(zip(beta_hat, BETA_TRUE)):
-        assert abs(bhat - btrue) < ABS_TOL_BETA, (
-            f"SEMPanelRE beta[{j}]: expected ≈{btrue}, got {bhat:.3f}"
-        )
-
-
-def test_sem_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
-    """SEMPanelRE posterior mean of sigma_alpha should be close to the true value.
+def test_sem_panel_re_recovers_all(rng, W_panel_dense, W_panel_graph):
+    """SEMPanelRE posterior mean recovery.
 
     NOTE: σ_α² is weakly identified in SEM-RE models because the random
     effects absorb spatial correlation that λ would otherwise capture.
@@ -219,7 +114,8 @@ def test_sem_panel_re_recovers_sigma_alpha(rng, W_panel_dense, W_panel_graph):
     )
     model = SEMPanelRE(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T)
     idata = model.fit(**SAMPLE_KWARGS)
-    sa_hat = float(idata.posterior["sigma_alpha"].mean())
-    assert abs(sa_hat - SIGMA_ALPHA_TRUE) < ABS_TOL_SIGMA_ALPHA_SEM_RE, (
-        f"SEMPanelRE sigma_alpha: expected ≈{SIGMA_ALPHA_TRUE}, got {sa_hat:.3f}"
+    _assert_scalar(idata, "lam", LAM_TRUE, ABS_TOL_SPATIAL, "SEMPanelRE")
+    _assert_beta(idata, "SEMPanelRE")
+    _assert_scalar(
+        idata, "sigma_alpha", SIGMA_ALPHA_TRUE, ABS_TOL_SIGMA_ALPHA_SEM_RE, "SEMPanelRE"
     )

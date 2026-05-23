@@ -765,6 +765,60 @@
   langid = {english},
 }
 
+@article{roberts2017CrossvalidationStrategies,
+  title = {Cross-validation Strategies for Data with Temporal, Spatial,
+           Hierarchical, or Phylogenetic Structure},
+  author = {Roberts, David R. and Bahn, Volker and Ciuti, Simone and Boyce, Mark
+            S. and Elith, Jane and Guillera-Arroita, Gurutzeta and Hauenstein,
+            Severin and Lahoz-Monfort, Jos{\'e} J. and Schr{\"o}der, Boris and
+            Thuiller, Wilfried and Warton, David I. and Wintle, Brendan A. and
+            Hartig, Florian and Dormann, Carsten F.},
+  year = 2017,
+  month = aug,
+  journal = {Ecography},
+  volume = {40},
+  number = {8},
+  pages = {913--929},
+  issn = {0906-7590, 1600-0587},
+  doi = {10.1111/ecog.02881},
+  url = {https://nsojournals.onlinelibrary.wiley.com/doi/10.1111/ecog.02881},
+  urldate = {2026-05-23},
+  abstract = {Ecological data often show temporal, spatial, hierarchical (random
+              effects), or phylogenetic structure. Modern statistical approaches
+              are increasingly accounting for such dependencies. However, when
+              performing cross-validation, these structures are regularly ignored
+              , resulting in serious underestimation of predictive error. One
+              cause for the poor performance of uncorrected (random)
+              cross-validation, noted often by modellers, are dependence
+              structures in the data that persist as dependence structures in
+              model residuals, violating the assumption of independence. Even
+              more concerning, because often overlooked, is that structured data
+              also provides ample opportunity for overfitting with non-causal
+              predictors. This problem can persist even if remedies such as
+              autoregressive models, generalized least squares, or mixed models
+              are used. Block cross-validation, where data are split
+              strategically rather than randomly, can address these issues.
+              However, the blocking strategy must be carefully considered.
+              Blocking in space, time, random effects or phylogenetic distance,
+              while accounting for dependencies in the data, may also unwittingly
+              induce extrapolations by restricting the ranges or combinations of
+              predictor variables available for model training, thus
+              overestimating interpolation errors. On the other hand, deliberate
+              blocking in predictor space may also improve error estimates when
+              extrapolation is the modelling goal. Here, we review the ecological
+              literature on non-random and blocked cross-validation approaches.
+              We also provide a series of simulations and case studies, in which
+              we show that, for all instances tested, block cross-validation is
+              nearly universally more appropriate than random cross-validation if
+              the goal is predicting to new data or predictor space, or for
+              selecting causal predictors. We recommend that block
+              cross-validation be used wherever dependence structures exist in a
+              dataset, even if no correlation structure is visible in the fitted
+              model residuals, or if the fitted models account for such
+              correlations.},
+  langid = {english},
+}
+
 @book{saad2003iterative,
   title = {Iterative Methods for Sparse Linear Systems},
   author = {Saad, Yousef},
@@ -881,7 +935,6 @@
   urldate = {2026-05-22},
   langid = {english},
 }
-
 @inproceedings{ubaru2018ApplicationsTrace,
   title = {Applications of {{Trace Estimation Techniques}}},
   booktitle = {High {{Performance Computing}} in {{Science}} and {{Engineering}}

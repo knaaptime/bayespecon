@@ -535,6 +535,10 @@ class GibbsEstimation:
             arrays = [c[key] for c in chain_results]
             posterior_samples[key] = np.stack(arrays, axis=0)  # (chains, n_keep)
 
+        # Also expose sigma² so downstream consumers (e.g. bridge sampling) can
+        # evaluate the PyMC model logp, which treats sigma² as the free RV.
+        posterior_samples["sigma2"] = posterior_samples["sigma"] ** 2
+
         # beta has shape (n_keep, k) per chain
         posterior_samples["beta"] = np.stack(
             [c["beta"] for c in chain_results], axis=0

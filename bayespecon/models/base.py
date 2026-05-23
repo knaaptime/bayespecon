@@ -29,6 +29,69 @@ from ..logdet import (
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
 
 
+def gelman_default_beta_prior(
+    y: np.ndarray,
+    design: np.ndarray,
+    feature_names: list[str],
+    scale: float = 2.5,
+) -> tuple[np.ndarray, np.ndarray]:
+    r"""Weakly-informative default prior on regression coefficients.
+
+    Follows Gelman, Jakulin, Pittau & Su (2008) by setting per-column
+    prior scales from ``sd(y)`` and ``sd(x_j)``.  For each column ``j``
+    of ``design``:
+
+    * **Intercept-like** (named ``"intercept"`` or numerically constant):
+      ``mu_j = mean(y)``, ``sigma_j = scale * sd(y)``.
+    * **Slope**:
+      ``mu_j = 0``, ``sigma_j = scale * sd(y) / sd(x_j)``.
+
+    Parameters
+    ----------
+    y : ndarray, shape (n,)
+        Response vector.
+    design : ndarray, shape (n, p)
+        Effective design matrix used by ``beta`` in the model
+        (i.e. ``X`` for SAR/SEM/OLS; ``[X, WX]`` for SDM/SDEM/SLX).
+    feature_names : list[str]
+        Column labels aligned with ``design``.  Used to detect
+        intercept-like columns named ``"intercept"``.
+    scale : float, default 2.5
+        Multiplier on the standardised prior scale.
+
+    Returns
+    -------
+    beta_mu : ndarray, shape (p,)
+    beta_sigma : ndarray, shape (p,)
+
+    References
+    ----------
+    Gelman, A., Jakulin, A., Pittau, M. G., & Su, Y.-S. (2008).
+    *A weakly informative default prior distribution for logistic and
+    other regression models.* Annals of Applied Statistics, 2(4),
+    1360-1383.
+    """
+    sd_y = float(np.std(y))
+    if sd_y <= 0.0:
+        sd_y = 1.0
+    mean_y = float(np.mean(y))
+    p = design.shape[1]
+    beta_mu = np.zeros(p, dtype=np.float64)
+    beta_sigma = np.empty(p, dtype=np.float64)
+    for j in range(p):
+        col = design[:, j]
+        name = feature_names[j] if j < len(feature_names) else ""
+        is_named_intercept = name.lower() == "intercept"
+        is_constant = np.allclose(col, col[0])
+        if is_named_intercept or is_constant:
+            beta_mu[j] = mean_y
+            beta_sigma[j] = scale * sd_y
+        else:
+            sd_col = float(np.std(col))
+            beta_sigma[j] = scale * sd_y / sd_col if sd_col > 0.0 else scale * sd_y
+    return beta_mu, beta_sigma
+
+
 def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
     """Return True when each row sum is numerically close to one."""
     row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
@@ -289,7 +352,6 @@ class SpatialModel(ABC):
             # Eigenvalues are computed lazily via the _W_eigs cached property
             # to avoid the O(n³) eigendecomposition for large n where trace
             # or Chebyshev methods are used instead.
-            self._W_eigs_cache: np.ndarray | None = None
             # Resolve the logdet method up-front so the lazy property
             # accessors know whether eigenvalues are required.
             self._resolved_logdet_method = (
@@ -347,7 +409,6 @@ class SpatialModel(ABC):
             # W-free mode: no spatial structure; spec tests require W to be supplied.
             self._W_sparse = None
             self._is_row_std = False
-            self._W_eigs_cache = None
             self._wx_column_indices: list[int] = []
             self._wx_feature_names: list[str] = []
             self._Wy = np.zeros(len(self._y), dtype=np.float64)
@@ -396,14 +457,9 @@ class SpatialModel(ABC):
         (e.g. by the eigenvalue logdet method).  Trace and Chebyshev
         methods never trigger this computation.
         """
-        if self._W_eigs_cache is not None:
-            return self._W_eigs_cache
         if self._W_sparse is None:
             return None
-        self._W_eigs_cache = np.linalg.eigvals(
-            self._W_sparse.toarray().astype(np.float64)
-        )
-        return self._W_eigs_cache
+        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
     @property
     def _W_for_logdet(self):
@@ -688,6 +744,19 @@ class SpatialModel(ABC):
                 indices.append(j)
         return indices
 
+    def _gelman_default_beta_prior(
+        self,
+        design: np.ndarray,
+        feature_names: list[str],
+        scale: float = 2.5,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        r"""Weakly-informative default prior on regression coefficients.
+
+        Thin wrapper around :func:`gelman_default_beta_prior` that uses
+        ``self._y`` as the response. See that function for details.
+        """
+        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
+
     # ------------------------------------------------------------------
     # Abstract interface
     # ------------------------------------------------------------------
@@ -895,12 +964,23 @@ class SpatialModel(ABC):
     def pymc_model(self) -> Optional[pm.Model]:
         """Return the PyMC model object built for the most recent fit.
 
+        For Gibbs-fitted models the PyMC model is not constructed during
+        sampling; it is built lazily on first access so that downstream
+        consumers (e.g. bridge sampling for marginal likelihoods) can
+        evaluate ``logp`` and the prior under the same model definition
+        used by the NUTS path.
+
         Returns
         -------
         pymc.Model or None
             The model object used by :meth:`fit`, or ``None`` if the instance
             has not been fit yet.
         """
+        if self._pymc_model is None and self._idata is not None:
+            try:
+                self._pymc_model = self._build_pymc_model()
+            except TypeError:
+                self._pymc_model = self._build_pymc_model(nuts_sampler="pymc")
         return self._pymc_model
 
     def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:

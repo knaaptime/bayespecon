@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import arviz as az
@@ -24,7 +25,7 @@ from ..logdet import (
     make_logdet_numpy_vec_fn,
 )
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
-from .base import _is_row_standardized_csr
+from .base import _is_row_standardized_csr, gelman_default_beta_prior
 
 
 def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
@@ -394,7 +395,6 @@ class SpatialPanelModel(ABC):
         # Validate W and store as N×N CSR. Dense expansion is deferred.
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
         # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
-        self._W_eigs_cache: np.ndarray | None = None
 
         # Resolve rho/lambda bounds from method and priors.
         # For row-standardised W the spectral stability interval is
@@ -459,6 +459,19 @@ class SpatialPanelModel(ABC):
             self._WX = self._sparse_panel_lag(self._X[:, self._wx_column_indices])
         else:
             self._WX = np.empty((self._X.shape[0], 0), dtype=float)
+
+    def _gelman_default_beta_prior(
+        self,
+        design: np.ndarray,
+        feature_names: list[str],
+        scale: float = 2.5,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Weakly-informative default Gaussian prior on regression coefficients.
+
+        Thin wrapper around :func:`bayespecon.models.base.gelman_default_beta_prior`
+        that uses ``self._y`` as the response.
+        """
+        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
 
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
         """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
@@ -539,7 +552,7 @@ class SpatialPanelModel(ABC):
             )
         return np.asarray(W @ R.T, dtype=np.float64).T
 
-    @property
+    @cached_property
     def _W_eigs(self) -> np.ndarray:
         """Eigenvalues of the N×N spatial weights matrix, computed lazily.
 
@@ -547,11 +560,7 @@ class SpatialPanelModel(ABC):
         log-determinants are used (those methods do not need the full
         eigendecomposition).
         """
-        if self._W_eigs_cache is None:
-            self._W_eigs_cache = np.linalg.eigvals(
-                self._W_sparse.toarray().astype(np.float64)
-            )
-        return self._W_eigs_cache
+        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
     @property
     def _W_for_logdet(self):
