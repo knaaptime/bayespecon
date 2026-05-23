@@ -17,8 +17,5 @@ Each model class uses PySAL [`graph`](https://pysal.org/libpysal/stable/generate
 - [Bayesian spatial diagnostics](https://www.sciencedirect.com/science/article/abs/pii/S0304407620303018)
 - Marginal (direct and indirect) effects for models with spatial terms
 - Fast [log-determinant functions]() for evaluating spatial terms
-- Models compile to PyMC for full customizability
-  - [performant sampling options]()
-  - Full suite of Bayesian spatial diagnostics through  [`arviz`](https://python.arviz.org/en/stable/)
+- Custom Gibbs sampler & PyMC/NUTS alternative
 - Generate synthetic datasets using a known data-generating process for each model
-
