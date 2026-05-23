@@ -378,9 +378,7 @@ def _make_gaussian_gibbs_step(
             r = y_jax - rho * Wy_jax
             X_eff = X_jax - rho * WX_jax
             # Quadratic-in-ρ form for X*'X* — no O(nk²) needed
-            XtX_eff = (
-                XtX_jax - rho * (XtWX + XtWX.T) + (rho * rho) * WXtWX
-            )
+            XtX_eff = XtX_jax - rho * (XtWX + XtWX.T) + (rho * rho) * WXtWX
 
         Sigma_beta_inv = XtX_eff / sigma2 + beta_prior_prec
         rhs_beta = beta_mu_jax / beta_sigma2_jax + X_eff.T @ r / sigma2
@@ -414,9 +412,7 @@ def _make_gaussian_gibbs_step(
 
             def log_density_spatial(param_val):
                 # r'r and X'r in closed form (quadratic / linear in param_val)
-                r_dot_r = (
-                    yty - 2.0 * param_val * yTWy + (param_val * param_val) * WyTWy
-                )
+                r_dot_r = yty - 2.0 * param_val * yTWy + (param_val * param_val) * WyTWy
                 Xtr = XTy - param_val * XTWy
                 rss = r_dot_r - Xtr @ jax.scipy.linalg.cho_solve(XtX_cho_jax, Xtr)
                 rss = jnp.maximum(rss, 1e-300)
@@ -433,9 +429,7 @@ def _make_gaussian_gibbs_step(
             def log_density_spatial(param_val):
                 rho_sq = param_val * param_val
                 yty_star = yty - 2.0 * param_val * yTWy + rho_sq * WyTWy
-                Xty_star = (
-                    XTy - param_val * (XTWy + WXTy) + rho_sq * WXTWy
-                )
+                Xty_star = XTy - param_val * (XTWy + WXTy) + rho_sq * WXTWy
                 XtX_star = XtX_jax - param_val * (XtWX + XtWX.T) + rho_sq * WXtWX
 
                 XtX_star_inv_Xty = jnp.linalg.solve(XtX_star, Xty_star)
@@ -451,10 +445,7 @@ def _make_gaussian_gibbs_step(
                     -jnp.inf,
                 )
                 return (
-                    logdet
-                    - 0.5 * logdet_XtX
-                    - 0.5 * (n - k) * jnp.log(rss)
-                    + log_prior
+                    logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * jnp.log(rss) + log_prior
                 )
 
         if use_slice:
