@@ -352,7 +352,6 @@ class SpatialModel(ABC):
             # Eigenvalues are computed lazily via the _W_eigs cached property
             # to avoid the O(n³) eigendecomposition for large n where trace
             # or Chebyshev methods are used instead.
-            self._W_eigs_cache: np.ndarray | None = None
             # Resolve the logdet method up-front so the lazy property
             # accessors know whether eigenvalues are required.
             self._resolved_logdet_method = (
@@ -410,7 +409,6 @@ class SpatialModel(ABC):
             # W-free mode: no spatial structure; spec tests require W to be supplied.
             self._W_sparse = None
             self._is_row_std = False
-            self._W_eigs_cache = None
             self._wx_column_indices: list[int] = []
             self._wx_feature_names: list[str] = []
             self._Wy = np.zeros(len(self._y), dtype=np.float64)
@@ -459,14 +457,9 @@ class SpatialModel(ABC):
         (e.g. by the eigenvalue logdet method).  Trace and Chebyshev
         methods never trigger this computation.
         """
-        if self._W_eigs_cache is not None:
-            return self._W_eigs_cache
         if self._W_sparse is None:
             return None
-        self._W_eigs_cache = np.linalg.eigvals(
-            self._W_sparse.toarray().astype(np.float64)
-        )
-        return self._W_eigs_cache
+        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
     @property
     def _W_for_logdet(self):

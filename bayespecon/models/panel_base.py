@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import arviz as az
@@ -394,7 +395,6 @@ class SpatialPanelModel(ABC):
         # Validate W and store as N×N CSR. Dense expansion is deferred.
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
         # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
-        self._W_eigs_cache: np.ndarray | None = None
 
         # Resolve rho/lambda bounds from method and priors.
         # For row-standardised W the spectral stability interval is
@@ -552,7 +552,7 @@ class SpatialPanelModel(ABC):
             )
         return np.asarray(W @ R.T, dtype=np.float64).T
 
-    @property
+    @cached_property
     def _W_eigs(self) -> np.ndarray:
         """Eigenvalues of the N×N spatial weights matrix, computed lazily.
 
@@ -560,11 +560,7 @@ class SpatialPanelModel(ABC):
         log-determinants are used (those methods do not need the full
         eigendecomposition).
         """
-        if self._W_eigs_cache is None:
-            self._W_eigs_cache = np.linalg.eigvals(
-                self._W_sparse.toarray().astype(np.float64)
-            )
-        return self._W_eigs_cache
+        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
     @property
     def _W_for_logdet(self):

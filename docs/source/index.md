@@ -30,6 +30,7 @@ Nonlinear Panel Models <user-guide/nonlinear_panel_models>
 Flow Models <user-guide/flow_models>
 Panel Flow Models <user-guide/panel_flow_models>
 Bayesian Spatial Diagnostics <user-guide/bayesian_lmtests>
+Spatial Block Cross-Validation <user-guide/spatial_cv_demo>
 Comparing bayespecon vs spreg <user-guide/cross_sectional_spreg_comparison>
 Recovering Parameters <user-guide/faithfulness_bayespecon>
 Replicating Elhorst et al 2024 <user-guide/jgsy2024_replication_bayespecon>
