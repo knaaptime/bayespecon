@@ -25,10 +25,18 @@ requires_nutpie = pytest.mark.skipif(
 )
 
 # ---------------------------------------------------------------------------
-# Sampling settings (moderate draws for reliable recovery, not too slow)
+# Sampling settings
 # ---------------------------------------------------------------------------
+# Cheap default: enough for parameter recovery within MC tolerance on the
+# small synthetic problems used in the suite. Tests that are weakly identified
+# (e.g. spatial probit with binary data, censored Tobit with heavy censoring)
+# can opt into ``SAMPLE_KWARGS_HEAVY``.
 
 SAMPLE_KWARGS: dict = dict(
+    tune=500, draws=500, chains=2, random_seed=42, progressbar=False
+)
+
+SAMPLE_KWARGS_HEAVY: dict = dict(
     tune=1000, draws=1500, chains=4, random_seed=42, progressbar=False
 )
 
