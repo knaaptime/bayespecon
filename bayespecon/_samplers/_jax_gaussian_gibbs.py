@@ -156,6 +156,78 @@ def _make_jax_gaussian_gibbs_state():
 
 
 # ---------------------------------------------------------------------------
+# Precomputed ρ-independent inner products
+# ---------------------------------------------------------------------------
+
+
+def _precompute_gibbs_constants(y, X, Wy, W_sparse, is_sar: bool):
+    """Compute all ρ-independent inner products as float64 JAX arrays.
+
+    These are bound into the JIT closure so each density evaluation
+    avoids touching any n-sized array.  For SAR/SDM, only the y-side
+    quantities are needed (X_eff = X).  For SEM/SDEM, the WX-side
+    quantities (cross-products with WX) are also required.
+
+    Parameters
+    ----------
+    y : ndarray of shape (n,)
+    X : ndarray of shape (n, k)
+    Wy : ndarray of shape (n,)
+        ``W @ y`` (precomputed by caller).
+    W_sparse : scipy.sparse matrix or None
+        Sparse W; used to form ``WX = W @ X`` for SEM/SDEM only.
+    is_sar : bool
+        If True, return zero placeholders for the WX-side quantities
+        (so the JIT step has a static signature).
+
+    Returns
+    -------
+    dict[str, jax.numpy.ndarray]
+        Keys: ``Wy_jax, WX_jax, yty, yTWy, WyTWy, XTy, XTWy, WXTy,
+        WXTWy, XtWX, WXtWX``.
+    """
+    import jax.numpy as jnp
+
+    n, k = X.shape
+    y64 = np.asarray(y, dtype=np.float64)
+    X64 = np.asarray(X, dtype=np.float64)
+    Wy64 = np.asarray(Wy, dtype=np.float64)
+
+    yty = float(y64 @ y64)
+    yTWy = float(y64 @ Wy64)
+    WyTWy = float(Wy64 @ Wy64)
+    XTy = X64.T @ y64
+    XTWy = X64.T @ Wy64
+
+    if is_sar:
+        WX64 = np.zeros((n, k), dtype=np.float64)
+        WXTy = np.zeros(k, dtype=np.float64)
+        WXTWy = np.zeros(k, dtype=np.float64)
+        XtWX = np.zeros((k, k), dtype=np.float64)
+        WXtWX = np.zeros((k, k), dtype=np.float64)
+    else:
+        WX64 = np.asarray(W_sparse @ X64, dtype=np.float64)
+        WXTy = WX64.T @ y64
+        WXTWy = WX64.T @ Wy64
+        XtWX = X64.T @ WX64
+        WXtWX = WX64.T @ WX64
+
+    return {
+        "Wy_jax": jnp.asarray(Wy64, dtype=jnp.float64),
+        "WX_jax": jnp.asarray(WX64, dtype=jnp.float64),
+        "yty": jnp.float64(yty),
+        "yTWy": jnp.float64(yTWy),
+        "WyTWy": jnp.float64(WyTWy),
+        "XTy": jnp.asarray(XTy, dtype=jnp.float64),
+        "XTWy": jnp.asarray(XTWy, dtype=jnp.float64),
+        "WXTy": jnp.asarray(WXTy, dtype=jnp.float64),
+        "WXTWy": jnp.asarray(WXTWy, dtype=jnp.float64),
+        "XtWX": jnp.asarray(XtWX, dtype=jnp.float64),
+        "WXtWX": jnp.asarray(WXtWX, dtype=jnp.float64),
+    }
+
+
+# ---------------------------------------------------------------------------
 # JIT-compiled Gibbs step builder
 # ---------------------------------------------------------------------------
 
@@ -164,12 +236,22 @@ def _make_gaussian_gibbs_step(
     y_jax,
     X_jax,
     Wy_jax,
-    W_dense_jax,
+    WX_jax,
     n,
     k,
     logdet_jax,
     XtX_jax,
     XtX_cho_jax,
+    # Precomputed ρ-independent inner products (closure constants)
+    yty,
+    yTWy,
+    WyTWy,
+    XTy,
+    XTWy,
+    WXTy,
+    WXTWy,
+    XtWX,
+    WXtWX,
     priors,
     model_type: str,
     use_mala: bool = True,
@@ -292,10 +374,13 @@ def _make_gaussian_gibbs_step(
             X_eff = X_jax
             XtX_eff = XtX_jax
         else:
-            # SEM: transform y and X by (I - λW)
-            r = y_jax - rho * (W_dense_jax @ y_jax)
-            X_eff = X_jax - rho * (W_dense_jax @ X_jax)
-            XtX_eff = X_eff.T @ X_eff
+            # SEM: transform y and X by (I - λW) using PRECOMPUTED Wy/WX
+            r = y_jax - rho * Wy_jax
+            X_eff = X_jax - rho * WX_jax
+            # Quadratic-in-ρ form for X*'X* — no O(nk²) needed
+            XtX_eff = (
+                XtX_jax - rho * (XtWX + XtWX.T) + (rho * rho) * WXtWX
+            )
 
         Sigma_beta_inv = XtX_eff / sigma2 + beta_prior_prec
         rhs_beta = beta_mu_jax / beta_sigma2_jax + X_eff.T @ r / sigma2
@@ -312,8 +397,8 @@ def _make_gaussian_gibbs_step(
         if is_sar:
             resid = y_jax - rho * Wy_jax - X_jax @ beta_new
         else:
-            resid_raw = y_jax - X_jax @ beta_new
-            resid = resid_raw - rho * (W_dense_jax @ resid_raw)
+            # SEM filtered residual: (I-ρW)(y - Xβ) = (y-ρWy) - (X-ρWX)β
+            resid = r - X_eff @ beta_new
 
         ss = resid @ resid
         a_post = sigma2_alpha_jax + jnp.float64(n / 2.0)
@@ -322,53 +407,61 @@ def _make_gaussian_gibbs_step(
         sigma2_new = jnp.maximum(1.0 / sigma2_inv, 1e-10)
 
         # ── Block 3: ρ/λ — MALA, RW-MH, or Slice ──
+        # Build the collapsed log-density used by the chosen sampler.
+        # All n-dependent inner products are *precomputed* closure constants,
+        # so each density evaluation is O(k³) — no O(nk) or O(n²k) work.
+        if is_sar:
+
+            def log_density_spatial(param_val):
+                # r'r and X'r in closed form (quadratic / linear in param_val)
+                r_dot_r = (
+                    yty - 2.0 * param_val * yTWy + (param_val * param_val) * WyTWy
+                )
+                Xtr = XTy - param_val * XTWy
+                rss = r_dot_r - Xtr @ jax.scipy.linalg.cho_solve(XtX_cho_jax, Xtr)
+                rss = jnp.maximum(rss, 1e-300)
+                logdet = logdet_jax(param_val)
+                log_prior = jnp.where(
+                    (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),
+                    0.0,
+                    -jnp.inf,
+                )
+                return logdet - 0.5 * (n - k) * jnp.log(rss) + log_prior
+
+        else:
+
+            def log_density_spatial(param_val):
+                rho_sq = param_val * param_val
+                yty_star = yty - 2.0 * param_val * yTWy + rho_sq * WyTWy
+                Xty_star = (
+                    XTy - param_val * (XTWy + WXTy) + rho_sq * WXTWy
+                )
+                XtX_star = XtX_jax - param_val * (XtWX + XtWX.T) + rho_sq * WXtWX
+
+                XtX_star_inv_Xty = jnp.linalg.solve(XtX_star, Xty_star)
+                rss = yty_star - Xty_star @ XtX_star_inv_Xty
+                rss = jnp.maximum(rss, 1e-300)
+
+                logdet = logdet_jax(param_val)
+                logdet_XtX = jnp.linalg.slogdet(XtX_star)[1]
+
+                log_prior = jnp.where(
+                    (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),
+                    0.0,
+                    -jnp.inf,
+                )
+                return (
+                    logdet
+                    - 0.5 * logdet_XtX
+                    - 0.5 * (n - k) * jnp.log(rss)
+                    + log_prior
+                )
+
         if use_slice:
             # Slice sampling: uses persistent interval for better ESS
             from ._jax_slice import jax_slice_sample_1d_adaptive
 
             key_rho_slice = key_rho
-
-            if is_sar:
-                # Collapsed log-density for SAR/SDM
-                def log_density_spatial(param_val):
-                    r = y_jax - param_val * Wy_jax
-                    Xtr = X_jax.T @ r
-                    rss = r @ r - Xtr @ jax.scipy.linalg.cho_solve(XtX_cho_jax, Xtr)
-                    logdet = logdet_jax(param_val)
-                    log_prior = jnp.where(
-                        (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),
-                        0.0,
-                        -jnp.inf,
-                    )
-                    return logdet - 0.5 * (n - k) * jnp.log(rss) + log_prior
-
-            else:
-                # Collapsed log-density for SEM/SDEM
-                def log_density_spatial(param_val):
-                    y_star = y_jax - param_val * (W_dense_jax @ y_jax)
-                    X_star = X_jax - param_val * (W_dense_jax @ X_jax)
-                    XtX_star = X_star.T @ X_star
-                    Xty_star = X_star.T @ y_star
-                    yty_star = y_star @ y_star
-
-                    XtX_star_inv_Xty = jnp.linalg.solve(XtX_star, Xty_star)
-                    rss = yty_star - Xty_star @ XtX_star_inv_Xty
-                    rss = jnp.maximum(rss, 1e-300)
-
-                    logdet = logdet_jax(param_val)
-                    logdet_XtX = jnp.linalg.slogdet(XtX_star)[1]
-
-                    log_prior = jnp.where(
-                        (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),
-                        0.0,
-                        -jnp.inf,
-                    )
-                    return (
-                        logdet
-                        - 0.5 * logdet_XtX
-                        - 0.5 * (n - k) * jnp.log(rss)
-                        + log_prior
-                    )
 
             # Always pass persistent interval (JAX arrays, never None).
             # jax_slice_sample_1d_adaptive checks whether x0 lies inside
@@ -400,50 +493,7 @@ def _make_gaussian_gibbs_step(
         # ── MALA or RW-MH ──
         key_rho_proposal, key_rho_accept = jax.random.split(key_rho)
 
-        if is_sar:
-            # Collapsed log-density: log p(ρ | y) = log|I-ρW| - (n-k)/2 * log RSS(ρ)
-            def log_density_spatial(param_val):
-                r = y_jax - param_val * Wy_jax
-                Xtr = X_jax.T @ r
-                rss = r @ r - Xtr @ jax.scipy.linalg.cho_solve(XtX_cho_jax, Xtr)
-                logdet = logdet_jax(param_val)
-                log_prior = jnp.where(
-                    (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),
-                    0.0,
-                    -jnp.inf,
-                )
-                return logdet - 0.5 * (n - k) * jnp.log(rss) + log_prior
-
-            log_density_fn = log_density_spatial
-        else:
-            # Collapsed log-density for SEM/SDEM:
-            # log p(λ | y) = log|I-λW| - 0.5*log|X*ᵀX*| - (n-k)/2 * log RSS(λ)
-            def log_density_spatial(param_val):
-                y_star = y_jax - param_val * (W_dense_jax @ y_jax)
-                X_star = X_jax - param_val * (W_dense_jax @ X_jax)
-                XtX_star = X_star.T @ X_star
-                Xty_star = X_star.T @ y_star
-                yty_star = y_star @ y_star
-
-                # RSS = y*ᵀy* - y*ᵀX* (X*ᵀX*)⁻¹ X*ᵀy*
-                # Use solve for numerical stability
-                XtX_star_inv_Xty = jnp.linalg.solve(XtX_star, Xty_star)
-                rss = yty_star - Xty_star @ XtX_star_inv_Xty
-                rss = jnp.maximum(rss, 1e-300)
-
-                logdet = logdet_jax(param_val)
-                logdet_XtX = jnp.linalg.slogdet(XtX_star)[1]
-
-                log_prior = jnp.where(
-                    (param_val >= rho_lower_jax) & (param_val <= rho_upper_jax),
-                    0.0,
-                    -jnp.inf,
-                )
-                return (
-                    logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * jnp.log(rss) + log_prior
-                )
-
-            log_density_fn = log_density_spatial
+        log_density_fn = log_density_spatial
 
         if use_mala:
             # Gradient + value via JAX autodiff
@@ -690,12 +740,13 @@ def run_chain_jax_gaussian(
     XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
     XtX_cho_jax = jax.scipy.linalg.cho_factor(XtX_jax)
 
-    if is_sar:
-        Wy_jax = jnp.asarray(Wy, dtype=jnp.float64)
-        W_dense_jax = None
+    if Wy is None:
+        Wy_np = np.asarray(W_sparse @ np.asarray(y, dtype=np.float64))
     else:
-        Wy_jax = None
-        W_dense_jax = jnp.asarray(W_sparse.toarray(), dtype=jnp.float64)
+        Wy_np = np.asarray(Wy, dtype=np.float64)
+    _consts = _precompute_gibbs_constants(
+        y=y, X=X, Wy=Wy_np, W_sparse=W_sparse, is_sar=is_sar
+    )
 
     # Initialize JAX state
     JAXGaussianGibbsState = _make_jax_gaussian_gibbs_state()
@@ -722,13 +773,22 @@ def run_chain_jax_gaussian(
     gibbs_step = _make_gaussian_gibbs_step(
         y_jax=y_jax,
         X_jax=X_jax,
-        Wy_jax=Wy_jax,
-        W_dense_jax=W_dense_jax,
+        Wy_jax=_consts["Wy_jax"],
+        WX_jax=_consts["WX_jax"],
         n=n,
         k=k,
         logdet_jax=logdet_jax,
         XtX_jax=XtX_jax,
         XtX_cho_jax=XtX_cho_jax,
+        yty=_consts["yty"],
+        yTWy=_consts["yTWy"],
+        WyTWy=_consts["WyTWy"],
+        XTy=_consts["XTy"],
+        XTWy=_consts["XTWy"],
+        WXTy=_consts["WXTy"],
+        WXTWy=_consts["WXTWy"],
+        XtWX=_consts["XtWX"],
+        WXtWX=_consts["WXtWX"],
         priors=priors,
         model_type=model_type,
         use_mala=use_mala,
@@ -941,24 +1001,34 @@ def run_chains_jax_gibbs_vectorized(
     XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
     XtX_cho_jax = jax.scipy.linalg.cho_factor(XtX_jax)
 
-    if is_sar:
-        Wy_jax = jnp.asarray(Wy, dtype=jnp.float64)
-        W_dense_jax = None
+    if Wy is None:
+        Wy_np = np.asarray(W_sparse @ np.asarray(y, dtype=np.float64))
     else:
-        Wy_jax = None
-        W_dense_jax = jnp.asarray(W_sparse.toarray(), dtype=jnp.float64)
+        Wy_np = np.asarray(Wy, dtype=np.float64)
+    _consts = _precompute_gibbs_constants(
+        y=y, X=X, Wy=Wy_np, W_sparse=W_sparse, is_sar=is_sar
+    )
 
     # Build the JIT-compiled step function (shared across all chains)
     gibbs_step = _make_gaussian_gibbs_step(
         y_jax=y_jax,
         X_jax=X_jax,
-        Wy_jax=Wy_jax,
-        W_dense_jax=W_dense_jax,
+        Wy_jax=_consts["Wy_jax"],
+        WX_jax=_consts["WX_jax"],
         n=n,
         k=k,
         logdet_jax=logdet_jax,
         XtX_jax=XtX_jax,
         XtX_cho_jax=XtX_cho_jax,
+        yty=_consts["yty"],
+        yTWy=_consts["yTWy"],
+        WyTWy=_consts["WyTWy"],
+        XTy=_consts["XTy"],
+        XTWy=_consts["XTWy"],
+        WXTy=_consts["WXTy"],
+        WXTWy=_consts["WXTWy"],
+        XtWX=_consts["XtWX"],
+        WXtWX=_consts["WXtWX"],
         priors=priors,
         model_type=model_type,
         use_mala=use_mala,
