@@ -286,10 +286,14 @@ def _sample_beta_conjugate(
     Xtr = X.T @ r
     rhs = Xtr / sigma2 + prior_prec @ prior_mean
 
-    # Cholesky factorisation: post_prec = L Lᵀ (SPD by construction)
+    # Cholesky factorisation: post_prec = L Lᵀ (SPD, lower-triangular L)
     # post_mean = post_prec⁻¹ @ rhs via two triangular solves
     # β = post_mean + L⁻ᵀ z,  z ~ N(0, I)  avoids forming inv(post_prec)
-    L, lower = cho_factor(post_prec)
+    # Cov(L⁻ᵀ z) = L⁻ᵀ L⁻¹ = (L Lᵀ)⁻¹ = post_prec⁻¹  ✓
+    # NB: must request lower=True; the scipy default returns the *upper*
+    # Cholesky U (A = UᵀU), in which case solve_triangular(U, z, trans='T')
+    # yields U⁻ᵀ z whose covariance is U⁻ᵀ U⁻¹ ≠ A⁻¹ — a silent bug.
+    L, lower = cho_factor(post_prec, lower=True)
     post_mean = cho_solve((L, lower), rhs)
     z = rng.standard_normal(k)
     beta = post_mean + solve_triangular(L, z, lower=lower, trans="T")

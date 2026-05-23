@@ -327,10 +327,11 @@ def _sample_beta_conjugate(
     Xtr = X.T @ r
     rhs = Xtr / sigma2 + prior_prec @ prior_mean
 
-    # Cholesky factorisation: post_prec = L Lᵀ (SPD by construction)
-    # post_mean = post_prec⁻¹ @ rhs via two triangular solves
-    # β = post_mean + L⁻ᵀ z,  z ~ N(0, I)  avoids forming inv(post_prec)
-    L, lower = cho_factor(post_prec)
+    # Cholesky factorisation: post_prec = L Lᵀ (SPD, lower-triangular L)
+    # Must request lower=True so that solve_triangular(L, z, trans='T')
+    # produces L⁻ᵀ z with Cov = (L Lᵀ)⁻¹ = post_prec⁻¹.  (See
+    # _gaussian_gibbs._sample_beta_conjugate for the full explanation.)
+    L, lower = cho_factor(post_prec, lower=True)
     post_mean = cho_solve((L, lower), rhs)
     z = rng.standard_normal(k)
     beta = post_mean + solve_triangular(L, z, lower=lower, trans="T")
@@ -498,11 +499,12 @@ def _sample_alpha_re(
     BtB = B.T @ B  # N × N
     # Precision matrix
     prec_alpha = (1.0 / sigma2) * BtB + (1.0 / sigma_alpha2) * np.eye(N)
-    # Cholesky factorisation: prec_alpha = L Lᵀ (SPD by construction)
-    # mean_alpha = prec_alpha⁻¹ @ rhs via two triangular solves
-    # α = mean_alpha + L⁻ᵀ z,  z ~ N(0, I)  avoids forming inv(prec_alpha)
+    # Cholesky factorisation: prec_alpha = L Lᵀ (SPD, lower-triangular L)
+    # Must request lower=True so that solve_triangular(L, z, trans='T')
+    # produces L⁻ᵀ z with Cov = (L Lᵀ)⁻¹ = prec_alpha⁻¹.  (See
+    # _gaussian_gibbs._sample_beta_conjugate for the full explanation.)
     rhs_alpha = (1.0 / sigma2) * DtAtAr
-    L, lower = cho_factor(prec_alpha)
+    L, lower = cho_factor(prec_alpha, lower=True)
     mean_alpha = cho_solve((L, lower), rhs_alpha)
     z = rng.standard_normal(N)
     alpha = mean_alpha + solve_triangular(L, z, lower=lower, trans="T")
