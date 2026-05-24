@@ -429,12 +429,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -579,6 +627,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1612,6 +1684,30 @@
 
               
             
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1927,7 +2023,7 @@
 <h1 id="bayespecon-logdet-logdet-eigenvalue">bayespecon.logdet.logdet_eigenvalue<a class="headerlink" href="#bayespecon-logdet-logdet-eigenvalue" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.logdet.logdet_eigenvalue">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">logdet_eigenvalue</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_eigenvalue.rho" title="bayespecon.logdet.logdet_eigenvalue.rho (Python parameter) — Spatial parameter (rho or lambda)."><span class="n"><span class="pre">rho</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_eigenvalue.eigs" title="bayespecon.logdet.logdet_eigenvalue.eigs (Python parameter) — Real parts of W's eigenvalues, shape (n,)."><span class="n"><span class="pre">eigs</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L231-L263"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.logdet_eigenvalue" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">logdet_eigenvalue</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_eigenvalue.rho" title="bayespecon.logdet.logdet_eigenvalue.rho (Python parameter) — Spatial parameter (rho or lambda)."><span class="n"><span class="pre">rho</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_eigenvalue.eigs" title="bayespecon.logdet.logdet_eigenvalue.eigs (Python parameter) — Real parts of W's eigenvalues, shape (n,)."><span class="n"><span class="pre">eigs</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L222-L254"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.logdet_eigenvalue" title="Link to this definition">¶</a></dt>
 <dd><p>Eigenvalue-based log|I - rho*W|.</p>
 <p>Pre-compute <code class="docutils literal notranslate"><span class="pre">eigs</span> <span class="pre">=</span> <span class="pre">np.linalg.eigvals(W).real</span></code> once; each evaluation
 costs O(n) and is exactly differentiable by pytensor autodiff.</p>

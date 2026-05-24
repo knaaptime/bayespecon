@@ -11,7 +11,7 @@
       
       
       
-        <link rel="prev" href="bayesian_lmtests.html">
+        <link rel="prev" href="spatial_cv_demo.html">
       
       
         <link rel="next" href="faithfulness_bayespecon.html">
@@ -431,12 +431,60 @@
   
   
     <li class="md-nav__item">
+      <a href="quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -581,6 +629,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1216,9 +1288,9 @@
 
 <span class="n">spreg_results</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;SLX&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">OLS</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">slx_lags</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
-    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Lag</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
-    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Error</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
-    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Lag</span><span class="p">(</span>
+    <span class="s2">&quot;SAR&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">ML_Lag</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
+    <span class="s2">&quot;SEM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">ML_Error</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]),</span>
+    <span class="s2">&quot;SDM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">ML_Lag</span><span class="p">(</span>
         <span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">w</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">slx_lags</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">w_lags</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">name_y</span><span class="o">=</span><span class="s2">&quot;HOVAL&quot;</span><span class="p">,</span> <span class="n">name_x</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;INC&quot;</span><span class="p">,</span> <span class="s2">&quot;CRIME&quot;</span><span class="p">]</span>
     <span class="p">),</span>
     <span class="s2">&quot;SDEM&quot;</span><span class="p">:</span> <span class="n">spreg</span><span class="o">.</span><span class="n">GM_Error</span><span class="p">(</span>
@@ -1240,45 +1312,18 @@
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>GM_Lag
-GM_Error
-GM_Lag
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>ML_Lag
+ML_Error
+ML_Lag
 GM_Error
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [beta, sigma]
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 19 seconds.
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/spreg/ml_error.py:184: RuntimeWarning: Method &#39;bounded&#39; does not support relative tolerance in x; defaulting to absolute tolerance.
+  res = minimize_scalar(
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
+NUTS: [beta, sigma2]
 Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 16 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [lam, beta, sigma]
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 14 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 20 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [lam, beta, sigma]
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/step_methods/hmc/quadpotential.py:316: RuntimeWarning: overflow encountered in dot
-  return 0.5 * np.dot(x, v_out)
-Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws total) took 19 seconds.
-There were 5 divergences after tuning. Increase `target_accept` or reparameterize.
 </code></pre></div>
 </div>
 </div>
@@ -1321,63 +1366,75 @@ There were 5 divergences after tuning. Increase `target_accept` or reparameteriz
   </thead>
   <tbody>
     <tr>
-      <th>Intercept</th>
-      <td>37.791</td>
-      <td>14.077</td>
-      <td>12.352</td>
-      <td>64.956</td>
-      <td>0.337</td>
-      <td>0.260</td>
-      <td>1742.0</td>
-      <td>2017.0</td>
-      <td>1.0</td>
-    </tr>
-    <tr>
-      <th>INC</th>
-      <td>0.562</td>
-      <td>0.528</td>
-      <td>-0.432</td>
-      <td>1.544</td>
-      <td>0.012</td>
-      <td>0.009</td>
-      <td>1956.0</td>
-      <td>2047.0</td>
-      <td>1.0</td>
-    </tr>
-    <tr>
-      <th>CRIME</th>
-      <td>-0.450</td>
-      <td>0.176</td>
-      <td>-0.790</td>
-      <td>-0.127</td>
-      <td>0.004</td>
-      <td>0.003</td>
-      <td>2015.0</td>
-      <td>2223.0</td>
-      <td>1.0</td>
-    </tr>
-    <tr>
       <th>rho</th>
       <td>0.216</td>
-      <td>0.163</td>
-      <td>-0.087</td>
-      <td>0.513</td>
+      <td>0.169</td>
+      <td>-0.109</td>
+      <td>0.517</td>
       <td>0.003</td>
       <td>0.003</td>
-      <td>2358.0</td>
-      <td>1957.0</td>
+      <td>3550.0</td>
+      <td>2530.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>14.893</td>
-      <td>1.507</td>
-      <td>12.071</td>
-      <td>17.617</td>
-      <td>0.030</td>
+      <td>14.997</td>
+      <td>1.509</td>
+      <td>12.341</td>
+      <td>17.907</td>
       <td>0.026</td>
-      <td>2500.0</td>
-      <td>2142.0</td>
+      <td>0.020</td>
+      <td>3502.0</td>
+      <td>3543.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <th>sigma2</th>
+      <td>227.184</td>
+      <td>46.626</td>
+      <td>150.051</td>
+      <td>317.653</td>
+      <td>0.802</td>
+      <td>0.716</td>
+      <td>3502.0</td>
+      <td>3543.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <th>Intercept</th>
+      <td>38.030</td>
+      <td>14.114</td>
+      <td>11.366</td>
+      <td>64.094</td>
+      <td>0.225</td>
+      <td>0.167</td>
+      <td>3935.0</td>
+      <td>3973.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <th>INC</th>
+      <td>0.554</td>
+      <td>0.510</td>
+      <td>-0.351</td>
+      <td>1.565</td>
+      <td>0.008</td>
+      <td>0.006</td>
+      <td>3964.0</td>
+      <td>3770.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <th>CRIME</th>
+      <td>-0.453</td>
+      <td>0.178</td>
+      <td>-0.793</td>
+      <td>-0.125</td>
+      <td>0.003</td>
+      <td>0.002</td>
+      <td>3769.0</td>
+      <td>4058.0</td>
       <td>1.0</td>
     </tr>
   </tbody>
@@ -1387,7 +1444,7 @@ There were 5 divergences after tuning. Increase `target_accept` or reparameteriz
 <h3 id="sampler-adequacy-for-rho">Sampler adequacy for <span class="math notranslate nohighlight">\(\rho\)</span><a class="headerlink" href="#sampler-adequacy-for-rho" title="Link to this heading">¶</a></h3>
 <p>Before trusting the SAR posterior summary above, verify that the
 spatial parameter <span class="math notranslate nohighlight">\(\rho\)</span> has been sampled efficiently. Wolf, Anselin
-&amp; Arribas-Bel (2018) <span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id33" title="Levi John Wolf, Luc Anselin, and Daniel Arribas-Bel. Stochastic Efficiency of Bayesian Markov Chain Monte Carlo in Spatial Econometric Models: An Empirical Comparison of Exact Sampling Methods. Geographical Analysis, 50(1):97–119, 2018. URL: https://onlinelibrary.wiley.com/doi/abs/10.1111/gean.12135 (visited on 2026-04-20), doi:10.1111/gean.12135.">Wolf <em>et al.</em>, 2018</a>]</span> show that
+&amp; Arribas-Bel (2018) <span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id49" title="Levi John Wolf, Luc Anselin, and Daniel Arribas-Bel. Stochastic Efficiency of Bayesian Markov Chain Monte Carlo in Spatial Econometric Models: An Empirical Comparison of Exact Sampling Methods. Geographical Analysis, 50(1):97–119, 2018. URL: https://onlinelibrary.wiley.com/doi/abs/10.1111/gean.12135 (visited on 2026-04-20), doi:10.1111/gean.12135.">Wolf <em>et al.</em>, 2018</a>]</span> show that
 <span class="math notranslate nohighlight">\(\rho\)</span> tends to mix slowly, so a chain that converges in mean can
 still under-cover the tails by 10–12 %.</p>
 <div class="cell docutils container">
@@ -1439,13 +1496,13 @@ still under-cover the tails by 10–12 %.</p>
   <tbody>
     <tr>
       <th>rho</th>
-      <td>2357.684873</td>
-      <td>1956.972676</td>
-      <td>1.003056</td>
-      <td>0.003339</td>
-      <td>58.942122</td>
-      <td>3.318067</td>
-      <td>True</td>
+      <td>3550.256335</td>
+      <td>2530.415191</td>
+      <td>1.000928</td>
+      <td>0.002821</td>
+      <td>88.756408</td>
+      <td>5.049753</td>
+      <td>False</td>
     </tr>
   </tbody>
 </table>
@@ -1461,36 +1518,33 @@ still under-cover the tails by 10–12 %.</p>
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>REGRESSION RESULTS
 ------------------
 
-SUMMARY OF OUTPUT: SPATIAL TWO STAGE LEAST SQUARES
+SUMMARY OF OUTPUT: MAXIMUM LIKELIHOOD SPATIAL LAG (METHOD = FULL)
 ------------------------------------------------------------------------------------
 Data set            :     unknown
 Weights matrix      :     unknown
 Dependent Variable  :       HOVAL                Number of Observations:          49
 Mean dependent var  :     38.4362                Number of Variables   :           4
 S.D. dependent var  :     18.4661                Degrees of Freedom    :          45
-Pseudo R-squared    :      0.2902
-Spatial Pseudo R-squared:  0.3560
+Pseudo R-squared    :      0.3826
+Spatial Pseudo R-squared:  0.3271
+Log likelihood      :   -200.4394
+Sigma-square ML     :    206.3220                Akaike info criterion :     408.879
+S.E of regression   :     14.3639                Schwarz criterion     :     416.446
 
 ------------------------------------------------------------------------------------
             Variable     Coefficient       Std.Error     z-Statistic     Probability
 ------------------------------------------------------------------------------------
-            CONSTANT        55.67226        20.24627         2.74975         0.00596
-                 INC         0.69542         0.55487         1.25329         0.21010
-               CRIME        -0.51907         0.19376        -2.67898         0.00738
-             W_HOVAL        -0.23275         0.38231        -0.60878         0.54267
+            CONSTANT        37.26813        13.94565         2.67238         0.00753
+                 INC         0.56316         0.51316         1.09742         0.27246
+               CRIME        -0.45102         0.17770        -2.53815         0.01114
+             W_HOVAL         0.23063         0.15496         1.48836         0.13666
 ------------------------------------------------------------------------------------
-Instrumented: W_HOVAL
-Instruments: W_CRIME, W_INC
-
-DIAGNOSTICS FOR SPATIAL DEPENDENCE
-TEST                              DF         VALUE           PROB
-Anselin-Kelejian Test             1          2.075           0.1497
 
 SPATIAL LAG MODEL IMPACTS
 Impacts computed using the &#39;simple&#39; method.
             Variable         Direct        Indirect          Total
-                 INC         0.6954         -0.1313          0.5641
-               CRIME        -0.5191          0.0980         -0.4211
+                 INC         0.5632          0.1688          0.7320
+               CRIME        -0.4510         -0.1352         -0.5862
 ================================ END OF REPORT =====================================
 </code></pre></div>
 </div>
@@ -1692,201 +1746,185 @@ Impacts computed using the &#39;simple&#39; method.
       <th>0</th>
       <td>SAR</td>
       <td>CONSTANT</td>
-      <td>37.790694</td>
-      <td>55.672262</td>
-      <td>-17.881568</td>
+      <td>38.029925</td>
+      <td>37.268135</td>
+      <td>0.761791</td>
     </tr>
     <tr>
       <th>1</th>
       <td>SAR</td>
       <td>CRIME</td>
-      <td>-0.450299</td>
-      <td>-0.519068</td>
-      <td>0.068769</td>
+      <td>-0.452607</td>
+      <td>-0.451020</td>
+      <td>-0.001588</td>
     </tr>
     <tr>
       <th>2</th>
       <td>SAR</td>
       <td>INC</td>
-      <td>0.562276</td>
-      <td>0.695416</td>
-      <td>-0.133140</td>
+      <td>0.553765</td>
+      <td>0.563156</td>
+      <td>-0.009391</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>SAR</td>
-      <td>rho</td>
-      <td>0.215835</td>
-      <td>-0.232746</td>
-      <td>0.448581</td>
+      <td>SDEM</td>
+      <td>CONSTANT</td>
+      <td>31.767462</td>
+      <td>29.460538</td>
+      <td>2.306923</td>
     </tr>
     <tr>
       <th>4</th>
       <td>SDEM</td>
-      <td>CONSTANT</td>
-      <td>28.491212</td>
-      <td>29.460538</td>
-      <td>-0.969327</td>
+      <td>CRIME</td>
+      <td>-0.583475</td>
+      <td>-0.575430</td>
+      <td>-0.008044</td>
     </tr>
     <tr>
       <th>5</th>
       <td>SDEM</td>
-      <td>CRIME</td>
-      <td>-0.568961</td>
-      <td>-0.575430</td>
-      <td>0.006469</td>
+      <td>INC</td>
+      <td>0.823601</td>
+      <td>0.820920</td>
+      <td>0.002682</td>
     </tr>
     <tr>
       <th>6</th>
       <td>SDEM</td>
-      <td>INC</td>
-      <td>0.885285</td>
-      <td>0.820920</td>
-      <td>0.064365</td>
+      <td>W_CRIME</td>
+      <td>0.250069</td>
+      <td>0.300693</td>
+      <td>-0.050624</td>
     </tr>
     <tr>
       <th>7</th>
       <td>SDEM</td>
-      <td>W_CRIME</td>
-      <td>0.267135</td>
-      <td>0.300693</td>
-      <td>-0.033559</td>
+      <td>W_INC</td>
+      <td>0.468414</td>
+      <td>0.478086</td>
+      <td>-0.009672</td>
     </tr>
     <tr>
       <th>8</th>
       <td>SDEM</td>
-      <td>W_INC</td>
-      <td>0.545364</td>
-      <td>0.478086</td>
-      <td>0.067278</td>
+      <td>lambda</td>
+      <td>0.435167</td>
+      <td>0.358330</td>
+      <td>0.076837</td>
     </tr>
     <tr>
       <th>9</th>
-      <td>SDEM</td>
-      <td>lambda</td>
-      <td>0.440069</td>
-      <td>0.358330</td>
-      <td>0.081739</td>
+      <td>SDM</td>
+      <td>CONSTANT</td>
+      <td>23.536444</td>
+      <td>17.045361</td>
+      <td>6.491083</td>
     </tr>
     <tr>
       <th>10</th>
       <td>SDM</td>
-      <td>CONSTANT</td>
-      <td>18.315262</td>
-      <td>1.578137</td>
-      <td>16.737125</td>
+      <td>CRIME</td>
+      <td>-0.604761</td>
+      <td>-0.608430</td>
+      <td>0.003669</td>
     </tr>
     <tr>
       <th>11</th>
       <td>SDM</td>
-      <td>CRIME</td>
-      <td>-0.604442</td>
-      <td>-0.634137</td>
-      <td>0.029695</td>
+      <td>INC</td>
+      <td>0.759630</td>
+      <td>0.803686</td>
+      <td>-0.044056</td>
     </tr>
     <tr>
       <th>12</th>
       <td>SDM</td>
-      <td>INC</td>
-      <td>0.805481</td>
-      <td>0.892362</td>
-      <td>-0.086881</td>
+      <td>W_CRIME</td>
+      <td>0.396576</td>
+      <td>0.475451</td>
+      <td>-0.078876</td>
     </tr>
     <tr>
       <th>13</th>
       <td>SDM</td>
-      <td>W_CRIME</td>
-      <td>0.460443</td>
-      <td>0.598950</td>
-      <td>-0.138507</td>
+      <td>W_INC</td>
+      <td>-0.072949</td>
+      <td>0.042213</td>
+      <td>-0.115162</td>
     </tr>
     <tr>
       <th>14</th>
-      <td>SDM</td>
-      <td>W_INC</td>
-      <td>0.065907</td>
-      <td>-0.600606</td>
-      <td>0.666513</td>
+      <td>SEM</td>
+      <td>CONSTANT</td>
+      <td>47.545280</td>
+      <td>48.008252</td>
+      <td>-0.462971</td>
     </tr>
     <tr>
       <th>15</th>
-      <td>SDM</td>
-      <td>rho</td>
-      <td>0.329694</td>
-      <td>0.887712</td>
-      <td>-0.558019</td>
+      <td>SEM</td>
+      <td>CRIME</td>
+      <td>-0.556544</td>
+      <td>-0.559458</td>
+      <td>0.002914</td>
     </tr>
     <tr>
       <th>16</th>
       <td>SEM</td>
-      <td>CONSTANT</td>
-      <td>47.980071</td>
-      <td>47.943711</td>
-      <td>0.036360</td>
+      <td>INC</td>
+      <td>0.744724</td>
+      <td>0.711532</td>
+      <td>0.033192</td>
     </tr>
     <tr>
       <th>17</th>
       <td>SEM</td>
-      <td>CRIME</td>
-      <td>-0.564235</td>
-      <td>-0.555717</td>
-      <td>-0.008518</td>
+      <td>lambda</td>
+      <td>0.422006</td>
+      <td>0.390499</td>
+      <td>0.031508</td>
     </tr>
     <tr>
       <th>18</th>
-      <td>SEM</td>
-      <td>INC</td>
-      <td>0.734156</td>
-      <td>0.705981</td>
-      <td>0.028175</td>
+      <td>SLX</td>
+      <td>CONSTANT</td>
+      <td>31.174816</td>
+      <td>27.727885</td>
+      <td>3.446932</td>
     </tr>
     <tr>
       <th>19</th>
-      <td>SEM</td>
-      <td>lambda</td>
-      <td>0.426726</td>
-      <td>0.372301</td>
-      <td>0.054426</td>
+      <td>SLX</td>
+      <td>CRIME</td>
+      <td>-0.586536</td>
+      <td>-0.590675</td>
+      <td>0.004139</td>
     </tr>
     <tr>
       <th>20</th>
       <td>SLX</td>
-      <td>CONSTANT</td>
-      <td>27.696533</td>
-      <td>27.727885</td>
-      <td>-0.031351</td>
+      <td>INC</td>
+      <td>0.712946</td>
+      <td>0.742442</td>
+      <td>-0.029496</td>
     </tr>
     <tr>
       <th>21</th>
       <td>SLX</td>
-      <td>CRIME</td>
-      <td>-0.591790</td>
-      <td>-0.590675</td>
-      <td>-0.001114</td>
+      <td>W_CRIME</td>
+      <td>0.342662</td>
+      <td>0.390156</td>
+      <td>-0.047494</td>
     </tr>
     <tr>
       <th>22</th>
       <td>SLX</td>
-      <td>INC</td>
-      <td>0.743739</td>
-      <td>0.742442</td>
-      <td>0.001297</td>
-    </tr>
-    <tr>
-      <th>23</th>
-      <td>SLX</td>
-      <td>W_CRIME</td>
-      <td>0.390632</td>
-      <td>0.390156</td>
-      <td>0.000476</td>
-    </tr>
-    <tr>
-      <th>24</th>
-      <td>SLX</td>
       <td>W_INC</td>
-      <td>0.487975</td>
+      <td>0.385933</td>
       <td>0.486179</td>
-      <td>0.001795</td>
+      <td>-0.100246</td>
     </tr>
   </tbody>
 </table>
@@ -1936,141 +1974,141 @@ Impacts computed using the &#39;simple&#39; method.
       <th>0</th>
       <td>SLX</td>
       <td>INC</td>
-      <td>0.743739</td>
-      <td>0.487975</td>
-      <td>1.231714</td>
+      <td>0.712946</td>
+      <td>0.385933</td>
+      <td>1.098879</td>
       <td>0.742442</td>
       <td>0.486179</td>
       <td>1.228621</td>
-      <td>0.001297</td>
-      <td>0.001795</td>
-      <td>0.003093</td>
+      <td>-0.029496</td>
+      <td>-0.100246</td>
+      <td>-0.129742</td>
     </tr>
     <tr>
       <th>1</th>
       <td>SLX</td>
       <td>CRIME</td>
-      <td>-0.591790</td>
-      <td>0.390632</td>
-      <td>-0.201157</td>
+      <td>-0.586536</td>
+      <td>0.342662</td>
+      <td>-0.243874</td>
       <td>-0.590675</td>
       <td>0.390156</td>
       <td>-0.200519</td>
-      <td>-0.001114</td>
-      <td>0.000476</td>
-      <td>-0.000638</td>
+      <td>0.004139</td>
+      <td>-0.047494</td>
+      <td>-0.043355</td>
     </tr>
     <tr>
       <th>2</th>
       <td>SAR</td>
       <td>INC</td>
-      <td>0.572928</td>
-      <td>0.156536</td>
-      <td>0.729463</td>
-      <td>0.695416</td>
-      <td>-0.131296</td>
-      <td>0.564120</td>
-      <td>-0.122488</td>
-      <td>0.287832</td>
-      <td>0.165344</td>
+      <td>0.565918</td>
+      <td>0.171577</td>
+      <td>0.737495</td>
+      <td>0.563156</td>
+      <td>0.168814</td>
+      <td>0.731970</td>
+      <td>0.002762</td>
+      <td>0.002763</td>
+      <td>0.005525</td>
     </tr>
     <tr>
       <th>3</th>
       <td>SAR</td>
       <td>CRIME</td>
-      <td>-0.459952</td>
-      <td>-0.137418</td>
-      <td>-0.597370</td>
-      <td>-0.519068</td>
-      <td>0.098001</td>
-      <td>-0.421067</td>
-      <td>0.059116</td>
-      <td>-0.235419</td>
-      <td>-0.176303</td>
+      <td>-0.463210</td>
+      <td>-0.147184</td>
+      <td>-0.610394</td>
+      <td>-0.451020</td>
+      <td>-0.135200</td>
+      <td>-0.586219</td>
+      <td>-0.012190</td>
+      <td>-0.011985</td>
+      <td>-0.024175</td>
     </tr>
     <tr>
       <th>4</th>
       <td>SEM</td>
       <td>INC</td>
-      <td>0.734156</td>
+      <td>0.744724</td>
       <td>0.000000</td>
-      <td>0.734156</td>
-      <td>0.705981</td>
+      <td>0.744724</td>
+      <td>0.711532</td>
       <td>0.000000</td>
-      <td>0.705981</td>
-      <td>0.028175</td>
+      <td>0.711532</td>
+      <td>0.033192</td>
       <td>0.000000</td>
-      <td>0.028175</td>
+      <td>0.033192</td>
     </tr>
     <tr>
       <th>5</th>
       <td>SEM</td>
       <td>CRIME</td>
-      <td>-0.564235</td>
+      <td>-0.556544</td>
       <td>0.000000</td>
-      <td>-0.564235</td>
-      <td>-0.555717</td>
+      <td>-0.556544</td>
+      <td>-0.559458</td>
       <td>0.000000</td>
-      <td>-0.555717</td>
-      <td>-0.008518</td>
+      <td>-0.559458</td>
+      <td>0.002914</td>
       <td>0.000000</td>
-      <td>-0.008518</td>
+      <td>0.002914</td>
     </tr>
     <tr>
       <th>6</th>
       <td>SDM</td>
       <td>INC</td>
-      <td>0.836697</td>
-      <td>0.480682</td>
-      <td>1.317378</td>
-      <td>0.892362</td>
-      <td>1.705923</td>
-      <td>2.598284</td>
-      <td>-0.055665</td>
-      <td>-1.225241</td>
-      <td>-1.280906</td>
+      <td>0.787065</td>
+      <td>0.314866</td>
+      <td>1.101930</td>
+      <td>0.803686</td>
+      <td>0.523510</td>
+      <td>1.327196</td>
+      <td>-0.016621</td>
+      <td>-0.208645</td>
+      <td>-0.225266</td>
     </tr>
     <tr>
       <th>7</th>
       <td>SDM</td>
       <td>CRIME</td>
-      <td>-0.581898</td>
-      <td>0.362772</td>
-      <td>-0.219126</td>
-      <td>-0.634137</td>
-      <td>0.320776</td>
-      <td>-0.313360</td>
-      <td>0.052238</td>
-      <td>0.041996</td>
-      <td>0.094234</td>
+      <td>-0.591440</td>
+      <td>0.257530</td>
+      <td>-0.333910</td>
+      <td>-0.608430</td>
+      <td>0.399790</td>
+      <td>-0.208640</td>
+      <td>0.016990</td>
+      <td>-0.142260</td>
+      <td>-0.125270</td>
     </tr>
     <tr>
       <th>8</th>
       <td>SDEM</td>
       <td>INC</td>
-      <td>0.885285</td>
-      <td>0.545364</td>
-      <td>1.430649</td>
+      <td>0.823601</td>
+      <td>0.468414</td>
+      <td>1.292015</td>
       <td>0.820920</td>
       <td>0.478086</td>
       <td>1.299005</td>
-      <td>0.064365</td>
-      <td>0.067278</td>
-      <td>0.131643</td>
+      <td>0.002682</td>
+      <td>-0.009672</td>
+      <td>-0.006990</td>
     </tr>
     <tr>
       <th>9</th>
       <td>SDEM</td>
       <td>CRIME</td>
-      <td>-0.568961</td>
-      <td>0.267135</td>
-      <td>-0.301826</td>
+      <td>-0.583475</td>
+      <td>0.250069</td>
+      <td>-0.333406</td>
       <td>-0.575430</td>
       <td>0.300693</td>
       <td>-0.274737</td>
-      <td>0.006469</td>
-      <td>-0.033559</td>
-      <td>-0.027089</td>
+      <td>-0.008044</td>
+      <td>-0.050624</td>
+      <td>-0.058669</td>
     </tr>
   </tbody>
 </table>
@@ -2113,18 +2151,7 @@ Impacts computed using the &#39;simple&#39; method.
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 1_000 tune and 2_000 draw iterations (4_000 + 8_000 draws total) took 15 seconds.
-</code></pre></div>
-</div>
-<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
-for Jupyter support
-  warnings.warn('install "ipywidgets" for Jupyter support')
-</pre>
-</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div><div class="output text_html"><div>
+<div class="output text_html"><div>
 <style scoped>
     .dataframe tbody tr th:only-of-type {
         vertical-align: middle;
@@ -2155,51 +2182,63 @@ for Jupyter support
   </thead>
   <tbody>
     <tr>
-      <th>Intercept</th>
-      <td>1.022</td>
-      <td>0.061</td>
-      <td>0.910</td>
-      <td>1.142</td>
-      <td>0.001</td>
-      <td>0.001</td>
-      <td>3900.0</td>
-      <td>4216.0</td>
-      <td>1.0</td>
-    </tr>
-    <tr>
-      <th>X_1</th>
-      <td>-1.031</td>
-      <td>0.026</td>
-      <td>-1.077</td>
-      <td>-0.980</td>
-      <td>0.000</td>
-      <td>0.000</td>
-      <td>5903.0</td>
-      <td>4761.0</td>
-      <td>1.0</td>
-    </tr>
-    <tr>
       <th>rho</th>
-      <td>0.492</td>
-      <td>0.028</td>
-      <td>0.438</td>
-      <td>0.546</td>
+      <td>0.463</td>
+      <td>0.029</td>
+      <td>0.409</td>
+      <td>0.517</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>3840.0</td>
-      <td>4046.0</td>
+      <td>7411.0</td>
+      <td>6040.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.044</td>
+      <td>1.052</td>
       <td>0.019</td>
-      <td>1.009</td>
-      <td>1.078</td>
+      <td>1.017</td>
+      <td>1.088</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>5405.0</td>
-      <td>4902.0</td>
+      <td>7117.0</td>
+      <td>7542.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <th>sigma2</th>
+      <td>1.106</td>
+      <td>0.040</td>
+      <td>1.030</td>
+      <td>1.179</td>
+      <td>0.000</td>
+      <td>0.000</td>
+      <td>7117.0</td>
+      <td>7542.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <th>Intercept</th>
+      <td>1.079</td>
+      <td>0.064</td>
+      <td>0.958</td>
+      <td>1.196</td>
+      <td>0.001</td>
+      <td>0.001</td>
+      <td>7537.0</td>
+      <td>6490.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <th>X_1</th>
+      <td>-1.077</td>
+      <td>0.027</td>
+      <td>-1.128</td>
+      <td>-1.026</td>
+      <td>0.000</td>
+      <td>0.000</td>
+      <td>7902.0</td>
+      <td>7955.0</td>
       <td>1.0</td>
     </tr>
   </tbody>
@@ -2263,17 +2302,17 @@ for Jupyter support
   <tbody>
     <tr>
       <th>X_1</th>
-      <td>-1.075204</td>
-      <td>-1.129604</td>
-      <td>-1.021696</td>
+      <td>-1.11699</td>
+      <td>-1.172798</td>
+      <td>-1.059813</td>
       <td>0.0</td>
-      <td>-0.960471</td>
-      <td>-1.196122</td>
-      <td>-0.758757</td>
+      <td>-0.893108</td>
+      <td>-1.110791</td>
+      <td>-0.702177</td>
       <td>0.0</td>
-      <td>-2.035675</td>
-      <td>-2.292644</td>
-      <td>-1.809266</td>
+      <td>-2.010098</td>
+      <td>-2.258359</td>
+      <td>-1.789753</td>
       <td>0.0</td>
     </tr>
   </tbody>
@@ -2311,29 +2350,29 @@ SUMMARY OF OUTPUT: SPATIAL TWO STAGE LEAST SQUARES
 Data set            :     unknown
 Weights matrix      :     unknown
 Dependent Variable  :           y                Number of Observations:        1600
-Mean dependent var  :      1.9513                Number of Variables   :           3
-S.D. dependent var  :      1.5702                Degrees of Freedom    :        1597
-Pseudo R-squared    :      0.5518
-Spatial Pseudo R-squared:  0.4798
+Mean dependent var  :      2.0215                Number of Variables   :           3
+S.D. dependent var  :      1.5700                Degrees of Freedom    :        1597
+Pseudo R-squared    :      0.5504
+Spatial Pseudo R-squared:  0.4928
 
 ------------------------------------------------------------------------------------
             Variable     Coefficient       Std.Error     z-Statistic     Probability
 ------------------------------------------------------------------------------------
-            CONSTANT         1.18652         0.10618        11.17475         0.00000
-                 X_1        -1.03619         0.02651       -39.08998         0.00000
-                 W_y         0.40827         0.05254         7.77095         0.00000
+            CONSTANT         1.14006         0.10154        11.22760         0.00000
+                 X_1        -1.07986         0.02792       -38.67629         0.00000
+                 W_y         0.43262         0.04841         8.93559         0.00000
 ------------------------------------------------------------------------------------
 Instrumented: W_y
 Instruments: W_X_1
 
 DIAGNOSTICS FOR SPATIAL DEPENDENCE
 TEST                              DF         VALUE           PROB
-Anselin-Kelejian Test             1          2.010           0.1563
+Anselin-Kelejian Test             1          0.349           0.5548
 
 SPATIAL LAG MODEL IMPACTS
 Impacts computed using the &#39;simple&#39; method.
             Variable         Direct        Indirect          Total
-                 X_1        -1.0362         -0.7149         -1.7511
+                 X_1        -1.0799         -0.8234         -1.9032
 ================================ END OF REPORT =====================================
 </code></pre></div>
 </div>

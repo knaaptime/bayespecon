@@ -430,12 +430,60 @@
   
   
     <li class="md-nav__item">
+      <a href="user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -580,6 +628,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1005,21 +1077,14 @@
 <a class="reference external" href="https://codecov.io/gh/knaaptime/bayespecon"><img alt="codecov" src="https://codecov.io/gh/knaaptime/bayespecon/branch/main/graph/badge.svg?token=XO4SilfBEb" /></a></p>
 <p><strong>Bayesian Spatial Econometric Models</strong></p>
 <p>The <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> package is designed to make it simpler to fit, diagnose, and interpret Bayesian spatial econometric regression models. It provides a suite of classes for building commmonly-used models using a straightforward API. Each model is implemented as a class that defines how spatial effects are represented, and the ‘main’ portion of the model specification is given using the familiar Wilkinson format via <a class="reference external" href="https://matthew.wardrop.casa/formulaic/latest/"><code class="docutils literal notranslate"><span class="pre">formulaic</span></code></a> (but you can pass design matrices if you prefer).</p>
-<p>Each model class uses PySAL <a class="reference external" href="https://pysal.org/libpysal/stable/generated/libpysal.graph.Graph.html#libpysal.graph.Graph"><code class="docutils literal notranslate"><span class="pre">graph</span></code></a> objects to represent spatial weights, <span class="math notranslate nohighlight">\(W\)</span>, (or sparse matrices if you prefer) providing thorough integration with the scientific Python and spatial analysis ecosystems. Estimation is handled by <a class="reference external" href="https://www.pymc.io/welcome.html"><code class="docutils literal notranslate"><span class="pre">pymc</span></code></a>.</p>
-<p>This design makes it simple to build and iterate on spatial regression models using a straightforward notation while retaining all the benefits of a Bayesian framework. The resulting <code class="docutils literal notranslate"><span class="pre">pymc.Model</span></code> object is augmented to include the (correct) log-likelihood if requested, facilitating the use of Bayes Factors in model specification searches. The package also implements a suite of novel Bayesian spatial diagnostics.</p>
-<p>Because models are compiled to PyMC, you can use the classes to specify a common model, then inspect the <code class="docutils literal notranslate"><span class="pre">pymc_model</span></code> object to sketch out a more complex specification.
-<strong>Main Features</strong>:</p>
+<p>Each model class uses PySAL <a class="reference external" href="https://pysal.org/libpysal/stable/generated/libpysal.graph.Graph.html#libpysal.graph.Graph"><code class="docutils literal notranslate"><span class="pre">graph</span></code></a> objects to represent spatial weights, <span class="math notranslate nohighlight">\(W\)</span>, (or sparse matrices if you prefer) providing thorough integration with the scientific Python and spatial analysis ecosystems. Estimation is handled by a custom Gibbs sampler tuned for spatial models, or passed to <a class="reference external" href="https://www.pymc.io/welcome.html"><code class="docutils literal notranslate"><span class="pre">pymc</span></code></a> to sample with NUTS instead.</p>
+<p><strong>Main Features</strong>:</p>
 <ul class="simple">
 <li><p>Wide variety of spatial econometric models using Wilkinson formulas and PySAL <code class="docutils literal notranslate"><span class="pre">Graph</span></code> objects</p></li>
 <li><p><a class="reference external" href="https://www.sciencedirect.com/science/article/abs/pii/S0304407620303018">Bayesian spatial diagnostics</a></p></li>
 <li><p>Marginal (direct and indirect) effects for models with spatial terms</p></li>
 <li><p>Fast <a class="reference internal" href="#"><span class="xref myst">log-determinant functions</span></a> for evaluating spatial terms</p></li>
-<li><p>Models compile to PyMC for full customizability</p>
-<ul>
-<li><p><a class="reference internal" href="#"><span class="xref myst">performant sampling options</span></a></p></li>
-<li><p>Full suite of Bayesian spatial diagnostics through  <a class="reference external" href="https://python.arviz.org/en/stable/"><code class="docutils literal notranslate"><span class="pre">arviz</span></code></a></p></li>
-</ul>
-</li>
+<li><p>Custom Gibbs sampler &amp; PyMC/NUTS alternative</p></li>
 <li><p>Generate synthetic datasets using a known data-generating process for each model</p></li>
 </ul>
 <div class="toctree-wrapper compound">

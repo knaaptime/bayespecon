@@ -429,12 +429,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -579,6 +627,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1808,6 +1880,30 @@
 
               
             
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2111,7 +2207,7 @@
 <h1 id="bayespecon-diagnostics-lmtests-bayesian-robust-lm-error-test">bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test<a class="headerlink" href="#bayespecon-diagnostics-lmtests-bayesian-robust-lm-error-test" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.diagnostics.lmtests.</span></span><span class="sig-name descname"><span class="pre">bayesian_robust_lm_error_test</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test.model" title="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test.model (Python parameter) — Fitted OLS-style model with inference_data containing posterior draws for beta and sigma."><span class="n"><span class="pre">model</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/diagnostics/lmtests/cross_sectional.py#L1323-L1389"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">bayespecon.diagnostics.lmtests.</span></span><span class="sig-name descname"><span class="pre">bayesian_robust_lm_error_test</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test.model" title="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test.model (Python parameter) — Fitted OLS-style model with inference_data containing posterior draws for beta and sigma."><span class="n"><span class="pre">model</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/diagnostics/lmtests/cross_sectional.py#L1338-L1404"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test" title="Link to this definition">¶</a></dt>
 <dd><p>Bayesian robust LM-Error test (H₀: λ = 0, robust to local ρ).</p>
 <p>Cross-sectional analogue of <a class="reference internal" href="bayespecon.diagnostics.lmtests.bayesian_panel_robust_lm_error_test.html#bayespecon.diagnostics.lmtests.bayesian_panel_robust_lm_error_test" title="bayespecon.diagnostics.lmtests.bayesian_panel_robust_lm_error_test (Python function) — Bayesian panel robust LM-Error test (H₀: λ = 0, robust to ρ)."><code class="xref py py-func docutils literal notranslate"><span class="pre">bayesian_panel_robust_lm_error_test()</span></code></a>.
 Tests whether the spatial-error coefficient is zero, robust to the
@@ -2125,8 +2221,8 @@ local presence of a spatial lag. The null model is OLS.</p>
 quantities are as in <a class="reference internal" href="bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_test.html#bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_test" title="bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_test (Python function) — Bayesian robust LM-Lag test (H₀: ρ = 0, robust to local λ)."><code class="xref py py-func docutils literal notranslate"><span class="pre">bayesian_robust_lm_lag_test()</span></code></a>. Distributed
 as <span class="math notranslate nohighlight">\(\chi^2_1\)</span> under H₀ following the Anselin–Bera–Florax–Yoon
 locally-robust construction (<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id4" title="Luc Anselin, Anil Bera, Raymond J G M Florax, and M Yoon. Simple diagnostic tests for spatial dependence. Regional Science and Urban Economics, 26:77–104, 1996. doi:10.1016/0166-0462(95)02111-6.">Anselin <em>et al.</em>, 1996</a>]</span>,
-<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id8" title="Anil K. Bera and Mann J. Yoon. Specification testing with locally misspecified alternatives. Econometric Theory, 9(4):649–658, 1993. doi:10.1017/S0266466600008111.">Bera and Yoon, 1993</a>]</span>). The Bayesian LM statistic is
-computed per posterior draw following <span class="bibtex-citation" id="id3">Doğan <em>et al.</em> [<a class="reference internal" href="../references.html#id11" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">2021</a>]</span>.</p>
+<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id9" title="Anil K. Bera and Mann J. Yoon. Specification testing with locally misspecified alternatives. Econometric Theory, 9(4):649–658, 1993. doi:10.1017/S0266466600008111.">Bera and Yoon, 1993</a>]</span>). The Bayesian LM statistic is
+computed per posterior draw following <span class="bibtex-citation" id="id3">Doğan <em>et al.</em> [<a class="reference internal" href="../references.html#id12" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">2021</a>]</span>.</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_test-parameters" title="Permalink to this headline">¶</a></dt>
 <dd class="field-odd"><dl class="simple api-field highlight">

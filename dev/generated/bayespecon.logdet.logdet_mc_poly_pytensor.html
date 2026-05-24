@@ -429,12 +429,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -579,6 +627,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1612,6 +1684,30 @@
 
               
             
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1927,7 +2023,7 @@
 <h1 id="bayespecon-logdet-logdet-mc-poly-pytensor">bayespecon.logdet.logdet_mc_poly_pytensor<a class="headerlink" href="#bayespecon-logdet-logdet-mc-poly-pytensor" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.logdet.logdet_mc_poly_pytensor">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">logdet_mc_poly_pytensor</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_mc_poly_pytensor.rho" title="bayespecon.logdet.logdet_mc_poly_pytensor.rho (Python parameter) — Spatial autoregressive parameter symbol."><span class="n"><span class="pre">rho</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_mc_poly_pytensor.traces" title="bayespecon.logdet.logdet_mc_poly_pytensor.traces (Python parameter) — Trace estimates traces[k-1] ≈ tr(W^k) for k=1..m from compute_flow_traces()."><span class="n"><span class="pre">traces</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L797-L852"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.logdet_mc_poly_pytensor" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">logdet_mc_poly_pytensor</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_mc_poly_pytensor.rho" title="bayespecon.logdet.logdet_mc_poly_pytensor.rho (Python parameter) — Spatial autoregressive parameter symbol."><span class="n"><span class="pre">rho</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.logdet_mc_poly_pytensor.traces" title="bayespecon.logdet.logdet_mc_poly_pytensor.traces (Python parameter) — Trace estimates traces[k-1] ≈ tr(W^k) for k=1..m from compute_flow_traces()."><span class="n"><span class="pre">traces</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L805-L860"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.logdet_mc_poly_pytensor" title="Link to this definition">¶</a></dt>
 <dd><p>Evaluate Barry-Pace trace polynomial approximation of log|I - rho*W| symbolically.</p>
 <p>Computes the truncated power-series approximation</p>
 <div class="math notranslate nohighlight">

@@ -295,8 +295,17 @@
     "    data=gdf,\n",
     "    W=W,\n",
     ")\n",
-    "display(summary_sar)\n",
-    "display(effects_sar)"
+    "summary_sar"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "fc67a6d9",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "effects_sar"
    ]
   },
   {
@@ -596,7 +605,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "bayes_factor_compare_models(model_dict, method=\"bridge\").round(3)"
+    "bayes_factor_compare_models(model_dict, method=\"bridge\", log=True).round(3)"
    ]
   },
   {
@@ -606,7 +615,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "bayes_factor_compare_models(model_dict, method=\"bic\").round(3)"
+    "bayes_factor_compare_models(model_dict, method=\"bic\", log=True).round(3)"
    ]
   },
   {
@@ -655,7 +664,7 @@
    "source": [
     "# WAIC and LOO comparison\n",
     "for ic in (\"waic\", \"loo\"):\n",
-    "    cmp = az.compare(idata_dict, ic=ic, method=\"BB-pseudo-BMA\")\n",
+    "    cmp = az.compare(idata_dict, ic=ic)\n",
     "    az.plot_compare(cmp)"
    ]
   },
@@ -762,13 +771,45 @@
     "sar_matrix.fit(draws=200, tune=200, chains=2, random_seed=7, progressbar=False)\n",
     "display(sar_matrix.summary(round_to=3))"
    ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "01213078",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8b358093",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "40dacc04",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "f3279eee",
+   "metadata": {},
+   "outputs": [],
+   "source": []
   }
  ],
  "metadata": {
   "kernelspec": {
-   "display_name": "Python [conda env:bayespreg]",
+   "display_name": "bayespreg",
    "language": "python",
-   "name": "conda-env-bayespreg-py"
+   "name": "python3"
   },
   "language_info": {
    "codemirror_mode": {

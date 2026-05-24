@@ -14,7 +14,7 @@
         <link rel="prev" href="panel_flow_models.html">
       
       
-        <link rel="next" href="cross_sectional_spreg_comparison.html">
+        <link rel="next" href="spatial_cv_demo.html">
       
       
       <link rel="icon" href="../_static/pysal_favicon.ico">
@@ -431,12 +431,60 @@
   
   
     <li class="md-nav__item">
+      <a href="quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -755,6 +803,30 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1516,20 +1588,15 @@ weight matrices <span class="math notranslate nohighlight">\(W_d, W_o, W_w\)</sp
 <div class="cell_output docutils container">
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [beta, sigma]
-Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draws total) took 20 seconds.
+NUTS: [beta, sigma2]
+Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draws total) took 17 seconds.
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draws total) took 21 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [beta, sigma]
-Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draws total) took 21 seconds.
+NUTS: [beta, sigma2]
+Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draws total) took 18 seconds.
 </code></pre></div>
 </div>
 <div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 </div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 </div><div class="output text_html">
             <div>
@@ -1539,8 +1606,8 @@ Sampling 4 chains for 5_000 tune and 5_000 draw iterations (20_000 + 20_000 draw
               <ul class="xr-sections group-sections">
               
             <li class = "xr-section-item">
-                  <input id="idata_posterior03970214-c60f-4b6a-a2a1-ad32ee7e73c4" class="xr-section-summary-in" type="checkbox">
-                  <label for="idata_posterior03970214-c60f-4b6a-a2a1-ad32ee7e73c4" class = "xr-section-summary">posterior</label>
+                  <input id="idata_posteriorb0949956-7516-4ff1-bbbe-7c43a7ddb342" class="xr-section-summary-in" type="checkbox">
+                  <label for="idata_posteriorb0949956-7516-4ff1-bbbe-7c43a7ddb342" class = "xr-section-summary">posterior</label>
                   <div class="xr-section-inline-details"></div>
                   <div class="xr-section-details">
                       <ul id="xr-dataset-coord-list" class="xr-var-list">
@@ -2093,69 +2160,77 @@ Coordinates:
   * draw         (draw) int64 40kB 0 1 2 3 4 5 ... 4994 4995 4996 4997 4998 4999
   * coefficient  (coefficient) &lt;U4 80B &#x27;x0&#x27; &#x27;x1&#x27; &#x27;x2&#x27; &#x27;W*x1&#x27; &#x27;W*x2&#x27;
 Data variables:
-    beta         (chain, draw, coefficient) float64 800kB 1.04 2.097 ... -0.1659
-    sigma        (chain, draw) float64 160kB 1.011 1.042 1.002 ... 1.002 1.081
+    beta         (chain, draw, coefficient) float64 800kB 1.111 2.242 ... 0.1962
+    sigma2       (chain, draw) float64 160kB 1.597 1.393 1.32 ... 1.29 1.257
+    sigma        (chain, draw) float64 160kB 1.264 1.18 1.149 ... 1.136 1.121
 Attributes:
-    created_at:                 2026-05-18T17:03:01.578344+00:00
+    created_at:                 2026-05-23T23:58:00.258123+00:00
     arviz_version:              0.23.4
     inference_library:          pymc
     inference_library_version:  5.28.5
-    sampling_time:              21.400784492492676
-    tuning_steps:               5000</pre><div class='xr-wrap' style='display:none'><div class='xr-header'><div class='xr-obj-type'>xarray.Dataset</div></div><ul class='xr-sections'><li class='xr-section-item'><input id='section-d7df92ba-be23-42af-9877-54f1ebb92830' class='xr-section-summary-in' type='checkbox' disabled /><label for='section-d7df92ba-be23-42af-9877-54f1ebb92830' class='xr-section-summary'>Dimensions:</label><div class='xr-section-inline-details'><ul class='xr-dim-list'><li><span class='xr-has-index'>chain</span>: 4</li><li><span class='xr-has-index'>draw</span>: 5000</li><li><span class='xr-has-index'>coefficient</span>: 5</li></ul></div></li><li class='xr-section-item'><input id='section-9fc7eebd-00b4-4948-bff4-2bafb0e947b2' class='xr-section-summary-in' type='checkbox' checked /><label for='section-9fc7eebd-00b4-4948-bff4-2bafb0e947b2' class='xr-section-summary' title='Expand/collapse section'>Coordinates: <span>(3)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>chain</span></div><div class='xr-var-dims'>(chain)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3</div><input id='attrs-d099359d-bb8c-4aa1-89d4-1d3757ab68f4' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-d099359d-bb8c-4aa1-89d4-1d3757ab68f4' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-49875d74-6d31-4987-801e-008b8dcf6da4' class='xr-var-data-in' type='checkbox'><label for='data-49875d74-6d31-4987-801e-008b8dcf6da4' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([0, 1, 2, 3])</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>draw</span></div><div class='xr-var-dims'>(draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3 4 ... 4996 4997 4998 4999</div><input id='attrs-d4c5720f-2cea-463d-b893-71e03ea53d8e' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-d4c5720f-2cea-463d-b893-71e03ea53d8e' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-c0ddb28b-1088-45f8-a4ad-df56a8f3fe14' class='xr-var-data-in' type='checkbox'><label for='data-c0ddb28b-1088-45f8-a4ad-df56a8f3fe14' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([   0,    1,    2, ..., 4997, 4998, 4999], shape=(5000,))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>coefficient</span></div><div class='xr-var-dims'>(coefficient)</div><div class='xr-var-dtype'>&lt;U4</div><div class='xr-var-preview xr-preview'>&#x27;x0&#x27; &#x27;x1&#x27; &#x27;x2&#x27; &#x27;W*x1&#x27; &#x27;W*x2&#x27;</div><input id='attrs-cff01685-a4a2-41ba-aee2-019295974d7f' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-cff01685-a4a2-41ba-aee2-019295974d7f' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-45c80235-444f-47ab-b5be-ad8fa8dad59e' class='xr-var-data-in' type='checkbox'><label for='data-45c80235-444f-47ab-b5be-ad8fa8dad59e' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([&#x27;x0&#x27;, &#x27;x1&#x27;, &#x27;x2&#x27;, &#x27;W*x1&#x27;, &#x27;W*x2&#x27;], dtype=&#x27;&lt;U4&#x27;)</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-979014c0-2360-4dec-b130-3bdc440f709c' class='xr-section-summary-in' type='checkbox' checked /><label for='section-979014c0-2360-4dec-b130-3bdc440f709c' class='xr-section-summary' title='Expand/collapse section'>Data variables: <span>(2)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span>beta</span></div><div class='xr-var-dims'>(chain, draw, coefficient)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>1.04 2.097 ... -0.6336 -0.1659</div><input id='attrs-a39852ff-4099-45a2-9844-781efa3d86a5' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-a39852ff-4099-45a2-9844-781efa3d86a5' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-28457887-e939-4831-b3cd-dc91faf75e0b' class='xr-var-data-in' type='checkbox'><label for='data-28457887-e939-4831-b3cd-dc91faf75e0b' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[[ 1.03980275,  2.09709828, -1.79012932, -0.31541994,
-         -0.61203853],
-        [ 1.07643494,  2.19246367, -1.46492208,  0.14401382,
-         -0.07551191],
-        [ 0.90274883,  2.11952394, -1.66866864, -0.84252237,
-         -0.40157132],
+    sampling_time:              18.25568175315857
+    tuning_steps:               5000</pre><div class='xr-wrap' style='display:none'><div class='xr-header'><div class='xr-obj-type'>xarray.Dataset</div></div><ul class='xr-sections'><li class='xr-section-item'><input id='section-20415f40-595f-4b27-9be9-9d62745c7db0' class='xr-section-summary-in' type='checkbox' disabled /><label for='section-20415f40-595f-4b27-9be9-9d62745c7db0' class='xr-section-summary'>Dimensions:</label><div class='xr-section-inline-details'><ul class='xr-dim-list'><li><span class='xr-has-index'>chain</span>: 4</li><li><span class='xr-has-index'>draw</span>: 5000</li><li><span class='xr-has-index'>coefficient</span>: 5</li></ul></div></li><li class='xr-section-item'><input id='section-29068d07-7b40-4c0f-9894-a7c63f2efc3f' class='xr-section-summary-in' type='checkbox' checked /><label for='section-29068d07-7b40-4c0f-9894-a7c63f2efc3f' class='xr-section-summary' title='Expand/collapse section'>Coordinates: <span>(3)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>chain</span></div><div class='xr-var-dims'>(chain)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3</div><input id='attrs-30572d2c-309b-4da8-bde7-a39f330801b4' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-30572d2c-309b-4da8-bde7-a39f330801b4' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-12f15910-36e6-4351-a3d5-7654c9491bc0' class='xr-var-data-in' type='checkbox'><label for='data-12f15910-36e6-4351-a3d5-7654c9491bc0' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([0, 1, 2, 3])</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>draw</span></div><div class='xr-var-dims'>(draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3 4 ... 4996 4997 4998 4999</div><input id='attrs-648721ba-5d53-4d0e-bdf3-2a5e94722026' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-648721ba-5d53-4d0e-bdf3-2a5e94722026' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-ccd34212-82dc-458a-a5cc-6c98bafe01bc' class='xr-var-data-in' type='checkbox'><label for='data-ccd34212-82dc-458a-a5cc-6c98bafe01bc' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([   0,    1,    2, ..., 4997, 4998, 4999], shape=(5000,))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>coefficient</span></div><div class='xr-var-dims'>(coefficient)</div><div class='xr-var-dtype'>&lt;U4</div><div class='xr-var-preview xr-preview'>&#x27;x0&#x27; &#x27;x1&#x27; &#x27;x2&#x27; &#x27;W*x1&#x27; &#x27;W*x2&#x27;</div><input id='attrs-59df13f0-56aa-42ab-9bfd-117c6b7e4b37' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-59df13f0-56aa-42ab-9bfd-117c6b7e4b37' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-38de5d7e-7306-4097-8b58-a236749e9c65' class='xr-var-data-in' type='checkbox'><label for='data-38de5d7e-7306-4097-8b58-a236749e9c65' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([&#x27;x0&#x27;, &#x27;x1&#x27;, &#x27;x2&#x27;, &#x27;W*x1&#x27;, &#x27;W*x2&#x27;], dtype=&#x27;&lt;U4&#x27;)</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-34066ea6-1561-4d97-91dc-1dfb68ad493d' class='xr-section-summary-in' type='checkbox' checked /><label for='section-34066ea6-1561-4d97-91dc-1dfb68ad493d' class='xr-section-summary' title='Expand/collapse section'>Data variables: <span>(3)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span>beta</span></div><div class='xr-var-dims'>(chain, draw, coefficient)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>1.111 2.242 ... -0.3921 0.1962</div><input id='attrs-578485cb-c0aa-40f7-9702-b3f6b3081b49' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-578485cb-c0aa-40f7-9702-b3f6b3081b49' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-20c4fe9d-54f4-4e1a-af65-8154aa85c783' class='xr-var-data-in' type='checkbox'><label for='data-20c4fe9d-54f4-4e1a-af65-8154aa85c783' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[[ 1.11136323,  2.24188798, -1.61330533,  0.13986168,
+         -0.1526477 ],
+        [ 0.96039308,  1.93517166, -1.61684458,  0.21342269,
+         -0.59409777],
+        [ 1.2783219 ,  1.8249301 , -1.44157132, -0.76308163,
+          0.04502973],
         ...,
-        [ 1.07527552,  1.78869988, -1.05041159, -0.06112655,
-          0.51924247],
-        [ 0.8868879 ,  1.80365015, -0.90562814, -0.39557882,
-          0.54324851],
-        [ 0.63142967,  1.53528408, -1.29466089, -1.16589765,
-          0.39517548]],
+        [ 0.79498687,  1.79654498, -1.51613059, -0.08511968,
+          0.15518889],
+        [ 0.93308774,  1.76505252, -1.7846799 , -0.13461659,
+         -0.27757776],
+        [ 1.22992593,  2.27114261, -1.35959431,  0.74404232,
+         -0.44589093]],
 
-       [[ 1.32003648,  2.0387572 , -1.7599526 ,  0.72849238,
-         -0.64419095],
-        [ 0.91412637,  2.00857936, -1.34560865, -0.09282988,
-         -0.49359716],
-        [ 0.72758088,  1.69567146, -1.57284433,  0.00317933,
-         -0.30650119],
+       [[ 1.21741628,  2.22648334, -1.53557751,  1.0002449 ,
+         -0.59662241],
+        [ 0.83455867,  1.78389691, -1.35923875, -0.85991142,
+          0.09992495],
+        [ 0.51122582,  1.5161465 , -1.44630442, -0.21787023,
+          0.08024687],
 ...
-        [ 1.04546525,  1.82748862, -1.10805527, -0.90772449,
-          0.02250414],
-        [ 0.72481067,  1.60174303, -1.12378644,  0.01049513,
-         -0.30898589],
-        [ 0.76809007,  1.67627856, -1.12003084, -0.91915452,
-         -0.21430207]],
+        [ 0.74506868,  1.5996482 , -1.30503742, -0.46349571,
+          0.17940262],
+        [ 0.71187824,  1.47807873, -1.11401691, -0.13049614,
+         -0.17997861],
+        [ 0.95042155,  1.79449309, -1.51067507,  0.0254491 ,
+          0.15778663]],
 
-       [[ 0.38567682,  2.04612425, -1.48228132, -0.39752719,
-         -0.380611  ],
-        [ 0.27461417,  2.08967377, -1.22803874, -0.92060711,
-         -0.31682685],
-        [ 0.95035643,  2.39595729, -1.55549352, -0.32718714,
-         -0.63310497],
+       [[ 0.76717894,  2.27412685, -1.69265258, -0.33569523,
+         -0.18991932],
+        [ 0.72140577,  1.59902343, -0.97869674, -0.93258515,
+         -0.03069374],
+        [ 0.65959574,  1.36460174, -1.01221891, -1.06736058,
+          0.75627196],
         ...,
-        [ 0.65481565,  1.92352986, -1.25479706, -0.92613282,
-         -0.08883585],
-        [ 0.89414365,  1.53843176, -1.2629667 , -0.51963795,
-          0.5436133 ],
-        [ 0.64547474,  1.86618287, -1.43136012, -0.63356551,
-         -0.16590905]]], shape=(4, 5000, 5))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>sigma</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>1.011 1.042 1.002 ... 1.002 1.081</div><input id='attrs-2389f0a3-94c8-4ea4-8bfb-476d4933706a' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-2389f0a3-94c8-4ea4-8bfb-476d4933706a' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-5e63032a-21e0-4817-ac19-1664eacd31a9' class='xr-var-data-in' type='checkbox'><label for='data-5e63032a-21e0-4817-ac19-1664eacd31a9' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[1.01109327, 1.04161852, 1.00162935, ..., 1.32092696, 1.13642156,
-        0.94303679],
-       [1.16592839, 0.99274762, 0.93779366, ..., 0.91825979, 1.10423547,
-        0.88220729],
-       [1.14548736, 1.30499254, 0.99955048, ..., 1.15545853, 1.14451425,
-        1.15861423],
-       [1.22871274, 1.2979764 , 1.5243278 , ..., 1.18437777, 1.00188702,
-        1.08053815]], shape=(4, 5000))</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-62a48168-b37a-47ea-836d-14f42264ad8c' class='xr-section-summary-in' type='checkbox' checked /><label for='section-62a48168-b37a-47ea-836d-14f42264ad8c' class='xr-section-summary' title='Expand/collapse section'>Attributes: <span>(6)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><dl class='xr-attrs'><dt><span>created_at :</span></dt><dd>2026-05-18T17:03:01.578344+00:00</dd><dt><span>arviz_version :</span></dt><dd>0.23.4</dd><dt><span>inference_library :</span></dt><dd>pymc</dd><dt><span>inference_library_version :</span></dt><dd>5.28.5</dd><dt><span>sampling_time :</span></dt><dd>21.400784492492676</dd><dt><span>tuning_steps :</span></dt><dd>5000</dd></dl></div></li></ul></div></div><br></div>
+        [ 1.38600173,  1.9559113 , -1.50844642,  0.22936269,
+         -0.28123454],
+        [ 0.84108839,  1.81271091, -1.32629513, -0.05247807,
+          0.26524298],
+        [ 0.73886156,  1.76891566, -1.43620329, -0.3921429 ,
+          0.19624016]]], shape=(4, 5000, 5))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>sigma2</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>1.597 1.393 1.32 ... 1.29 1.257</div><input id='attrs-aca7abba-5607-414f-896c-75238ad97b8a' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-aca7abba-5607-414f-896c-75238ad97b8a' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-720f5ef1-4405-44df-8175-240eb22d0560' class='xr-var-data-in' type='checkbox'><label for='data-720f5ef1-4405-44df-8175-240eb22d0560' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[1.59740779, 1.39309731, 1.32022557, ..., 1.5483493 , 1.47727619,
+        1.21996499],
+       [1.16620798, 1.1301621 , 0.97991207, ..., 1.62553668, 2.4158734 ,
+        1.19266242],
+       [1.11778043, 1.73092756, 1.11754356, ..., 1.29608946, 1.37900578,
+        1.18897298],
+       [1.69019533, 1.32541905, 0.88103098, ..., 1.34891318, 1.28976528,
+        1.25740772]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>sigma</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>1.264 1.18 1.149 ... 1.136 1.121</div><input id='attrs-b3a2ec5d-ac74-45c1-a0af-fad3d8380a52' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-b3a2ec5d-ac74-45c1-a0af-fad3d8380a52' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-566d1224-3929-42fe-bb91-6714917e1b0b' class='xr-var-data-in' type='checkbox'><label for='data-566d1224-3929-42fe-bb91-6714917e1b0b' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[1.26388599, 1.18029543, 1.14901069, ..., 1.24432685, 1.21543251,
+        1.10452026],
+       [1.0799111 , 1.06309082, 0.98990508, ..., 1.27496536, 1.55430801,
+        1.09209085],
+       [1.05725136, 1.3156472 , 1.05713933, ..., 1.13845925, 1.17431077,
+        1.09040038],
+       [1.30007512, 1.15126845, 0.93863251, ..., 1.16142722, 1.13567833,
+        1.12134193]], shape=(4, 5000))</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-dadaac77-7324-457d-94f6-51e57946c2d6' class='xr-section-summary-in' type='checkbox' checked /><label for='section-dadaac77-7324-457d-94f6-51e57946c2d6' class='xr-section-summary' title='Expand/collapse section'>Attributes: <span>(6)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><dl class='xr-attrs'><dt><span>created_at :</span></dt><dd>2026-05-23T23:58:00.258123+00:00</dd><dt><span>arviz_version :</span></dt><dd>0.23.4</dd><dt><span>inference_library :</span></dt><dd>pymc</dd><dt><span>inference_library_version :</span></dt><dd>5.28.5</dd><dt><span>sampling_time :</span></dt><dd>18.25568175315857</dd><dt><span>tuning_steps :</span></dt><dd>5000</dd></dl></div></li></ul></div></div><br></div>
                       </ul>
                   </div>
             </li>
             
             <li class = "xr-section-item">
-                  <input id="idata_sample_stats5cfa7321-371d-43cd-bf55-dc0176975793" class="xr-section-summary-in" type="checkbox">
-                  <label for="idata_sample_stats5cfa7321-371d-43cd-bf55-dc0176975793" class = "xr-section-summary">sample_stats</label>
+                  <input id="idata_sample_stats78310df7-0210-4a5e-91de-ded1b4caefb8" class="xr-section-summary-in" type="checkbox">
+                  <label for="idata_sample_stats78310df7-0210-4a5e-91de-ded1b4caefb8" class = "xr-section-summary">sample_stats</label>
                   <div class="xr-section-inline-details"></div>
                   <div class="xr-section-details">
                       <ul id="xr-dataset-coord-list" class="xr-var-list">
@@ -2707,127 +2782,127 @@ Coordinates:
   * chain                  (chain) int64 32B 0 1 2 3
   * draw                   (draw) int64 40kB 0 1 2 3 4 ... 4996 4997 4998 4999
 Data variables: (12/18)
-    perf_counter_start     (chain, draw) float64 160kB 456.1 456.1 ... 465.7
-    smallest_eigval        (chain, draw) float64 160kB nan nan nan ... nan nan
-    energy                 (chain, draw) float64 160kB 155.7 152.1 ... 148.4
-    reached_max_treedepth  (chain, draw) bool 20kB False False ... False False
-    acceptance_rate        (chain, draw) float64 160kB 0.9534 1.0 ... 0.9161 1.0
+    n_steps                (chain, draw) float64 160kB 15.0 7.0 7.0 ... 7.0 3.0
+    lp                     (chain, draw) float64 160kB -88.98 -87.89 ... -86.2
+    acceptance_rate        (chain, draw) float64 160kB 0.6525 0.9695 ... 0.9937
+    diverging              (chain, draw) bool 20kB False False ... False False
+    perf_counter_diff      (chain, draw) float64 160kB 0.0004634 ... 0.0001299
     largest_eigval         (chain, draw) float64 160kB nan nan nan ... nan nan
     ...                     ...
-    energy_error           (chain, draw) float64 160kB -0.03968 ... -0.03155
-    process_time_diff      (chain, draw) float64 160kB 0.000478 ... 0.000371
-    n_steps                (chain, draw) float64 160kB 7.0 3.0 7.0 ... 7.0 7.0
-    step_size_bar          (chain, draw) float64 160kB 0.5342 0.5342 ... 0.5597
-    diverging              (chain, draw) bool 20kB False False ... False False
-    tree_depth             (chain, draw) int64 160kB 3 2 3 3 3 3 ... 3 3 3 3 3 3
+    divergences            (chain, draw) int64 160kB 0 0 0 0 0 0 ... 0 0 0 0 0 0
+    energy_error           (chain, draw) float64 160kB 0.3811 ... -0.179
+    reached_max_treedepth  (chain, draw) bool 20kB False False ... False False
+    process_time_diff      (chain, draw) float64 160kB 0.0004633 ... 0.0001302
+    index_in_trajectory    (chain, draw) int64 160kB -7 2 5 3 -5 ... 6 -2 -3 3 2
+    energy                 (chain, draw) float64 160kB 91.67 90.34 ... 87.35
 Attributes:
-    created_at:                 2026-05-18T17:03:01.606683+00:00
+    created_at:                 2026-05-23T23:58:00.282680+00:00
     arviz_version:              0.23.4
     inference_library:          pymc
     inference_library_version:  5.28.5
-    sampling_time:              21.400784492492676
-    tuning_steps:               5000</pre><div class='xr-wrap' style='display:none'><div class='xr-header'><div class='xr-obj-type'>xarray.Dataset</div></div><ul class='xr-sections'><li class='xr-section-item'><input id='section-b6a13816-fff7-4f2f-b755-56c83414c19c' class='xr-section-summary-in' type='checkbox' disabled /><label for='section-b6a13816-fff7-4f2f-b755-56c83414c19c' class='xr-section-summary'>Dimensions:</label><div class='xr-section-inline-details'><ul class='xr-dim-list'><li><span class='xr-has-index'>chain</span>: 4</li><li><span class='xr-has-index'>draw</span>: 5000</li></ul></div></li><li class='xr-section-item'><input id='section-87a6de3a-444c-43a0-9c12-a917d9a44256' class='xr-section-summary-in' type='checkbox' checked /><label for='section-87a6de3a-444c-43a0-9c12-a917d9a44256' class='xr-section-summary' title='Expand/collapse section'>Coordinates: <span>(2)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>chain</span></div><div class='xr-var-dims'>(chain)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3</div><input id='attrs-a51acd8d-c92b-493a-9f26-1b274dfb3b63' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-a51acd8d-c92b-493a-9f26-1b274dfb3b63' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-afdd69e5-2d57-4775-baef-03c8fd436493' class='xr-var-data-in' type='checkbox'><label for='data-afdd69e5-2d57-4775-baef-03c8fd436493' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([0, 1, 2, 3])</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>draw</span></div><div class='xr-var-dims'>(draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3 4 ... 4996 4997 4998 4999</div><input id='attrs-914ee2f9-105e-4504-9106-33f67a2ee572' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-914ee2f9-105e-4504-9106-33f67a2ee572' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-688c8c5a-33f6-477c-b746-5bb73de5d54b' class='xr-var-data-in' type='checkbox'><label for='data-688c8c5a-33f6-477c-b746-5bb73de5d54b' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([   0,    1,    2, ..., 4997, 4998, 4999], shape=(5000,))</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-1203ddf2-40d2-4e2c-987d-32e2f88b0c3d' class='xr-section-summary-in' type='checkbox' /><label for='section-1203ddf2-40d2-4e2c-987d-32e2f88b0c3d' class='xr-section-summary' title='Expand/collapse section'>Data variables: <span>(18)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span>perf_counter_start</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>456.1 456.1 456.1 ... 465.7 465.7</div><input id='attrs-23281030-8c9f-4f85-afe7-5da66b699151' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-23281030-8c9f-4f85-afe7-5da66b699151' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-5a11975b-9177-4487-ac3b-7a481ab89d6d' class='xr-var-data-in' type='checkbox'><label for='data-5a11975b-9177-4487-ac3b-7a481ab89d6d' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[456.0550836 , 456.05570276, 456.05622593, ..., 458.69484392,
-        458.6951701 , 458.69561985],
-       [456.54344878, 456.54425152, 456.5449742 , ..., 459.58327791,
-        459.58372399, 459.58418323],
-       [461.9626497 , 461.96313831, 461.96359777, ..., 464.72880173,
-        464.7293091 , 464.72978312],
-       [463.08615274, 463.08686838, 463.08764927, ..., 465.66128309,
-        465.66174111, 465.66222853]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>smallest_eigval</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>nan nan nan nan ... nan nan nan nan</div><input id='attrs-b4fa3d8b-92d7-46ed-ab7e-45d5ccbe1d2f' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-b4fa3d8b-92d7-46ed-ab7e-45d5ccbe1d2f' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-9c4a39b9-b8c0-4ba9-8e3b-6f64eab55b1a' class='xr-var-data-in' type='checkbox'><label for='data-9c4a39b9-b8c0-4ba9-8e3b-6f64eab55b1a' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[nan, nan, nan, ..., nan, nan, nan],
-       [nan, nan, nan, ..., nan, nan, nan],
-       [nan, nan, nan, ..., nan, nan, nan],
-       [nan, nan, nan, ..., nan, nan, nan]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>energy</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>155.7 152.1 154.1 ... 150.5 148.4</div><input id='attrs-84dc9344-086b-456d-8ac7-716d35e5e513' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-84dc9344-086b-456d-8ac7-716d35e5e513' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-d4d5a7d6-f3e3-4e98-af35-a5d82d8b4ab1' class='xr-var-data-in' type='checkbox'><label for='data-d4d5a7d6-f3e3-4e98-af35-a5d82d8b4ab1' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[155.65670863, 152.11104066, 154.08369002, ..., 152.50960613,
-        154.97677092, 155.30393972],
-       [156.06552353, 150.86386347, 150.38080724, ..., 148.0581567 ,
-        150.22971271, 147.10037977],
-       [155.38054252, 155.69885007, 152.96499669, ..., 149.71729705,
-        152.61822432, 151.85526026],
-       [154.72760892, 157.4727241 , 160.64464462, ..., 151.02100856,
-        150.46214309, 148.44034557]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>reached_max_treedepth</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>bool</div><div class='xr-var-preview xr-preview'>False False False ... False False</div><input id='attrs-18478f9e-78ff-4b76-98d0-32363b4737df' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-18478f9e-78ff-4b76-98d0-32363b4737df' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-8b1c47eb-133c-400c-be7a-699d4f0ec59c' class='xr-var-data-in' type='checkbox'><label for='data-8b1c47eb-133c-400c-be7a-699d4f0ec59c' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[False, False, False, ..., False, False, False],
+    sampling_time:              18.25568175315857
+    tuning_steps:               5000</pre><div class='xr-wrap' style='display:none'><div class='xr-header'><div class='xr-obj-type'>xarray.Dataset</div></div><ul class='xr-sections'><li class='xr-section-item'><input id='section-d2913217-ed56-4bfd-b4ca-901cc586da3b' class='xr-section-summary-in' type='checkbox' disabled /><label for='section-d2913217-ed56-4bfd-b4ca-901cc586da3b' class='xr-section-summary'>Dimensions:</label><div class='xr-section-inline-details'><ul class='xr-dim-list'><li><span class='xr-has-index'>chain</span>: 4</li><li><span class='xr-has-index'>draw</span>: 5000</li></ul></div></li><li class='xr-section-item'><input id='section-030bbdfe-1a85-462e-87fc-61208f72f7e0' class='xr-section-summary-in' type='checkbox' checked /><label for='section-030bbdfe-1a85-462e-87fc-61208f72f7e0' class='xr-section-summary' title='Expand/collapse section'>Coordinates: <span>(2)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>chain</span></div><div class='xr-var-dims'>(chain)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3</div><input id='attrs-704c04ca-e150-40db-8a5e-ce01693a3ae9' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-704c04ca-e150-40db-8a5e-ce01693a3ae9' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-f96dfbeb-461f-464a-81c1-60d114b91b0d' class='xr-var-data-in' type='checkbox'><label for='data-f96dfbeb-461f-464a-81c1-60d114b91b0d' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([0, 1, 2, 3])</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>draw</span></div><div class='xr-var-dims'>(draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3 4 ... 4996 4997 4998 4999</div><input id='attrs-3be27e5d-420e-409b-ab8b-fa7406336266' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-3be27e5d-420e-409b-ab8b-fa7406336266' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-4f4fa3b1-946f-42a9-b66b-4fa8936fef4d' class='xr-var-data-in' type='checkbox'><label for='data-4f4fa3b1-946f-42a9-b66b-4fa8936fef4d' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([   0,    1,    2, ..., 4997, 4998, 4999], shape=(5000,))</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-3ec82f59-c0c9-425e-b77d-8dda13c47931' class='xr-section-summary-in' type='checkbox' /><label for='section-3ec82f59-c0c9-425e-b77d-8dda13c47931' class='xr-section-summary' title='Expand/collapse section'>Data variables: <span>(18)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span>n_steps</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>15.0 7.0 7.0 7.0 ... 3.0 7.0 3.0</div><input id='attrs-db930eb1-5c2a-4fe2-8356-0193358d2562' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-db930eb1-5c2a-4fe2-8356-0193358d2562' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-031698c0-ba6a-4bf6-815c-64141009b3f5' class='xr-var-data-in' type='checkbox'><label for='data-031698c0-ba6a-4bf6-815c-64141009b3f5' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[15.,  7.,  7., ...,  3.,  7.,  7.],
+       [ 7.,  7.,  3., ...,  3.,  7.,  7.],
+       [ 7.,  7.,  7., ...,  3.,  3.,  7.],
+       [ 7.,  7.,  7., ...,  3.,  7.,  3.]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>lp</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>-88.98 -87.89 ... -86.84 -86.2</div><input id='attrs-683302fd-d851-48f9-bcf2-d1784970b376' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-683302fd-d851-48f9-bcf2-d1784970b376' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-5b185a50-4f1b-42ce-a9fc-86c9b1552d1e' class='xr-var-data-in' type='checkbox'><label for='data-5b185a50-4f1b-42ce-a9fc-86c9b1552d1e' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[-88.98384958, -87.88983426, -91.38655743, ..., -87.48495541,
+        -89.22329387, -90.34075793],
+       [-90.62386471, -86.70712785, -90.24081352, ..., -88.33719611,
+        -92.16211538, -86.42971778],
+       [-92.90712408, -92.89413759, -90.24134132, ..., -86.56209397,
+        -90.31618515, -86.20960167],
+       [-90.96065497, -89.01883295, -93.2714635 , ..., -88.80138976,
+        -86.83885818, -86.19601378]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>acceptance_rate</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.6525 0.9695 ... 0.9394 0.9937</div><input id='attrs-abf6a0cb-0e17-4fe1-ac69-ef185999e7f7' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-abf6a0cb-0e17-4fe1-ac69-ef185999e7f7' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-f58be3fb-3797-4bbf-9e54-73953fc0f4aa' class='xr-var-data-in' type='checkbox'><label for='data-f58be3fb-3797-4bbf-9e54-73953fc0f4aa' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.65246483, 0.96947029, 0.60543363, ..., 0.67759554, 0.94852985,
+        0.97037389],
+       [0.78266036, 1.        , 0.81942946, ..., 0.99692145, 0.88678795,
+        0.99569822],
+       [0.6704637 , 0.96509699, 1.        , ..., 0.93356962, 0.70451625,
+        0.97429526],
+       [0.80797264, 0.91351708, 0.84958383, ..., 0.86597581, 0.93943964,
+        0.99373495]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>diverging</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>bool</div><div class='xr-var-preview xr-preview'>False False False ... False False</div><input id='attrs-c12bacf3-f46b-4da3-a9e7-aabea6ddc6a8' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-c12bacf3-f46b-4da3-a9e7-aabea6ddc6a8' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-abd352d1-e383-4f8b-be90-d0ff01de8773' class='xr-var-data-in' type='checkbox'><label for='data-abd352d1-e383-4f8b-be90-d0ff01de8773' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[False, False, False, ..., False, False, False],
        [False, False, False, ..., False, False, False],
        [False, False, False, ..., False, False, False],
-       [False, False, False, ..., False, False, False]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>acceptance_rate</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.9534 1.0 0.6647 ... 0.9161 1.0</div><input id='attrs-6d71cc66-238a-4ca5-bc51-3cf8e656c057' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-6d71cc66-238a-4ca5-bc51-3cf8e656c057' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-7e3f128d-8f7b-4a76-abd8-6b851c75532d' class='xr-var-data-in' type='checkbox'><label for='data-7e3f128d-8f7b-4a76-abd8-6b851c75532d' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.95344806, 1.        , 0.66467726, ..., 0.78833317, 0.91344051,
-        0.87580616],
-       [0.82766869, 0.98977546, 0.80986809, ..., 1.        , 0.79880883,
-        0.94172572],
-       [0.71164332, 0.96990753, 1.        , ..., 0.98452748, 0.86889871,
-        0.96570199],
-       [0.9029127 , 0.95402744, 0.97967706, ..., 0.80713581, 0.91608492,
-        1.        ]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>largest_eigval</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>nan nan nan nan ... nan nan nan nan</div><input id='attrs-22914c98-48a3-426a-958c-2688bb87af6c' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-22914c98-48a3-426a-958c-2688bb87af6c' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-0b5dcc16-e283-4998-b013-f10f3d9f637c' class='xr-var-data-in' type='checkbox'><label for='data-0b5dcc16-e283-4998-b013-f10f3d9f637c' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[nan, nan, nan, ..., nan, nan, nan],
+       [False, False, False, ..., False, False, False]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>perf_counter_diff</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.0004634 0.0002436 ... 0.0001299</div><input id='attrs-ea4f129e-8443-4850-a4ba-4bbe5c874fbb' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-ea4f129e-8443-4850-a4ba-4bbe5c874fbb' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-976ff08b-474f-4846-9dad-729c1f8314d4' class='xr-var-data-in' type='checkbox'><label for='data-976ff08b-474f-4846-9dad-729c1f8314d4' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.00046337, 0.00024355, 0.00026008, ..., 0.00013686, 0.00024153,
+        0.0002351 ],
+       [0.00047305, 0.0004836 , 0.00028834, ..., 0.00013288, 0.00023219,
+        0.00027165],
+       [0.00049879, 0.00042409, 0.00047667, ..., 0.0001253 , 0.00012463,
+        0.00025094],
+       [0.00048023, 0.00050617, 0.00048878, ..., 0.00012899, 0.00025367,
+        0.00012989]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>largest_eigval</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>nan nan nan nan ... nan nan nan nan</div><input id='attrs-9b623b65-a841-4930-a7a4-a31d1b8f121f' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-9b623b65-a841-4930-a7a4-a31d1b8f121f' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-71e159bf-edf2-4555-a9ba-379c1bb2e693' class='xr-var-data-in' type='checkbox'><label for='data-71e159bf-edf2-4555-a9ba-379c1bb2e693' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[nan, nan, nan, ..., nan, nan, nan],
        [nan, nan, nan, ..., nan, nan, nan],
        [nan, nan, nan, ..., nan, nan, nan],
-       [nan, nan, nan, ..., nan, nan, nan]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>perf_counter_diff</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.0004777 0.0004026 ... 0.0003706</div><input id='attrs-c2287622-5b78-4db8-81a1-85c16867e3b5' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-c2287622-5b78-4db8-81a1-85c16867e3b5' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-98ded921-4d23-44c6-b8d1-088b33770e88' class='xr-var-data-in' type='checkbox'><label for='data-98ded921-4d23-44c6-b8d1-088b33770e88' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.00047766, 0.00040264, 0.00053407, ..., 0.00022957, 0.00035696,
-        0.00034642],
-       [0.00068105, 0.00057638, 0.0006196 , ..., 0.00035387, 0.00036485,
-        0.0006433 ],
-       [0.00039105, 0.00036184, 0.00036365, ..., 0.00040948, 0.00037267,
-        0.00040814],
-       [0.00059297, 0.00064046, 0.00108453, ..., 0.00036182, 0.0003919 ,
-        0.00037064]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>max_energy_error</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>-0.4443 -0.6105 ... 0.2239 -0.1551</div><input id='attrs-7acc7e11-0f5a-4c05-9d48-006e20296c38' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-7acc7e11-0f5a-4c05-9d48-006e20296c38' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-44bca0d2-921a-4dc7-9f6f-55309d3137ff' class='xr-var-data-in' type='checkbox'><label for='data-44bca0d2-921a-4dc7-9f6f-55309d3137ff' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[-0.44431838, -0.61052228,  0.84737721, ...,  0.27164943,
-         0.49806755,  0.56852912],
-       [ 0.66149688, -0.11213086,  0.33621366, ..., -0.30984297,
-         0.3590256 ,  0.15230648],
-       [ 0.68186693, -0.36503349, -0.46851802, ..., -0.24332579,
-         0.31734833, -0.63658274],
-       [ 0.25726844, -0.75499013, -0.99716845, ...,  0.41385714,
-         0.22393417, -0.15506997]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>step_size</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.48 0.48 0.48 ... 0.5899 0.5899</div><input id='attrs-d609fd2c-971e-409d-a5d8-dacdb6419b4e' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-d609fd2c-971e-409d-a5d8-dacdb6419b4e' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-8213a379-6cf9-4af2-84a4-b0afe1e67cc4' class='xr-var-data-in' type='checkbox'><label for='data-8213a379-6cf9-4af2-84a4-b0afe1e67cc4' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.4799625 , 0.4799625 , 0.4799625 , ..., 0.4799625 , 0.4799625 ,
-        0.4799625 ],
-       [0.63707539, 0.63707539, 0.63707539, ..., 0.63707539, 0.63707539,
-        0.63707539],
-       [0.56205055, 0.56205055, 0.56205055, ..., 0.56205055, 0.56205055,
-        0.56205055],
-       [0.58989553, 0.58989553, 0.58989553, ..., 0.58989553, 0.58989553,
-        0.58989553]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>index_in_trajectory</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>-6 -2 -2 7 -3 3 -5 ... 2 2 4 4 4 4</div><input id='attrs-6abe0a48-cbb6-433a-81a7-e2789fd3419a' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-6abe0a48-cbb6-433a-81a7-e2789fd3419a' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-d3ae6edc-7bb1-48ee-9f13-b7809edf2fe4' class='xr-var-data-in' type='checkbox'><label for='data-d3ae6edc-7bb1-48ee-9f13-b7809edf2fe4' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[-6, -2, -2, ...,  2, -2,  3],
-       [ 3, -3,  2, ...,  2,  1, -4],
-       [ 5, -4, -3, ..., -5, -3, -2],
-       [-4,  2,  3, ...,  4,  4,  4]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>divergences</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 0 0 0 0 0 0 0 ... 0 0 0 0 0 0 0 0</div><input id='attrs-cf1758bc-1f57-4c11-99a3-074475818aaf' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-cf1758bc-1f57-4c11-99a3-074475818aaf' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-e5659184-b83f-4839-a2ad-f23f5cf36dd9' class='xr-var-data-in' type='checkbox'><label for='data-e5659184-b83f-4839-a2ad-f23f5cf36dd9' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0, 0, 0, ..., 0, 0, 0],
+       [nan, nan, nan, ..., nan, nan, nan]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>smallest_eigval</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>nan nan nan nan ... nan nan nan nan</div><input id='attrs-fc2ebd18-ee0a-47b6-93d4-10f7bca47d83' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-fc2ebd18-ee0a-47b6-93d4-10f7bca47d83' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-15689d72-3687-4eba-ab75-f897501d95c5' class='xr-var-data-in' type='checkbox'><label for='data-15689d72-3687-4eba-ab75-f897501d95c5' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[nan, nan, nan, ..., nan, nan, nan],
+       [nan, nan, nan, ..., nan, nan, nan],
+       [nan, nan, nan, ..., nan, nan, nan],
+       [nan, nan, nan, ..., nan, nan, nan]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>max_energy_error</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.9167 -0.2973 ... -0.3083 -0.179</div><input id='attrs-cf191182-3522-43d3-9a53-c6e341156438' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-cf191182-3522-43d3-9a53-c6e341156438' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-afa46985-5fc7-428f-b97c-b0ef6843dcf3' class='xr-var-data-in' type='checkbox'><label for='data-afa46985-5fc7-428f-b97c-b0ef6843dcf3' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[ 0.91673061, -0.29733759,  0.84589417, ...,  0.88548225,
+        -0.17146922, -0.19818466],
+       [ 0.34094797, -0.30802742,  0.4067733 , ..., -0.17910353,
+         0.40001788, -0.37765897],
+       [ 0.66640139, -0.32231536, -0.64684387, ...,  0.15550735,
+         0.5016407 , -0.60537116],
+       [ 0.46915012,  0.38165209,  0.31924106, ...,  0.51428587,
+        -0.30828278, -0.17903175]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>tree_depth</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>4 3 3 3 3 3 3 3 ... 3 2 4 3 4 2 3 2</div><input id='attrs-e788c617-fa9a-4c26-b421-c4def6fbd47a' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-e788c617-fa9a-4c26-b421-c4def6fbd47a' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-7e9f4d9d-b7f4-4fe2-addf-702096224a8b' class='xr-var-data-in' type='checkbox'><label for='data-7e9f4d9d-b7f4-4fe2-addf-702096224a8b' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[4, 3, 3, ..., 2, 3, 3],
+       [3, 3, 2, ..., 2, 3, 3],
+       [3, 3, 3, ..., 2, 2, 3],
+       [3, 3, 3, ..., 2, 3, 2]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>perf_counter_start</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>310.9 310.9 310.9 ... 318.1 318.1</div><input id='attrs-2e482a64-43de-49aa-b466-b12c08f202dd' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-2e482a64-43de-49aa-b466-b12c08f202dd' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-750a06c9-2a54-47b8-a726-03d73ad00a84' class='xr-var-data-in' type='checkbox'><label for='data-750a06c9-2a54-47b8-a726-03d73ad00a84' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[310.94114946, 310.94169857, 310.94205137, ..., 312.6031459 ,
+        312.60335973, 312.6036783 ],
+       [311.93031862, 311.93092417, 311.93154242, ..., 313.93129205,
+        313.93149854, 313.9317994 ],
+       [315.63787041, 315.63850272, 315.63907942, ..., 317.84563239,
+        317.84582805, 317.8460471 ],
+       [316.12124664, 316.12186419, 316.12249718, ..., 318.12261765,
+        318.12282097, 318.12315303]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>step_size</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.5279 0.5279 ... 0.571 0.571</div><input id='attrs-b0474c17-7513-4d10-8133-3b1a56af1674' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-b0474c17-7513-4d10-8133-3b1a56af1674' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-eeab5a51-c9bd-472b-8f6b-041b1b42ab88' class='xr-var-data-in' type='checkbox'><label for='data-eeab5a51-c9bd-472b-8f6b-041b1b42ab88' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.52786556, 0.52786556, 0.52786556, ..., 0.52786556, 0.52786556,
+        0.52786556],
+       [0.51731836, 0.51731836, 0.51731836, ..., 0.51731836, 0.51731836,
+        0.51731836],
+       [0.60604551, 0.60604551, 0.60604551, ..., 0.60604551, 0.60604551,
+        0.60604551],
+       [0.57099021, 0.57099021, 0.57099021, ..., 0.57099021, 0.57099021,
+        0.57099021]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>step_size_bar</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.5441 0.5441 ... 0.5554 0.5554</div><input id='attrs-c21daf3b-9d87-41cd-acc7-c31aef7782dd' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-c21daf3b-9d87-41cd-acc7-c31aef7782dd' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-6f1136f3-b835-4c25-86e6-974fd964750e' class='xr-var-data-in' type='checkbox'><label for='data-6f1136f3-b835-4c25-86e6-974fd964750e' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.54413772, 0.54413772, 0.54413772, ..., 0.54413772, 0.54413772,
+        0.54413772],
+       [0.57027178, 0.57027178, 0.57027178, ..., 0.57027178, 0.57027178,
+        0.57027178],
+       [0.53956586, 0.53956586, 0.53956586, ..., 0.53956586, 0.53956586,
+        0.53956586],
+       [0.5553753 , 0.5553753 , 0.5553753 , ..., 0.5553753 , 0.5553753 ,
+        0.5553753 ]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>divergences</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 0 0 0 0 0 0 0 ... 0 0 0 0 0 0 0 0</div><input id='attrs-5d8a1d7d-f499-4bc2-84ff-fe13ca15ead8' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-5d8a1d7d-f499-4bc2-84ff-fe13ca15ead8' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-7c88c263-f09a-475c-8ac0-7dee05780ee5' class='xr-var-data-in' type='checkbox'><label for='data-7c88c263-f09a-475c-8ac0-7dee05780ee5' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0, 0, 0, ..., 0, 0, 0],
        [0, 0, 0, ..., 0, 0, 0],
        [0, 0, 0, ..., 0, 0, 0],
-       [0, 0, 0, ..., 0, 0, 0]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>lp</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>-151.3 -146.9 ... -147.8 -146.9</div><input id='attrs-7ae63736-cbfb-4c5d-909e-ad95557bcd87' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-7ae63736-cbfb-4c5d-909e-ad95557bcd87' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-7c31c369-9644-4795-b0d8-105c598e5855' class='xr-var-data-in' type='checkbox'><label for='data-7c31c369-9644-4795-b0d8-105c598e5855' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[-151.27720741, -146.94600669, -152.17092182, ..., -152.06100931,
-        -151.2454232 , -149.02429532],
-       [-149.59516415, -146.2792867 , -148.31761957, ..., -145.33666047,
-        -145.56951756, -146.07670899],
-       [-151.84908823, -151.36110415, -146.36876677, ..., -148.57437569,
-        -150.24123955, -148.3326964 ],
-       [-152.47633131, -154.45609624, -154.14210425, ..., -147.87023936,
-        -147.77717226, -146.88396463]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>energy_error</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>-0.03968 -0.6105 ... -0.03155</div><input id='attrs-fcf37972-aaa3-4912-bd94-f828890e33b1' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-fcf37972-aaa3-4912-bd94-f828890e33b1' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-1205ed01-e6ac-4814-a742-6d6f1131a9c3' class='xr-var-data-in' type='checkbox'><label for='data-1205ed01-e6ac-4814-a742-6d6f1131a9c3' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[-0.03967541, -0.61052228,  0.84737721, ...,  0.27164943,
-         0.08120908, -0.31500629],
-       [-0.06944501, -0.09517372,  0.30238614, ..., -0.30984297,
-         0.08243615,  0.01666456],
-       [ 0.34994306, -0.03334118, -0.46851802, ...,  0.06042469,
-         0.31734833, -0.34337331],
-       [ 0.25726844, -0.00681625, -0.0742495 , ...,  0.08583488,
-        -0.03484691, -0.03154589]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>process_time_diff</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.000478 0.0004028 ... 0.000371</div><input id='attrs-d858fd83-9585-46a3-a6ca-311f4489dde5' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-d858fd83-9585-46a3-a6ca-311f4489dde5' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-d862b355-25dc-4d39-8dc7-04d5585d75e9' class='xr-var-data-in' type='checkbox'><label for='data-d862b355-25dc-4d39-8dc7-04d5585d75e9' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.00047804, 0.00040278, 0.00053477, ..., 0.00022933, 0.00035715,
-        0.00034667],
-       [0.00068087, 0.00057684, 0.00061992, ..., 0.00035419, 0.00036515,
-        0.00064355],
-       [0.00039137, 0.00036224, 0.00036382, ..., 0.00040994, 0.00037305,
-        0.00040829],
-       [0.00059379, 0.00064093, 0.00108481, ..., 0.00036188, 0.00039216,
-        0.00037101]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>n_steps</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>7.0 3.0 7.0 7.0 ... 7.0 7.0 7.0 7.0</div><input id='attrs-75a5f256-8619-44ad-a57b-08100a75c5c3' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-75a5f256-8619-44ad-a57b-08100a75c5c3' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-b1158305-5aed-460a-9ab2-0478019f4500' class='xr-var-data-in' type='checkbox'><label for='data-b1158305-5aed-460a-9ab2-0478019f4500' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[ 7.,  3.,  7., ...,  3.,  7.,  7.],
-       [ 7.,  7.,  7., ...,  7.,  7., 15.],
-       [ 7.,  7.,  7., ...,  7.,  7.,  7.],
-       [ 7.,  7., 15., ...,  7.,  7.,  7.]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>step_size_bar</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.5342 0.5342 ... 0.5597 0.5597</div><input id='attrs-4f9fefe9-7d63-473f-ac8f-7ed33b914dc6' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-4f9fefe9-7d63-473f-ac8f-7ed33b914dc6' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-dbb3e0e2-e00e-43dd-9cfd-d2094ccb193d' class='xr-var-data-in' type='checkbox'><label for='data-dbb3e0e2-e00e-43dd-9cfd-d2094ccb193d' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.53422213, 0.53422213, 0.53422213, ..., 0.53422213, 0.53422213,
-        0.53422213],
-       [0.55954106, 0.55954106, 0.55954106, ..., 0.55954106, 0.55954106,
-        0.55954106],
-       [0.54431351, 0.54431351, 0.54431351, ..., 0.54431351, 0.54431351,
-        0.54431351],
-       [0.55973316, 0.55973316, 0.55973316, ..., 0.55973316, 0.55973316,
-        0.55973316]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>diverging</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>bool</div><div class='xr-var-preview xr-preview'>False False False ... False False</div><input id='attrs-1ecbefff-8c9a-4ee3-9a21-67bfdc6b4e14' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-1ecbefff-8c9a-4ee3-9a21-67bfdc6b4e14' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-3d88f1d6-e915-4407-bccf-fa0dfc59f427' class='xr-var-data-in' type='checkbox'><label for='data-3d88f1d6-e915-4407-bccf-fa0dfc59f427' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[False, False, False, ..., False, False, False],
+       [0, 0, 0, ..., 0, 0, 0]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>energy_error</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.3811 -0.08755 ... -0.08201 -0.179</div><input id='attrs-aa01508b-54e0-4660-85bb-cf8bc8c525de' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-aa01508b-54e0-4660-85bb-cf8bc8c525de' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-28983643-4b95-425f-993d-0c19701ef4be' class='xr-var-data-in' type='checkbox'><label for='data-28983643-4b95-425f-993d-0c19701ef4be' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[ 0.38109606, -0.08754554,  0.6442372 , ...,  0.07455894,
+         0.14589911, -0.03834203],
+       [ 0.31513034, -0.27418352,  0.4067733 , ..., -0.09554006,
+         0.193237  , -0.37765897],
+       [ 0.43147012,  0.14083621, -0.25736819, ..., -0.08529062,
+         0.5016407 , -0.60537116],
+       [ 0.27176061, -0.37286006,  0.31924106, ..., -0.34697402,
+        -0.0820057 , -0.17903175]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>reached_max_treedepth</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>bool</div><div class='xr-var-preview xr-preview'>False False False ... False False</div><input id='attrs-8be10059-aef6-4727-8803-18fde688e330' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-8be10059-aef6-4727-8803-18fde688e330' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-75020f87-b99d-4dbf-8616-867453e901a2' class='xr-var-data-in' type='checkbox'><label for='data-75020f87-b99d-4dbf-8616-867453e901a2' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[False, False, False, ..., False, False, False],
        [False, False, False, ..., False, False, False],
        [False, False, False, ..., False, False, False],
-       [False, False, False, ..., False, False, False]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>tree_depth</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>3 2 3 3 3 3 3 3 ... 2 3 3 3 3 3 3 3</div><input id='attrs-345b8b8b-604b-4656-a46d-0774d4421378' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-345b8b8b-604b-4656-a46d-0774d4421378' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-f1e80b74-9cc2-4842-ab8a-82aaf1a837dd' class='xr-var-data-in' type='checkbox'><label for='data-f1e80b74-9cc2-4842-ab8a-82aaf1a837dd' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[3, 2, 3, ..., 2, 3, 3],
-       [3, 3, 3, ..., 3, 3, 4],
-       [3, 3, 3, ..., 3, 3, 3],
-       [3, 3, 4, ..., 3, 3, 3]], shape=(4, 5000))</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-bb560e50-da02-4bcb-8d0e-3555055be5f8' class='xr-section-summary-in' type='checkbox' checked /><label for='section-bb560e50-da02-4bcb-8d0e-3555055be5f8' class='xr-section-summary' title='Expand/collapse section'>Attributes: <span>(6)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><dl class='xr-attrs'><dt><span>created_at :</span></dt><dd>2026-05-18T17:03:01.606683+00:00</dd><dt><span>arviz_version :</span></dt><dd>0.23.4</dd><dt><span>inference_library :</span></dt><dd>pymc</dd><dt><span>inference_library_version :</span></dt><dd>5.28.5</dd><dt><span>sampling_time :</span></dt><dd>21.400784492492676</dd><dt><span>tuning_steps :</span></dt><dd>5000</dd></dl></div></li></ul></div></div><br></div>
+       [False, False, False, ..., False, False, False]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>process_time_diff</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>0.0004633 0.0002438 ... 0.0001302</div><input id='attrs-667c5e81-3544-4f55-bf8c-27b53bc471d1' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-667c5e81-3544-4f55-bf8c-27b53bc471d1' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-c69fd36e-4a87-4946-b7a4-2c1535863fdf' class='xr-var-data-in' type='checkbox'><label for='data-c69fd36e-4a87-4946-b7a4-2c1535863fdf' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[0.0004633 , 0.00024378, 0.0002602 , ..., 0.00013701, 0.00024167,
+        0.0002353 ],
+       [0.00047355, 0.00048424, 0.00028863, ..., 0.00013292, 0.00023235,
+        0.00027212],
+       [0.00049932, 0.00042454, 0.00047704, ..., 0.00012549, 0.00012464,
+        0.00025114],
+       [0.00048078, 0.0005065 , 0.00048928, ..., 0.00012914, 0.00025389,
+        0.00013018]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>index_in_trajectory</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>-7 2 5 3 -5 -2 4 ... 6 6 -2 -3 3 2</div><input id='attrs-b18234f0-21c8-42e0-9cca-ce2fa77e390d' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-b18234f0-21c8-42e0-9cca-ce2fa77e390d' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-3f710e00-c62c-4cbc-8673-a123d93c3ea5' class='xr-var-data-in' type='checkbox'><label for='data-3f710e00-c62c-4cbc-8673-a123d93c3ea5' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[-7,  2,  5, ...,  1,  2, -5],
+       [ 1, -4,  2, ..., -2,  2,  4],
+       [-2,  6, -6, ..., -3, -2,  2],
+       [-1,  4, -2, ..., -3,  3,  2]], shape=(4, 5000))</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span>energy</span></div><div class='xr-var-dims'>(chain, draw)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>91.67 90.34 94.82 ... 91.35 87.35</div><input id='attrs-0e8c06d2-23f3-41de-8f60-a727073b7675' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-0e8c06d2-23f3-41de-8f60-a727073b7675' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-8226354c-f40d-4496-9123-29d0f9d821f0' class='xr-var-data-in' type='checkbox'><label for='data-8226354c-f40d-4496-9123-29d0f9d821f0' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([[91.67289013, 90.34065958, 94.82437758, ..., 94.66278135,
+        90.46540705, 93.55847465],
+       [94.4727466 , 91.71355423, 90.91303555, ..., 89.80402778,
+        93.34104921, 93.29865405],
+       [99.28550481, 96.93106332, 94.70917996, ..., 88.82363616,
+        90.79023497, 91.66820801],
+       [93.4475027 , 95.59100395, 95.60087189, ..., 94.48315852,
+        91.34613471, 87.35454562]], shape=(4, 5000))</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-1e73d1b8-3ca7-4b3b-ba7b-7f68aba17912' class='xr-section-summary-in' type='checkbox' checked /><label for='section-1e73d1b8-3ca7-4b3b-ba7b-7f68aba17912' class='xr-section-summary' title='Expand/collapse section'>Attributes: <span>(6)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><dl class='xr-attrs'><dt><span>created_at :</span></dt><dd>2026-05-23T23:58:00.282680+00:00</dd><dt><span>arviz_version :</span></dt><dd>0.23.4</dd><dt><span>inference_library :</span></dt><dd>pymc</dd><dt><span>inference_library_version :</span></dt><dd>5.28.5</dd><dt><span>sampling_time :</span></dt><dd>18.25568175315857</dd><dt><span>tuning_steps :</span></dt><dd>5000</dd></dl></div></li></ul></div></div><br></div>
                       </ul>
                   </div>
             </li>
             
             <li class = "xr-section-item">
-                  <input id="idata_observed_datab685db99-1d83-44de-bca9-51b282e6307c" class="xr-section-summary-in" type="checkbox">
-                  <label for="idata_observed_datab685db99-1d83-44de-bca9-51b282e6307c" class = "xr-section-summary">observed_data</label>
+                  <input id="idata_observed_datae440d400-c871-41af-b610-aa4281f3c113" class="xr-section-summary-in" type="checkbox">
+                  <label for="idata_observed_datae440d400-c871-41af-b610-aa4281f3c113" class = "xr-section-summary">observed_data</label>
                   <div class="xr-section-inline-details"></div>
                   <div class="xr-section-details">
                       <ul id="xr-dataset-coord-list" class="xr-var-list">
@@ -3380,12 +3455,12 @@ Coordinates:
 Data variables:
     obs        (obs_dim_0) float64 392B 2.206 -0.2238 -0.5325 ... 3.193 -0.03629
 Attributes:
-    created_at:                 2026-05-18T17:03:01.611185+00:00
+    created_at:                 2026-05-23T23:58:00.286432+00:00
     arviz_version:              0.23.4
     inference_library:          pymc
-    inference_library_version:  5.28.5</pre><div class='xr-wrap' style='display:none'><div class='xr-header'><div class='xr-obj-type'>xarray.Dataset</div></div><ul class='xr-sections'><li class='xr-section-item'><input id='section-db60d6e1-6225-4258-93b9-aa86eebd1b29' class='xr-section-summary-in' type='checkbox' disabled /><label for='section-db60d6e1-6225-4258-93b9-aa86eebd1b29' class='xr-section-summary'>Dimensions:</label><div class='xr-section-inline-details'><ul class='xr-dim-list'><li><span class='xr-has-index'>obs_dim_0</span>: 49</li></ul></div></li><li class='xr-section-item'><input id='section-d788adb9-a0e6-411d-a09c-7358d6f056a5' class='xr-section-summary-in' type='checkbox' checked /><label for='section-d788adb9-a0e6-411d-a09c-7358d6f056a5' class='xr-section-summary' title='Expand/collapse section'>Coordinates: <span>(1)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>obs_dim_0</span></div><div class='xr-var-dims'>(obs_dim_0)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3 4 5 6 ... 43 44 45 46 47 48</div><input id='attrs-954af967-c9f1-44a8-8f1e-9aef1cdc3768' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-954af967-c9f1-44a8-8f1e-9aef1cdc3768' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-56524ad9-d631-4fcb-a9d1-c3ed73656658' class='xr-var-data-in' type='checkbox'><label for='data-56524ad9-d631-4fcb-a9d1-c3ed73656658' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
+    inference_library_version:  5.28.5</pre><div class='xr-wrap' style='display:none'><div class='xr-header'><div class='xr-obj-type'>xarray.Dataset</div></div><ul class='xr-sections'><li class='xr-section-item'><input id='section-bd305726-f4af-48dd-aa35-bc4204e106a5' class='xr-section-summary-in' type='checkbox' disabled /><label for='section-bd305726-f4af-48dd-aa35-bc4204e106a5' class='xr-section-summary'>Dimensions:</label><div class='xr-section-inline-details'><ul class='xr-dim-list'><li><span class='xr-has-index'>obs_dim_0</span>: 49</li></ul></div></li><li class='xr-section-item'><input id='section-d3f47e8f-c9d6-4073-9377-bc118b3889d3' class='xr-section-summary-in' type='checkbox' checked /><label for='section-d3f47e8f-c9d6-4073-9377-bc118b3889d3' class='xr-section-summary' title='Expand/collapse section'>Coordinates: <span>(1)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>obs_dim_0</span></div><div class='xr-var-dims'>(obs_dim_0)</div><div class='xr-var-dtype'>int64</div><div class='xr-var-preview xr-preview'>0 1 2 3 4 5 6 ... 43 44 45 46 47 48</div><input id='attrs-6a7ce02d-d054-4b35-8d8e-c11a148abb25' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-6a7ce02d-d054-4b35-8d8e-c11a148abb25' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-63fd05d9-4545-416e-a581-e9455f097122' class='xr-var-data-in' type='checkbox'><label for='data-63fd05d9-4545-416e-a581-e9455f097122' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
        18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
-       36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48])</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-a9b18b2b-d0c2-4543-81db-63c9ef5fd00e' class='xr-section-summary-in' type='checkbox' checked /><label for='section-a9b18b2b-d0c2-4543-81db-63c9ef5fd00e' class='xr-section-summary' title='Expand/collapse section'>Data variables: <span>(1)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span>obs</span></div><div class='xr-var-dims'>(obs_dim_0)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>2.206 -0.2238 ... 3.193 -0.03629</div><input id='attrs-75ac8615-24f2-40fd-8a98-851d72040cb2' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-75ac8615-24f2-40fd-8a98-851d72040cb2' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-1136bd61-df91-453d-91fa-90e405b5b33c' class='xr-var-data-in' type='checkbox'><label for='data-1136bd61-df91-453d-91fa-90e405b5b33c' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([ 2.20593821, -0.22375484, -0.53247206,  2.58662821, -1.09550335,
+       36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48])</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-301edfa9-2636-47e8-b949-95ab6899c194' class='xr-section-summary-in' type='checkbox' checked /><label for='section-301edfa9-2636-47e8-b949-95ab6899c194' class='xr-section-summary' title='Expand/collapse section'>Data variables: <span>(1)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span>obs</span></div><div class='xr-var-dims'>(obs_dim_0)</div><div class='xr-var-dtype'>float64</div><div class='xr-var-preview xr-preview'>2.206 -0.2238 ... 3.193 -0.03629</div><input id='attrs-23710e1d-5353-4943-b86a-b6004d47a30d' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-23710e1d-5353-4943-b86a-b6004d47a30d' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-e8cdddcb-9d36-4a85-957e-4c3b4de09a3f' class='xr-var-data-in' type='checkbox'><label for='data-e8cdddcb-9d36-4a85-957e-4c3b4de09a3f' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([ 2.20593821, -0.22375484, -0.53247206,  2.58662821, -1.09550335,
        -0.03051802,  4.1925592 , -1.20235351,  0.38915266,  1.47698521,
         4.52751238,  3.19773277, -2.17392055, -1.89204806,  0.29649345,
        -0.51858839,  2.36721098,  4.77790264,  4.32252061, -3.12034199,
@@ -3394,7 +3469,7 @@ Attributes:
         0.41979135,  0.07816433, -0.95997183, -0.58075662,  1.62864797,
        -0.11067121, -2.3380418 , -3.92240956,  0.83935187,  3.84281341,
         0.83850458,  3.5023291 ,  0.36310829,  3.64482033, -2.43690479,
-       -0.07417853,  0.34726983,  3.19287899, -0.03629307])</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-33ba44e5-4fc4-4522-bd4b-a183faf6d09b' class='xr-section-summary-in' type='checkbox' checked /><label for='section-33ba44e5-4fc4-4522-bd4b-a183faf6d09b' class='xr-section-summary' title='Expand/collapse section'>Attributes: <span>(4)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><dl class='xr-attrs'><dt><span>created_at :</span></dt><dd>2026-05-18T17:03:01.611185+00:00</dd><dt><span>arviz_version :</span></dt><dd>0.23.4</dd><dt><span>inference_library :</span></dt><dd>pymc</dd><dt><span>inference_library_version :</span></dt><dd>5.28.5</dd></dl></div></li></ul></div></div><br></div>
+       -0.07417853,  0.34726983,  3.19287899, -0.03629307])</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-4fb4201c-a93a-421c-b106-365106391755' class='xr-section-summary-in' type='checkbox' checked /><label for='section-4fb4201c-a93a-421c-b106-365106391755' class='xr-section-summary' title='Expand/collapse section'>Attributes: <span>(4)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><dl class='xr-attrs'><dt><span>created_at :</span></dt><dd>2026-05-23T23:58:00.286432+00:00</dd><dt><span>arviz_version :</span></dt><dd>0.23.4</dd><dt><span>inference_library :</span></dt><dd>pymc</dd><dt><span>inference_library_version :</span></dt><dd>5.28.5</dd></dl></div></li></ul></div></div><br></div>
                       </ul>
                   </div>
             </li>
@@ -3776,15 +3851,7 @@ dl.xr-attrs {
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [lam, beta, sigma]
-Sampling 2 chains for 2_500 tune and 2_500 draw iterations (5_000 + 5_000 draws total) took 8 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-</code></pre></div>
-</div>
-<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div><div class="output text_html"><div>
+<div class="output text_html"><div>
 <style scoped>
     .dataframe tbody tr th:only-of-type {
         vertical-align: middle;
@@ -3816,11 +3883,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>LM-Lag</th>
-      <td>[0.08056549006269845, 0.19097127671489061, 1.0...</td>
-      <td>1.174518</td>
-      <td>0.752204</td>
-      <td>(0.0024745034312204477, 4.7037379511033635)</td>
-      <td>0.278475</td>
+      <td>[0.2142964999714249, 1.0784033337487473, 1.280...</td>
+      <td>1.063234</td>
+      <td>0.656830</td>
+      <td>(0.002046756821756825, 4.2687677969034725)</td>
+      <td>0.302479</td>
       <td>bayesian_lm_lag</td>
       <td>1</td>
       <td>20000</td>
@@ -3828,11 +3895,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>LM-Error</th>
-      <td>[0.47707939717345443, 1.0466054505042437, 0.61...</td>
-      <td>0.805512</td>
-      <td>0.832931</td>
-      <td>(0.020207207616838876, 1.6148907826243006)</td>
-      <td>0.369450</td>
+      <td>[0.7079187163674477, 0.7756572487282507, 0.744...</td>
+      <td>0.669052</td>
+      <td>0.683859</td>
+      <td>(0.01439387891732751, 1.3853911845443356)</td>
+      <td>0.413382</td>
       <td>bayesian_lm_error</td>
       <td>1</td>
       <td>20000</td>
@@ -3840,11 +3907,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>LM-WX</th>
-      <td>[5.734684017019941, 12.242492292612532, 8.5360...</td>
-      <td>2.206863</td>
-      <td>1.470670</td>
-      <td>(0.11745131935239046, 8.690947277739108)</td>
-      <td>0.331731</td>
+      <td>[2.1772383544689546, 2.461992249621931, 3.2200...</td>
+      <td>2.088028</td>
+      <td>1.395973</td>
+      <td>(0.094252903719317, 8.076401711363376)</td>
+      <td>0.352039</td>
       <td>bayesian_lm_wx</td>
       <td>2</td>
       <td>20000</td>
@@ -3852,11 +3919,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>LM-WX-SEM</th>
-      <td>[0.5729247427828063, 0.8698066531453681, 1.927...</td>
-      <td>1.374796</td>
-      <td>0.929004</td>
-      <td>(0.05384602841611582, 5.162758722449914)</td>
-      <td>0.502883</td>
+      <td>[1.7422647535500337, 1.3680890033817354, 2.087...</td>
+      <td>1.326702</td>
+      <td>0.892985</td>
+      <td>(0.05991654119279072, 5.268798370988537)</td>
+      <td>0.515122</td>
       <td>bayesian_lm_wx_sem</td>
       <td>2</td>
       <td>5000</td>
@@ -3864,11 +3931,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>LM-SDM Joint</th>
-      <td>[1.5573842546337127, 1.7366799202285508, 3.388...</td>
-      <td>4.300187</td>
-      <td>3.079410</td>
-      <td>(0.49531459103854514, 15.333515083223924)</td>
-      <td>0.230821</td>
+      <td>[0.7240693263411933, 2.7662057621910225, 2.499...</td>
+      <td>3.926935</td>
+      <td>2.786218</td>
+      <td>(0.42552310256783094, 14.12838410020766)</td>
+      <td>0.269463</td>
       <td>bayesian_lm_sdm_joint</td>
       <td>3</td>
       <td>20000</td>
@@ -3876,11 +3943,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>LM-SLX-Error Joint</th>
-      <td>[1.9616472781768783, 1.5756675409025398, 3.976...</td>
-      <td>2.317343</td>
-      <td>1.824571</td>
-      <td>(0.8290621080030701, 6.471197109525884)</td>
-      <td>0.509207</td>
+      <td>[1.3998088300832803, 3.503434583833462, 1.5975...</td>
+      <td>2.113251</td>
+      <td>1.633809</td>
+      <td>(0.7011929236378893, 6.14925226708313)</td>
+      <td>0.549237</td>
       <td>bayesian_lm_slx_error_joint</td>
       <td>3</td>
       <td>20000</td>
@@ -3954,11 +4021,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>Robust LM-Lag</th>
-      <td>[0.06391583041893403, 0.05646948428927984, 0.0...</td>
-      <td>0.058038</td>
-      <td>0.054021</td>
-      <td>(0.02195140452571085, 0.11643326870541107)</td>
-      <td>0.809625</td>
+      <td>[0.04470652999465178, 0.06039321001634649, 0.0...</td>
+      <td>0.052556</td>
+      <td>0.049121</td>
+      <td>(0.021080445691698788, 0.10259303831611748)</td>
+      <td>0.818673</td>
       <td>bayesian_robust_lm_lag</td>
       <td>1</td>
       <td>20000</td>
@@ -3967,11 +4034,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>Robust LM-Error</th>
-      <td>[0.4399213141487016, 0.38866943564704703, 0.38...</td>
-      <td>0.399463</td>
-      <td>0.371815</td>
-      <td>(0.151087620438704, 0.8013895187433848)</td>
-      <td>0.527367</td>
+      <td>[0.25920888331861297, 0.35016040229998563, 0.2...</td>
+      <td>0.304723</td>
+      <td>0.284806</td>
+      <td>(0.12222462329904812, 0.5948354055071103)</td>
+      <td>0.580937</td>
       <td>bayesian_robust_lm_error</td>
       <td>1</td>
       <td>20000</td>
@@ -3980,11 +4047,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>Robust LM-Lag-SDM</th>
-      <td>[2.3239936598673694, 2.1897775111120743, 2.368...</td>
-      <td>2.173464</td>
-      <td>2.140140</td>
-      <td>(1.3539458062634329, 3.18861237503891)</td>
-      <td>0.140410</td>
+      <td>[1.4978493822846384, 1.717522706311598, 1.8123...</td>
+      <td>2.003181</td>
+      <td>1.974842</td>
+      <td>(1.2853662789897993, 2.8776085043879007)</td>
+      <td>0.156969</td>
       <td>bayesian_robust_lm_lag_sdm</td>
       <td>1</td>
       <td>20000</td>
@@ -3993,11 +4060,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>Robust LM-WX</th>
-      <td>[4.957023315270082, 20.092506689947076, 13.819...</td>
-      <td>3.541754</td>
-      <td>2.124467</td>
-      <td>(0.20843929121278812, 14.79086494788994)</td>
-      <td>0.170184</td>
+      <td>[10.245649160788064, 1.0528258214212913, 0.629...</td>
+      <td>3.282266</td>
+      <td>1.979317</td>
+      <td>(0.19732605346455073, 13.74434937383887)</td>
+      <td>0.193760</td>
       <td>bayesian_robust_lm_wx</td>
       <td>2</td>
       <td>20000</td>
@@ -4006,11 +4073,11 @@ We recommend running at least 4 chains for robust computation of convergence dia
     </tr>
     <tr>
       <th>Robust LM-Error-SDEM</th>
-      <td>[2.1166753772364615, 2.0054446899087712, 2.152...</td>
-      <td>1.983813</td>
-      <td>1.963974</td>
-      <td>(1.2828334284408829, 2.8020092452695162)</td>
-      <td>0.158989</td>
+      <td>[1.4121519102807134, 1.6051095505017356, 1.687...</td>
+      <td>1.844711</td>
+      <td>1.826631</td>
+      <td>(1.2221148772775057, 2.56596081416618)</td>
+      <td>0.174400</td>
       <td>bayesian_robust_lm_error_sdem</td>
       <td>1</td>
       <td>20000</td>
@@ -4060,7 +4127,7 @@ We recommend running at least 4 chains for robust computation of convergence dia
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/01d80024637c87b9fd55ced11cf4aa8e7ebcb7668c0226cb83947384acac3526.png" src="../_images/01d80024637c87b9fd55ced11cf4aa8e7ebcb7668c0226cb83947384acac3526.png" />
+<img alt="../_images/b4c7a81f46c5255ba74aa911907adea1a68311972639957500f4ee56d4e6be7c.png" src="../_images/b4c7a81f46c5255ba74aa911907adea1a68311972639957500f4ee56d4e6be7c.png" />
 </div>
 </div>
 <h2 id="comparison-with-classical-spreg-lm-tests">6. Comparison with Classical spreg LM Tests<a class="headerlink" href="#comparison-with-classical-spreg-lm-tests" title="Link to this heading">¶</a></h2>
@@ -4133,79 +4200,79 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>LM-Lag</th>
-      <td>1.174518</td>
+      <td>1.063234</td>
       <td>0.886074</td>
-      <td>0.278475</td>
+      <td>0.302479</td>
       <td>0.346543</td>
     </tr>
     <tr>
       <th>LM-Error</th>
-      <td>0.805512</td>
+      <td>0.669052</td>
       <td>1.341625</td>
-      <td>0.369450</td>
+      <td>0.413382</td>
       <td>0.246748</td>
     </tr>
     <tr>
       <th>LM-WX</th>
-      <td>2.206863</td>
+      <td>2.088028</td>
       <td>0.616118</td>
-      <td>0.331731</td>
+      <td>0.352039</td>
       <td>0.734872</td>
     </tr>
     <tr>
       <th>LM-WX-SEM</th>
-      <td>1.374796</td>
+      <td>1.326702</td>
       <td>NaN</td>
-      <td>0.502883</td>
+      <td>0.515122</td>
       <td>NaN</td>
     </tr>
     <tr>
       <th>LM-SDM Joint</th>
-      <td>4.300187</td>
+      <td>3.926935</td>
       <td>1.957743</td>
-      <td>0.230821</td>
+      <td>0.269463</td>
       <td>0.581224</td>
     </tr>
     <tr>
       <th>LM-SLX-Error Joint</th>
-      <td>2.317343</td>
+      <td>2.113251</td>
       <td>1.957743</td>
-      <td>0.509207</td>
+      <td>0.549237</td>
       <td>0.581224</td>
     </tr>
     <tr>
       <th>Robust LM-Lag</th>
-      <td>0.058038</td>
+      <td>0.052556</td>
       <td>0.057811</td>
-      <td>0.809625</td>
+      <td>0.818673</td>
       <td>0.809990</td>
     </tr>
     <tr>
       <th>Robust LM-Error</th>
-      <td>0.399463</td>
+      <td>0.304723</td>
       <td>0.513362</td>
-      <td>0.527367</td>
+      <td>0.580937</td>
       <td>0.473687</td>
     </tr>
     <tr>
       <th>Robust LM-Lag-SDM</th>
-      <td>2.173464</td>
+      <td>2.003181</td>
       <td>1.341625</td>
-      <td>0.140410</td>
+      <td>0.156969</td>
       <td>0.246748</td>
     </tr>
     <tr>
       <th>Robust LM-WX</th>
-      <td>3.541754</td>
+      <td>3.282266</td>
       <td>1.071669</td>
-      <td>0.170184</td>
+      <td>0.193760</td>
       <td>0.585181</td>
     </tr>
     <tr>
       <th>Robust LM-Error-SDEM</th>
-      <td>1.983813</td>
+      <td>1.844711</td>
       <td>NaN</td>
-      <td>0.158989</td>
+      <td>0.174400</td>
       <td>NaN</td>
     </tr>
   </tbody>
@@ -4270,57 +4337,57 @@ The registry on each class wires the <em>correct</em> tests for its specificatio
   <tbody>
     <tr>
       <th>LM-Lag</th>
-      <td>1.174518</td>
-      <td>0.752204</td>
+      <td>1.063234</td>
+      <td>0.656830</td>
       <td>1</td>
-      <td>0.278475</td>
-      <td>0.002475</td>
-      <td>4.703738</td>
+      <td>0.302479</td>
+      <td>0.002047</td>
+      <td>4.268768</td>
     </tr>
     <tr>
       <th>LM-Error</th>
-      <td>0.805512</td>
-      <td>0.832931</td>
+      <td>0.669052</td>
+      <td>0.683859</td>
       <td>1</td>
-      <td>0.369450</td>
-      <td>0.020207</td>
-      <td>1.614891</td>
+      <td>0.413382</td>
+      <td>0.014394</td>
+      <td>1.385391</td>
     </tr>
     <tr>
       <th>LM-SDM-Joint</th>
-      <td>4.300187</td>
-      <td>3.079410</td>
+      <td>3.926935</td>
+      <td>2.786218</td>
       <td>3</td>
-      <td>0.230821</td>
-      <td>0.495315</td>
-      <td>15.333515</td>
+      <td>0.269463</td>
+      <td>0.425523</td>
+      <td>14.128384</td>
     </tr>
     <tr>
       <th>LM-SLX-Error-Joint</th>
-      <td>2.317343</td>
-      <td>1.824571</td>
+      <td>2.113251</td>
+      <td>1.633809</td>
       <td>3</td>
-      <td>0.509207</td>
-      <td>0.829062</td>
-      <td>6.471197</td>
+      <td>0.549237</td>
+      <td>0.701193</td>
+      <td>6.149252</td>
     </tr>
     <tr>
       <th>Robust-LM-Lag</th>
-      <td>0.058038</td>
-      <td>0.054021</td>
+      <td>0.052556</td>
+      <td>0.049121</td>
       <td>1</td>
-      <td>0.809625</td>
-      <td>0.021951</td>
-      <td>0.116433</td>
+      <td>0.818673</td>
+      <td>0.021080</td>
+      <td>0.102593</td>
     </tr>
     <tr>
       <th>Robust-LM-Error</th>
-      <td>0.399463</td>
-      <td>0.371815</td>
+      <td>0.304723</td>
+      <td>0.284806</td>
       <td>1</td>
-      <td>0.527367</td>
-      <td>0.151088</td>
-      <td>0.801390</td>
+      <td>0.580937</td>
+      <td>0.122225</td>
+      <td>0.594835</td>
     </tr>
   </tbody>
 </table>
@@ -4338,7 +4405,7 @@ The registry on each class wires the <em>correct</em> tests for its specificatio
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>OLS recommends:
 </code></pre></div>
 </div>
-<img alt="../_images/4e1a1003468923c3cbe0c2f267e766fd6815a016aa6d34981a028ff0a45044ca.svg" src="../_images/4e1a1003468923c3cbe0c2f267e766fd6815a016aa6d34981a028ff0a45044ca.svg" />
+<img alt="../_images/41e10602260842b0bb62a105ccdbca0fd4ce42ae530106f419823233e17ad4af.svg" src="../_images/41e10602260842b0bb62a105ccdbca0fd4ce42ae530106f419823233e17ad4af.svg" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -4352,7 +4419,7 @@ The registry on each class wires the <em>correct</em> tests for its specificatio
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>SAR recommends:
 </code></pre></div>
 </div>
-<img alt="../_images/29ec01acd111bc44cf2017cd9211b783e8061c0742698d899c34b3b811fa05f9.svg" src="../_images/29ec01acd111bc44cf2017cd9211b783e8061c0742698d899c34b3b811fa05f9.svg" />
+<img alt="../_images/06d639a38cc63b0c1112a01aba4269d74e29337ac551b2dce04c6ce5ca0e6543.svg" src="../_images/06d639a38cc63b0c1112a01aba4269d74e29337ac551b2dce04c6ce5ca0e6543.svg" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -4366,7 +4433,7 @@ The registry on each class wires the <em>correct</em> tests for its specificatio
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>SLX recommends:
 </code></pre></div>
 </div>
-<img alt="../_images/62b91c1a46dc650ec2433b995ba4deec318bb5fd939f87553b33a674da5cf357.svg" src="../_images/62b91c1a46dc650ec2433b995ba4deec318bb5fd939f87553b33a674da5cf357.svg" />
+<img alt="../_images/03ff809b58bc2a8f565b609da2610e569b8c7b213176a0b3a4580e78b4a9c0dd.svg" src="../_images/03ff809b58bc2a8f565b609da2610e569b8c7b213176a0b3a4580e78b4a9c0dd.svg" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -4390,21 +4457,7 @@ The registry on each class wires the <em>correct</em> tests for its specificatio
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 2 chains for 2_000 tune and 2_000 draw iterations (4_000 + 4_000 draws total) took 8 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [lam, beta, sigma]
-Sampling 2 chains for 2_000 tune and 2_000 draw iterations (4_000 + 4_000 draws total) took 8 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-</code></pre></div>
-</div>
-<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div><div class="output text_html"><div>
+<div class="output text_html"><div>
 <style scoped>
     .dataframe tbody tr th:only-of-type {
         vertical-align: middle;
@@ -4435,22 +4488,22 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>LM-Error-SDM</th>
-      <td>[0.014773972761648359, 0.2208342282160338, 0.0...</td>
-      <td>0.659267</td>
-      <td>0.276799</td>
-      <td>(0.0008039243872589326, 3.4484156602338407)</td>
-      <td>0.416819</td>
+      <td>[0.5011092852777681, 0.017415901671114013, 0.8...</td>
+      <td>1.115102</td>
+      <td>0.331330</td>
+      <td>(0.0006419727046537715, 6.959984604047735)</td>
+      <td>0.290976</td>
       <td>bayesian_lm_error_sdm</td>
       <td>1</td>
       <td>4000</td>
     </tr>
     <tr>
       <th>LM-Lag-SDEM</th>
-      <td>[0.605288608216171, 1.042439921169661, 1.77802...</td>
-      <td>1.667039</td>
-      <td>0.760041</td>
-      <td>(0.0017609721322403053, 8.185425933050988)</td>
-      <td>0.196656</td>
+      <td>[0.5639265200467874, 13.375634359847549, 0.938...</td>
+      <td>1.943157</td>
+      <td>0.830327</td>
+      <td>(0.001825991372517943, 10.116913129200373)</td>
+      <td>0.163326</td>
       <td>bayesian_lm_lag_sdem</td>
       <td>1</td>
       <td>4000</td>
@@ -4612,42 +4665,32 @@ SDEM   n=144  X.shape=(144, 2)  true params: [&#39;lam&#39;, &#39;beta1&#39;, &#
 <div class="cell_output docutils container">
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
-Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [lam, beta, sigma]
-Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 </code></pre></div>
@@ -4762,72 +4805,72 @@ We recommend running at least 4 chains for robust computation of convergence dia
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>=== DGP=OLS | start=OLS | recommended=OLS (yes expected OLS) ===
                     statistic  df  p_value
 test                                      
-LM-Lag                 0.9436   1   0.3314
-LM-Error               0.1539   1   0.6949
-LM-SDM-Joint           2.7928   2   0.2475
-LM-SLX-Error-Joint     1.0814   2   0.5823
-Robust-LM-Lag          0.9264   1   0.3358
-Robust-LM-Error        0.5537   1   0.4568
+LM-Lag                 0.9421   1   0.3317
+LM-Error               0.1455   1   0.7029
+LM-SDM-Joint           2.7057   2   0.2585
+LM-SLX-Error-Joint     1.0512   2   0.5912
+Robust-LM-Lag          0.8982   1   0.3433
+Robust-LM-Error        0.5391   1   0.4628
 
 === DGP=SAR | start=OLS | recommended=SAR (yes expected SAR) ===
                     statistic  df  p_value
 test                                      
-LM-Lag                60.6425   1   0.0000
-LM-Error              25.6142   1   0.0000
-LM-SDM-Joint          63.9130   2   0.0000
-LM-SLX-Error-Joint    60.7688   2   0.0000
-Robust-LM-Lag         36.5259   1   0.0000
-Robust-LM-Error        0.0245   1   0.8756
+LM-Lag                61.1045   1   0.0000
+LM-Error              25.4791   1   0.0000
+LM-SDM-Joint          64.2955   2   0.0000
+LM-SLX-Error-Joint    60.2682   2   0.0000
+Robust-LM-Lag         36.3646   1   0.0000
+Robust-LM-Error        0.0580   1   0.8097
 
 === DGP=SEM | start=OLS | recommended=SEM (yes expected SEM) ===
                     statistic  df  p_value
 test                                      
-LM-Lag                 7.9648   1   0.0048
-LM-Error              29.0218   1   0.0000
-LM-SDM-Joint          30.7141   2   0.0000
-LM-SLX-Error-Joint    30.3255   2   0.0000
-Robust-LM-Lag          1.3166   1   0.2512
-Robust-LM-Error       22.5775   1   0.0000
+LM-Lag                 7.7141   1   0.0055
+LM-Error              28.8128   1   0.0000
+LM-SDM-Joint          30.0061   2   0.0000
+LM-SLX-Error-Joint    30.1095   2   0.0000
+Robust-LM-Lag          1.3070   1   0.2529
+Robust-LM-Error       22.4407   1   0.0000
 
 === DGP=SLX | start=SLX | recommended=SLX (yes expected SLX) ===
                       statistic  df  p_value
 test                                        
-LM-Lag                   3.0202   1   0.0822
-LM-Error                 0.1113   1   0.7387
-Robust-LM-Lag-SDM        1.0732   1   0.3002
-Robust-LM-Error-SDEM     0.9562   1   0.3281
+LM-Lag                   3.0257   1   0.0820
+LM-Error                 0.1117   1   0.7382
+Robust-LM-Lag-SDM        1.0495   1   0.3056
+Robust-LM-Error-SDEM     0.9400   1   0.3323
 
 === DGP=SDM | start=SAR | recommended=SDM (yes expected SDM) ===
                  statistic  df  p_value
 test                                   
-LM-Error            5.6081   1   0.0179
-LM-WX              13.1387   1   0.0003
-Robust-LM-WX       14.1017   1   0.0002
-Robust-LM-Error     9.0481   1   0.0026
+LM-Error            4.4551   1   0.0348
+LM-WX              12.1483   1   0.0005
+Robust-LM-WX       17.0436   1   0.0000
+Robust-LM-Error     7.5257   1   0.0061
 
 === DGP=SDM | start=SLX | recommended=SDM (yes expected SDM) ===
                       statistic  df  p_value
 test                                        
-LM-Lag                  33.2470   1   0.0000
-LM-Error                19.7914   1   0.0000
-Robust-LM-Lag-SDM       10.1044   1   0.0015
-Robust-LM-Error-SDEM     0.4076   1   0.5232
+LM-Lag                  30.5240   1   0.0000
+LM-Error                17.7450   1   0.0000
+Robust-LM-Lag-SDM        9.5178   1   0.0020
+Robust-LM-Error-SDEM     0.2169   1   0.6414
 
 === DGP=SDEM | start=SEM | recommended=SDEM (yes expected SDEM) ===
                statistic  df  p_value
 test                                 
-LM-Lag           69.8144   1   0.0000
-LM-WX            44.5342   1   0.0000
-Robust-LM-Lag     0.4394   1   0.5074
-Robust-LM-WX     25.4409   1   0.0000
+LM-Lag           71.5586   1   0.0000
+LM-WX            43.9368   1   0.0000
+Robust-LM-Lag     0.7789   1   0.3775
+Robust-LM-WX     25.5448   1   0.0000
 
 === DGP=SDEM | start=SLX | recommended=SDEM (yes expected SDEM) ===
                       statistic  df  p_value
 test                                        
-LM-Lag                  12.5117   1   0.0004
-LM-Error                17.0136   1   0.0000
-Robust-LM-Lag-SDM        1.4023   1   0.2363
-Robust-LM-Error-SDEM     7.0256   1   0.0080
+LM-Lag                  12.0932   1   0.0005
+LM-Error                16.2227   1   0.0001
+Robust-LM-Lag-SDM        1.3550   1   0.2444
+Robust-LM-Error-SDEM     6.6657   1   0.0098
 </code></pre></div>
 </div>
 </div>
@@ -4843,8 +4886,8 @@ Robust-LM-Error-SDEM     7.0256   1   0.0080
 <div class="cell_output docutils container">
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>LM-Lag *  (p=0.0000, alpha=0.05)
 ├── &lt;sig&gt; LM-Error *  (p=0.0000, alpha=0.05)
-│   ├── &lt;sig&gt; Robust-LM-Lag-SDM *  (p=0.0015, alpha=0.05)
-│   │   ├── &lt;sig&gt; Robust-LM-Error-SDEM *  (p=0.5232, alpha=0.05)
+│   ├── &lt;sig&gt; Robust-LM-Lag-SDM *  (p=0.0020, alpha=0.05)
+│   │   ├── &lt;sig&gt; Robust-LM-Error-SDEM *  (p=0.6414, alpha=0.05)
 │   │   │   ├── &lt;sig&gt; Robust-LM-Lag-SDM p &lt;= Robust-LM-Error-SDEM p
 │   │   │   │   ├── [SDM]
 │   │   │   │   └── [SDEM]
@@ -4929,15 +4972,9 @@ fixed-effects OLS DGP and run the full diagnostic table.</p>
 <div class="cell_output docutils container">
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
-Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 6 seconds.
+NUTS: [beta, sigma2]
+Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -4978,57 +5015,57 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>Panel-LM-Lag</th>
-      <td>86.613402</td>
-      <td>86.580947</td>
+      <td>84.694264</td>
+      <td>84.656800</td>
       <td>1</td>
       <td>0.000000e+00</td>
-      <td>80.177727</td>
-      <td>92.752239</td>
+      <td>77.426851</td>
+      <td>91.951679</td>
     </tr>
     <tr>
       <th>Panel-LM-Error</th>
-      <td>23.148766</td>
-      <td>22.844322</td>
+      <td>22.321703</td>
+      <td>21.940709</td>
       <td>1</td>
-      <td>1.499394e-06</td>
-      <td>13.598631</td>
-      <td>33.547203</td>
+      <td>2.305858e-06</td>
+      <td>11.806254</td>
+      <td>34.658109</td>
     </tr>
     <tr>
       <th>Panel-LM-SDM-Joint</th>
-      <td>89.831950</td>
-      <td>89.751540</td>
+      <td>88.138628</td>
+      <td>88.039371</td>
       <td>2</td>
       <td>0.000000e+00</td>
-      <td>85.074567</td>
-      <td>94.653589</td>
+      <td>82.867041</td>
+      <td>93.807878</td>
     </tr>
     <tr>
       <th>Panel-LM-SLX-Error-Joint</th>
-      <td>90.055446</td>
-      <td>89.750935</td>
+      <td>88.422994</td>
+      <td>88.041710</td>
       <td>2</td>
       <td>0.000000e+00</td>
-      <td>80.836285</td>
-      <td>100.146899</td>
+      <td>78.285630</td>
+      <td>100.394412</td>
     </tr>
     <tr>
       <th>Panel-Robust-LM-Lag</th>
-      <td>68.368119</td>
-      <td>67.783224</td>
+      <td>67.184064</td>
+      <td>66.740233</td>
       <td>1</td>
-      <td>1.110223e-16</td>
-      <td>48.320642</td>
-      <td>91.952245</td>
+      <td>2.220446e-16</td>
+      <td>47.935579</td>
+      <td>91.675476</td>
     </tr>
     <tr>
       <th>Panel-Robust-LM-Error</th>
-      <td>3.275295</td>
-      <td>3.247275</td>
+      <td>3.341650</td>
+      <td>3.319574</td>
       <td>1</td>
-      <td>7.033028e-02</td>
-      <td>2.314885</td>
-      <td>4.405134</td>
+      <td>6.754686e-02</td>
+      <td>2.384254</td>
+      <td>4.559821</td>
     </tr>
   </tbody>
 </table>
@@ -5046,34 +5083,18 @@ We recommend running at least 4 chains for robust computation of convergence dia
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Panel decision tree (DGP = SAR-FE) recommends: SARPanelFE
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
-</code></pre></div>
-</div>
 </div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="n">panel_model</span><span class="o">.</span><span class="n">spatial_diagnostics_decision</span><span class="p">(</span>
-    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=2.72e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
-</code></pre></div>
-</div>
-<img alt="../_images/b003f7966cebd8a027cc71add8339e46ed1f83992ab3d714a1479263672a5be1.svg" src="../_images/b003f7966cebd8a027cc71add8339e46ed1f83992ab3d714a1479263672a5be1.svg" />
+<img alt="../_images/90a63d09fdf8f38877bd1129d452a12da263269bc94146faa6d3b83430e91b87.svg" src="../_images/90a63d09fdf8f38877bd1129d452a12da263269bc94146faa6d3b83430e91b87.svg" />
 </div>
 </div>
 <h2 id="panel-dgp-recovery-stress-test">10. Panel DGP-Recovery Stress Test<a class="headerlink" href="#panel-dgp-recovery-stress-test" title="Link to this heading">¶</a></h2>
@@ -5172,96 +5193,36 @@ Durbin-family alternatives.</p>
 <div class="cell_output docutils container">
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
-Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
-Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
-Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 6 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:494: RuntimeWarning: X&#39;X (panel robust LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:586: RuntimeWarning: X&#39;X (panel robust LM-error) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  XtX_inv = _safe_inv(X.T @ X, &quot;X&#39;X (panel robust LM-error)&quot;)
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
-Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.30e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.30e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.30e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.30e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [lam, beta, sigma]
-Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 6 seconds.
-We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.28e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (2 chains in 2 jobs)
-NUTS: [beta, sigma]
+NUTS: [beta, sigma2]
 Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.30e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/diagnostics/lmtests/panel.py:340: RuntimeWarning: X&#39;X (panel LM-lag) is ill-conditioned (cond=4.30e+14); falling back to pseudo-inverse.
-  ZtZ_inv = _safe_inv(Z.T @ Z, &quot;X&#39;X (panel LM-lag)&quot;)
+Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [beta, sigma2]
+Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
+Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [beta, sigma2]
+Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (2 chains in 2 jobs)
+NUTS: [beta, sigma2]
+Sampling 2 chains for 400 tune and 400 draw iterations (800 + 800 draws total) took 5 seconds.
+We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -5376,69 +5337,69 @@ We recommend running at least 4 chains for robust computation of convergence dia
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>=== DGP=OLS | start=OLSPanelFE | recommended=OLSPanelFE (yes expected OLSPanelFE) ===
                           statistic  df  p_value
 test                                            
-Panel-LM-Lag                 0.3728   1   0.5415
-Panel-LM-Error               0.0029   1   0.9573
-Panel-LM-SDM-Joint           0.5352   2   0.7652
-Panel-LM-SLX-Error-Joint     0.5366   2   0.7647
-Panel-Robust-LM-Lag          0.5182   1   0.4716
-Panel-Robust-LM-Error        0.1527   1   0.6960
+Panel-LM-Lag                 0.3659   1   0.5453
+Panel-LM-Error               0.0028   1   0.9577
+Panel-LM-SDM-Joint           0.5264   2   0.7686
+Panel-LM-SLX-Error-Joint     0.5278   2   0.7681
+Panel-Robust-LM-Lag          0.5128   1   0.4739
+Panel-Robust-LM-Error        0.1525   1   0.6962
 
 === DGP=SAR | start=OLSPanelFE | recommended=SARPanelFE (yes expected SARPanelFE) ===
                           statistic  df  p_value
 test                                            
-Panel-LM-Lag               159.7254   1   0.0000
-Panel-LM-Error              50.8878   1   0.0000
-Panel-LM-SDM-Joint         160.8265   2   0.0000
-Panel-LM-SLX-Error-Joint   161.1832   2   0.0000
-Panel-Robust-LM-Lag        111.4493   1   0.0000
-Panel-Robust-LM-Error        1.0459   1   0.3065
+Panel-LM-Lag               158.1953   1   0.0000
+Panel-LM-Error              50.2981   1   0.0000
+Panel-LM-SDM-Joint         159.3719   2   0.0000
+Panel-LM-SLX-Error-Joint   159.6871   2   0.0000
+Panel-Robust-LM-Lag        110.7468   1   0.0000
+Panel-Robust-LM-Error        1.1803   1   0.2773
 
 === DGP=SEM | start=OLSPanelFE | recommended=SEMPanelFE (yes expected SEMPanelFE) ===
                           statistic  df  p_value
 test                                            
-Panel-LM-Lag                17.1362   1   0.0000
-Panel-LM-Error              61.2819   1   0.0000
-Panel-LM-SDM-Joint          62.0483   2   0.0000
-Panel-LM-SLX-Error-Joint    62.1021   2   0.0000
-Panel-Robust-LM-Lag          0.8175   1   0.3659
-Panel-Robust-LM-Error       45.4738   1   0.0000
+Panel-LM-Lag                16.9363   1   0.0000
+Panel-LM-Error              60.3938   1   0.0000
+Panel-LM-SDM-Joint          61.1549   2   0.0000
+Panel-LM-SLX-Error-Joint    61.2138   2   0.0000
+Panel-Robust-LM-Lag          0.8092   1   0.3684
+Panel-Robust-LM-Error       44.6549   1   0.0000
 
 === DGP=SLX | start=SLXPanelFE | recommended=SLXPanelFE (yes expected SLXPanelFE) ===
                             statistic  df  p_value
 test                                              
-Panel-LM-Lag                   1.8767   1   0.1707
-Panel-LM-Error                 0.0059   1   0.9388
-Panel-Robust-LM-Lag-SDM        7.4441   1   0.0064
-Panel-Robust-LM-Error-SDEM     5.5612   1   0.0184
+Panel-LM-Lag                   1.8591   1   0.1727
+Panel-LM-Error                 0.0058   1   0.9394
+Panel-Robust-LM-Lag-SDM        7.4781   1   0.0062
+Panel-Robust-LM-Error-SDEM     5.6128   1   0.0178
 
 === DGP=SDM | start=SARPanelFE | recommended=SDMPanelFE (yes expected SDMPanelFE) ===
                     statistic  df  p_value
 test                                      
-Panel-LM-Error      1221.2956   1      0.0
-Panel-LM-WX           53.4267   1      0.0
-Panel-Robust-LM-WX    59.5576   1      0.0
+Panel-LM-Error      1172.3422   1      0.0
+Panel-LM-WX           52.0892   1      0.0
+Panel-Robust-LM-WX    57.5434   1      0.0
 
 === DGP=SDM | start=SLXPanelFE | recommended=SDMPanelFE (yes expected SDMPanelFE) ===
                             statistic  df  p_value
 test                                              
-Panel-LM-Lag                  56.0582   1   0.0000
-Panel-LM-Error                22.5902   1   0.0000
-Panel-Robust-LM-Lag-SDM       35.3386   1   0.0000
-Panel-Robust-LM-Error-SDEM     1.8121   1   0.1783
+Panel-LM-Lag                  57.0450   1   0.0000
+Panel-LM-Error                21.9613   1   0.0000
+Panel-Robust-LM-Lag-SDM       37.4341   1   0.0000
+Panel-Robust-LM-Error-SDEM     2.2783   1   0.1312
 
 === DGP=SDEM | start=SEMPanelFE | recommended=SDEMPanelFE (yes expected SDEMPanelFE) ===
               statistic  df  p_value
 test                                
-Panel-LM-Lag   215.5567   1      0.0
-Panel-LM-WX    190.3757   1      0.0
+Panel-LM-Lag   212.5967   1      0.0
+Panel-LM-WX    189.0111   1      0.0
 
 === DGP=SDEM | start=SLXPanelFE | recommended=SDEMPanelFE (yes expected SDEMPanelFE) ===
                             statistic  df  p_value
 test                                              
-Panel-LM-Lag                  23.8739   1   0.0000
-Panel-LM-Error                35.4455   1   0.0000
-Panel-Robust-LM-Lag-SDM        9.0949   1   0.0026
-Panel-Robust-LM-Error-SDEM    20.8166   1   0.0000
+Panel-LM-Lag                  23.8309   1   0.0000
+Panel-LM-Error                34.2883   1   0.0000
+Panel-Robust-LM-Lag-SDM        9.2329   1   0.0024
+Panel-Robust-LM-Error-SDEM    19.8298   1   0.0000
 </code></pre></div>
 </div>
 </div>
@@ -5492,15 +5453,12 @@ all three lag terms) wires the robust variants for marginal-extension testing.</
 <div class="cell_output docutils container">
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>/home/runner/micromamba/envs/test/lib/python3.14/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
   from .autonotebook import tqdm as notebook_tqdm
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/_jax_dispatch.py:247: RuntimeWarning: BAYESPECON_JAX_SPARSE_BACKEND=auto selected fallback backend &#39;callback+scipy&#39; because optional dependency &#39;klujax&#39; is not installed. Estimation is likely faster when the optional sparse backend is installed. Install &#39;klujax&#39; to enable the faster JAX-native sparse path.
-  sparse_backend = _select_jax_sparse_backend()
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/bayespecon/_jax_dispatch.py:247: RuntimeWarning: BAYESPECON_JAX_SPARSE_BACKEND=auto selected fallback backend &#39;callback+scipy&#39; because optional dependency &#39;scikits.umfpack&#39; is not installed. Estimation is likely faster when the optional sparse backend is installed. Install &#39;scikit-umfpack&#39; to enable the UMFPACK callback path.
-  sparse_backend = _select_jax_sparse_backend()
 Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [beta, sigma]
 Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 6 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
+The rhat statistic is larger than 1.01 for some parameters. This indicates problems during sampling. See https://arxiv.org/abs/1903.08008 for details
 </code></pre></div>
 </div>
 <div class="output text_html"><div>
@@ -5541,48 +5499,48 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>LM-Flow-Dest</th>
-      <td>0.492078</td>
-      <td>0.214866</td>
+      <td>0.471392</td>
+      <td>0.205539</td>
       <td>1</td>
-      <td>0.483002</td>
-      <td>0.000409</td>
-      <td>2.613774</td>
+      <td>0.492347</td>
+      <td>0.000378</td>
+      <td>2.365742</td>
     </tr>
     <tr>
       <th>LM-Flow-Orig</th>
-      <td>0.645980</td>
-      <td>0.313059</td>
+      <td>0.647370</td>
+      <td>0.288222</td>
       <td>1</td>
-      <td>0.421554</td>
-      <td>0.000625</td>
-      <td>3.162586</td>
+      <td>0.421055</td>
+      <td>0.000847</td>
+      <td>3.211893</td>
     </tr>
     <tr>
       <th>LM-Flow-Network</th>
-      <td>0.405725</td>
-      <td>0.172567</td>
+      <td>0.422015</td>
+      <td>0.179963</td>
       <td>1</td>
-      <td>0.524147</td>
-      <td>0.000522</td>
-      <td>2.085226</td>
+      <td>0.515933</td>
+      <td>0.000856</td>
+      <td>2.246105</td>
     </tr>
     <tr>
       <th>LM-Flow-Joint</th>
-      <td>1.580734</td>
-      <td>1.220782</td>
+      <td>1.578617</td>
+      <td>1.213088</td>
       <td>3</td>
-      <td>0.663766</td>
-      <td>0.098407</td>
-      <td>5.061359</td>
+      <td>0.664248</td>
+      <td>0.145582</td>
+      <td>5.094049</td>
     </tr>
     <tr>
       <th>LM-Flow-Intra</th>
-      <td>1.122433</td>
-      <td>0.902517</td>
+      <td>1.165007</td>
+      <td>0.859312</td>
       <td>3</td>
-      <td>0.771662</td>
-      <td>0.075129</td>
-      <td>3.497387</td>
+      <td>0.761409</td>
+      <td>0.099886</td>
+      <td>3.989801</td>
     </tr>
   </tbody>
 </table>
@@ -5603,7 +5561,12 @@ We recommend running at least 4 chains for robust computation of convergence dia
 <div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
 Multiprocess sampling (2 chains in 2 jobs)
 NUTS: [rho_simplex, beta, sigma]
-Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 34 seconds.
+/home/runner/micromamba/envs/test/lib/python3.14/site-packages/arviz/__init__.py:50: FutureWarning: 
+ArviZ is undergoing a major refactor to improve flexibility and extensibility while maintaining a user-friendly interface.
+Some upcoming changes may be backward incompatible.
+For details and migration guidance, visit: https://python.arviz.org/en/latest/user_guide/migration_guide.html
+  warn(
+Sampling 2 chains for 600 tune and 600 draw iterations (1_200 + 1_200 draws total) took 31 seconds.
 We recommend running at least 4 chains for robust computation of convergence diagnostics
 </code></pre></div>
 </div>
@@ -5645,39 +5608,39 @@ We recommend running at least 4 chains for robust computation of convergence dia
   <tbody>
     <tr>
       <th>Robust-LM-Flow-Dest</th>
-      <td>0.442242</td>
-      <td>0.190211</td>
+      <td>0.444687</td>
+      <td>0.186924</td>
       <td>1</td>
-      <td>0.506042</td>
-      <td>0.000454</td>
-      <td>2.080650</td>
+      <td>0.504869</td>
+      <td>0.000444</td>
+      <td>2.411450</td>
     </tr>
     <tr>
       <th>Robust-LM-Flow-Orig</th>
-      <td>0.503193</td>
-      <td>0.231676</td>
+      <td>0.521171</td>
+      <td>0.231729</td>
       <td>1</td>
-      <td>0.478101</td>
-      <td>0.000521</td>
-      <td>2.517034</td>
+      <td>0.470343</td>
+      <td>0.000410</td>
+      <td>2.593989</td>
     </tr>
     <tr>
       <th>Robust-LM-Flow-Network</th>
-      <td>0.593153</td>
-      <td>0.294225</td>
+      <td>0.579905</td>
+      <td>0.258207</td>
       <td>1</td>
-      <td>0.441202</td>
-      <td>0.000717</td>
-      <td>2.854484</td>
+      <td>0.446350</td>
+      <td>0.000719</td>
+      <td>2.901868</td>
     </tr>
     <tr>
       <th>LM-Flow-Intra</th>
-      <td>1.836638</td>
-      <td>1.425188</td>
+      <td>1.945764</td>
+      <td>1.513260</td>
       <td>3</td>
-      <td>0.606995</td>
-      <td>0.138265</td>
-      <td>5.696267</td>
+      <td>0.583740</td>
+      <td>0.149408</td>
+      <td>5.695545</td>
     </tr>
   </tbody>
 </table>

@@ -429,12 +429,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -579,6 +627,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -2060,6 +2132,30 @@
 
               
             
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2495,7 +2591,7 @@
 <h1 id="bayespecon-dgp-simulate-sar">bayespecon.dgp.simulate_sar<a class="headerlink" href="#bayespecon-dgp-simulate-sar" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
 <dt class="sig sig-object highlight sig-wrap py" id="bayespecon.dgp.simulate_sar">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.dgp.</span></span><span class="sig-name descname"><span class="pre">simulate_sar</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.n" title="bayespecon.dgp.simulate_sar.n (Python parameter) — Square-grid side length used when only n is supplied."><span class="n"><span class="pre">n</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.W" title="bayespecon.dgp.simulate_sar.W (Python parameter) — Spatial weights."><span class="n"><span class="pre">W</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.gdf" title="bayespecon.dgp.simulate_sar.gdf (Python parameter) — Spatial units source used when W is not provided."><span class="n"><span class="pre">gdf</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.rho" title="bayespecon.dgp.simulate_sar.rho (Python parameter) — Spatial autoregressive coefficient."><span class="n"><span class="pre">rho</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">0.5</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.beta" title="bayespecon.dgp.simulate_sar.beta (Python parameter) — Regression coefficients including intercept."><span class="n"><span class="pre">beta</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.sigma" title="bayespecon.dgp.simulate_sar.sigma (Python parameter) — Innovation standard deviation."><span class="n"><span class="pre">sigma</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.err_hetero" title="bayespecon.dgp.simulate_sar.err_hetero (Python parameter) — If True, generate heteroskedastic innovations with observation-specific standard deviations \sigma_i = \sigma \sqrt{1 + \|x_i\|^2}."><span class="n"><span class="pre">err_hetero</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.rng" title="bayespecon.dgp.simulate_sar.rng (Python parameter) — Random generator."><span class="n"><span class="pre">rng</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.seed" title="bayespecon.dgp.simulate_sar.seed (Python parameter) — Seed used when rng is not supplied."><span class="n"><span class="pre">seed</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.contiguity" title="bayespecon.dgp.simulate_sar.contiguity (Python parameter) — Neighbor rule for gdf mode."><span class="n"><span class="pre">contiguity</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="s1">&#39;queen&#39;</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.create_gdf" title="bayespecon.dgp.simulate_sar.create_gdf (Python parameter) — If True, include a gdf key in the returned dict with y and X_* columns attached to geometry."><span class="n"><span class="pre">create_gdf</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.geometry_type" title="bayespecon.dgp.simulate_sar.geometry_type (Python parameter) — Geometry type to generate when create_gdf=True and gdf is not provided."><span class="n"><span class="pre">geometry_type</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="s1">&#39;polygon&#39;</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/dgp/cross_sectional.py#L144-L236"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.dgp.simulate_sar" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">bayespecon.dgp.</span></span><span class="sig-name descname"><span class="pre">simulate_sar</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.n" title="bayespecon.dgp.simulate_sar.n (Python parameter) — Square-grid side length used when only n is supplied."><span class="n"><span class="pre">n</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.W" title="bayespecon.dgp.simulate_sar.W (Python parameter) — Spatial weights."><span class="n"><span class="pre">W</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.gdf" title="bayespecon.dgp.simulate_sar.gdf (Python parameter) — Spatial units source used when W is not provided."><span class="n"><span class="pre">gdf</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.rho" title="bayespecon.dgp.simulate_sar.rho (Python parameter) — Spatial autoregressive coefficient."><span class="n"><span class="pre">rho</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">0.5</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.beta" title="bayespecon.dgp.simulate_sar.beta (Python parameter) — Regression coefficients including intercept."><span class="n"><span class="pre">beta</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.sigma" title="bayespecon.dgp.simulate_sar.sigma (Python parameter) — Innovation standard deviation."><span class="n"><span class="pre">sigma</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.err_hetero" title="bayespecon.dgp.simulate_sar.err_hetero (Python parameter) — If True, generate heteroskedastic innovations with observation-specific standard deviations \sigma_i = \sigma \sqrt{1 + \|x_i\|^2}."><span class="n"><span class="pre">err_hetero</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.rng" title="bayespecon.dgp.simulate_sar.rng (Python parameter) — Random generator."><span class="n"><span class="pre">rng</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.seed" title="bayespecon.dgp.simulate_sar.seed (Python parameter) — Seed used when rng is not supplied."><span class="n"><span class="pre">seed</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.contiguity" title="bayespecon.dgp.simulate_sar.contiguity (Python parameter) — Neighbor rule for gdf mode."><span class="n"><span class="pre">contiguity</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="s1">&#39;queen&#39;</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.create_gdf" title="bayespecon.dgp.simulate_sar.create_gdf (Python parameter) — If True, include a gdf key in the returned dict with y and X_* columns attached to geometry."><span class="n"><span class="pre">create_gdf</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.dgp.simulate_sar.geometry_type" title="bayespecon.dgp.simulate_sar.geometry_type (Python parameter) — Geometry type to generate when create_gdf=True and gdf is not provided."><span class="n"><span class="pre">geometry_type</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="s1">&#39;polygon&#39;</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/dgp/cross_sectional.py#L141-L233"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.dgp.simulate_sar" title="Link to this definition">¶</a></dt>
 <dd><p>Simulate data from SAR DGP <code class="docutils literal notranslate"><span class="pre">y</span> <span class="pre">=</span> <span class="pre">(I-rho</span> <span class="pre">W)^(-1)(X</span> <span class="pre">beta</span> <span class="pre">+</span> <span class="pre">eps)</span></code>.</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.dgp.simulate_sar-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.dgp.simulate_sar-parameters" title="Permalink to this headline">¶</a></dt>

@@ -429,12 +429,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -579,6 +627,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1480,6 +1552,30 @@
 
               
             
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1831,7 +1927,7 @@
 <h1 id="bayespecon-logdet-make-logdet-fn">bayespecon.logdet.make_logdet_fn<a class="headerlink" href="#bayespecon-logdet-make-logdet-fn" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
 <dt class="sig sig-object highlight sig-wrap py" id="bayespecon.logdet.make_logdet_fn">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">make_logdet_fn</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.W" title="bayespecon.logdet.make_logdet_fn.W (Python parameter) — Either a 2-D dense (n, n) spatial weights matrix or a 1-D array of pre-computed real eigenvalues."><span class="n"><span class="pre">W</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.method" title="bayespecon.logdet.make_logdet_fn.method (Python parameter) — Auto-selected when None (&quot;eigenvalue&quot; for n &lt;= 2000 else &quot;chebyshev&quot;)."><span class="n"><span class="pre">method</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.rho_min" title="bayespecon.logdet.make_logdet_fn.rho_min (Python parameter) — Lower bound for the grid method."><span class="n"><span class="pre">rho_min</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="o">-</span><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.rho_max" title="bayespecon.logdet.make_logdet_fn.rho_max (Python parameter) — Upper bound for the grid method."><span class="n"><span class="pre">rho_max</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.T" title="bayespecon.logdet.make_logdet_fn.T (Python parameter) — Panel time-period count."><span class="n"><span class="pre">T</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">1</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L1606-L1798"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.make_logdet_fn" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">make_logdet_fn</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.W" title="bayespecon.logdet.make_logdet_fn.W (Python parameter) — Either a 2-D dense (n, n) spatial weights matrix or a 1-D array of pre-computed real eigenvalues."><span class="n"><span class="pre">W</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.method" title="bayespecon.logdet.make_logdet_fn.method (Python parameter) — Auto-selected when None (&quot;eigenvalue&quot; for n &lt;= 2000 else &quot;chebyshev&quot;)."><span class="n"><span class="pre">method</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.rho_min" title="bayespecon.logdet.make_logdet_fn.rho_min (Python parameter) — Lower bound for the grid method."><span class="n"><span class="pre">rho_min</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="o">-</span><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.rho_max" title="bayespecon.logdet.make_logdet_fn.rho_max (Python parameter) — Upper bound for the grid method."><span class="n"><span class="pre">rho_max</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.make_logdet_fn.T" title="bayespecon.logdet.make_logdet_fn.T (Python parameter) — Panel time-period count."><span class="n"><span class="pre">T</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">1</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L2059-L2266"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.make_logdet_fn" title="Link to this definition">¶</a></dt>
 <dd><p>Return a function (rho) -&gt; pytensor log|I - rho*W| expression.</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.logdet.make_logdet_fn-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.logdet.make_logdet_fn-parameters" title="Permalink to this headline">¶</a></dt>
@@ -1853,11 +1949,11 @@ for large sparse W.
 <code class="docutils literal notranslate"><span class="pre">&quot;sparse_spline&quot;</span></code> — sparse-LU + cubic-spline interpolation on
 <code class="docutils literal notranslate"><span class="pre">[max(rho_min,</span> <span class="pre">0),</span> <span class="pre">rho_max]</span></code>.
 <code class="docutils literal notranslate"><span class="pre">&quot;grid_mc&quot;</span></code> — Monte Carlo trace approximation
-(<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id7" title="Ronald Paul Barry and R. Kelley Pace. Monte Carlo estimates of the log determinant of large sparse matrices. Linear Algebra and its Applications, 289(1):41–54, 1999. URL: https://www.sciencedirect.com/science/article/pii/S002437959710009X (visited on 2026-04-20), doi:10.1016/S0024-3795(97)10009-X.">Barry and Kelley Pace, 1999</a>]</span>) + spline interpolation.
+(<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id8" title="Ronald Paul Barry and R. Kelley Pace. Monte Carlo estimates of the log determinant of large sparse matrices. Linear Algebra and its Applications, 289(1):41–54, 1999. URL: https://www.sciencedirect.com/science/article/pii/S002437959710009X (visited on 2026-04-20), doi:10.1016/S0024-3795(97)10009-X.">Barry and Kelley Pace, 1999</a>]</span>) + spline interpolation.
 <code class="docutils literal notranslate"><span class="pre">&quot;grid_ilu&quot;</span></code> — ILU-based approximation
 + spline interpolation.
 <code class="docutils literal notranslate"><span class="pre">&quot;chebyshev&quot;</span></code> — Chebyshev polynomial approximation
-(<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id28" title="R. Kelley Pace and James P. LeSage. Chebyshev approximation of log-determinants of spatial weight matrices. Computational Statistics &amp; Data Analysis, 45(2):179–196, 2004. URL: https://www.sciencedirect.com/science/article/pii/S0167947302003213 (visited on 2026-04-20), doi:10.1016/S0167-9473(02)00321-3.">Pace and LeSage, 2004</a>]</span>); near-minimax
+(<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id35" title="R. Kelley Pace and James P. LeSage. Chebyshev approximation of log-determinants of spatial weight matrices. Computational Statistics &amp; Data Analysis, 45(2):179–196, 2004. URL: https://www.sciencedirect.com/science/article/pii/S0167947302003213 (visited on 2026-04-20), doi:10.1016/S0167-9473(02)00321-3.">Pace and LeSage, 2004</a>]</span>); near-minimax
 polynomial evaluated via Clenshaw’s algorithm.
 O(m) per evaluation after O(n³) or O(R·n·m) pre-computation.
 <code class="docutils literal notranslate"><span class="pre">&quot;trace_mc&quot;</span></code> — Hutchinson stochastic trace estimator with a

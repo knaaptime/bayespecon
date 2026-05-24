@@ -735,7 +735,7 @@
    "outputs": [],
    "source": [
     "panel_model.spatial_diagnostics_decision(\n",
-    "    alpha=0.01,\n",
+    "    alpha=0.05,\n",
     ")"
    ]
   },

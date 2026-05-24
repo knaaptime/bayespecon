@@ -79,5 +79,7 @@
       ~LogDetMethod.TRACE_MC
       ~LogDetMethod.GRID_ILU
       ~LogDetMethod.CHEBYSHEV
+      ~LogDetMethod.TRACE_XTRACE
+      ~LogDetMethod.TRACE_HUTCHPP
    
    

@@ -1,0 +1,30 @@
+﻿bayespecon.\_samplers.\_gaussian\_gibbs.GaussianGibbsState
+==========================================================
+
+.. currentmodule:: bayespecon._samplers._gaussian_gibbs
+
+.. autoclass:: GaussianGibbsState
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~GaussianGibbsState.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~GaussianGibbsState.beta
+      ~GaussianGibbsState.sigma2
+      ~GaussianGibbsState.rho
+   
+   

@@ -429,12 +429,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -579,6 +627,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1672,6 +1744,30 @@
 
               
             
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2047,8 +2143,8 @@
 <h1 id="bayespecon-logdet-chebyshev">bayespecon.logdet.chebyshev<a class="headerlink" href="#bayespecon-logdet-chebyshev" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
 <dt class="sig sig-object highlight sig-wrap py" id="bayespecon.logdet.chebyshev">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">chebyshev</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.W" title="bayespecon.logdet.chebyshev.W (Python parameter) — Spatial weights matrix (dense or sparse)."><span class="n"><span class="pre">W</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.order" title="bayespecon.logdet.chebyshev.order (Python parameter) — Number of Chebyshev terms (polynomial degree)."><span class="n"><span class="pre">order</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">20</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.rmin" title="bayespecon.logdet.chebyshev.rmin (Python parameter) — Lower bound of the rho interval."><span class="n"><span class="pre">rmin</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="o">-</span><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.rmax" title="bayespecon.logdet.chebyshev.rmax (Python parameter) — Upper bound of the rho interval."><span class="n"><span class="pre">rmax</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.random_state" title="bayespecon.logdet.chebyshev.random_state (Python parameter) — Seed for the Monte Carlo trace estimator (only used when n &gt; 2000)."><span class="n"><span class="pre">random_state</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.eigs" title="bayespecon.logdet.chebyshev.eigs (Python parameter) — Pre-computed real eigenvalues of W."><span class="n"><span class="pre">eigs</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.n_mc_iter" title="bayespecon.logdet.chebyshev.n_mc_iter (Python parameter) — Number of Hutchinson probes used by the Monte-Carlo trace estimator (only consulted when n &gt; 2000 and eigs is None)."><span class="n"><span class="pre">n_mc_iter</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">30</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L537-L714"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.chebyshev" title="Link to this definition">¶</a></dt>
-<dd><p>Compute Chebyshev approximation of log|I - rho*W| (<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id28" title="R. Kelley Pace and James P. LeSage. Chebyshev approximation of log-determinants of spatial weight matrices. Computational Statistics &amp; Data Analysis, 45(2):179–196, 2004. URL: https://www.sciencedirect.com/science/article/pii/S0167947302003213 (visited on 2026-04-20), doi:10.1016/S0167-9473(02)00321-3.">Pace and LeSage, 2004</a>]</span>).</p>
+<span class="sig-prename descclassname"><span class="pre">bayespecon.logdet.</span></span><span class="sig-name descname"><span class="pre">chebyshev</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.W" title="bayespecon.logdet.chebyshev.W (Python parameter) — Spatial weights matrix (dense or sparse)."><span class="n"><span class="pre">W</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.order" title="bayespecon.logdet.chebyshev.order (Python parameter) — Number of Chebyshev terms (polynomial degree)."><span class="n"><span class="pre">order</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">20</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.rmin" title="bayespecon.logdet.chebyshev.rmin (Python parameter) — Lower bound of the rho interval."><span class="n"><span class="pre">rmin</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="o">-</span><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.rmax" title="bayespecon.logdet.chebyshev.rmax (Python parameter) — Upper bound of the rho interval."><span class="n"><span class="pre">rmax</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">1.0</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.random_state" title="bayespecon.logdet.chebyshev.random_state (Python parameter) — Seed for the Monte Carlo trace estimator (only used when n &gt; 2000)."><span class="n"><span class="pre">random_state</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.eigs" title="bayespecon.logdet.chebyshev.eigs (Python parameter) — Pre-computed real eigenvalues of W."><span class="n"><span class="pre">eigs</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.logdet.chebyshev.n_mc_iter" title="bayespecon.logdet.chebyshev.n_mc_iter (Python parameter) — Number of Hutchinson probes used by the Monte-Carlo trace estimator (only consulted when n &gt; 2000 and eigs is None)."><span class="n"><span class="pre">n_mc_iter</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">30</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/logdet.py#L528-L722"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.logdet.chebyshev" title="Link to this definition">¶</a></dt>
+<dd><p>Compute Chebyshev approximation of log|I - rho*W| (<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id35" title="R. Kelley Pace and James P. LeSage. Chebyshev approximation of log-determinants of spatial weight matrices. Computational Statistics &amp; Data Analysis, 45(2):179–196, 2004. URL: https://www.sciencedirect.com/science/article/pii/S0167947302003213 (visited on 2026-04-20), doi:10.1016/S0167-9473(02)00321-3.">Pace and LeSage, 2004</a>]</span>).</p>
 <p>Uses Chebyshev polynomials of the first kind to approximate the
 log-determinant over <code class="docutils literal notranslate"><span class="pre">[rmin,</span> <span class="pre">rmax]</span></code>.  The approximation is
 near-minimax: for a given polynomial degree it minimises the
@@ -2060,7 +2156,7 @@ the exact log-determinant at Chebyshev nodes via eigenvalues,
 then computes Chebyshev coefficients from those values.</p></li>
 <li><p><strong>Monte-Carlo trace-based</strong> (automatically used when <em>n</em> &gt; 2000):
 replaces exact traces with Barry-Pace stochastic trace estimates
-(<span class="bibtex-citation" id="id2">Barry and Kelley Pace [<a class="reference internal" href="../references.html#id7" title="Ronald Paul Barry and R. Kelley Pace. Monte Carlo estimates of the log determinant of large sparse matrices. Linear Algebra and its Applications, 289(1):41–54, 1999. URL: https://www.sciencedirect.com/science/article/pii/S002437959710009X (visited on 2026-04-20), doi:10.1016/S0024-3795(97)10009-X.">1999</a>]</span>), avoiding the O(n³) eigenvalue
+(<span class="bibtex-citation" id="id2">Barry and Kelley Pace [<a class="reference internal" href="../references.html#id8" title="Ronald Paul Barry and R. Kelley Pace. Monte Carlo estimates of the log determinant of large sparse matrices. Linear Algebra and its Applications, 289(1):41–54, 1999. URL: https://www.sciencedirect.com/science/article/pii/S002437959710009X (visited on 2026-04-20), doi:10.1016/S0024-3795(97)10009-X.">1999</a>]</span>), avoiding the O(n³) eigenvalue
 decomposition.</p></li>
 </ul>
 <dl class="field-list simple">
@@ -2125,7 +2221,7 @@ transform of the log-determinant evaluated at Chebyshev nodes.</p>
 <p>Pace, R.K. &amp; LeSage, J.P. (2004). Chebyshev approximation of
 log-determinants of spatial weight matrices. <em>Computational
 Statistics &amp; Data Analysis</em>, 45(2), 179–196.
-<span class="bibtex-citation" id="id3">[<a class="reference internal" href="../references.html#id28" title="R. Kelley Pace and James P. LeSage. Chebyshev approximation of log-determinants of spatial weight matrices. Computational Statistics &amp; Data Analysis, 45(2):179–196, 2004. URL: https://www.sciencedirect.com/science/article/pii/S0167947302003213 (visited on 2026-04-20), doi:10.1016/S0167-9473(02)00321-3.">Pace and LeSage, 2004</a>]</span></p>
+<span class="bibtex-citation" id="id3">[<a class="reference internal" href="../references.html#id35" title="R. Kelley Pace and James P. LeSage. Chebyshev approximation of log-determinants of spatial weight matrices. Computational Statistics &amp; Data Analysis, 45(2):179–196, 2004. URL: https://www.sciencedirect.com/science/article/pii/S0167947302003213 (visited on 2026-04-20), doi:10.1016/S0167-9473(02)00321-3.">Pace and LeSage, 2004</a>]</span></p>
 <p>Trefethen, L.N. (2013). <em>Approximation Theory and Approximation
 Practice</em>. SIAM. (Background on Chebyshev nodes, the Clenshaw
 recurrence used in <a class="reference internal" href="bayespecon.logdet.logdet_chebyshev.html#bayespecon.logdet.logdet_chebyshev" title="bayespecon.logdet.logdet_chebyshev (Python function) — Evaluate Chebyshev approximation of log|I - rho*W| symbolically."><code class="xref py py-func docutils literal notranslate"><span class="pre">logdet_chebyshev()</span></code></a> for stable evaluation,

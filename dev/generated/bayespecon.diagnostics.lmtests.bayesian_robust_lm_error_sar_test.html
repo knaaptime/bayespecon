@@ -429,12 +429,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -579,6 +627,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1808,6 +1880,30 @@
 
               
             
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2111,13 +2207,13 @@
 <h1 id="bayespecon-diagnostics-lmtests-bayesian-robust-lm-error-sar-test">bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test<a class="headerlink" href="#bayespecon-diagnostics-lmtests-bayesian-robust-lm-error-sar-test" title="Link to this heading">¶</a></h1>
 <dl class="py function objdesc">
 <dt class="sig sig-object highlight sig-wrap py" id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test">
-<span class="sig-prename descclassname"><span class="pre">bayespecon.diagnostics.lmtests.</span></span><span class="sig-name descname"><span class="pre">bayesian_robust_lm_error_sar_test</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test.model" title="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test.model (Python parameter) — Fitted SAR model exposing inference_data with posterior draws of beta, rho, sigma and the cached _y, _X, _Wy, _W_sparse, _W_dense, _T_ww attributes."><span class="n"><span class="pre">model</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/diagnostics/lmtests/cross_sectional.py#L1629-L1754"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">bayespecon.diagnostics.lmtests.</span></span><span class="sig-name descname"><span class="pre">bayesian_robust_lm_error_sar_test</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test.model" title="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test.model (Python parameter) — Fitted SAR model exposing inference_data with posterior draws of beta, rho, sigma and the cached _y, _X, _Wy, _W_sparse, _W_dense, _T_ww attributes."><span class="n"><span class="pre">model</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/diagnostics/lmtests/cross_sectional.py#L1644-L1769"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test" title="Link to this definition">¶</a></dt>
 <dd><p>Bayesian robust LM-Error test in SAR context (H₀: λ = 0 | SAR).</p>
 <p>Tests whether a SAR fit should be extended to SARAR by adding a
 spatial-error process, robust to the locally-estimated lag parameter
 <span class="math notranslate nohighlight">\(\rho\)</span>.  Implements the Doǧan–Taşpınar–Bera (2021) Bayesian
 Neyman-orthogonal score adjustment
-(<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id11" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">Doğan <em>et al.</em>, 2021</a>]</span>, Proposition 3) with the SARAR
+(<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id12" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">Doğan <em>et al.</em>, 2021</a>]</span>, Proposition 3) with the SARAR
 information blocks at the SAR posterior mean
 (<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id2" title="Luc Anselin. Spatial Econometrics: Methods and Models. Volume 4. Springer Netherlands, 1988. ISBN 978-90-481-8311-1. URL: http://www.amazon.com/Spatial-Econometrics-Methods-Operational-Regional/dp/9024737354, arXiv:1011.1669v3, doi:10.1007/978-94-015-7799-1.">Anselin, 1988</a>]</span>,
 <span class="bibtex-citation" id="id3">[<a class="reference internal" href="../references.html#id4" title="Luc Anselin, Anil Bera, Raymond J G M Florax, and M Yoon. Simple diagnostic tests for spatial dependence. Regional Science and Urban Economics, 26:77–104, 1996. doi:10.1016/0166-0462(95)02111-6.">Anselin <em>et al.</em>, 1996</a>]</span>).</p>

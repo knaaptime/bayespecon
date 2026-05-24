@@ -431,12 +431,60 @@
   
   
     <li class="md-nav__item">
+      <a href="quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -581,6 +629,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1299,20 +1371,6 @@ Profiling backend=blackjax...
 Profiling backend=nutpie...
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
-  from .autonotebook import tqdm as notebook_tqdm
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/sampling/mcmc.py:361: UserWarning: `idata_kwargs` are currently ignored by the nutpie sampler
-  warnings.warn(
-</code></pre></div>
-</div>
 <div class="output text_html"><div>
 <style scoped>
     .dataframe tbody tr th:only-of-type {
@@ -1347,73 +1405,73 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>nutpie</td>
+      <td>c</td>
       <td>True</td>
-      <td>4.683233</td>
-      <td>0.306133</td>
-      <td>1.087851</td>
-      <td>0.769278</td>
-      <td>-0.449502</td>
-      <td>0</td>
-      <td></td>
-      <td>0.043867</td>
-      <td>0.061133</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
+      <td>NaN</td>
+      <td>NaN</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>blackjax</td>
+      <td>numba</td>
       <td>True</td>
-      <td>6.308307</td>
-      <td>0.307041</td>
-      <td>1.086662</td>
-      <td>0.769066</td>
-      <td>-0.449853</td>
-      <td>0</td>
-      <td></td>
-      <td>0.042959</td>
-      <td>0.060503</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
+      <td>NaN</td>
+      <td>NaN</td>
     </tr>
     <tr>
       <th>2</th>
       <td>numpyro</td>
       <td>True</td>
-      <td>9.323634</td>
-      <td>0.305389</td>
-      <td>1.090718</td>
-      <td>0.769516</td>
-      <td>-0.447719</td>
-      <td>0</td>
-      <td></td>
-      <td>0.044611</td>
-      <td>0.062961</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
+      <td>NaN</td>
+      <td>NaN</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>numba</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>11.560471</td>
-      <td>0.311810</td>
-      <td>1.082217</td>
-      <td>0.768926</td>
-      <td>-0.450564</td>
-      <td>0</td>
-      <td></td>
-      <td>0.038190</td>
-      <td>0.058221</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
+      <td>NaN</td>
+      <td>NaN</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>c</td>
+      <td>nutpie</td>
       <td>True</td>
-      <td>18.145584</td>
-      <td>0.311810</td>
-      <td>1.082217</td>
-      <td>0.768926</td>
-      <td>-0.450564</td>
-      <td>0</td>
-      <td></td>
-      <td>0.038190</td>
-      <td>0.058221</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
+      <td>NaN</td>
+      <td>NaN</td>
     </tr>
   </tbody>
 </table>
@@ -1471,58 +1529,58 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>nutpie</td>
+      <td>c</td>
       <td>True</td>
-      <td>4.683</td>
-      <td>0.306</td>
-      <td>0.044</td>
-      <td>0.061</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>blackjax</td>
+      <td>numba</td>
       <td>True</td>
-      <td>6.308</td>
-      <td>0.307</td>
-      <td>0.043</td>
-      <td>0.061</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
     <tr>
       <th>2</th>
       <td>numpyro</td>
       <td>True</td>
-      <td>9.324</td>
-      <td>0.305</td>
-      <td>0.045</td>
-      <td>0.063</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>numba</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>11.560</td>
-      <td>0.312</td>
-      <td>0.038</td>
-      <td>0.058</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>c</td>
+      <td>nutpie</td>
       <td>True</td>
-      <td>18.146</td>
-      <td>0.312</td>
-      <td>0.038</td>
-      <td>0.058</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
   </tbody>
 </table>
@@ -1561,7 +1619,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/54d8bdef38879d05408d3924f5377bf6a0b264c7fcbd77b6dee0079823d50aca.png" src="../_images/54d8bdef38879d05408d3924f5377bf6a0b264c7fcbd77b6dee0079823d50aca.png" />
+<img alt="../_images/baa9fa9ac27bee0d5cff6e420e3911ba309dfb97542d8dba118bb5a33cea7460.png" src="../_images/baa9fa9ac27bee0d5cff6e420e3911ba309dfb97542d8dba118bb5a33cea7460.png" />
 </div>
 </div>
 <div class="cell docutils container">
@@ -1628,18 +1686,6 @@ Profiling backend=blackjax on 40×40 grid...
 Profiling backend=nutpie on 40×40 grid...
 </code></pre></div>
 </div>
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 11 seconds.
-Initializing NUTS using jitter+adapt_diag...
-Multiprocess sampling (4 chains in 2 jobs)
-NUTS: [rho, beta, sigma]
-Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws total) took 10 seconds.
-/home/runner/micromamba/envs/test/lib/python3.14/site-packages/pymc/sampling/mcmc.py:361: UserWarning: `idata_kwargs` are currently ignored by the nutpie sampler
-  warnings.warn(
-</code></pre></div>
-</div>
 <div class="output text_html"><div>
 <style scoped>
     .dataframe tbody tr th:only-of-type {
@@ -1671,58 +1717,58 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
   <tbody>
     <tr>
       <th>0</th>
-      <td>nutpie</td>
+      <td>c</td>
       <td>True</td>
-      <td>2.772</td>
-      <td>0.355</td>
-      <td>0.005</td>
-      <td>0.014</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>numpyro</td>
+      <td>numba</td>
       <td>True</td>
-      <td>5.973</td>
-      <td>0.354</td>
-      <td>0.004</td>
-      <td>0.015</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>blackjax</td>
+      <td>numpyro</td>
       <td>True</td>
-      <td>6.137</td>
-      <td>0.353</td>
-      <td>0.003</td>
-      <td>0.015</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>numba</td>
+      <td>blackjax</td>
       <td>True</td>
-      <td>12.006</td>
-      <td>0.353</td>
-      <td>0.003</td>
-      <td>0.016</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>c</td>
+      <td>nutpie</td>
       <td>True</td>
-      <td>13.246</td>
-      <td>0.353</td>
-      <td>0.003</td>
-      <td>0.016</td>
-      <td>0</td>
-      <td></td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>AttributeError: 'InferenceData' object has no ...</td>
     </tr>
   </tbody>
 </table>
@@ -1761,7 +1807,7 @@ Sampling 4 chains for 250 tune and 250 draw iterations (1_000 + 1_000 draws tota
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/bde3b30f3c9dcacfe11de1a1f7f9005bd7beb6ef13fd382f1f554b4be3ecdcb4.png" src="../_images/bde3b30f3c9dcacfe11de1a1f7f9005bd7beb6ef13fd382f1f554b4be3ecdcb4.png" />
+<img alt="../_images/baa9fa9ac27bee0d5cff6e420e3911ba309dfb97542d8dba118bb5a33cea7460.png" src="../_images/baa9fa9ac27bee0d5cff6e420e3911ba309dfb97542d8dba118bb5a33cea7460.png" />
 </div>
 </div>
 <h2 id="reading-the-results">Reading The Results<a class="headerlink" href="#reading-the-results" title="Link to this heading">¶</a></h2>

@@ -429,12 +429,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../user-guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Quickstart</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../user-guide/pedagogical_spatial_models.html" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     <span>Cross Sectional Models</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/gibbs_sampler.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
     
   </span>
   
@@ -579,6 +627,30 @@
   
   <span class="md-ellipsis">
     <span>Bayesian Spatial Diagnostics</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/spatial_cv_demo.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Spatial Block Cross-<wbr>Validation</span>
     
   </span>
   
@@ -1808,6 +1880,30 @@
 
               
             
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Gibbs Sampler</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2116,7 +2212,7 @@
 <p>Bayesian extension of the classical LM-Error test
 (<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id4" title="Luc Anselin, Anil Bera, Raymond J G M Florax, and M Yoon. Simple diagnostic tests for spatial dependence. Regional Science and Urban Economics, 26:77–104, 1996. doi:10.1016/0166-0462(95)02111-6.">Anselin <em>et al.</em>, 1996</a>]</span>, eq. 9) using the Doğan,
 Taşpınar &amp; Bera (2021) quadratic-net-loss framework
-(<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id11" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">Doğan <em>et al.</em>, 2021</a>]</span>, Proposition 1).  The score and
+(<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id12" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">Doğan <em>et al.</em>, 2021</a>]</span>, Proposition 1).  The score and
 concentration matrix come from the OLS log-likelihood; the spatial
 error parameter <span class="math notranslate nohighlight">\(\lambda\)</span> is information-orthogonal to
 <span class="math notranslate nohighlight">\(\beta\)</span> under <span class="math notranslate nohighlight">\(H_0\)</span> so no Schur projection is needed.</p>
@@ -2135,7 +2231,7 @@ The per-draw LM statistic is</p>
 \[\mathrm{LM}^{(d)} = \frac{\bigl(S^{(d)}\bigr)^2}{V}
 \;\xrightarrow{d}\; \chi^2_1 \quad \text{under } H_0,\]</div>
 <p>and the Bayesian p-value is computed at the posterior-mean LM
-(<span class="bibtex-citation" id="id3">[<a class="reference internal" href="../references.html#id11" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">Doğan <em>et al.</em>, 2021</a>]</span>, eq. 3.7).</p>
+(<span class="bibtex-citation" id="id3">[<a class="reference internal" href="../references.html#id12" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">Doğan <em>et al.</em>, 2021</a>]</span>, eq. 3.7).</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.diagnostics.lmtests.bayesian_lm_error_test-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_lm_error_test-parameters" title="Permalink to this headline">¶</a></dt>
 <dd class="field-odd"><dl class="simple api-field highlight">
