@@ -72,7 +72,7 @@ class TestTraceaxTraces:
         """traceax_traces returns (order,) array of mean trace estimates."""
         W = _toy_w_sparse(20)
         order, k = 5, 10
-        result = traceax_traces(W, order=order, k=k, estimator="xtrace")
+        result = traceax_traces(W, order=order, k=k, estimator="hutchpp")
         assert result.shape == (order,)
 
     def test_accuracy_vs_exact_traces(self):
@@ -80,7 +80,7 @@ class TestTraceaxTraces:
         W = _toy_w_sparse(20)
         order = 5
         # k must be <= n for traceax estimators (QR decomposition constraint)
-        result = traceax_traces(W, order=order, k=10, estimator="xtrace")
+        result = traceax_traces(W, order=order, k=10, estimator="hutchpp")
         # result shape: (order,) — mean trace estimates
         exact = _exact_traces(W, order)
         # Override k=1,2 with exact values
@@ -104,7 +104,7 @@ class TestTraceaxTraces:
     def test_exact_k1_k2(self):
         """k=1 and k=2 entries use exact values (not stochastic)."""
         W = _toy_w_sparse(20)
-        result = traceax_traces(W, order=5, k=10, estimator="xtrace")
+        result = traceax_traces(W, order=5, k=10, estimator="hutchpp")
         # Row 0 should be exact tr(W) = 0 for zero-diagonal W
         assert abs(result[0]) < 1e-10
         # Row 1 should be exact tr(W^2)
@@ -112,7 +112,7 @@ class TestTraceaxTraces:
         assert abs(result[1] - exact_tr_w2) < 1e-10
 
     def test_hutchpp_estimator(self):
-        """Hutch++ estimator also returns correct shape."""
+        """Hutch++ estimator returns correct shape."""
         W = _toy_w_sparse(20)
         result = traceax_traces(W, order=5, k=10, estimator="hutchpp")
         assert result.shape == (5,)
@@ -130,6 +130,51 @@ class TestTraceaxTraces:
         W = _toy_w_sparse(20)
         with pytest.raises(ValueError, match="estimator must be"):
             traceax_traces(W, order=5, k=10, estimator="invalid")
+
+
+# ---------------------------------------------------------------------------
+# XTrace estimator (pure NumPy, no traceax dep)
+# ---------------------------------------------------------------------------
+
+
+class TestXTraceEstimator:
+    """The xtrace path is pure NumPy, so it runs without traceax installed."""
+
+    def test_shape_and_finite(self):
+        W = _toy_w_sparse(20)
+        result = traceax_traces(W, order=5, k=10, estimator="xtrace")
+        assert result.shape == (5,)
+        assert np.all(np.isfinite(result))
+
+    def test_accuracy_vs_exact_traces(self):
+        """xtrace estimates are close to exact tr(W^k) for small W."""
+        W = _toy_w_sparse(20)
+        order = 5
+        result = traceax_traces(W, order=order, k=10, estimator="xtrace")
+        exact = _exact_traces(W, order)
+        # k=1,2 entries are overridden with exact values
+        exact[0] = float(W.diagonal().sum())
+        exact[1] = float(W.multiply(W.T).sum())
+        for k_idx in range(order):
+            if abs(exact[k_idx]) > 0.5:
+                rel_err = abs(result[k_idx] - exact[k_idx]) / abs(exact[k_idx])
+                assert rel_err < 0.25, (
+                    f"k={k_idx + 1}: mean={result[k_idx]:.4f}, "
+                    f"exact={exact[k_idx]:.4f}"
+                )
+            else:
+                abs_err = abs(result[k_idx] - exact[k_idx])
+                assert abs_err < 1.0, (
+                    f"k={k_idx + 1}: mean={result[k_idx]:.4f}, "
+                    f"exact={exact[k_idx]:.4f}"
+                )
+
+    def test_falls_back_to_hutchinson_for_small_k(self):
+        """When k<2, xtrace cannot do leave-one-out and falls back."""
+        W = _toy_w_sparse(20)
+        result = traceax_traces(W, order=3, k=1, estimator="xtrace")
+        assert result.shape == (3,)
+        assert np.all(np.isfinite(result))
 
 
 # ---------------------------------------------------------------------------
@@ -167,66 +212,17 @@ class TestTraceaxTracesForChebyshev:
 
 
 @skip_no_traceax
-class TestLogdetTraceXTrace:
-    def test_make_logdet_fn_trace_xtrace(self):
-        """make_logdet_fn with trace_xtrace returns a callable."""
-        from bayespecon.logdet import make_logdet_fn
-
-        W = _toy_w_sparse(20)
-        fn = make_logdet_fn(W, method="trace_xtrace")
-        assert callable(fn)
-
-    def test_trace_xtrace_accuracy_vs_eigenvalue(self):
-        """trace_xtrace logdet matches eigenvalue within tolerance."""
-        import pytensor
-        import pytensor.tensor as pt
-
-        from bayespecon.logdet import make_logdet_fn
-
-        n = 20
-        W = _toy_w_sparse(n)
-        I = np.eye(n)
-
-        fn_xtrace = make_logdet_fn(W, method="trace_xtrace")
-        fn_eig = make_logdet_fn(W, method="eigenvalue")
-
-        rho_sym = pt.scalar("rho")
-        expr_xt = fn_xtrace(rho_sym)
-        expr_eig = fn_eig(rho_sym)
-        fn_xt_compiled = pytensor.function([rho_sym], expr_xt)
-        fn_eig_compiled = pytensor.function([rho_sym], expr_eig)
-
-        for rho in [-0.5, -0.2, 0.0, 0.2, 0.5]:
-            approx = float(fn_xt_compiled(rho))
-            exact = float(fn_eig_compiled(rho))
-            # Stochastic trace estimation has some variance
-            assert abs(approx - exact) < 1.0, (
-                f"rho={rho}: approx={approx:.4f}, exact={exact:.4f}"
-            )
-
-    def test_make_logdet_numpy_fn_trace_xtrace(self):
-        """make_logdet_numpy_fn with trace_xtrace returns a callable."""
-        from bayespecon.logdet import make_logdet_numpy_fn
-
-        W = _toy_w_sparse(20)
-        fn = make_logdet_numpy_fn(W, eigs=None, method="trace_xtrace")
-        assert callable(fn)
-        val = fn(0.3)
-        assert np.isfinite(val)
-
-
-@skip_no_traceax
 class TestLogdetTraceHutchPP:
     def test_make_logdet_fn_trace_hutchpp(self):
-        """make_logdet_fn with trace_hutchpp returns a callable."""
+        """make_logdet_fn with chebyshev + hutchpp returns a callable."""
         from bayespecon.logdet import make_logdet_fn
 
         W = _toy_w_sparse(20)
-        fn = make_logdet_fn(W, method="trace_hutchpp")
+        fn = make_logdet_fn(W, method="chebyshev", trace_estimator="hutchpp")
         assert callable(fn)
 
     def test_trace_hutchpp_accuracy_vs_eigenvalue(self):
-        """trace_hutchpp logdet matches eigenvalue within tolerance."""
+        """chebyshev + hutchpp logdet matches eigenvalue within tolerance."""
         import pytensor
         import pytensor.tensor as pt
 
@@ -235,7 +231,7 @@ class TestLogdetTraceHutchPP:
         n = 20
         W = _toy_w_sparse(n)
 
-        fn_hpp = make_logdet_fn(W, method="trace_hutchpp")
+        fn_hpp = make_logdet_fn(W, method="chebyshev", trace_estimator="hutchpp")
         fn_eig = make_logdet_fn(W, method="eigenvalue")
 
         rho_sym = pt.scalar("rho")
@@ -257,37 +253,13 @@ class TestLogdetTraceHutchPP:
 # ---------------------------------------------------------------------------
 
 
-@skip_no_traceax
 class TestAutoSelection:
-    def test_auto_prefers_trace_xtrace_for_large_n(self):
-        """_auto_logdet_method prefers trace_xtrace for n > 2000 when traceax available."""
+    def test_auto_prefers_chebyshev_for_large_n(self):
+        """_auto_logdet_method picks eigenvalue for small n, chebyshev for large n."""
         from bayespecon.logdet import _auto_logdet_method
 
-        # Small n: eigenvalue
         assert _auto_logdet_method(100) == "eigenvalue"
-        # Medium n: chebyshev
-        assert _auto_logdet_method(1000) == "chebyshev"
-        # Large n: trace_xtrace (when traceax available)
-        assert _auto_logdet_method(3000) == "trace_xtrace"
-
-    def test_auto_respects_env_var(self):
-        """BAYESPECON_LOGDET_TRACEAX_MIN_N controls the threshold."""
-        import os
-
-        from bayespecon.logdet import _auto_logdet_method
-
-        old = os.environ.get("BAYESPECON_LOGDET_TRACEAX_MIN_N")
-        try:
-            # Set threshold to 5000 — n=3000 should fall back to chebyshev
-            os.environ["BAYESPECON_LOGDET_TRACEAX_MIN_N"] = "5000"
-            assert _auto_logdet_method(3000) == "chebyshev"
-            # n=6000 should use trace_xtrace
-            assert _auto_logdet_method(6000) == "trace_xtrace"
-        finally:
-            if old is None:
-                os.environ.pop("BAYESPECON_LOGDET_TRACEAX_MIN_N", None)
-            else:
-                os.environ["BAYESPECON_LOGDET_TRACEAX_MIN_N"] = old
+        assert _auto_logdet_method(3000) == "chebyshev"
 
 
 # ---------------------------------------------------------------------------

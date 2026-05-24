@@ -15,11 +15,8 @@ CANONICAL_METHODS = {
     "grid_sparse",
     "sparse_spline",
     "grid_mc",
-    "trace_mc",
     "grid_ilu",
     "chebyshev",
-    "trace_xtrace",
-    "trace_hutchpp",
 }
 
 
@@ -64,15 +61,9 @@ def test_resolve_none_small_n_auto_selects_eigenvalue():
 
 
 def test_resolve_none_large_n_auto_selects_chebyshev():
-    # Above the default cutoff, auto-selection switches to chebyshev
-    # (or trace_xtrace when traceax is installed).
-    from bayespecon._trace_estimation import traceax_available
+    # Above the default cutoff, auto-selection switches to chebyshev.
+    assert resolve_logdet_method(None, n=10_000) == "chebyshev"
 
-    result = resolve_logdet_method(None, n=10_000)
-    if traceax_available():
-        assert result == "trace_xtrace"
-    else:
-        assert result == "chebyshev"
 
 
 def test_resolve_none_cutoff_env(monkeypatch):

@@ -39,14 +39,19 @@ class LogDetMethod(str, Enum):
     GRID_SPARSE = "grid_sparse"
     SPARSE_SPLINE = "sparse_spline"
     GRID_MC = "grid_mc"
-    TRACE_MC = "trace_mc"
     GRID_ILU = "grid_ilu"
     CHEBYSHEV = "chebyshev"
-    TRACE_XTRACE = "trace_xtrace"
-    TRACE_HUTCHPP = "trace_hutchpp"
 
 
 VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
+
+#: Valid values for the ``trace_estimator`` kwarg of the ``make_logdet_*``
+#: builders.  Selects which stochastic estimator constructs the Chebyshev
+#: coefficients when an eigendecomposition is unavailable (n above the auto
+#: cutoff).  ``"hutchpp"`` is the default; see ``docs/source/user-guide/
+#: logdet_profiling.ipynb`` for the cost/accuracy frontier.
+VALID_TRACE_ESTIMATORS: frozenset[str] = frozenset({"hutchinson", "hutchpp", "xtrace"})
+TraceEstimatorName = Literal["hutchinson", "hutchpp", "xtrace"]
 
 #: Public type alias for user-facing ``logdet_method`` parameters.  Use in
 #: constructor signatures to enable IDE autocomplete and static checking:
@@ -62,13 +67,9 @@ LogDetMethodName = Literal[
     "grid_sparse",
     "sparse_spline",
     "grid_mc",
-    "trace_mc",
     "grid_ilu",
     "chebyshev",
-    "trace_xtrace",
-    "trace_hutchpp",
 ]
-
 
 def resolve_logdet_method(method: str | None, *, n: int) -> str:
     """Validate ``method`` and auto-select when ``None``.
@@ -92,13 +93,25 @@ def resolve_logdet_method(method: str | None, *, n: int) -> str:
     """
     if method is None:
         return _auto_logdet_method(int(n))
-    # Accept 'mc_poly' as an alias for the canonical 'trace_mc'.
-    if method == "mc_poly":
-        method = "trace_mc"
     if method not in VALID_LOGDET_METHODS:
         valid = ", ".join(sorted(VALID_LOGDET_METHODS))
         raise ValueError(f"Unknown logdet method: {method!r}. Valid options: {valid}.")
     return method
+
+
+def _resolve_trace_estimator(trace_estimator: str) -> str:
+    """Validate the ``trace_estimator`` kwarg."""
+    if trace_estimator not in VALID_TRACE_ESTIMATORS:
+        valid = ", ".join(sorted(VALID_TRACE_ESTIMATORS))
+        raise ValueError(
+            f"Unknown trace_estimator: {trace_estimator!r}. Valid options: {valid}."
+        )
+    return trace_estimator
+
+
+def _default_trace_k(trace_estimator: str) -> int:
+    """Default probe count per trace estimator (see logdet_profiling notebook)."""
+    return {"hutchinson": 30, "hutchpp": 50, "xtrace": 25}[trace_estimator]
 
 
 @dataclass(frozen=True)
@@ -533,6 +546,7 @@ def chebyshev(
     random_state: int | None = None,
     eigs: np.ndarray | None = None,
     n_mc_iter: int = 30,
+    estimator: str = "hutchpp",
 ) -> dict:
     """Compute Chebyshev approximation of log|I - rho*W| (:cite:p:`pace2004ChebyshevApproximation`).
 
@@ -678,10 +692,10 @@ def chebyshev(
                     W_sp,
                     order=order,
                     n_mc_iter=n_mc_iter,
-                    estimator="xtrace",
+                    estimator=estimator,
                     seed=random_state,
                 )
-                method_used = "trace_xtrace"
+                method_used = f"chebyshev_{estimator}"
             else:
                 raise ImportError("traceax not available")
         except ImportError:
@@ -800,6 +814,7 @@ def logdet_chebyshev(
     # f(x) = c_0 + x*b_1 - b_2
     # After the loop, b_curr = b_1, b_next = b_2
     return c[0] + x * b_curr - b_next
+
 
 
 def logdet_mc_poly_pytensor(
@@ -1036,6 +1051,8 @@ def make_logdet_jax_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
+    trace_estimator: TraceEstimatorName = "hutchpp",
+    trace_k: int | None = None,
 ):
     """Return a JAX-native function (rho) -> log|I - rho*W|.
 
@@ -1050,18 +1067,14 @@ def make_logdet_jax_fn(
         array of pre-computed real eigenvalues.  Passing eigenvalues skips
         the O(n³) decomposition.
     method : str or None
-        Auto-selected when ``None`` (``"eigenvalue"`` for ``n <= 2000``
+        Auto-selected when ``None`` (``"eigenvalue"`` for ``n <= 500``
         else ``"chebyshev"``).  Supported values:
 
-        ``"eigenvalue"`` — eigenvalue-based exact evaluation, O(n) per call.
+        ``"eigenvalue"`` — exact evaluation from eigenvalues, O(n) per call.
         ``"chebyshev"`` — Chebyshev polynomial via Clenshaw's algorithm,
-        O(m) per call after O(n³) or O(R·n·m) pre-computation.
-        ``"trace_mc"`` — Hutchinson trace-seeded Chebyshev polynomial,
-        O(m) per call after O(R·n·m) pre-computation.
-        ``"trace_xtrace"`` — XTrace variance-reduced trace-seeded Chebyshev,
-        O(m) per call after O(R·n·m) pre-computation.
-        ``"trace_hutchpp"`` — Hutch++ variance-reduced trace-seeded Chebyshev,
-        O(m) per call after O(R·n·m) pre-computation.
+        O(m) per call.  Coefficients are built from exact eigenvalues when
+        ``n`` is small (or ``eigs`` is supplied); otherwise from a stochastic
+        trace estimator selected by ``trace_estimator``.
     rho_min : float, default=-1.0
         Lower bound for the rho interval.
     rho_max : float, default=1.0
@@ -1069,6 +1082,13 @@ def make_logdet_jax_fn(
     T : int, default 1
         Panel time-period count.  The returned log-determinant is
         multiplied by *T*.
+    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
+        Stochastic trace estimator used to build the Chebyshev
+        coefficients when an eigendecomposition is unavailable.  Ignored
+        when ``method="eigenvalue"`` or when eigenvalues are passed in.
+    trace_k : int, optional
+        Number of probe vectors for the trace estimator.  Defaults:
+        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
 
     Returns
     -------
@@ -1088,8 +1108,8 @@ def make_logdet_jax_fn(
     methods (``"grid_dense"``, ``"grid_sparse"``, ``"sparse_spline"``,
     ``"grid_mc"``, ``"grid_ilu"``) and ``"exact"`` are not supported
     because they rely on scipy or pytensor-specific operations that
-    cannot be called inside ``jax.jit``.  Use ``"eigenvalue"``,
-    ``"chebyshev"``, or trace-based methods instead.
+    cannot be called inside ``jax.jit``.  Use ``"eigenvalue"`` or
+    ``"chebyshev"`` instead.
 
     See Also
     --------
@@ -1098,15 +1118,10 @@ def make_logdet_jax_fn(
     make_logdet_numpy_vec_fn : NumPy vectorized version (for post-processing).
     """
     T = int(T)
-    _JAX_METHODS = frozenset(
-        {
-            "eigenvalue",
-            "chebyshev",
-            "trace_mc",
-            "trace_xtrace",
-            "trace_hutchpp",
-        }
-    )
+    _JAX_METHODS = frozenset({"eigenvalue", "chebyshev"})
+
+    trace_estimator = _resolve_trace_estimator(trace_estimator)
+    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
 
     # Resolve W to eigenvalues or sparse matrix
     eigs = None
@@ -1129,7 +1144,7 @@ def make_logdet_jax_fn(
         raise ValueError(
             f"Method '{method}' does not have a JAX-native implementation. "
             f"JAX-compatible methods: {sorted(_JAX_METHODS)}. "
-            f"Use 'eigenvalue', 'chebyshev', or a trace-based method."
+            f"Use 'eigenvalue' or 'chebyshev'."
         )
 
     if method == "eigenvalue":
@@ -1146,46 +1161,25 @@ def make_logdet_jax_fn(
 
         return _jax_eigenvalue
 
-    if method == "chebyshev":
-        out = chebyshev(
-            W_sparse if eigs is None else None,
-            order=20,
-            rmin=rho_min,
-            rmax=rho_max,
-            eigs=eigs,
-        )
-        coeffs = out["coeffs"].astype(np.float64)
-        rmin_cb = float(out["rmin"])
-        rmax_cb = float(out["rmax"])
+    # method == "chebyshev"
+    out = chebyshev(
+        W_sparse if eigs is None else None,
+        order=20,
+        rmin=rho_min,
+        rmax=rho_max,
+        eigs=eigs,
+        estimator=trace_estimator,
+        n_mc_iter=_k,
+    )
+    coeffs = out["coeffs"].astype(np.float64)
+    rmin_cb = float(out["rmin"])
+    rmax_cb = float(out["rmax"])
 
-        def _jax_chebyshev(rho):
-            val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)
-            return val if T == 1 else T * val
+    def _jax_chebyshev(rho):
+        val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)
+        return val if T == 1 else T * val
 
-        return _jax_chebyshev
-
-    if method in ("trace_mc", "trace_xtrace", "trace_hutchpp"):
-        # When eigenvalues are available, use them for Chebyshev
-        # coefficient computation (exact and fast).  Only pass the
-        # sparse matrix when eigenvalues are not available.
-        W_sp = W_sparse if eigs is None else None
-        # All trace-based methods use trace-seeded Chebyshev for
-        # near-minimax accuracy.  chebyshev() internally selects the
-        # appropriate trace estimator (flow, xtrace, hutch++) based
-        # on n and available libraries, so we delegate to it.
-        out = chebyshev(W_sp, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
-        coeffs = out["coeffs"].astype(np.float64)
-        rmin_cb = float(out["rmin"])
-        rmax_cb = float(out["rmax"])
-
-        def _jax_trace_cheb(rho):
-            val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)
-            return val if T == 1 else T * val
-
-        return _jax_trace_cheb
-
-    # Should not reach here due to the validation above
-    raise ValueError(f"Unhandled JAX logdet method: {method!r}")
+    return _jax_chebyshev
 
 
 def logdet_interpolated(
@@ -1638,6 +1632,13 @@ def _auto_logdet_method(n: int) -> str:
     ``BAYESPECON_LOGDET_EIGEN_MAX_N`` (default: ``500``). Lowering the
     cutoff avoids expensive dense eigendecompositions for larger empirical
     datasets while keeping exact evaluation on small to medium test cases.
+
+    For ``n`` above the cutoff this returns ``"chebyshev"``; whether the
+    Chebyshev coefficients are built from the exact eigenvalues or from a
+    stochastic trace estimator is decided downstream by :func:`chebyshev`
+    (based on the ``BAYESPECON_LOGDET_TRACEAX_MIN_N`` threshold) and
+    parameterised via the ``trace_estimator`` kwarg of the ``make_logdet_*``
+    builders.
     """
     cutoff_raw = os.getenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "500")
     try:
@@ -1646,20 +1647,6 @@ def _auto_logdet_method(n: int) -> str:
         cutoff = 500
     if n <= cutoff:
         return "eigenvalue"
-    # For large n, prefer traceax-based estimators when available
-    traceax_min_raw = os.getenv("BAYESPECON_LOGDET_TRACEAX_MIN_N", "2000")
-    try:
-        traceax_min = max(1, int(traceax_min_raw))
-    except ValueError:
-        traceax_min = 2000
-    if n >= traceax_min:
-        try:
-            from bayespecon._trace_estimation import traceax_available
-
-            if traceax_available():
-                return "trace_xtrace"
-        except ImportError:
-            pass
     return "chebyshev"
 
 
@@ -1732,6 +1719,8 @@ def make_logdet_numpy_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
+    trace_estimator: TraceEstimatorName = "hutchpp",
+    trace_k: int | None = None,
 ):
     """Return a **pure-numpy** ``(rho: float) -> float`` logdet evaluator.
 
@@ -1755,6 +1744,12 @@ def make_logdet_numpy_fn(
     T : int, default 1
         Panel time-period count.  The returned log-determinant is
         multiplied by *T*.
+    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
+        Stochastic trace estimator used to build the Chebyshev
+        coefficients when an eigendecomposition is unavailable.
+    trace_k : int, optional
+        Number of probe vectors for the trace estimator.  Defaults:
+        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
 
     Returns
     -------
@@ -1763,6 +1758,8 @@ def make_logdet_numpy_fn(
         (or T * log|I - rho*W| for panel models).
     """
     T = int(T)
+    trace_estimator = _resolve_trace_estimator(trace_estimator)
+    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
     method = resolve_logdet_method(method, n=n)
 
@@ -1779,7 +1776,15 @@ def make_logdet_numpy_fn(
     elif method == "chebyshev":
         # Pass precomputed eigs to skip the redundant toarray + eigvals
         # that chebyshev() would otherwise perform internally.
-        out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
+        out = chebyshev(
+            W_sparse,
+            order=20,
+            rmin=rho_min,
+            rmax=rho_max,
+            eigs=eigs,
+            estimator=trace_estimator,
+            n_mc_iter=_k,
+        )
         coeffs = out["coeffs"]
         rmin_cb, rmax_cb = out["rmin"], out["rmax"]
         m = len(coeffs)
@@ -1801,66 +1806,6 @@ def make_logdet_numpy_fn(
             return val if T == 1 else T * val
 
         return _cheb_numpy
-
-    elif method == "trace_mc":
-        # Use trace-seeded Chebyshev for near-minimax accuracy.
-        if sp.issparse(W_sparse):
-            W_sp = W_sparse.tocsr().astype(np.float64)
-        else:
-            W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
-        out = chebyshev(W_sp, order=20, rmin=rho_min, rmax=rho_max)
-        coeffs = out["coeffs"]
-        rmin_cb, rmax_cb = out["rmin"], out["rmax"]
-        m = len(coeffs)
-
-        def _mc_cheb_numpy(r):
-            r = float(r)
-            x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return 0.0
-            if m == 1:
-                return float(coeffs[0])
-            b_next = 0.0
-            b_curr = float(coeffs[m - 1])
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
-                b_next = b_curr
-                b_curr = b_new
-            val = float(coeffs[0]) + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _mc_cheb_numpy
-
-    elif method in ("trace_xtrace", "trace_hutchpp"):
-        # Use trace-seeded Chebyshev for near-minimax accuracy (same
-        # precomputation cost, but Chebyshev coefficients minimise
-        # maximum absolute error on the interval).
-        if sp.issparse(W_sparse):
-            W_sp = W_sparse.tocsr().astype(np.float64)
-        else:
-            W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
-        out = chebyshev(W_sp, order=20, rmin=rho_min, rmax=rho_max)
-        coeffs = out["coeffs"]
-        rmin_cb, rmax_cb = out["rmin"], out["rmax"]
-        m = len(coeffs)
-
-        def _traceax_cheb_numpy(r):
-            r = float(r)
-            x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return 0.0
-            if m == 1:
-                return float(coeffs[0])
-            b_next = 0.0
-            b_curr = float(coeffs[m - 1])
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
-                b_next = b_curr
-                b_curr = b_new
-            val = float(coeffs[0]) + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _traceax_cheb_numpy
 
     elif method in _GRID_SPLINE_METHODS:
         # Grid/spline methods: precompute numpy spline, then evaluate directly.
@@ -1893,6 +1838,8 @@ def make_logdet_numpy_vec_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
+    trace_estimator: TraceEstimatorName = "hutchpp",
+    trace_k: int | None = None,
 ):
     """Return a **vectorized** numpy ``(rho_arr: np.ndarray) -> np.ndarray`` logdet evaluator.
 
@@ -1913,6 +1860,12 @@ def make_logdet_numpy_vec_fn(
     T : int, default 1
         Panel time-period count.  The returned log-determinant is
         multiplied by *T*.
+    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
+        Stochastic trace estimator used to build the Chebyshev
+        coefficients when an eigendecomposition is unavailable.
+    trace_k : int, optional
+        Number of probe vectors for the trace estimator.  Defaults:
+        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
 
     Returns
     -------
@@ -1921,6 +1874,8 @@ def make_logdet_numpy_vec_fn(
         computing log|I - rho*W| (or T * log|I - rho*W| for panel models).
     """
     T = int(T)
+    trace_estimator = _resolve_trace_estimator(trace_estimator)
+    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
     method = resolve_logdet_method(method, n=n)
 
@@ -1941,7 +1896,15 @@ def make_logdet_numpy_vec_fn(
         return _vec_eigenvalue
 
     if method == "chebyshev":
-        out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
+        out = chebyshev(
+            W_sparse,
+            order=20,
+            rmin=rho_min,
+            rmax=rho_max,
+            eigs=eigs,
+            estimator=trace_estimator,
+            n_mc_iter=_k,
+        )
         coeffs = out["coeffs"].astype(np.float64)
         rmin_cb, rmax_cb = float(out["rmin"]), float(out["rmax"])
         m = len(coeffs)
@@ -1966,64 +1929,6 @@ def make_logdet_numpy_vec_fn(
             return val if T == 1 else T * val
 
         return _vec_chebyshev
-
-    if method == "trace_mc":
-        # Use trace-seeded Chebyshev for near-minimax accuracy.
-        if sp.issparse(W_sparse):
-            W_sp = W_sparse.tocsr().astype(np.float64)
-        else:
-            W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
-        out = chebyshev(W_sp, order=20, rmin=rho_min, rmax=rho_max)
-        coeffs = out["coeffs"].astype(np.float64)
-        rmin_cb, rmax_cb = float(out["rmin"]), float(out["rmax"])
-        m = len(coeffs)
-
-        def _vec_mc_cheb(rho_arr: np.ndarray) -> np.ndarray:
-            rho_arr = np.asarray(rho_arr, dtype=np.float64)
-            x = (2.0 * rho_arr - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return np.zeros_like(rho_arr, dtype=np.float64)
-            if m == 1:
-                return np.full_like(rho_arr, coeffs[0], dtype=np.float64)
-            b_next = np.zeros_like(x, dtype=np.float64)
-            b_curr = np.full_like(x, coeffs[m - 1], dtype=np.float64)
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + coeffs[k]
-                b_next = b_curr
-                b_curr = b_new
-            val = coeffs[0] + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _vec_mc_cheb
-
-    if method in ("trace_xtrace", "trace_hutchpp"):
-        # Use trace-seeded Chebyshev for near-minimax accuracy.
-        if sp.issparse(W_sparse):
-            W_sp = W_sparse.tocsr().astype(np.float64)
-        else:
-            W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
-        out = chebyshev(W_sp, order=20, rmin=rho_min, rmax=rho_max)
-        coeffs = out["coeffs"].astype(np.float64)
-        rmin_cb, rmax_cb = float(out["rmin"]), float(out["rmax"])
-        m = len(coeffs)
-
-        def _vec_traceax_cheb(rho_arr: np.ndarray) -> np.ndarray:
-            rho_arr = np.asarray(rho_arr, dtype=np.float64)
-            x = (2.0 * rho_arr - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return np.zeros_like(rho_arr, dtype=np.float64)
-            if m == 1:
-                return np.full_like(rho_arr, coeffs[0], dtype=np.float64)
-            b_next = np.zeros_like(x, dtype=np.float64)
-            b_curr = np.full_like(x, coeffs[m - 1], dtype=np.float64)
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + coeffs[k]
-                b_next = b_curr
-                b_curr = b_new
-            val = coeffs[0] + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _vec_traceax_cheb
 
     if method in _GRID_SPLINE_METHODS:
         W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
@@ -2062,6 +1967,8 @@ def make_logdet_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
+    trace_estimator: TraceEstimatorName = "hutchpp",
+    trace_k: int | None = None,
 ):
     """Return a function (rho) -> pytensor log|I - rho*W| expression.
 
@@ -2074,7 +1981,7 @@ def make_logdet_fn(
         ``'exact'`` methods are not available in that case and fall back to
         ``'eigenvalue'``.
     method : str
-        Auto-selected when ``None`` (``"eigenvalue"`` for ``n <= 2000`` else
+        Auto-selected when ``None`` (``"eigenvalue"`` for ``n <= 500`` else
         ``"chebyshev"``). Supported values:
 
         ``"eigenvalue"`` — pre-compute W's eigenvalues once (O(n³)); every
@@ -2091,10 +1998,10 @@ def make_logdet_fn(
         + spline interpolation.
         ``"chebyshev"`` — Chebyshev polynomial approximation
         (:cite:p:`pace2004ChebyshevApproximation`); near-minimax
-        polynomial evaluated via Clenshaw's algorithm.
-        O(m) per evaluation after O(n³) or O(R·n·m) pre-computation.
-        ``"trace_mc"`` — Hutchinson stochastic trace estimator with a
-        truncated polynomial expansion (used by the flow models).
+        polynomial evaluated via Clenshaw's algorithm.  Coefficients are
+        built from exact eigenvalues when ``n`` is small (or ``eigs`` is
+        supplied); otherwise from a stochastic trace estimator selected
+        by ``trace_estimator``.
     rho_min : float, default=-1.0
         Lower bound for the grid method.
     rho_max : float, default=1.0
@@ -2104,6 +2011,15 @@ def make_logdet_fn(
         by *T*, exploiting
         ``log|I_{NT} - ρ(I_T⊗W_N)| = T · log|I_N - ρW_N|``.
         Leave at 1 for cross-sectional models.
+    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
+        Stochastic trace estimator used to build the Chebyshev
+        coefficients when an eigendecomposition is unavailable.  Ignored
+        for non-Chebyshev methods and when eigenvalues are passed in.
+        See ``docs/source/user-guide/logdet_profiling.ipynb`` for the
+        cost/accuracy frontier.
+    trace_k : int, optional
+        Number of probe vectors for the trace estimator.  Defaults:
+        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
 
     Returns
     -------
@@ -2136,18 +2052,24 @@ def make_logdet_fn(
     * ``"chebyshev"`` — exact within ``[rmin, rmax] = [rho_min, rho_max]``
       up to the polynomial order (default 20); evaluation outside the
       Chebyshev interval diverges rapidly and should never be attempted.
-    * ``"trace_mc"`` — accuracy controlled by the polynomial order and
-      number of Hutchinson probes; intended for very large sparse W
-      where eigendecomposition is infeasible.
     """
     T = int(T)
+    trace_estimator = _resolve_trace_estimator(trace_estimator)
+    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
 
     if sp.issparse(W):
         W_sparse = W.tocsr().astype(np.float64)
         method = resolve_logdet_method(method, n=W_sparse.shape[0])
 
         if method == "chebyshev":
-            out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max)
+            out = chebyshev(
+                W_sparse,
+                order=20,
+                rmin=rho_min,
+                rmax=rho_max,
+                estimator=trace_estimator,
+                n_mc_iter=_k,
+            )
             coeffs_np = out["coeffs"]
             rmin_cb = out["rmin"]
             rmax_cb = out["rmax"]
@@ -2226,7 +2148,14 @@ def make_logdet_fn(
         )
         return _make_pytensor_interp_fn(spline_obj, T)
     elif method == "chebyshev":
-        out = chebyshev(W_dense, order=20, rmin=rho_min, rmax=rho_max)
+        out = chebyshev(
+            W_dense,
+            order=20,
+            rmin=rho_min,
+            rmax=rho_max,
+            estimator=trace_estimator,
+            n_mc_iter=_k,
+        )
         coeffs_np = out["coeffs"]
         rmin_cb = out["rmin"]
         rmax_cb = out["rmax"]
@@ -2236,34 +2165,9 @@ def make_logdet_fn(
             return val if T == 1 else T * val
 
         return _chebyshev_interp
-    elif method == "trace_mc":
-        W_sp = sp.csr_matrix(W_dense.astype(np.float64))
-        traces = compute_flow_traces(W_sp, miter=30, riter=50)
-
-        def _mc_poly_eval(rho):
-            val = logdet_mc_poly_pytensor(rho, traces)
-            return val if T == 1 else T * val
-
-        return _mc_poly_eval
-    elif method in ("trace_xtrace", "trace_hutchpp"):
-        from bayespecon._trace_estimation import traceax_traces
-
-        est_name = "xtrace" if method == "trace_xtrace" else "hutchpp"
-        W_sp = sp.csr_matrix(W_dense.astype(np.float64))
-        traces = traceax_traces(W_sp, order=30, k=50, estimator=est_name)
-        m = len(traces)
-        k_arr = np.arange(1, m + 1, dtype=np.float64)
-        w = (traces / k_arr).astype(np.float64)
-
-        def _traceax_poly_eval(rho):
-            val = logdet_mc_poly_pytensor(rho, w)
-            return val if T == 1 else T * val
-
-        return _traceax_poly_eval
     else:
-        raise ValueError(
-            f"Unknown method: {method!r}. Choose one of: 'eigenvalue', 'exact', 'grid_dense', 'grid_sparse', 'sparse_spline', 'grid_mc', 'grid_ilu', 'chebyshev', 'trace_mc', 'trace_xtrace', 'trace_hutchpp'."
-        )
+        valid = ", ".join(sorted(VALID_LOGDET_METHODS))
+        raise ValueError(f"Unknown method: {method!r}. Choose one of: {valid}.")
 
 
 def _hash_array(arr: np.ndarray) -> str:
@@ -2307,14 +2211,18 @@ def get_cached_logdet_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
+    trace_estimator: TraceEstimatorName = "hutchpp",
+    trace_k: int | None = None,
 ):
     """Return a shared cached ``make_logdet_fn`` callable.
 
     Cache key includes a stable signature of ``W`` plus ``method``, bounds,
-    and panel multiplier ``T``. This avoids repeatedly rebuilding equivalent
-    logdet approximations across model instances.
+    panel multiplier ``T``, and the Chebyshev trace estimator settings.
+    This avoids repeatedly rebuilding equivalent logdet approximations
+    across model instances.
     """
     T = int(T)
+    trace_estimator = _resolve_trace_estimator(trace_estimator)
     if sp.issparse(W):
         n_w = int(W.shape[0])
     else:
@@ -2331,6 +2239,8 @@ def get_cached_logdet_fn(
         float(rho_min),
         float(rho_max),
         T,
+        trace_estimator,
+        trace_k,
     )
     fn = _LOGDET_FN_CACHE.get(key)
     if fn is not None:
@@ -2343,6 +2253,8 @@ def get_cached_logdet_fn(
         rho_min=rho_min,
         rho_max=rho_max,
         T=T,
+        trace_estimator=trace_estimator,
+        trace_k=trace_k,
     )
     _LOGDET_FN_CACHE[key] = fn
     if len(_LOGDET_FN_CACHE) > _LOGDET_FN_CACHE_MAXSIZE:
@@ -2354,12 +2266,11 @@ def make_flow_separable_logdet(
     W_sparse,
     n: int,
     method: str | None = None,
-    miter: int = 30,
-    riter: int = 50,
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     cheb_order: int = 20,
-    random_state: int | None = None,
+    trace_estimator: TraceEstimatorName = "hutchpp",
+    trace_k: int | None = None,
 ):
     r"""Pre-compute logdet data for separable flow models and return a logdet callable.
 
@@ -2386,22 +2297,19 @@ def make_flow_separable_logdet(
         eigendecomposition.  Exact for any rho.
         ``"chebyshev"`` — near-minimax Chebyshev polynomial; O(m) per step
         after O(n³) or O(R·n·m) precomputation via :func:`chebyshev`.
-        ``"trace_mc"`` — Barry-Pace trace polynomial evaluated via Horner's
-        method; O(miter) per step after O(riter·n·miter) stochastic
-        precomputation via :func:`compute_flow_traces`.  Valid for
-        :math:`\rho \in [-1, 1]`, unlike the grid-based :func:`mc`.
-    miter : int, default 30
-        Trace orders to estimate (``"trace_mc"`` only).
-    riter : int, default 50
-        Monte Carlo probe count (``"trace_mc"`` only).
+        Coefficients use exact eigenvalues when ``n`` is small, otherwise
+        a stochastic trace estimator selected by ``trace_estimator``.
     rho_min : float, default -1.0
         Lower bound of the rho domain (``"chebyshev"`` only).
     rho_max : float, default 1.0
         Upper bound of the rho domain (``"chebyshev"`` only).
     cheb_order : int, default 20
         Chebyshev polynomial order (``"chebyshev"`` only).
-    random_state : int, optional
-        Seed for MC trace estimation (``"trace_mc"`` only).
+    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
+        Stochastic trace estimator used to build Chebyshev coefficients
+        when an eigendecomposition is unavailable.
+    trace_k : int, optional
+        Number of probe vectors for the trace estimator.
 
     Returns
     -------
@@ -2410,12 +2318,13 @@ def make_flow_separable_logdet(
         :math:`n\,f(\rho_d) + n\,f(\rho_o)` where
         :math:`f(\rho) = \log|I_n - \rho W|`.
     """
+    trace_estimator = _resolve_trace_estimator(trace_estimator)
+    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
+
     if sp.issparse(W_sparse):
         W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
-        W_sp = W_sparse.tocsr().astype(np.float64)
     else:
         W_dense = np.asarray(W_sparse, dtype=np.float64)
-        W_sp = sp.csr_matrix(W_dense)
 
     if method is None:
         method = _auto_logdet_method(n)
@@ -2426,7 +2335,14 @@ def make_flow_separable_logdet(
             n * logdet_eigenvalue(rho_d, eigs) + n * logdet_eigenvalue(rho_o, eigs)
         )
     elif method == "chebyshev":
-        out = chebyshev(W_dense, order=cheb_order, rmin=rho_min, rmax=rho_max)
+        out = chebyshev(
+            W_dense,
+            order=cheb_order,
+            rmin=rho_min,
+            rmax=rho_max,
+            estimator=trace_estimator,
+            n_mc_iter=_k,
+        )
         coeffs = out["coeffs"]
         rmin_cb = out["rmin"]
         rmax_cb = out["rmax"]
@@ -2434,18 +2350,10 @@ def make_flow_separable_logdet(
             n * logdet_chebyshev(rho_d, coeffs, rmin=rmin_cb, rmax=rmax_cb)
             + n * logdet_chebyshev(rho_o, coeffs, rmin=rmin_cb, rmax=rmax_cb)
         )
-    elif method in ("trace_mc", "mc_poly"):
-        traces = compute_flow_traces(
-            W_sp, miter=miter, riter=riter, random_state=random_state
-        )
-        return lambda rho_d, rho_o: (
-            n * logdet_mc_poly_pytensor(rho_d, traces)
-            + n * logdet_mc_poly_pytensor(rho_o, traces)
-        )
     else:
         raise ValueError(
             f"make_flow_separable_logdet: method={method!r} not recognised. "
-            "Choose one of: 'eigenvalue', 'chebyshev', 'trace_mc', 'mc_poly'."
+            "Choose one of: 'eigenvalue', 'chebyshev'."
         )
 
 
@@ -2453,12 +2361,11 @@ def make_flow_separable_logdet_numpy(
     W_sparse,
     n: int,
     method: str | None = None,
-    miter: int = 30,
-    riter: int = 50,
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     cheb_order: int = 20,
-    random_state: int | None = None,
+    trace_estimator: TraceEstimatorName = "hutchpp",
+    trace_k: int | None = None,
 ):
     r"""Pre-compute numeric logdet data for separable flow models.
 
@@ -2469,9 +2376,10 @@ def make_flow_separable_logdet_numpy(
         n\,\log|I_n - \rho_d W| + n\,\log|I_n - \rho_o W|
 
     Parameters are aligned with :func:`make_flow_separable_logdet` for API
-    symmetry, though ``miter``/``riter``/``cheb_order``/``random_state`` are
-    currently controlled by the underlying method defaults.
+    symmetry.
     """
+    trace_estimator = _resolve_trace_estimator(trace_estimator)
+
     if sp.issparse(W_sparse):
         W_sp = W_sparse.tocsr().astype(np.float64)
     else:
@@ -2479,10 +2387,10 @@ def make_flow_separable_logdet_numpy(
 
     if method is None:
         method = _auto_logdet_method(n)
-    if method not in {"eigenvalue", "chebyshev", "trace_mc", "mc_poly"}:
+    if method not in {"eigenvalue", "chebyshev"}:
         raise ValueError(
             f"make_flow_separable_logdet_numpy: method={method!r} not recognised. "
-            "Choose one of: 'eigenvalue', 'chebyshev', 'trace_mc', 'mc_poly'."
+            "Choose one of: 'eigenvalue', 'chebyshev'."
         )
 
     eigs = None
@@ -2495,6 +2403,8 @@ def make_flow_separable_logdet_numpy(
         method=method,
         rho_min=rho_min,
         rho_max=rho_max,
+        trace_estimator=trace_estimator,
+        trace_k=trace_k,
     )
 
     def _eval(rho_d, rho_o) -> np.ndarray:

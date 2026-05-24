@@ -240,12 +240,12 @@ def test_logdet_mc_poly_pytensor_empty_traces() -> None:
 
 
 def test_make_logdet_fn_mc_poly() -> None:
-    """make_logdet_fn with method='trace_mc' produces a valid callable."""
+    """make_logdet_fn with chebyshev + hutchinson trace produces a valid callable."""
     import pytensor
     import pytensor.tensor as pt
 
     W = _toy_w()
-    fn = make_logdet_fn(W, method="trace_mc")
+    fn = make_logdet_fn(W, method="chebyshev", trace_estimator="hutchinson")
     assert callable(fn)
 
     rho_sym = pt.dscalar("rho")
@@ -256,7 +256,7 @@ def test_make_logdet_fn_mc_poly() -> None:
         approx = float(compiled(rho))
         exact = np.linalg.slogdet(I - rho * W)[1]
         assert abs(approx - exact) < 0.1, (
-            f"rho={rho}: mc_poly={approx:.4f}, exact={exact:.4f}"
+            f"rho={rho}: chebyshev={approx:.4f}, exact={exact:.4f}"
         )
 
 
@@ -325,7 +325,11 @@ class TestMakeFlowSeparableLogdet:
         from bayespecon.logdet import make_flow_separable_logdet
 
         fn = make_flow_separable_logdet(
-            self.W_sp, self.n, method="trace_mc", miter=50, riter=100, random_state=0
+            self.W_sp,
+            self.n,
+            method="chebyshev",
+            cheb_order=25,
+            trace_estimator="hutchinson",
         )
         compiled = self._compile(fn)
         val = float(compiled(self.rho_d, self.rho_o))

@@ -303,6 +303,8 @@ class SpatialPanelModel(ABC):
         robust: bool = False,
         w_vars: Optional[list] = None,
         backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
+        trace_estimator: str = "hutchpp",
+        trace_k: int | None = None,
     ):
         if W is None:
             raise ValueError("W is required.")
@@ -314,6 +316,8 @@ class SpatialPanelModel(ABC):
         self.priors_obj = resolve_priors(priors, _priors_cls)
         self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
+        self.trace_estimator = trace_estimator
+        self.trace_k = trace_k
         self.model = int(model)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
@@ -586,7 +590,12 @@ class SpatialPanelModel(ABC):
                 else None
             )
             self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
-                self._W_sparse, eigs, method=self.logdet_method, T=self._T
+                self._W_sparse,
+                eigs,
+                method=self.logdet_method,
+                T=self._T,
+                trace_estimator=self.trace_estimator,
+                trace_k=self.trace_k,
             )
         return self._logdet_numpy_fn_cache
 
@@ -600,7 +609,12 @@ class SpatialPanelModel(ABC):
                 else None
             )
             self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
-                self._W_sparse, eigs, method=self.logdet_method, T=self._T
+                self._W_sparse,
+                eigs,
+                method=self.logdet_method,
+                T=self._T,
+                trace_estimator=self.trace_estimator,
+                trace_k=self.trace_k,
             )
         return self._logdet_numpy_vec_fn_cache
 
@@ -609,7 +623,11 @@ class SpatialPanelModel(ABC):
         """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
         if self._logdet_pytensor_fn_cache is None:
             self._logdet_pytensor_fn_cache = make_logdet_fn(
-                self._W_for_logdet, method=self.logdet_method, T=self._T
+                self._W_for_logdet,
+                method=self.logdet_method,
+                T=self._T,
+                trace_estimator=self.trace_estimator,
+                trace_k=self.trace_k,
             )
         return self._logdet_pytensor_fn_cache
 
