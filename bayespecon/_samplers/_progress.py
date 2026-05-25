@@ -173,21 +173,30 @@ class GibbsProgressBarManager:
 
     def __exit__(self, *args):
         if self._show:
-            self._progress.__exit__(*args)
-            # Print final summary line
+            # Compute final summary line
             total_draws = self.chains * (self.draws + self.tune)
-            # Get elapsed time from first task
             if self._tasks:
                 elapsed = self._progress.tasks[self._tasks[0]].elapsed or 0.0
             else:
                 elapsed = 0.0
             speed = total_draws / elapsed if elapsed > 0 else 0.0
-            print(
+            summary = (
                 f"Sampling {self.chains} chain{'s' if self.chains > 1 else ''} "
                 f"for {self.tune} tune and {self.draws} draw iterations, "
                 f"{self.chains} x {self.tune + self.draws:,} draws total "
                 f"took {elapsed:.0f}s ({speed:.0f} draws/s)"
             )
+            # In Jupyter, print inside the ipy_widget before exiting
+            # so the summary appears in the same output block as the
+            # progress bar (avoids creating a separate rich block).
+            ipy_widget = getattr(self._progress.live, "ipy_widget", None)
+            if ipy_widget is not None:
+                with ipy_widget:
+                    self._progress.console.print(summary)
+                self._progress.__exit__(*args)
+            else:
+                self._progress.__exit__(*args)
+                self._progress.console.print(summary)
 
     def start_chain(self, chain_idx: int) -> None:
         """Record the start time for a chain.
@@ -455,20 +464,30 @@ class _ParallelProgressRenderer:
         return self
 
     def __exit__(self, *args):
-        self._progress.__exit__(*args)
-        # Print final summary (same format as GibbsProgressBarManager)
+        # Compute final summary line
         total_draws = self.n_chains * (self.draws + self.tune)
         if self._tasks:
             elapsed = self._progress.tasks[self._tasks[0]].elapsed or 0.0
         else:
             elapsed = 0.0
         speed = total_draws / elapsed if elapsed > 0 else 0.0
-        print(
+        summary = (
             f"Sampling {self.n_chains} chain{'s' if self.n_chains > 1 else ''} "
             f"for {self.tune} tune and {self.draws} draw iterations, "
             f"{self.n_chains} x {self.tune + self.draws:,} draws total "
             f"took {elapsed:.0f}s ({speed:.0f} draws/s)"
         )
+        # In Jupyter, print inside the ipy_widget before exiting
+        # so the summary appears in the same output block as the
+        # progress bar (avoids creating a separate rich block).
+        ipy_widget = getattr(self._progress.live, "ipy_widget", None)
+        if ipy_widget is not None:
+            with ipy_widget:
+                self._progress.console.print(summary)
+            self._progress.__exit__(*args)
+        else:
+            self._progress.__exit__(*args)
+            self._progress.console.print(summary)
 
     def process_message(self, msg: dict) -> None:
         """Process a single message from the worker queue.
