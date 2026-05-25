@@ -147,7 +147,7 @@ def run_chains(
 
         if progressbar:
             # Per-chain progress bars via multiprocessing Queue + rich
-            from ._progress import _ParallelProgressRenderer, _ParallelProgressReporter
+            from .._utils._progress import _ParallelProgressRenderer, _ParallelProgressReporter
 
             manager = multiprocessing.Manager()
             queue = manager.Queue()
@@ -196,7 +196,7 @@ def run_chains(
             return list(results)
 
     # Sequential execution with progress bars
-    from ._progress import GibbsProgressBarManager
+    from .._utils._progress import GibbsProgressBarManager
 
     with GibbsProgressBarManager(
         chains=n_chains,

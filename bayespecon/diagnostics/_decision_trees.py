@@ -504,7 +504,7 @@ def _sem_spec() -> TreeNode:
     # If LM-Lag fires from a SEM fit it can mean either (i) a true lag on top
     # of the error process (→ SARAR) or (ii) omitted WX masquerading as ρ
     # (→ SDEM).  ``LM-WX`` (here the SEM-null variant exposed under that
-    # label, see SEM._spatial_diagnostics_tests) settles the ambiguity.
+    # label, see SEM diagnostic suite) settles the ambiguity.
     #
     # Robust-after-naive precondition: a naive precursor (``LM-Lag`` or
     # ``LM-WX``) must fire before consulting its Schur-orthogonalised

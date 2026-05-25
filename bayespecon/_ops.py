@@ -628,7 +628,7 @@ class SparseFlowSolveOp(pt.Op):
 
     Examples
     --------
-    >>> from bayespecon.ops import SparseFlowSolveOp
+    >>> from bayespecon._ops import SparseFlowSolveOp
     >>> from bayespecon.graph import flow_weight_matrices
     >>> import pytensor.tensor as pt, pytensor
     >>> wms = flow_weight_matrices(G)
@@ -1694,7 +1694,7 @@ class SparseSARSolveOp(pt.Op):
 
     Examples
     --------
-    >>> from bayespecon.ops import SparseSARSolveOp
+    >>> from bayespecon._ops import SparseSARSolveOp
     >>> import pytensor.tensor as pt, pytensor
     >>> op = SparseSARSolveOp(W_csr)
     >>> rho = pt.scalar("rho")

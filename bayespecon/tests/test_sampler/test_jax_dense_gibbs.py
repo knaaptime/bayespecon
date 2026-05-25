@@ -26,7 +26,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
-from bayespecon._samplers._spatial_normal import (
+from bayespecon._samplers._utils._spatial_normal import (
     cg_solve,
     chebyshev_sample,
     jax_build_P_dense,
@@ -228,7 +228,7 @@ class TestJaxChebyshevSample:
 
     def test_returns_spatial_normal_draw(self):
         """JAX Chebyshev should return a SpatialNormalDraw."""
-        from bayespecon._samplers._spatial_normal import SpatialNormalDraw
+        from bayespecon._samplers._utils._spatial_normal import SpatialNormalDraw
 
         n = 30
         P_sparse, _, _, _ = _make_precision(n)

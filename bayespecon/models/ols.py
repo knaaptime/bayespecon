@@ -14,7 +14,6 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ..diagnostics.lmtests import OLS_SUITE
 from .base import SpatialModel
 from .priors import OLSPriors
 
@@ -83,8 +82,12 @@ class OLS(SpatialModel):
     """
 
     _priors_cls = OLSPriors
-
-    _spatial_diagnostics_tests = OLS_SUITE.tests
+    _spatial_params: tuple[str, ...] = ()
+    _lag_terms: tuple[str, ...] = ()
+    _jacobian_param: str | None = None
+    _has_wx_in_beta: bool = False
+    _gibbs_class: str | None = None
+    _model_type: str = "ols"
 
     def _build_pymc_model(self) -> pm.Model:
         """Construct the PyMC model for Bayesian OLS regression.

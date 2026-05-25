@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon.logdet import (
+from bayespecon._logdet import (
     chebyshev,
     clear_logdet_fn_cache,
     get_cached_logdet_fn,
@@ -133,7 +133,7 @@ def test_chebyshev_accuracy_against_exact() -> None:
     import pytensor
     import pytensor.tensor as pt
 
-    from bayespecon.logdet import logdet_chebyshev
+    from bayespecon._logdet import logdet_chebyshev
 
     rho_sym = pt.scalar("rho")
     expr = logdet_chebyshev(rho_sym, coeffs, rmin=rmin, rmax=rmax)
@@ -196,7 +196,7 @@ def test_logdet_mc_poly_pytensor_matches_eigenvalue() -> None:
     import pytensor
     import pytensor.tensor as pt
 
-    from bayespecon.logdet import (
+    from bayespecon._logdet import (
         compute_flow_traces,
         logdet_eigenvalue,
         logdet_mc_poly_pytensor,
@@ -231,7 +231,7 @@ def test_logdet_mc_poly_pytensor_empty_traces() -> None:
     import pytensor
     import pytensor.tensor as pt
 
-    from bayespecon.logdet import logdet_mc_poly_pytensor
+    from bayespecon._logdet import logdet_mc_poly_pytensor
 
     rho_sym = pt.dscalar("rho")
     expr = logdet_mc_poly_pytensor(rho_sym, np.array([]))
@@ -290,7 +290,7 @@ class TestMakeFlowSeparableLogdet:
         # Reference: exact eigenvalue-based answer
         rho_d_t = pt.dscalar("rd")
         rho_o_t = pt.dscalar("ro")
-        from bayespecon.logdet import logdet_eigenvalue
+        from bayespecon._logdet import logdet_eigenvalue
 
         ref_expr = n * logdet_eigenvalue(rho_d_t, eigs) + n * logdet_eigenvalue(
             rho_o_t, eigs
@@ -304,7 +304,7 @@ class TestMakeFlowSeparableLogdet:
         return self.pytensor.function([rho_d_t, rho_o_t], fn(rho_d_t, rho_o_t))
 
     def test_eigenvalue_method(self):
-        from bayespecon.logdet import make_flow_separable_logdet
+        from bayespecon._logdet import make_flow_separable_logdet
 
         fn = make_flow_separable_logdet(self.W_sp, self.n, method="eigenvalue")
         compiled = self._compile(fn)
@@ -312,7 +312,7 @@ class TestMakeFlowSeparableLogdet:
         assert abs(val - self.ref_val) < 1e-8
 
     def test_chebyshev_method(self):
-        from bayespecon.logdet import make_flow_separable_logdet
+        from bayespecon._logdet import make_flow_separable_logdet
 
         fn = make_flow_separable_logdet(
             self.W_sp, self.n, method="chebyshev", cheb_order=25
@@ -322,7 +322,7 @@ class TestMakeFlowSeparableLogdet:
         assert abs(val - self.ref_val) / (abs(self.ref_val) + 1e-12) < 0.02
 
     def test_mc_poly_method(self):
-        from bayespecon.logdet import make_flow_separable_logdet
+        from bayespecon._logdet import make_flow_separable_logdet
 
         fn = make_flow_separable_logdet(
             self.W_sp,
@@ -336,7 +336,7 @@ class TestMakeFlowSeparableLogdet:
         assert abs(val - self.ref_val) / (abs(self.ref_val) + 1e-12) < 0.02
 
     def test_invalid_method_raises(self):
-        from bayespecon.logdet import make_flow_separable_logdet
+        from bayespecon._logdet import make_flow_separable_logdet
 
         with pytest.raises(ValueError, match="not recognised"):
             make_flow_separable_logdet(self.W_sp, self.n, method="sparse_spline")

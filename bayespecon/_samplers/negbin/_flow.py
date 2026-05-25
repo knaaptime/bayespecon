@@ -50,15 +50,15 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from ._kronecker import kron_At_matvec, kron_eigenvalue_bounds, kron_logdet_A, kron_matvec, kron_P_matvec
-from ._polyagamma import sample_polyagamma
-from ._slice import (
+from ..panel._kronecker import kron_At_matvec, kron_eigenvalue_bounds, kron_logdet_A, kron_matvec, kron_P_matvec
+from .._utils._polyagamma import sample_polyagamma
+from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d,
     slice_sample_1d_adaptive,
     update_slice_width,
 )
-from ._spatial_normal import (
+from .._utils._spatial_normal import (
     cg_solve,
     chebyshev_sample,
     lanczos_logdet,

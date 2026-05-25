@@ -1,7 +1,7 @@
 """Unit tests for the full-JIT JAX Gibbs sampler.
 
 Tests the ``_make_gibbs_step_with_data()`` and ``run_chain_jax()``
-functions in ``bayespecon._samplers._jax_gibbs``.
+functions in ``bayespecon._samplers.negbin._jax``.
 
 All tests are skipped when JAX is not installed.
 """
@@ -25,14 +25,14 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
-from bayespecon._samplers._jax_gibbs import (
+from bayespecon._samplers.negbin._jax import (
     _make_gibbs_step_with_data,
     _nb_loglik_pointwise_jax,
     _sample_alpha_python,
     run_chain_jax,
 )
-from bayespecon._samplers.pg_gibbs import GibbsPriors, GibbsState, JAXGibbsState
-from bayespecon.logdet import make_logdet_jax_fn
+from bayespecon._samplers.negbin._core import GibbsPriors, GibbsState, JAXGibbsState
+from bayespecon._logdet import make_logdet_jax_fn
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -89,7 +89,7 @@ def _make_test_data(n=20, k=2, rho_true=0.3, seed=42):
 
 def _make_jax_components(W, W_sym, WtW, W_eigs, X):
     """Convert numpy/scipy arrays to JAX arrays for the Gibbs step."""
-    from bayespecon.logdet import make_logdet_jax_fn
+    from bayespecon._logdet import make_logdet_jax_fn
 
     W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
     WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)

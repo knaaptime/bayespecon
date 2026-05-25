@@ -20,7 +20,7 @@ class TestParallelProgressReporter:
 
     def test_update_puts_message_on_queue(self):
         """update() puts a correctly-structured dict on the queue."""
-        from bayespecon._samplers._progress import _ParallelProgressReporter
+        from bayespecon._samplers._utils._progress import _ParallelProgressReporter
 
         manager = multiprocessing.Manager()
         queue = manager.Queue()
@@ -37,7 +37,7 @@ class TestParallelProgressReporter:
 
     def test_start_chain_puts_message_on_queue(self):
         """start_chain() puts a start message on the queue."""
-        from bayespecon._samplers._progress import _ParallelProgressReporter
+        from bayespecon._samplers._utils._progress import _ParallelProgressReporter
 
         manager = multiprocessing.Manager()
         queue = manager.Queue()
@@ -51,7 +51,7 @@ class TestParallelProgressReporter:
 
     def test_set_accept_rate_is_noop(self):
         """set_accept_rate() does not put messages on the queue."""
-        from bayespecon._samplers._progress import _ParallelProgressReporter
+        from bayespecon._samplers._utils._progress import _ParallelProgressReporter
 
         manager = multiprocessing.Manager()
         queue = manager.Queue()
@@ -63,7 +63,7 @@ class TestParallelProgressReporter:
 
     def test_multiple_chains_independent_queues(self):
         """Different reporters on the same queue send distinct chain IDs."""
-        from bayespecon._samplers._progress import _ParallelProgressReporter
+        from bayespecon._samplers._utils._progress import _ParallelProgressReporter
 
         manager = multiprocessing.Manager()
         queue = manager.Queue()
@@ -83,7 +83,7 @@ class TestParallelProgressRenderer:
 
     def test_context_manager_creates_tasks(self):
         """Renderer creates one rich task per chain on enter."""
-        from bayespecon._samplers._progress import _ParallelProgressRenderer
+        from bayespecon._samplers._utils._progress import _ParallelProgressRenderer
 
         renderer = _ParallelProgressRenderer(
             n_chains=3, draws=10, tune=5, model_type="sar"
@@ -93,7 +93,7 @@ class TestParallelProgressRenderer:
 
     def test_process_update_message_tuning(self):
         """process_message() handles a tuning-phase update."""
-        from bayespecon._samplers._progress import _ParallelProgressRenderer
+        from bayespecon._samplers._utils._progress import _ParallelProgressRenderer
 
         renderer = _ParallelProgressRenderer(
             n_chains=1, draws=10, tune=5, model_type="sar"
@@ -106,7 +106,7 @@ class TestParallelProgressRenderer:
 
     def test_process_update_message_draw(self):
         """process_message() handles a draw-phase update."""
-        from bayespecon._samplers._progress import _ParallelProgressRenderer
+        from bayespecon._samplers._utils._progress import _ParallelProgressRenderer
 
         renderer = _ParallelProgressRenderer(
             n_chains=1, draws=10, tune=5, model_type="sar"
@@ -124,7 +124,7 @@ class TestParallelProgressRenderer:
 
     def test_process_start_message_records_time(self):
         """process_message() records chain start time on 'start'."""
-        from bayespecon._samplers._progress import _ParallelProgressRenderer
+        from bayespecon._samplers._utils._progress import _ParallelProgressRenderer
 
         renderer = _ParallelProgressRenderer(
             n_chains=2, draws=10, tune=5, model_type="sar"
@@ -136,7 +136,7 @@ class TestParallelProgressRenderer:
 
     def test_drain_thread_processes_messages(self):
         """drain() processes messages from the queue in a thread."""
-        from bayespecon._samplers._progress import (
+        from bayespecon._samplers._utils._progress import (
             _ParallelProgressRenderer,
             _ParallelProgressReporter,
         )
@@ -173,7 +173,7 @@ class TestRunChainsParallelProgress:
 
     def test_parallel_progressbar_false_is_silent(self):
         """parallel=True with progressbar=False runs silently."""
-        from bayespecon._samplers._chain_runner import run_chains
+        from bayespecon._samplers.gaussian._chain_runner import run_chains
 
         def mock_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
             return {"chain": chain_id}
@@ -192,7 +192,7 @@ class TestRunChainsParallelProgress:
 
     def test_parallel_progressbar_true_uses_reporter(self):
         """parallel=True with progressbar=True passes reporters to chain_fn."""
-        from bayespecon._samplers._chain_runner import run_chains
+        from bayespecon._samplers.gaussian._chain_runner import run_chains
 
         received_managers = []
 
@@ -216,15 +216,15 @@ class TestRunChainsParallelProgress:
         )
         assert len(results) == 2
         # Each chain should have received a _ParallelProgressReporter
-        from bayespecon._samplers._progress import _ParallelProgressReporter
+        from bayespecon._samplers._utils._progress import _ParallelProgressReporter
 
         for pm in received_managers:
             assert isinstance(pm, _ParallelProgressReporter)
 
     def test_sequential_path_unchanged(self):
         """parallel=False still uses GibbsProgressBarManager."""
-        from bayespecon._samplers._chain_runner import run_chains
-        from bayespecon._samplers._progress import GibbsProgressBarManager
+        from bayespecon._samplers.gaussian._chain_runner import run_chains
+        from bayespecon._samplers._utils._progress import GibbsProgressBarManager
 
         received_managers = []
 

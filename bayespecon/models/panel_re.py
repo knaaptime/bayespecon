@@ -28,12 +28,6 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from ..diagnostics.lmtests import (
-    OLS_PANEL_SUITE,
-    SAR_PANEL_SUITE,
-    SDEM_PANEL_SUITE,
-    SEM_PANEL_SUITE,
-)
 from ._sampler import use_jax_likelihood
 from .panel_base import SpatialPanelModel
 from .priors import (
@@ -124,7 +118,6 @@ class OLSPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
 
     _priors_cls = PanelOLSREPriors
 
@@ -310,7 +303,6 @@ class SARPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
 
     _priors_cls = PanelSARREPriors
 
@@ -398,8 +390,7 @@ class SARPanelRE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._re_gibbs import REGibbsPriors
-        from .._samplers._re_gibbs_estimation import GaussianSARREGibbs
+        from .._samplers.panel import REGibbsPriors, GaussianSARREGibbs
 
         priors = REGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
@@ -729,7 +720,6 @@ class SEMPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
     _priors_cls = PanelSEMREPriors
 
@@ -968,8 +958,7 @@ class SEMPanelRE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._re_gibbs import REGibbsPriors
-        from .._samplers._re_gibbs_estimation import GaussianSEMREGibbs
+        from .._samplers.panel import REGibbsPriors, GaussianSEMREGibbs
 
         priors = REGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
@@ -1268,7 +1257,6 @@ class SDEMPanelRE(SpatialPanelModel):
     captured by the random effect rather than by within-unit demeaning.
     """
 
-    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
 
     _priors_cls = PanelSDEMREPriors
 

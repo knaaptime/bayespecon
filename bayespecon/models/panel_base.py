@@ -18,7 +18,7 @@ from libpysal.graph import Graph
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
 
-from ..logdet import (
+from .._logdet import (
     _auto_logdet_method,
     make_logdet_fn,
     make_logdet_numpy_fn,
@@ -404,7 +404,7 @@ class SpatialPanelModel(ABC):
         # For row-standardised W the spectral stability interval is
         # always approximately (-1, 1), so no eigenvalue computation
         # is needed here.
-        from ..logdet import resolve_logdet_bounds
+        from .._logdet import resolve_logdet_bounds
 
         self._logdet_bounds = resolve_logdet_bounds(
             self.logdet_method,
@@ -1203,31 +1203,10 @@ class SpatialPanelModel(ABC):
         self._require_fit()
         return self._y - self.fitted_values()
 
-    # ------------------------------------------------------------------
-    # Class-level registry of applicable Bayesian LM specification tests.
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _lazy_lm_test(module: str, name: str):
-        """Return a callable that lazily imports ``name`` from ``module``.
-
-        Used in ``_spatial_diagnostics_tests`` registries to avoid
-        circular imports at module-load time.
-        """
-        import importlib
-
-        def _fn(model):
-            mod = importlib.import_module(module)
-            return getattr(mod, name)(model)
-
-        return _fn
-
-    _spatial_diagnostics_tests: list[tuple] = []
-
     def spatial_diagnostics(self) -> pd.DataFrame:
         """Run Bayesian LM specification tests and return a summary table.
 
-        Iterates over the class-level ``_spatial_diagnostics_tests`` registry
+        Looks up the diagnostic suite registered for this model class
         and calls each test function on this fitted model, collecting the
         results into a tidy DataFrame.  The set of tests depends on the
         model type — for example, an OLSPanelFE model runs Panel-LM-Lag,
@@ -1267,9 +1246,16 @@ class SpatialPanelModel(ABC):
             the test results.
         """
         from .base import SpatialModel
+        from ..diagnostics.lmtests.registry import get_diagnostic_suite
 
         self._require_fit()
-        return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
+        suite = get_diagnostic_suite(self)
+        if suite is None:
+            raise ValueError(
+                f"No diagnostic suite registered for {type(self).__name__}. "
+                f"Register one in bayespecon.diagnostics.lmtests.registry."
+            )
+        return SpatialModel._run_lm_diagnostics(self, suite.tests)
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"

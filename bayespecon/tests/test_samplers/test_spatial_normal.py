@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from bayespecon._samplers._spatial_normal import (
+from bayespecon._samplers._utils._spatial_normal import (
     CholmodFactor,
     has_cholmod,
     sample_spatial_normal,

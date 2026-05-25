@@ -11,24 +11,18 @@ from . import (
     models as models,
 )
 from . import (
-    ops as ops,
+    _ops as _ops,
 )
-from ._samplers._gaussian_gibbs import (
-    GaussianGibbsCache as GaussianGibbsCache,
-)
-from ._samplers._gaussian_gibbs import (
+from ._samplers.gaussian._core import (
     GaussianGibbsPriors as GaussianGibbsPriors,
 )
-from ._samplers._gaussian_gibbs import (
-    GaussianGibbsState as GaussianGibbsState,
-)
-from ._samplers._gibbs_estimation import (
+from ._samplers.gaussian._estimation import (
     GaussianSARGibbs as GaussianSARGibbs,
 )
-from ._samplers._gibbs_estimation import (
+from ._samplers.gaussian._estimation import (
     GaussianSEMGibbs as GaussianSEMGibbs,
 )
-from ._samplers._gibbs_estimation import (
+from ._samplers.gaussian._estimation import (
     GibbsEstimation as GibbsEstimation,
 )
 from .config import (
@@ -268,12 +262,12 @@ from .models.flow import (
 from .models.flow import (
     SARNegBinFlowSeparableLatent as SARNegBinFlowSeparableLatent,
 )
-from .ops import (
+from ._ops import (
     SparseFlowSolveOp as SparseFlowSolveOp,
 )
-from .ops import (
+from ._ops import (
     kron_solve_matrix as kron_solve_matrix,
 )
-from .ops import (
+from ._ops import (
     kron_solve_vec as kron_solve_vec,
 )

@@ -28,14 +28,13 @@ import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
-from .._samplers._chain_runner import run_chains
-from .._samplers._idata import gibbs_to_inference_data
-from .._samplers._jax_gibbs import run_chain_jax
-from .._samplers._slice import SliceWidthState
-from .._samplers._spatial_normal import CholmodFactor, has_cholmod
-from .._samplers.pg_gibbs import GibbsCache, GibbsPriors, GibbsState, run_chain
-from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
-from ..logdet import make_logdet_numpy_fn
+from .._samplers.gaussian._chain_runner import run_chains
+from .._samplers._utils._idata import gibbs_to_inference_data
+from .._samplers.negbin._jax import run_chain_jax
+from .._samplers._utils._slice import SliceWidthState
+from .._samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from .._samplers.negbin import GibbsCache, GibbsPriors, GibbsState, run_chain
+from .._logdet import make_logdet_numpy_fn
 from .base import SpatialModel
 from .priors import SARPriors
 
@@ -71,7 +70,6 @@ class SARNegBinLatent(SpatialModel):
     """
 
     _priors_cls = SARPriors
-    _spatial_diagnostics_tests = SAR_NEGBIN_SUITE.tests
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -159,7 +157,7 @@ class SARNegBinLatent(SpatialModel):
             alpha_init = 1.0
 
         # ω₀: draw from PG(y + α, η)
-        from .._samplers._polyagamma import sample_polyagamma
+        from .._samplers._utils._polyagamma import sample_polyagamma
 
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 
@@ -372,7 +370,7 @@ class SARNegBinLatent(SpatialModel):
             # trace-seeded Chebyshev (O(nnz·m) precomputation, O(m) per
             # eval), avoiding the O(n³) eigendecomposition.  For small n
             # it falls back to eigenvalue-based exact evaluation.
-            from ..logdet import make_logdet_jax_fn
+            from .._logdet import make_logdet_jax_fn
 
             bounds = self._logdet_bounds
             logdet_jax = make_logdet_jax_fn(

@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon.logdet import (
+from bayespecon._logdet import (
     _build_logdet_grid,
     _stable_rho_grid,
     logdet_exact,
@@ -246,7 +246,7 @@ class TestBuildLogdetGrid:
 
     def test_large_matrix_slogdet_path(self):
         """For n > _LOGDET_GRID_EIG_MAX, uses slogdet loop."""
-        from bayespecon.logdet import _LOGDET_GRID_EIG_MAX
+        from bayespecon._logdet import _LOGDET_GRID_EIG_MAX
 
         n = _LOGDET_GRID_EIG_MAX + 1
         rng = np.random.default_rng(42)
@@ -269,7 +269,7 @@ class TestLogdetMC:
     """Tests for logdet.mc (Monte Carlo log-determinant)."""
 
     def test_basic(self):
-        from bayespecon.logdet import mc
+        from bayespecon._logdet import mc
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         result = mc(
@@ -280,28 +280,28 @@ class TestLogdetMC:
         assert len(result["rho"]) == len(result["lndet"])
 
     def test_invalid_order_raises(self):
-        from bayespecon.logdet import mc
+        from bayespecon._logdet import mc
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="order must be positive"):
             mc(order=0, iter=10, W=W)
 
     def test_invalid_iter_raises(self):
-        from bayespecon.logdet import mc
+        from bayespecon._logdet import mc
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="iter must be positive"):
             mc(order=5, iter=0, W=W)
 
     def test_negative_rmin_raises(self):
-        from bayespecon.logdet import mc
+        from bayespecon._logdet import mc
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="nonnegative"):
             mc(order=5, iter=10, W=W, rmin=-0.5)
 
     def test_rmax_leq_rmin_raises(self):
-        from bayespecon.logdet import mc
+        from bayespecon._logdet import mc
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="rmax must be greater than rmin"):
@@ -317,7 +317,7 @@ class TestLogdetSpline:
     """Tests for logdet.spline (LU interpolation style)."""
 
     def test_basic(self):
-        from bayespecon.logdet import spline
+        from bayespecon._logdet import spline
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         result = spline(W, rmin=0.01, rmax=0.99, n_grid=50)
@@ -326,21 +326,21 @@ class TestLogdetSpline:
         assert len(result["rho"]) == len(result["lndet"])
 
     def test_small_n_grid_raises(self):
-        from bayespecon.logdet import spline
+        from bayespecon._logdet import spline
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="n_grid must be at least 20"):
             spline(W, n_grid=10)
 
     def test_negative_rmin_raises(self):
-        from bayespecon.logdet import spline
+        from bayespecon._logdet import spline
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="nonnegative"):
             spline(W, rmin=-0.5)
 
     def test_rmax_leq_rmin_raises(self):
-        from bayespecon.logdet import spline
+        from bayespecon._logdet import spline
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="rmax must be greater than rmin"):
@@ -356,7 +356,7 @@ class TestLogdetSparseGrid:
     """Tests for logdet.sparse_grid."""
 
     def test_basic(self):
-        from bayespecon.logdet import sparse_grid
+        from bayespecon._logdet import sparse_grid
 
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         result = sparse_grid(W, lmin=0.01, lmax=0.99, grid=0.1)

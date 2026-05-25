@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon import logdet
+from bayespecon import _logdet as logdet
 
 
 def _toy_w(n: int = 5) -> np.ndarray:

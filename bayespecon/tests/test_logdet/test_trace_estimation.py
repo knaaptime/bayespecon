@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from bayespecon._trace_estimation import (
+from bayespecon._logdet._trace import (
     traceax_available,
     traceax_traces,
     traceax_traces_for_chebyshev,
@@ -215,7 +215,7 @@ class TestTraceaxTracesForChebyshev:
 class TestLogdetTraceHutchPP:
     def test_make_logdet_fn_trace_hutchpp(self):
         """make_logdet_fn with chebyshev + hutchpp returns a callable."""
-        from bayespecon.logdet import make_logdet_fn
+        from bayespecon._logdet import make_logdet_fn
 
         W = _toy_w_sparse(20)
         fn = make_logdet_fn(W, method="chebyshev", trace_estimator="hutchpp")
@@ -226,7 +226,7 @@ class TestLogdetTraceHutchPP:
         import pytensor
         import pytensor.tensor as pt
 
-        from bayespecon.logdet import make_logdet_fn
+        from bayespecon._logdet import make_logdet_fn
 
         n = 20
         W = _toy_w_sparse(n)
@@ -256,7 +256,7 @@ class TestLogdetTraceHutchPP:
 class TestAutoSelection:
     def test_auto_prefers_chebyshev_for_large_n(self):
         """_auto_logdet_method picks eigenvalue for small n, chebyshev for large n."""
-        from bayespecon.logdet import _auto_logdet_method
+        from bayespecon._logdet import _auto_logdet_method
 
         assert _auto_logdet_method(100) == "eigenvalue"
         assert _auto_logdet_method(3000) == "chebyshev"
@@ -271,7 +271,7 @@ class TestAutoSelection:
 class TestChebyshevMCPath:
     def test_chebyshev_large_n_uses_traceax(self):
         """chebyshev() with n > 2000 uses traceax when available."""
-        from bayespecon.logdet import chebyshev
+        from bayespecon._logdet import chebyshev
 
         # Create a larger W to trigger MC path (n > 2000)
         n = 50  # Too small for MC path; force it by mocking
@@ -283,7 +283,7 @@ class TestChebyshevMCPath:
 
     def test_chebyshev_mc_path_produces_valid_coeffs(self):
         """Chebyshev MC path (with or without traceax) produces valid coefficients."""
-        from bayespecon.logdet import chebyshev
+        from bayespecon._logdet import chebyshev
 
         # Use a moderate n that triggers MC path only if n > 2000
         # For testing, we verify the function works for small n too

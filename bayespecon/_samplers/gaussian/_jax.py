@@ -450,7 +450,7 @@ def _make_gaussian_gibbs_step(
 
         if use_slice:
             # Slice sampling: uses persistent interval for better ESS
-            from ._jax_slice import jax_slice_sample_1d_adaptive
+            from .._utils._jax_slice import jax_slice_sample_1d_adaptive
 
             key_rho_slice = key_rho
 
@@ -707,7 +707,7 @@ def run_chain_jax_gaussian(
 
     jax.config.update("jax_enable_x64", True)
 
-    from ._gaussian_loglik import (
+    from ._loglik import (
         sar_pointwise_loglik_vectorized,
         sem_pointwise_loglik_vectorized,
     )
@@ -972,7 +972,7 @@ def run_chains_jax_gibbs_vectorized(
 
     jax.config.update("jax_enable_x64", True)
 
-    from ._gaussian_loglik import (
+    from ._loglik import (
         sar_pointwise_loglik_vectorized,
         sem_pointwise_loglik_vectorized,
     )
@@ -1049,7 +1049,7 @@ def run_chains_jax_gibbs_vectorized(
     master_key = jax.random.PRNGKey(jax_seeds[0])
     keys = jax.random.split(master_key, chains)
 
-    from ._progress import GibbsProgressBarManager
+    from .._utils._progress import GibbsProgressBarManager
 
     with GibbsProgressBarManager(
         chains=chains,

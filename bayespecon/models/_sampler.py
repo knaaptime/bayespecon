@@ -39,7 +39,7 @@ def _has_module(name: str) -> bool:
 def _jax_dispatches_available() -> bool:
     """Return ``True`` if both JAX and PyTensor's JAX dispatch are present.
 
-    When this is true, the custom Ops in :mod:`bayespecon.ops` register their
+    When this is true, the custom Ops in :mod:`bayespecon._ops` register their
     own ``jax_funcify`` implementations on import, so models that previously
     required the C backend can sample under ``"blackjax"`` or ``"numpyro"``.
     """

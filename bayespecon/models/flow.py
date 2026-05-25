@@ -40,9 +40,8 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from ..diagnostics.lmtests import FLOW_INTRA_SUITE, FLOW_SUITE
 from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
-from ..logdet import (
+from .._logdet import (
     _flow_logdet_poly_coeffs,
     compute_flow_traces,
     flow_logdet_numpy,
@@ -50,7 +49,7 @@ from ..logdet import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from ..ops import kron_solve_matrix, kron_solve_vec
+from .._ops import kron_solve_matrix, kron_solve_vec
 from ._sampler import (
     enforce_c_backend,
     prepare_compile_kwargs,
@@ -260,7 +259,7 @@ class FlowModel(ABC):
         How to compute :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`.
         ``"traces"`` uses Barry-Pace stochastic traces with the multinomial
         Kronecker identity (the default and recommended method).
-        ``"eigenvalue"``, ``"chebyshev"``, ``"mc_poly"`` (separable
+        ``"eigenvalue"``, ``"chebyshev"``
         flow models only) use the Kronecker eigenvalue factorisation.
     restrict_positive : bool, default True
         If True, use a ``pm.Dirichlet`` prior that restricts :math:`\\rho_d,
@@ -419,7 +418,7 @@ class FlowModel(ABC):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
+        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev"}
         if logdet_method in _SEPARABLE_METHODS:
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
@@ -697,16 +696,10 @@ class FlowModel(ABC):
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
         return az.summary(self._idata, var_names=var_names, **kwargs)
 
-    # ------------------------------------------------------------------
-    # Class-level registry of applicable Bayesian LM specification tests.
-    # Mirrors the SpatialModel pattern; subclasses populate this list.
-    # ------------------------------------------------------------------
-    _spatial_diagnostics_tests: list[tuple] = []
-
     def spatial_diagnostics(self) -> pd.DataFrame:
         """Run Bayesian LM specification tests for flow models.
 
-        Iterates over the class-level ``_spatial_diagnostics_tests`` registry
+        Looks up the diagnostic suite registered for this model class
         and returns a tidy DataFrame with one row per test.  See
         :meth:`bayespecon.models.base.SpatialModel.spatial_diagnostics` for
         the column schema.
@@ -719,7 +712,14 @@ class FlowModel(ABC):
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
-        return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
+        from ..diagnostics.lmtests.registry import get_diagnostic_suite
+        suite = get_diagnostic_suite(self)
+        if suite is None:
+            raise ValueError(
+                f"No diagnostic suite registered for {type(self).__name__}. "
+                f"Register one in bayespecon.diagnostics.lmtests.registry."
+            )
+        return SpatialModel._run_lm_diagnostics(self, suite.tests)
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
@@ -1152,8 +1152,6 @@ class SARFlow(FlowModel):
         - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
     """
 
-    _spatial_diagnostics_tests = FLOW_SUITE.tests
-
     def _build_pymc_model(self) -> pm.Model:
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
@@ -1376,7 +1374,7 @@ class SARFlowSeparable(FlowModel):
         Number of regional attribute columns (destination/origin variable
         pairs). Inferred from ``dest_*``/``orig_*`` column names when the
         standard LeSage layout is used.
-    logdet_method : {"chebyshev", "eigenvalue", "mc_poly", "traces"}, default "chebyshev"
+    logdet_method : {"chebyshev", "eigenvalue", "traces"}, default "chebyshev"
         Method for the :math:`n \\times n` log-determinant used in the
         :math:`\\rho` slice sampler.
 
@@ -1387,17 +1385,14 @@ class SARFlowSeparable(FlowModel):
           trade-off for repeated evaluation.
         * ``"eigenvalue"`` — exact eigendecomposition. :math:`O(n^3)`
           setup, then :math:`O(n)` per call. Good for moderate *n*.
-        * ``"mc_poly"`` — Monte-Carlo polynomial approximation.
         * ``"traces"`` — precompute :math:`N \\times N` flow traces
           (also used by Bayesian LM diagnostics). Falls back to
           Chebyshev for the :math:`n \\times n` logdet internally.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"`` methods).
     titer : int, default 800
         Geometric tail cutoff for series-based log-determinant variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1422,7 +1417,7 @@ class SARFlowSeparable(FlowModel):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev"}
         if method not in _VALID:
             raise ValueError(
                 f"SARFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
@@ -1441,7 +1436,7 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -1476,7 +1471,7 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "Initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
         return self._separable_logdet_numpy_fn(rho_d, rho_o)
 
@@ -1490,7 +1485,7 @@ class SARFlowSeparable(FlowModel):
         :math:`A = L_o \\otimes L_d` to replace the
         :math:`N\\times N` sparse factorisation with two :math:`n\\times n`
         sparse solves per predictor via
-        :func:`~bayespecon.ops.kron_solve_matrix`.
+        :func:`~bayespecon._ops.kron_solve_matrix`.
 
         Parameters
         ----------
@@ -1597,7 +1592,7 @@ class PoissonSARFlow(SARFlow):
 
     The spatial filter is on the **log-mean** scale. The implicit solve
     :math:`\\eta = A^{-1} X\\beta` is embedded in the PyMC graph via
-    :class:`~bayespecon.ops.SparseFlowSolveOp`, which provides NUTS
+    :class:`~bayespecon._ops.SparseFlowSolveOp`, which provides NUTS
     gradients via the adjoint method.
 
     Parameters
@@ -1689,7 +1684,7 @@ class PoissonSARFlow(SARFlow):
         return rng.poisson(lam).astype(np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from ..ops import SparseFlowSolveOp
+        from .._ops import SparseFlowSolveOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -1777,15 +1772,14 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         Number of regional attribute columns. Inferred from
         ``dest_*``/``orig_*`` column names when the standard LeSage
         layout is used.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1846,7 +1840,7 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         return rng.poisson(lam).astype(np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from ..ops import KroneckerFlowSolveOp
+        from .._ops import KroneckerFlowSolveOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -1857,7 +1851,7 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "PoissonSARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
@@ -1940,8 +1934,6 @@ class OLSFlow(FlowModel):
     No spatial-lag term enters the likelihood, so no log-determinant
     is required and ``logdet_method`` is ignored if passed.
     """
-
-    _spatial_diagnostics_tests = FLOW_INTRA_SUITE.tests
 
     def __init__(self, y, G, X, **kwargs):
         # Skip log-determinant precomputation: A = I_N has |A| = 1.
@@ -2232,7 +2224,7 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
     """
 
     def _build_pymc_model(self) -> pm.Model:
-        from ..ops import SparseFlowSolveOp
+        from .._ops import SparseFlowSolveOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -2330,7 +2322,7 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
     """Separable SAR flow model with NB2 observation noise."""
 
     def _build_pymc_model(self) -> pm.Model:
-        from ..ops import KroneckerFlowSolveOp
+        from .._ops import KroneckerFlowSolveOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -2342,7 +2334,7 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "NegativeBinomialSARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
@@ -2757,15 +2749,14 @@ class SEMFlowSeparable(SEMFlow):
         Number of regional attribute columns. Inferred from
         ``dest_*``/``orig_*`` column names when the standard LeSage
         layout is used.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -2789,7 +2780,7 @@ class SEMFlowSeparable(SEMFlow):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev"}
         if method not in _VALID:
             raise ValueError(
                 f"SEMFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
@@ -2808,7 +2799,7 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -2851,7 +2842,7 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "Initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
         return self._separable_logdet_numpy_fn(lam_d, lam_o)
 
@@ -2931,8 +2922,6 @@ class SARNegBinFlowLatent(FlowModel):
     or :math:`\\beta`.  Monitor ESS for :math:`\\alpha` specifically and use
     longer runs if needed.
     """
-
-    _spatial_diagnostics_tests = FLOW_SUITE.tests
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "traces")
@@ -3026,15 +3015,15 @@ class SARNegBinFlowLatent(FlowModel):
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
-        from .._samplers._chain_runner import run_chains
-        from .._samplers._idata import gibbs_to_inference_data
-        from .._samplers.pg_gibbs_flow import (
+        from .._samplers.gaussian._chain_runner import run_chains
+        from .._samplers._utils._idata import gibbs_to_inference_data
+        from .._samplers.negbin._flow import (
             FlowGibbsCacheNS,
             FlowGibbsPriors,
             FlowGibbsState,
             run_flow_chain_nonseparable,
         )
-        from ..logdet import flow_logdet_numpy
+        from .._logdet import flow_logdet_numpy
 
         y = self._y_int.astype(np.float64)
         X = self._X_design
@@ -3174,8 +3163,8 @@ class SARNegBinFlowLatent(FlowModel):
         else:
             alpha_init = 1.0
 
-        from .._samplers._polyagamma import sample_polyagamma
-        from .._samplers.pg_gibbs_flow import FlowGibbsState
+        from .._samplers._utils._polyagamma import sample_polyagamma
+        from .._samplers.negbin._flow import FlowGibbsState
 
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 
@@ -3220,12 +3209,12 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         Column labels for ``X``.
     k : int, optional
         Number of regional attribute columns.
-    logdet_method : {"traces", "eigenvalue", "chebyshev", "mc_poly"}, default "chebyshev"
+    logdet_method : {"traces", "eigenvalue", "chebyshev"}, default "chebyshev"
         Method for the log-determinant.  ``"traces"`` precomputes
         :math:`N \\times N` flow traces (also used by Bayesian LM diagnostics);
         ``"eigenvalue"`` uses the Kronecker-factored
         :math:`n \\log|I_n - \\rho_d W| + n \\log|I_n - \\rho_o W|`;
-        ``"chebyshev"`` and ``"mc_poly"`` are polynomial approximations for
+        ``"chebyshev"`` is a polynomial approximation for
         large *n*.
     priors : dict, optional
         Override default priors. Supported keys:
@@ -3247,8 +3236,6 @@ class SARNegBinFlowSeparableLatent(FlowModel):
     or :math:`\\beta`.  Monitor ESS for :math:`\\alpha` specifically and use
     longer runs if needed.
     """
-
-    _spatial_diagnostics_tests = FLOW_SUITE.tests
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "chebyshev")
@@ -3337,15 +3324,15 @@ class SARNegBinFlowSeparableLatent(FlowModel):
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
-        from .._samplers._chain_runner import run_chains
-        from .._samplers._idata import gibbs_to_inference_data
-        from .._samplers.pg_gibbs_flow import (
+        from .._samplers.gaussian._chain_runner import run_chains
+        from .._samplers._utils._idata import gibbs_to_inference_data
+        from .._samplers.negbin._flow import (
             FlowGibbsCache,
             FlowGibbsPriors,
             FlowGibbsState,
             run_flow_chain_separable,
         )
-        from ..logdet import make_logdet_numpy_fn
+        from .._logdet import make_logdet_numpy_fn
 
         y = self._y_int.astype(np.float64)
         X = self._X_design
@@ -3475,8 +3462,8 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         else:
             alpha_init = 1.0
 
-        from .._samplers._polyagamma import sample_polyagamma
-        from .._samplers.pg_gibbs_flow import FlowGibbsState
+        from .._samplers._utils._polyagamma import sample_polyagamma
+        from .._samplers.negbin._flow import FlowGibbsState
 
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 

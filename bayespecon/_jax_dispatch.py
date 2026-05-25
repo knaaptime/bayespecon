@@ -1,11 +1,11 @@
-"""JAX dispatch registrations for the custom Ops in :mod:`bayespecon.ops`.
+"""JAX dispatch registrations for the custom Ops in :mod:`bayespecon._ops`.
 
 This module enables JAX-backed NUTS samplers (``"blackjax"``, ``"numpyro"``)
-for models that depend on :class:`~bayespecon.ops.SparseFlowSolveOp`,
-:class:`~bayespecon.ops.SparseFlowSolveMatrixOp`,
-:class:`~bayespecon.ops.SparseSARSolveOp`,
-:class:`~bayespecon.ops.KroneckerFlowSolveOp`, and
-:class:`~bayespecon.ops.KroneckerFlowSolveMatrixOp`.
+for models that depend on :class:`~bayespecon._ops.SparseFlowSolveOp`,
+:class:`~bayespecon._ops.SparseFlowSolveMatrixOp`,
+:class:`~bayespecon._ops.SparseSARSolveOp`,
+:class:`~bayespecon._ops.KroneckerFlowSolveOp`, and
+:class:`~bayespecon._ops.KroneckerFlowSolveMatrixOp`.
 
 The Kronecker Ops are translated into pure-JAX dense LU solves
 (:math:`n\\times n`, jittable, vmappable).  The general sparse Ops are wrapped
@@ -362,7 +362,7 @@ def _select_jax_sar_lineax_neumann_k() -> int:
 
 @lru_cache(maxsize=1)
 def register_jax_dispatch() -> bool:
-    """Register JAX dispatches for all Ops in :mod:`bayespecon.ops`.
+    """Register JAX dispatches for all Ops in :mod:`bayespecon._ops`.
 
     Idempotent (cached). Returns ``True`` if registration ran, ``False`` if
     JAX is not available.
@@ -388,7 +388,7 @@ def register_jax_dispatch() -> bool:
     lineax_precond_kind = _select_jax_sar_lineax_precond()
     lineax_neumann_k = _select_jax_sar_lineax_neumann_k()
 
-    from .ops import (
+    from ._ops import (
         KroneckerFlowSolveMatrixOp,
         KroneckerFlowSolveOp,
         SparseFlowSolveMatrixOp,

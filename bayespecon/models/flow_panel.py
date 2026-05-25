@@ -21,9 +21,8 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from ..diagnostics.lmtests import FLOW_PANEL_SUITE
 from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
-from ..logdet import (
+from .._logdet import (
     _flow_logdet_poly_coeffs,
     compute_flow_traces,
     flow_logdet_numpy,
@@ -31,7 +30,7 @@ from ..logdet import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from ..ops import kron_solve_matrix
+from .._ops import kron_solve_matrix
 from ._sampler import (
     enforce_c_backend,
     prepare_compile_kwargs,
@@ -262,23 +261,19 @@ class FlowPanelModel(ABC):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev", "mc_poly"}
+        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev"}
         if self.logdet_method in _SEPARABLE_METHODS:
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
                 self._n,
                 method=self.logdet_method,
-                miter=miter,
-                riter=trace_riter,
-                random_state=trace_seed,
+                cheb_order=miter,
             )
             self._separable_logdet_numpy_fn = make_flow_separable_logdet_numpy(
                 self._W_sparse,
                 self._n,
                 method=self.logdet_method,
-                miter=miter,
-                riter=trace_riter,
-                random_state=trace_seed,
+                cheb_order=miter,
             )
             if self.logdet_method == "eigenvalue":
                 self._W_eigs = np.linalg.eigvals(
@@ -450,15 +445,12 @@ class FlowPanelModel(ABC):
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
         return az.summary(self._idata, var_names=var_names, **kwargs)
 
-    # ------------------------------------------------------------------
-    # Class-level registry of Bayesian LM specification tests.
-    # ------------------------------------------------------------------
-    _spatial_diagnostics_tests: list[tuple] = []
-
     def spatial_diagnostics(self) -> pd.DataFrame:
         """Run Bayesian LM specification tests for flow panel models.
 
-        See :meth:`bayespecon.models.base.SpatialModel.spatial_diagnostics`
+        Looks up the diagnostic suite registered for this model class
+        and returns a tidy DataFrame with one row per test.  See
+        :meth:`bayespecon.models.base.SpatialModel.spatial_diagnostics`
         for the column schema.
 
         Raises
@@ -469,7 +461,14 @@ class FlowPanelModel(ABC):
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
-        return SpatialModel._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
+        from ..diagnostics.lmtests.registry import get_diagnostic_suite
+        suite = get_diagnostic_suite(self)
+        if suite is None:
+            raise ValueError(
+                f"No diagnostic suite registered for {type(self).__name__}. "
+                f"Register one in bayespecon.diagnostics.lmtests.registry."
+            )
+        return SpatialModel._run_lm_diagnostics(self, suite.tests)
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
@@ -905,7 +904,7 @@ class FlowPanelModel(ABC):
 
         Replaces the :math:`N\\times N` sparse factorisation in
         :meth:`_compute_flow_effects_from_draws` with two :math:`n\\times n`
-        solves via :func:`~bayespecon.ops.kron_solve_matrix`, exploiting
+        solves via :func:`~bayespecon._ops.kron_solve_matrix`, exploiting
         :math:`A = L_o \\otimes L_d`.
         """
         n = self._n
@@ -1186,7 +1185,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -1195,11 +1194,11 @@ class SARFlowSeparablePanel(FlowPanelModel):
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by 
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1224,7 +1223,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
 
     def __init__(self, y, G, X, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev"}
         if method not in _VALID:
             raise ValueError(
                 f"SARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -1243,7 +1242,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -1280,7 +1279,7 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "Initialize with logdet_method='eigenvalue' or 'chebyshev'."
             )
         return self._T * self._separable_logdet_numpy_fn(rho_d, rho_o)
 
@@ -1402,7 +1401,7 @@ class PoissonSARFlowPanel(FlowPanelModel):
         self._y_int_vec: np.ndarray = y_arr.reshape(-1).astype(np.int64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from ..ops import SparseFlowSolveMatrixOp
+        from .._ops import SparseFlowSolveMatrixOp
 
         if self.logdet_method != "traces":
             raise ValueError(
@@ -1549,15 +1548,15 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         inferred from columns prefixed ``dest_`` if omitted.
     model : int, default 0
         Fixed-effects transform. **Only** ``0`` (pooled) is supported.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by 
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1603,7 +1602,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
             )
 
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev"}
         if method not in _VALID:
             raise ValueError(
                 f"PoissonSARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -1614,7 +1613,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         self._y_int_vec: np.ndarray = y_arr.reshape(-1).astype(np.int64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from ..ops import KroneckerFlowSolveMatrixOp
+        from .._ops import KroneckerFlowSolveMatrixOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -1624,7 +1623,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "PoissonSARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
             )
         n = self._n
         N = self._N_flow  # n²
@@ -1763,8 +1762,6 @@ class OLSFlowPanel(FlowPanelModel):
     All log-determinant precomputation is skipped (``A = I_N`` with
     :math:`|A| = 1`).
     """
-
-    _spatial_diagnostics_tests = FLOW_PANEL_SUITE.tests
 
     def __init__(self, y, G, X, T, **kwargs):
         # Skip log-determinant precomputation: A = I_N has |A| = 1.
@@ -2047,7 +2044,7 @@ class NegativeBinomialSARFlowPanel(PoissonSARFlowPanel):
     """Panel NB2 SAR flow model with unrestricted dependence parameters."""
 
     def _build_pymc_model(self) -> pm.Model:
-        from ..ops import SparseFlowSolveMatrixOp
+        from .._ops import SparseFlowSolveMatrixOp
 
         if self.logdet_method != "traces":
             raise ValueError(
@@ -2116,7 +2113,7 @@ class NegativeBinomialSARFlowSeparablePanel(PoissonSARFlowSeparablePanel):
     """Panel separable NB2 SAR flow model."""
 
     def _build_pymc_model(self) -> pm.Model:
-        from ..ops import KroneckerFlowSolveMatrixOp
+        from .._ops import KroneckerFlowSolveMatrixOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -2127,7 +2124,7 @@ class NegativeBinomialSARFlowSeparablePanel(PoissonSARFlowSeparablePanel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "NegativeBinomialSARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
             )
         n = self._n
         N = self._N_flow
@@ -2469,7 +2466,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev", "mc_poly"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -2478,11 +2475,11 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        ``"mc_poly"``).
+        
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by ``"mc_poly"``).
+        Number of Monte Carlo probes (used by 
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -2507,7 +2504,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
 
     def __init__(self, y, G, X, T, **kwargs):
         method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev", "mc_poly"}
+        _VALID = {"eigenvalue", "chebyshev"}
         if method not in _VALID:
             raise ValueError(
                 f"SEMFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
@@ -2527,7 +2524,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -2575,7 +2572,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue', 'chebyshev', or 'mc_poly'."
+                "Initialize with logdet_method='eigenvalue' or 'chebyshev'."
             )
         return self._T * self._separable_logdet_numpy_fn(lam_d, lam_o)
 

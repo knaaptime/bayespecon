@@ -2,7 +2,7 @@
 
 import pytest
 
-from bayespecon.logdet import (
+from bayespecon._logdet import (
     VALID_LOGDET_METHODS,
     LogDetMethod,
     resolve_logdet_method,

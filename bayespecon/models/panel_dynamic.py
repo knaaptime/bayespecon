@@ -32,15 +32,7 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from ..diagnostics.lmtests import (
-    OLS_PANEL_SUITE,
-    SAR_PANEL_SUITE,
-    SDEM_PANEL_SUITE,
-    SDM_PANEL_SUITE,
-    SEM_PANEL_DYNAMIC_SUITE,
-    SLX_PANEL_DYNAMIC_SUITE,
-)
-from ..logdet import get_cached_logdet_fn
+from .._logdet import get_cached_logdet_fn
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 from .priors import (
@@ -292,7 +284,6 @@ class _DynamicPanelMixin:
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelOLSDynamicPriors
 
-    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
     """Dynamic panel regression without contemporaneous spatial dependence.
 
     Implements
@@ -443,7 +434,6 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDMRDynamicPriors
 
-    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
     """Dynamic restricted spatial Durbin panel regression.
 
     Implements
@@ -602,7 +592,6 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDMUDynamicPriors
 
-    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
     """Dynamic unrestricted spatial Durbin panel regression.
 
     Implements
@@ -824,7 +813,6 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSARDynamicPriors
 
-    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
     """Dynamic spatial-lag panel regression.
 
     Implements
@@ -996,7 +984,6 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSEMDynamicPriors
 
-    _spatial_diagnostics_tests = SEM_PANEL_DYNAMIC_SUITE.tests
     """Dynamic spatial-error panel regression.
 
     Implements
@@ -1274,7 +1261,6 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDEMDynamicPriors
 
-    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
     """Dynamic spatial Durbin error panel regression.
 
     Implements
@@ -1574,7 +1560,6 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSLXDynamicPriors
 
-    _spatial_diagnostics_tests = SLX_PANEL_DYNAMIC_SUITE.tests
     """Dynamic SLX panel regression.
 
     Implements

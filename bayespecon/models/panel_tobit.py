@@ -43,7 +43,6 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from ..diagnostics.lmtests import SAR_PANEL_SUITE, SEM_PANEL_DYNAMIC_SUITE
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 from .priors import PanelSARTobitPriors, PanelSEMTobitPriors
@@ -84,7 +83,6 @@ class _PanelTobitBase(SpatialPanelModel):
 class SARPanelTobit(_PanelTobitBase):
     _priors_cls = PanelSARTobitPriors
 
-    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
     """Bayesian spatial lag panel Tobit model.
 
     .. math::
@@ -358,7 +356,6 @@ class SARPanelTobit(_PanelTobitBase):
 class SEMPanelTobit(_PanelTobitBase):
     _priors_cls = PanelSEMTobitPriors
 
-    _spatial_diagnostics_tests = SEM_PANEL_DYNAMIC_SUITE.tests
     """Bayesian spatial error panel Tobit model.
 
     .. math::

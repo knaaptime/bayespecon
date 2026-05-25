@@ -7,14 +7,6 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ..diagnostics.lmtests import (
-    OLS_PANEL_SUITE,
-    SAR_PANEL_SUITE,
-    SDEM_PANEL_SUITE,
-    SDM_PANEL_SUITE,
-    SEM_PANEL_SUITE,
-    SLX_PANEL_SUITE,
-)
 from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, use_jax_likelihood
 from .base import _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
@@ -120,7 +112,6 @@ class OLSPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
 
     _priors_cls = PanelOLSPriors
 
@@ -294,7 +285,6 @@ class SARPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
 
     _priors_cls = PanelSARPriors
 
@@ -469,8 +459,8 @@ class SARPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSARGibbs
+        from .._samplers.gaussian import GaussianGibbsPriors
+        from .._samplers.gaussian import GaussianSARGibbs
 
         default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
             self._X, list(self._feature_names)
@@ -678,7 +668,6 @@ class SEMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
     _priors_cls = PanelSEMPriors
 
@@ -980,8 +969,8 @@ class SEMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSEMGibbs
+        from .._samplers.gaussian import GaussianGibbsPriors
+        from .._samplers.gaussian import GaussianSEMGibbs
 
         default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
             self._X, list(self._feature_names)
@@ -1169,7 +1158,6 @@ class SDMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
 
     _has_wx_in_beta = True
 
@@ -1358,8 +1346,8 @@ class SDMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSARGibbs
+        from .._samplers.gaussian import GaussianGibbsPriors
+        from .._samplers.gaussian import GaussianSARGibbs
 
         Z = np.hstack([self._X, self._WX])
         feature_names = list(self._feature_names) + [
@@ -1607,7 +1595,6 @@ class SDEMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
 
     _has_wx_in_beta = True
 
@@ -1914,8 +1901,8 @@ class SDEMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSEMGibbs
+        from .._samplers.gaussian import GaussianGibbsPriors
+        from .._samplers.gaussian import GaussianSEMGibbs
 
         Z = np.hstack([self._X, self._WX])
         feature_names = list(self._feature_names) + [
@@ -2127,7 +2114,6 @@ class SLXPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SLX_PANEL_SUITE.tests
 
     _has_wx_in_beta = True
 

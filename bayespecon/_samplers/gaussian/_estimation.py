@@ -28,13 +28,13 @@ import scipy.sparse as sp
 _log = logging.getLogger(__name__)
 
 from ._chain_runner import run_chains
-from ._gaussian_gibbs import (
+from ._core import (
     GaussianGibbsCache,
     GaussianGibbsPriors,
     _initialize_gaussian_gibbs,
     run_gaussian_chain,
 )
-from ._idata import gibbs_to_inference_data
+from .._utils._idata import gibbs_to_inference_data
 
 
 class GibbsEstimation:
@@ -316,7 +316,7 @@ class GibbsEstimation:
         -------
         az.InferenceData
         """
-        from ._jax_gaussian_gibbs import (
+        from ._jax import (
             run_chain_jax_gaussian,
             run_chains_jax_gibbs_vectorized,
         )
@@ -480,7 +480,7 @@ class GibbsEstimation:
         callable
             JAX-native logdet function ``(rho) -> jax.numpy.ndarray``.
         """
-        from ..logdet import make_logdet_jax_fn
+        from ..._logdet import make_logdet_jax_fn
 
         # Use eigenvalues if available (fastest for JAX path)
         W_input = self.W_eigs if self.W_eigs is not None else self.W_sparse

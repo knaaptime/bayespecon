@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import warnings
 from abc import ABC, abstractmethod
 from functools import cached_property
@@ -19,7 +18,7 @@ from libpysal.graph import Graph
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
 
-from ..logdet import (
+from .._logdet import (
     _auto_logdet_method,
     make_logdet_fn,
     make_logdet_numpy_fn,
@@ -314,7 +313,42 @@ class SpatialModel(ABC):
         By default all non-constant columns are lagged. Pass a subset to
         restrict which variables receive a spatial lag, e.g.
         ``w_vars=["income", "density"]``.
+
+    Attributes
+    ----------
+    _spatial_params : tuple[str, ...]
+        Spatial autoregressive parameters in the model (e.g. ``("rho",)``
+        for SAR, ``("lam",)`` for SEM).  Empty for OLS and SLX.
+    _lag_terms : tuple[str, ...]
+        Lagged terms present in the model specification (e.g. ``("Wy",)``
+        for SAR, ``("WX",)`` for SLX, ``("Wy", "WX")`` for SDM).
+    _jacobian_param : str or None
+        Name of the parameter that appears in the Jacobian determinant
+        ``log|I - param * W|``.  ``"rho"`` for SAR/SDM, ``"lam"`` for
+        SEM/SDEM, ``None`` for OLS/SLX (no Jacobian).
+    _has_wx_in_beta : bool
+        Whether the ``beta`` coefficient vector includes WX coefficients
+        (i.e. whether the design matrix is ``[X, WX]`` rather than just
+        ``X``).  True for SLX, SDM, SDEM.
+    _gibbs_class : str or None
+        Fully-qualified class name of the Gibbs sampler for this model
+        (e.g. ``"GaussianSARGibbs"``), or ``None`` if no Gibbs sampler
+        exists.  Used to look up the sampler at runtime to avoid circular
+        imports.
+    _model_type : str
+        Short lowercase model name used as the ``model_type`` argument to
+        the Gibbs sampler (e.g. ``"sar"``, ``"sdm"``).  Also used for
+        InferenceData coordinate labels.
     """
+
+    # --- Declarative model metadata ----------------------------------------
+    # Subclasses override these to declare their spatial structure.
+    _spatial_params: tuple[str, ...] = ()
+    _lag_terms: tuple[str, ...] = ()
+    _jacobian_param: str | None = None
+    _has_wx_in_beta: bool = False
+    _gibbs_class: str | None = None
+    _model_type: str = ""
 
     def __init__(
         self,
@@ -922,6 +956,155 @@ class SpatialModel(ABC):
             )
         return self._idata
 
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> az.InferenceData:
+        """Sample posterior via 3-block Gaussian Gibbs.
+
+        Uses the model's :attr:`_gibbs_class` attribute to resolve the
+        appropriate Gibbs sampler class at runtime.  Only models with
+        ``_gibbs_class is not None`` support Gibbs sampling; calling this
+        method on OLS or SLX raises :exc:`NotImplementedError`.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers for the NumPy path.  ``-1`` uses
+            all CPUs.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        gibbs_method : str, default "numpy"
+            Execution backend: ``"numpy"`` for Python-loop Gibbs with
+            adaptive slice sampling, or ``"jax"`` for full-JIT Gibbs
+            with MALA for ρ/λ.
+        mala_step_size : float, default 0.05
+            Initial MALA step size for the JAX path.
+        use_mala : bool, default True
+            If True, use MALA for the ρ/λ update in the JAX path.
+        use_slice : bool, default True
+            If True, use slice sampling for the ρ/λ update.
+        slice_width : float or None, default None
+            Initial step-out width for slice sampling.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+
+        Returns
+        -------
+        arviz.InferenceData
+            With ``posterior``, ``log_likelihood``, and ``observed_data``
+            groups.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model has no Gibbs sampler (``_gibbs_class is None``)
+            or uses a robust (Student-t) likelihood.
+        """
+        if self._gibbs_class is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support Gibbs sampling. "
+                f"Use sampler='nuts' (the default)."
+            )
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        # --- Resolve Gibbs class (lazy import to avoid circular deps) ---
+        import importlib
+
+        from .._samplers.gaussian import GaussianGibbsPriors
+
+        gibbs_module = importlib.import_module(
+            ".._samplers.gaussian", package=__package__
+        )
+        GibbsClass = getattr(gibbs_module, self._gibbs_class)
+
+        # --- Build design matrix and feature names ---
+        if self._has_wx_in_beta:
+            Z = np.hstack([self._X, self._WX])  # (n, 2k)
+            feature_names = list(self._feature_names) + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
+        else:
+            Z = self._X
+            feature_names = list(self._feature_names)
+
+        # --- Build priors ---
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            Z, feature_names
+        )
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        # --- Build Gibbs sampler kwargs ---
+        gibbs_kwargs: dict[str, Any] = dict(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type=self._model_type,
+            W_eigs=self._W_eigs.real.astype(np.float64)
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+        )
+        # SAR/SDM need Wy; SEM/SDEM do not
+        if self._jacobian_param == "rho":
+            gibbs_kwargs["Wy"] = self._Wy
+
+        gibbs = GibbsClass(**gibbs_kwargs)
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            use_slice=use_slice,
+            slice_width=slice_width,
+            chain_method=chain_method,
+        )
+        return self._idata
+
     def _attach_jacobian_corrected_log_likelihood(
         self,
         idata: az.InferenceData,
@@ -1031,29 +1214,6 @@ class SpatialModel(ABC):
         summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
         return self._rename_summary_index(summary_df)
 
-    # ------------------------------------------------------------------
-    # Class-level registry of applicable Bayesian LM specification tests.
-    # Each subclass sets this to a list of (test_function, display_label)
-    # pairs.  The base spatial_diagnostics() method iterates over this
-    # list and builds a summary DataFrame.
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _lazy_lm_test(module: str, name: str):
-        """Return a callable that lazily imports ``name`` from ``module``.
-
-        Used in ``_spatial_diagnostics_tests`` registries to avoid
-        circular imports at module-load time.
-        """
-
-        def _fn(model):
-            mod = importlib.import_module(module)
-            return getattr(mod, name)(model)
-
-        return _fn
-
-    _spatial_diagnostics_tests: list[tuple] = []
-
     @staticmethod
     def _run_lm_diagnostics(model, tests: list[tuple]) -> pd.DataFrame:
         """Execute a registry of LM tests and return a tidy DataFrame.
@@ -1106,7 +1266,7 @@ class SpatialModel(ABC):
     def spatial_diagnostics(self) -> pd.DataFrame:
         """Run Bayesian LM specification tests and return a summary table.
 
-        Iterates over the class-level ``_spatial_diagnostics_tests`` registry
+        Looks up the diagnostic suite registered for this model class
         and calls each test function on this fitted model, collecting the
         results into a tidy DataFrame.  The set of tests depends on the
         model type — for example, an OLS model runs LM-Lag, LM-Error,
@@ -1166,7 +1326,14 @@ class SpatialModel(ABC):
         self._require_fit()
         self._require_W()
 
-        return self._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
+        from ..diagnostics.lmtests.registry import get_diagnostic_suite
+        suite = get_diagnostic_suite(self)
+        if suite is None:
+            raise ValueError(
+                f"No diagnostic suite registered for {type(self).__name__}. "
+                f"Register one in bayespecon.diagnostics.lmtests.registry."
+            )
+        return self._run_lm_diagnostics(self, suite.tests)
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"

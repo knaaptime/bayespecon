@@ -20,9 +20,9 @@ import scipy.sparse as sp
 
 _log = logging.getLogger(__name__)
 
-from ._chain_runner import run_chains
-from ._idata import gibbs_to_inference_data
-from ._re_gibbs import (
+from ..gaussian._chain_runner import run_chains
+from .._utils._idata import gibbs_to_inference_data
+from ._re_core import (
     REGibbsCache,
     REGibbsPriors,
     _initialize_re_gibbs,
@@ -30,7 +30,7 @@ from ._re_gibbs import (
 )
 
 
-class REGBibbsEstimation:
+class REGibbsEstimation:
     """Base class for RE panel Gibbs sampler configuration and execution.
 
     Encapsulates the data, priors, cache, and chain-running logic for
@@ -291,7 +291,7 @@ class REGBibbsEstimation:
         ...
 
 
-class GaussianSARREGibbs(REGBibbsEstimation):
+class GaussianSARREGibbs(REGibbsEstimation):
     """Gibbs sampler for SAR panel model with random effects.
 
     5-block sampler: β (conjugate normal), σ² (conjugate Inv-Γ),
@@ -365,7 +365,7 @@ class GaussianSARREGibbs(REGBibbsEstimation):
         return "rho"
 
 
-class GaussianSEMREGibbs(REGBibbsEstimation):
+class GaussianSEMREGibbs(REGibbsEstimation):
     """Gibbs sampler for SEM panel model with random effects.
 
     5-block sampler: β (conjugate normal), σ² (conjugate Inv-Γ),

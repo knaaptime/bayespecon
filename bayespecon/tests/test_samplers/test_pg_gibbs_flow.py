@@ -1,4 +1,4 @@
-the """Tests for Kronecker matvec primitives and flow Gibbs samplers.
+"""Tests for Kronecker matvec primitives and flow Gibbs samplers.
 
 Smoke tests use small n=5 grids. Recovery tests use n=8.
 """
@@ -10,7 +10,7 @@ import pytest
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from bayespecon._samplers._kronecker import (
+from bayespecon._samplers.panel._kronecker import (
     kron_At_matvec,
     kron_eigenvalue_bounds,
     kron_logdet_A,
@@ -156,7 +156,7 @@ class TestFlowGibbsState:
     """Test FlowGibbsState construction."""
 
     def test_separable_state(self):
-        from bayespecon._samplers.pg_gibbs_flow import FlowGibbsState
+        from bayespecon._samplers.negbin._flow import FlowGibbsState
 
         N = 25
         k = 3
@@ -174,7 +174,7 @@ class TestFlowGibbsState:
         assert state.eta.shape == (N,)
 
     def test_nonseparable_state(self):
-        from bayespecon._samplers.pg_gibbs_flow import FlowGibbsState
+        from bayespecon._samplers.negbin._flow import FlowGibbsState
 
         N = 25
         k = 3
@@ -195,7 +195,7 @@ class TestFlowGibbsPriors:
     """Test FlowGibbsPriors defaults."""
 
     def test_defaults(self):
-        from bayespecon._samplers.pg_gibbs_flow import FlowGibbsPriors
+        from bayespecon._samplers.negbin._flow import FlowGibbsPriors
 
         priors = FlowGibbsPriors()
         assert priors.rho_lower == -0.999

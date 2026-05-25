@@ -112,7 +112,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
-from ._gaussian_gibbs import (
+from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d_adaptive,
 )

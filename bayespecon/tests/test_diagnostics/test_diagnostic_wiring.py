@@ -129,9 +129,11 @@ EXPECTED_REGISTRIES = {
 
 def test_spatial_diagnostics_registries_match_expected():
     """Each model class should expose the expected ordered list of LM tests."""
+    from bayespecon.diagnostics.lmtests.registry import get_diagnostic_suite
     for cls, expected_labels in EXPECTED_REGISTRIES.items():
-        registry = cls._spatial_diagnostics_tests
-        actual_labels = [label for _, label in registry]
+        suite = get_diagnostic_suite(cls)
+        assert suite is not None, f"No suite registered for {cls.__name__}"
+        actual_labels = [label for _, label in suite.tests]
         assert actual_labels == expected_labels, (
             f"{cls.__name__}: expected {expected_labels}, got {actual_labels}"
         )
@@ -139,7 +141,9 @@ def test_spatial_diagnostics_registries_match_expected():
 
 def test_slx_uses_slx_specific_lm_tests():
     """SLX uses Koley-Bera SLX-specific LM tests, not raw OLS LM tests."""
-    labels = [label for _, label in SLX._spatial_diagnostics_tests]
+    from bayespecon.diagnostics.lmtests.registry import get_diagnostic_suite
+    suite = get_diagnostic_suite(SLX)
+    labels = [label for _, label in suite.tests]
     # Must not be empty placeholders
     assert len(labels) >= 2
 

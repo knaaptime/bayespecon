@@ -1,11 +1,44 @@
-"""Custom Gibbs samplers for non-Gaussian spatial models.
+"""Custom Gibbs samplers for spatial econometric models.
 
-This package provides block-Gibbs sampling primitives for models where
-NUTS performs poorly due to posterior geometry (banana-shaped correlations,
-non-conjugate likelihoods, etc.). The primary entry point is
-:func:`pg_gibbs`, which implements the Pólya–Gamma Gibbs sampler for
-structural-form SAR Negative Binomial.
+Subpackages
+-----------
+gaussian
+    Gaussian (SAR/SEM/SDM/SDEM) Gibbs samplers.
+panel
+    Panel (FE/RE) Gibbs samplers.
+negbin
+    Negative Binomial (Pólya-Gamma) Gibbs samplers.
+_utils
+    Internal utilities (not public API).
 
-Internal primitives (prefixed with ``_``) are designed for reuse by
-future Gibbs samplers (SpatialProbitGibbs, TobitGibbs, etc.).
+Re-exports
+----------
+The most commonly-used symbols are re-exported here for backward
+compatibility.  New code should import from subpackages directly::
+
+    from bayespecon._samplers.gaussian import GaussianSARGibbs
+    from bayespecon._samplers.panel import REGibbsEstimation
+    from bayespecon._samplers.negbin import run_chain
 """
+
+from .gaussian import GibbsEstimation, GaussianSARGibbs, GaussianSEMGibbs, GaussianGibbsPriors
+from .panel import REGibbsEstimation, GaussianSARREGibbs, GaussianSEMREGibbs, REGibbsPriors
+from .negbin import GibbsState, GibbsPriors, GibbsCache, run_chain
+
+__all__ = [
+    # Gaussian
+    "GibbsEstimation",
+    "GaussianSARGibbs",
+    "GaussianSEMGibbs",
+    "GaussianGibbsPriors",
+    # Panel
+    "REGibbsEstimation",
+    "GaussianSARREGibbs",
+    "GaussianSEMREGibbs",
+    "REGibbsPriors",
+    # NegBin
+    "GibbsState",
+    "GibbsPriors",
+    "GibbsCache",
+    "run_chain",
+]

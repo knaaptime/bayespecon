@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon._samplers._slice import slice_sample_1d
+from bayespecon._samplers._utils._slice import slice_sample_1d
 
 
 class TestSliceSample1d:

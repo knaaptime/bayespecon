@@ -283,3 +283,6 @@ from .suites import (
 from .suites import (
     DiagnosticSuite as DiagnosticSuite,
 )
+from .registry import (
+    get_diagnostic_suite as get_diagnostic_suite,
+)
