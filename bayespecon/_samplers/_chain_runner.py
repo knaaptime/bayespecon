@@ -1,8 +1,9 @@
 """Parallel chain dispatch for Gibbs samplers.
 
 Supports sequential execution with rich progress bars, process-based
-parallelism via ``multiprocessing.Pool`` (with safe start-method
-detection), and JAX vectorized chains via ``jax.vmap``.
+parallelism via ``joblib.Parallel`` (with per-chain progress bars
+via a multiprocessing Queue), and JAX vectorized chains via
+``jax.vmap``.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import importlib.util
 import logging
 import multiprocessing
 import platform
+import threading
 import warnings
 from typing import Callable
 
@@ -109,7 +111,10 @@ def run_chains(
         Number of parallel workers when ``parallel=True``.
         ``-1`` uses all CPUs. Ignored when ``parallel=False``.
     progressbar : bool, default True
-        Show per-chain progress bars (sequential only).
+        Show per-chain progress bars.  In sequential mode
+        (``parallel=False``), uses ``rich`` progress bars directly.
+        In parallel mode (``parallel=True``), uses ``rich`` progress
+        bars updated via a multiprocessing Queue.
     parallel : bool, default False
         If True, run chains in parallel via ``joblib.Parallel``.
         If False, run chains sequentially with progress bars.
@@ -139,10 +144,56 @@ def run_chains(
         from joblib import Parallel, delayed
 
         n_workers = n_jobs if n_jobs > 0 else -1  # joblib uses -1 for all CPUs
-        results = Parallel(n_jobs=n_workers)(
-            delayed(chain_fn)(chain_id, seed) for chain_id, seed in enumerate(seeds)
-        )
-        return list(results)
+
+        if progressbar:
+            # Per-chain progress bars via multiprocessing Queue + rich
+            from ._progress import _ParallelProgressRenderer, _ParallelProgressReporter
+
+            manager = multiprocessing.Manager()
+            queue = manager.Queue()
+            stop_event = threading.Event()
+
+            renderer = _ParallelProgressRenderer(
+                n_chains=n_chains,
+                draws=draws,
+                tune=tune,
+                model_type=model_type,
+            )
+            reporters = [
+                _ParallelProgressReporter(queue, chain_id=c)
+                for c in range(n_chains)
+            ]
+
+            # Daemon thread drains the queue and updates rich bars
+            drain_thread = threading.Thread(
+                target=renderer.drain,
+                args=(queue, stop_event),
+                daemon=True,
+            )
+
+            with renderer:
+                drain_thread.start()
+                try:
+                    results = Parallel(n_jobs=n_workers)(
+                        delayed(chain_fn)(
+                            chain_id,
+                            seed,
+                            progress_manager=reporters[chain_id],
+                            chain_id_kw=chain_id,
+                        )
+                        for chain_id, seed in enumerate(seeds)
+                    )
+                finally:
+                    stop_event.set()
+                    drain_thread.join(timeout=5.0)
+            return list(results)
+        else:
+            # No progress bar — silent parallel execution
+            results = Parallel(n_jobs=n_workers)(
+                delayed(chain_fn)(chain_id, seed)
+                for chain_id, seed in enumerate(seeds)
+            )
+            return list(results)
 
     # Sequential execution with progress bars
     from ._progress import GibbsProgressBarManager

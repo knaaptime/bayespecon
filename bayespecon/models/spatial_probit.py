@@ -314,6 +314,7 @@ class SpatialProbit:
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
+        progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
@@ -332,6 +333,7 @@ class SpatialProbit:
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                progressbar=progressbar,
                 nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )

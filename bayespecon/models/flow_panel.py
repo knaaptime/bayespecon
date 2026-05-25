@@ -340,6 +340,7 @@ class FlowPanelModel(ABC):
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
+        progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
@@ -371,6 +372,7 @@ class FlowPanelModel(ABC):
                 target_accept=target_accept,
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
+                progressbar=progressbar,
                 nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )

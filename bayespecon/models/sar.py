@@ -284,6 +284,7 @@ class SAR(SpatialModel):
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
                 nuts_sampler=nuts_sampler,
+                progressbar=progressbar,
                 **sample_kwargs,
             )
 

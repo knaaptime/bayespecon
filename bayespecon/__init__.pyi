@@ -262,6 +262,12 @@ from .models.flow import (
 from .models.flow import (
     SEMFlowSeparable as SEMFlowSeparable,
 )
+from .models.flow import (
+    SARNegBinFlowLatent as SARNegBinFlowLatent,
+)
+from .models.flow import (
+    SARNegBinFlowSeparableLatent as SARNegBinFlowSeparableLatent,
+)
 from .ops import (
     SparseFlowSolveOp as SparseFlowSolveOp,
 )

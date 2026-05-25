@@ -10,6 +10,8 @@ but does not advance the bar.
 
 from __future__ import annotations
 
+import multiprocessing
+import threading
 import time
 from collections.abc import Iterable
 from contextlib import nullcontext
@@ -310,3 +312,250 @@ class GibbsProgressBarManager:
         """Force a refresh of the progress bar display."""
         if self._show:
             self._progress.refresh()
+
+
+# ---------------------------------------------------------------------------
+# Parallel progress bar support
+# ---------------------------------------------------------------------------
+
+
+class _ParallelProgressReporter:
+    """Picklable progress reporter for worker processes.
+
+    Implements the same interface as :class:`GibbsProgressBarManager`
+    (``update``, ``start_chain``, ``set_accept_rate``) but serialises
+    updates as dicts on a :class:`multiprocessing.Queue` so that a
+    main-process renderer can display them.
+
+    This allows ``joblib.Parallel`` worker processes to report progress
+    back to the main process without holding any unpicklable ``rich``
+    objects.
+
+    Parameters
+    ----------
+    queue : multiprocessing.Queue
+        Queue to post update messages on.
+    chain_id : int
+        0-based chain index that this reporter represents.
+    """
+
+    def __init__(self, queue: multiprocessing.Queue, chain_id: int):
+        # Store the *context* queue so it survives pickling across
+        # process boundaries (Manager queues are already proxy objects).
+        self._queue = queue
+        self._chain_id = chain_id
+
+    # -- same interface as GibbsProgressBarManager -----------------------
+
+    def update(
+        self,
+        chain_idx: int,
+        iteration: int,
+        tuning: bool,
+        accept: bool | None = None,
+    ):
+        self._queue.put(
+            {
+                "type": "update",
+                "chain": self._chain_id,
+                "iteration": iteration,
+                "tuning": tuning,
+                "accept": accept,
+            }
+        )
+
+    def start_chain(self, chain_idx: int):
+        self._queue.put({"type": "start", "chain": self._chain_id})
+
+    def set_accept_rate(self, chain_idx: int, rate: float):
+        # Aggregate accept rate is not useful per-iteration in
+        # parallel mode; the main-process renderer tracks running
+        # rates from individual accept booleans.
+        pass
+
+    def refresh(self):
+        # No-op: the daemon drain thread continuously refreshes
+        # the rich progress display.
+        pass
+
+
+class _ParallelProgressRenderer:
+    """Main-process renderer that reads queue messages and updates rich bars.
+
+    Owns a :class:`_GibbsProgress` instance with one task per chain.
+    A daemon thread calls :meth:`drain` in a loop to consume messages
+    from the worker queue and update the corresponding tasks.
+
+    Parameters
+    ----------
+    n_chains : int
+        Number of chains.
+    draws : int
+        Post-warmup draws per chain.
+    tune : int
+        Warmup draws per chain.
+    model_type : str
+        Model type (for display).
+    """
+
+    def __init__(
+        self,
+        n_chains: int,
+        draws: int,
+        tune: int,
+        model_type: str = "sar",
+    ):
+        self.n_chains = n_chains
+        self.draws = draws
+        self.tune = tune
+        self.model_type = model_type
+
+        # Accept-rate tracking (mirrors GibbsProgressBarManager logic)
+        self._accept_counts: list[int] = [0] * n_chains
+        self._accept_totals: list[int] = [0] * n_chains
+
+        # Per-chain start times for speed reporting
+        self._chain_start_times: dict[int, float] = {}
+
+        # Create the rich Progress instance (same layout as sequential)
+        self._progress = _GibbsProgress(
+            BarColumn(bar_width=None, table_column=Column("Progress", ratio=2)),
+            TextColumn(
+                "{task.fields[draw_iter]:>4d}/{task.fields[total_draws]}",
+                table_column=Column("Draws", ratio=2),
+            ),
+            TextColumn(
+                "{task.fields[accept_rate]}",
+                table_column=Column("Accept", ratio=1),
+            ),
+            TextColumn(
+                "{task.fields[speed]}",
+                table_column=Column("Speed", ratio=2),
+            ),
+            TimeElapsedColumn(table_column=Column("Elapsed", ratio=1)),
+            TimeRemainingColumn(table_column=Column("Remaining", ratio=1)),
+            console=Console(theme=default_gibbs_theme),
+            expand=True,
+        )
+        self._tasks: list[Any] = []
+
+    def __enter__(self):
+        self._progress.__enter__()
+        for c in range(self.n_chains):
+            task_id = self._progress.add_task(
+                f"Chain {c + 1}",
+                total=self.draws,
+                phase="tune",
+                draw_iter=0,
+                total_draws=self.draws,
+                accept_rate="--",
+                speed="--",
+            )
+            self._tasks.append(task_id)
+        return self
+
+    def __exit__(self, *args):
+        self._progress.__exit__(*args)
+        # Print final summary (same format as GibbsProgressBarManager)
+        total_draws = self.n_chains * (self.draws + self.tune)
+        if self._tasks:
+            elapsed = self._progress.tasks[self._tasks[0]].elapsed or 0.0
+        else:
+            elapsed = 0.0
+        speed = total_draws / elapsed if elapsed > 0 else 0.0
+        print(
+            f"Sampling {self.n_chains} chain{'s' if self.n_chains > 1 else ''} "
+            f"for {self.tune} tune and {self.draws} draw iterations, "
+            f"{self.n_chains} x {self.tune + self.draws:,} draws total "
+            f"took {elapsed:.0f}s ({speed:.0f} draws/s)"
+        )
+
+    def process_message(self, msg: dict) -> None:
+        """Process a single message from the worker queue.
+
+        Parameters
+        ----------
+        msg : dict
+            Message dict with ``"type"`` key (``"start"`` or ``"update"``).
+        """
+        msg_type = msg["type"]
+        chain = msg["chain"]
+
+        if msg_type == "start":
+            self._chain_start_times[chain] = time.monotonic()
+
+        elif msg_type == "update":
+            iteration = msg["iteration"]
+            tuning = msg["tuning"]
+            accept = msg.get("accept")
+
+            task_id = self._tasks[chain]
+            phase = "tune" if tuning else "draw"
+
+            # Accept rate
+            if accept is not None:
+                self._accept_totals[chain] += 1
+                if accept:
+                    self._accept_counts[chain] += 1
+                rate = self._accept_counts[chain] / self._accept_totals[chain]
+                accept_str = f"{rate:.0%}"
+            else:
+                accept_str = "--"
+
+            # Speed
+            chain_start = self._chain_start_times.get(chain)
+            if chain_start is not None:
+                elapsed = time.monotonic() - chain_start
+            else:
+                elapsed = self._progress.tasks[task_id].elapsed or 0.0
+            if elapsed > 0:
+                speed_str = f"{(iteration + 1) / elapsed:.1f} draws/s"
+            else:
+                speed_str = "--"
+
+            # Advance bar only during draw phase (like GibbsProgressBarManager)
+            if tuning:
+                self._progress.update(
+                    task_id,
+                    phase=phase,
+                    draw_iter=0,
+                    accept_rate=accept_str,
+                    speed=speed_str,
+                )
+            else:
+                draw_iter = iteration - self.tune + 1
+                self._progress.update(
+                    task_id,
+                    advance=1,
+                    phase=phase,
+                    draw_iter=draw_iter,
+                    accept_rate=accept_str,
+                    speed=speed_str,
+                )
+
+    def drain(self, queue: multiprocessing.Queue, stop_event: threading.Event) -> None:
+        """Drain messages from *queue* until *stop_event* is set.
+
+        Intended to be run in a daemon thread.
+
+        Parameters
+        ----------
+        queue : multiprocessing.Queue
+            The shared queue that workers post messages on.
+        stop_event : threading.Event
+            When set, the loop exits after draining remaining messages.
+        """
+        while not stop_event.is_set():
+            try:
+                msg = queue.get(timeout=0.1)
+            except Exception:
+                # queue.get raises Empty on timeout — just retry
+                continue
+            self.process_message(msg)
+        # Drain any remaining messages after stop signal
+        while not queue.empty():
+            try:
+                msg = queue.get_nowait()
+            except Exception:
+                break
+            self.process_message(msg)

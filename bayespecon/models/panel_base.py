@@ -1006,6 +1006,7 @@ class SpatialPanelModel(ABC):
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
+        progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Sample the posterior for the panel model.
@@ -1022,6 +1023,8 @@ class SpatialPanelModel(ABC):
             NUTS target acceptance probability.
         random_seed : int, optional
             Random seed used by PyMC.
+        progressbar : bool, default True
+            Show progress bar during sampling.
         **sample_kwargs
             Extra keyword arguments forwarded to :func:`pymc.sample`.  Pass
             ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
@@ -1053,6 +1056,7 @@ class SpatialPanelModel(ABC):
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                progressbar=progressbar,
                 nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )

@@ -350,7 +350,7 @@ def _sample_splu(
 
 
 def lanczos_logdet(
-    precision: sp.spmatrix,
+    precision: sp.spmatrix | spla.LinearOperator,
     *,
     n_probes: int = 10,
     lanczos_deg: int = 30,
@@ -365,8 +365,11 @@ def lanczos_logdet(
 
     Parameters
     ----------
-    precision : sparse matrix of shape (n, n)
-        Sparse SPD precision matrix.
+    precision : sparse matrix or LinearOperator of shape (n, n)
+        Sparse SPD precision matrix, or a ``LinearOperator`` with
+        a ``matvec`` method.  Passing a ``LinearOperator`` avoids
+        constructing the full N×N sparse matrix when the matvec
+        can be computed more efficiently (e.g., via Kronecker structure).
     n_probes : int, default 10
         Number of probe vectors.  More probes reduce variance.
     lanczos_deg : int, default 30
@@ -426,7 +429,11 @@ def lanczos_logdet(
         rng = np.random.default_rng()
 
     n = precision.shape[0]
-    P_csr = sp.csr_matrix(precision)
+    # Accept both sparse matrices and LinearOperator
+    if isinstance(precision, spla.LinearOperator):
+        P_op = precision
+    else:
+        P_op = sp.csr_matrix(precision)
 
     estimates = np.empty(n_probes)
     for j in range(n_probes):
@@ -443,7 +450,7 @@ def lanczos_logdet(
         Q = np.empty((n, lanczos_deg))
 
         Q[:, 0] = q
-        r = P_csr @ q
+        r = P_op @ q
         alpha_vals[0] = float(q @ r)
         r = r - alpha_vals[0] * q
 
@@ -457,7 +464,7 @@ def lanczos_logdet(
                 break
             q_new = r / beta_vals[i - 1]
             Q[:, i] = q_new
-            r = P_csr @ q_new
+            r = P_op @ q_new
             alpha_vals[i] = float(q_new @ r)
             # Full reorthogonalisation (one pass)
             r = r - alpha_vals[i] * q_new - beta_vals[i - 1] * Q[:, i - 1]
@@ -486,7 +493,7 @@ def lanczos_logdet(
 
 
 def cg_solve(
-    precision: sp.spmatrix,
+    precision: sp.spmatrix | spla.LinearOperator,
     rhs: np.ndarray,
     *,
     tol: float = 1e-8,
@@ -497,8 +504,11 @@ def cg_solve(
 
     Parameters
     ----------
-    precision : sparse matrix of shape (n, n)
-        Sparse SPD precision matrix.
+    precision : sparse matrix or LinearOperator of shape (n, n)
+        Sparse SPD precision matrix, or a ``LinearOperator`` with
+        a ``matvec`` method.  Passing a ``LinearOperator`` avoids
+        constructing the full N×N sparse matrix when the matvec
+        can be computed more efficiently (e.g., via Kronecker structure).
     rhs : ndarray of shape (n,)
         Right-hand side vector.
     tol : float, default 1e-8
@@ -508,7 +518,8 @@ def cg_solve(
     preconditioner : {"jacobi", "none"}, default "jacobi"
         Preconditioner type.  "jacobi" uses M = diag(P), which
         is cheap and effective for diagonally-dominant spatial
-        precision matrices.
+        precision matrices.  Not available when ``precision`` is a
+        ``LinearOperator`` (use "none" instead).
 
     Returns
     -------
@@ -527,23 +538,30 @@ def cg_solve(
     if maxiter is None:
         maxiter = 2 * n
 
-    P_csr = sp.csr_matrix(precision)
-
-    # Build preconditioner LinearOperator
-    if preconditioner == "jacobi":
-        M_diag = P_csr.diagonal()
-        M_diag = np.where(np.abs(M_diag) > 1e-15, M_diag, 1.0)
-        M_inv_diag = 1.0 / M_diag
-        M_op = spla.LinearOperator((n, n), matvec=lambda v: M_inv_diag * v)
-    elif preconditioner == "none":
+    # Accept both sparse matrices and LinearOperator
+    if isinstance(precision, spla.LinearOperator):
+        P_op = precision
+        # No Jacobi preconditioner for LinearOperator (no diagonal access)
         M_op = None
     else:
-        raise ValueError(f"Unknown preconditioner: {preconditioner!r}")
+        P_csr = sp.csr_matrix(precision)
+        P_op = P_csr
+
+        # Build preconditioner LinearOperator (only for sparse matrices)
+        if preconditioner == "jacobi":
+            M_diag = P_csr.diagonal()
+            M_diag = np.where(np.abs(M_diag) > 1e-15, M_diag, 1.0)
+            M_inv_diag = 1.0 / M_diag
+            M_op = spla.LinearOperator((n, n), matvec=lambda v: M_inv_diag * v)
+        elif preconditioner == "none":
+            M_op = None
+        else:
+            raise ValueError(f"Unknown preconditioner: {preconditioner!r}")
 
     # scipy >= 1.12 uses rtol/atol; older versions use tol.
     # Use rtol for forward compatibility.
     x, info = spla.cg(
-        P_csr,
+        P_op,
         rhs,
         rtol=tol,
         maxiter=maxiter,
@@ -651,7 +669,7 @@ def _chebyshev_coeffs_inv_sqrt(
 
 
 def chebyshev_sample(
-    precision: sp.spmatrix,
+    precision: sp.spmatrix | spla.LinearOperator,
     mean_term: np.ndarray,
     *,
     rng: np.random.Generator | None = None,
@@ -669,8 +687,14 @@ def chebyshev_sample(
 
     Parameters
     ----------
-    precision : sparse matrix of shape (n, n)
-        Sparse SPD precision matrix P.
+    precision : sparse matrix or LinearOperator of shape (n, n)
+        Sparse SPD precision matrix P, or a ``LinearOperator`` with
+        a ``matvec`` method.  Passing a ``LinearOperator`` avoids
+        constructing the full N×N sparse matrix when the matvec
+        can be computed more efficiently (e.g., via Kronecker structure).
+        When passing a ``LinearOperator``, ``lambda_min`` and
+        ``lambda_max`` must be provided explicitly since Gershgorin
+        bounds require diagonal access.
     mean_term : ndarray of shape (n,)
         The precision-weighted mean: P @ m. The actual mean is
         m = P⁻¹ @ mean_term, computed via CG.
@@ -730,16 +754,30 @@ def chebyshev_sample(
         rng = np.random.default_rng()
 
     n = precision.shape[0]
-    P_csr = sp.csr_matrix(precision)
+
+    # Accept both sparse matrices and LinearOperator
+    if isinstance(precision, spla.LinearOperator):
+        P_op = precision
+        P_csr = None  # Not available for LinearOperator
+    else:
+        P_csr = sp.csr_matrix(precision)
+        P_op = P_csr
 
     # --- Step 1: Compute mean via CG ---
-    m = cg_solve(P_csr, mean_term, tol=cg_tol)
+    m = cg_solve(P_op, mean_term, tol=cg_tol)
 
     # --- Step 2: Compute eigenvalue bounds ---
     if lambda_min is None or lambda_max is None:
-        g_min, g_max = _gershgorin_bounds(P_csr)
-        lambda_min = g_min if lambda_min is None else lambda_min
-        lambda_max = g_max if lambda_max is None else lambda_max
+        if P_csr is not None:
+            g_min, g_max = _gershgorin_bounds(P_csr)
+            lambda_min = g_min if lambda_min is None else lambda_min
+            lambda_max = g_max if lambda_max is None else lambda_max
+        else:
+            raise ValueError(
+                "When precision is a LinearOperator, lambda_min and lambda_max "
+                "must be provided explicitly (Gershgorin bounds require "
+                "diagonal access)."
+            )
 
     # Safety: ensure lambda_min > 0 (P is SPD)
     if lambda_min <= 0:
@@ -774,12 +812,12 @@ def chebyshev_sample(
 
     # Forward recurrence for T_j(P_mapped) z
     y_prev = z.copy()  # T_0(P_m) z = z
-    y_curr = (P_csr @ z - c * z) * inv_d  # T_1(P_m) z = (Pz - cz) / d
+    y_curr = (P_op @ z - c * z) * inv_d  # T_1(P_m) z = (Pz - cz) / d
 
     v = coeffs[0] * y_prev + coeffs[1] * y_curr
 
     for j in range(2, degree + 1):
-        y_new = 2.0 * (P_csr @ y_curr - c * y_curr) * inv_d - y_prev
+        y_new = 2.0 * (P_op @ y_curr - c * y_curr) * inv_d - y_prev
         v += coeffs[j] * y_new
         y_prev = y_curr
         y_curr = y_new

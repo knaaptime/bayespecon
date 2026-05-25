@@ -393,6 +393,7 @@ class SARPanelFE(SpatialPanelModel):
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
                 nuts_sampler=nuts_sampler,
+                progressbar=progressbar,
                 **sample_kwargs,
             )
 
@@ -858,6 +859,7 @@ class SEMPanelFE(SpatialPanelModel):
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
                 nuts_sampler=nuts_sampler,
+                progressbar=progressbar,
                 **sample_kwargs,
             )
 
@@ -1276,6 +1278,7 @@ class SDMPanelFE(SpatialPanelModel):
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
                 nuts_sampler=nuts_sampler,
+                progressbar=progressbar,
                 **sample_kwargs,
             )
 
@@ -1786,6 +1789,7 @@ class SDEMPanelFE(SpatialPanelModel):
                 random_seed=random_seed,
                 idata_kwargs=idata_kwargs,
                 nuts_sampler=nuts_sampler,
+                progressbar=progressbar,
                 **sample_kwargs,
             )
 

@@ -867,6 +867,7 @@ class SpatialModel(ABC):
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
+        progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
@@ -883,6 +884,8 @@ class SpatialModel(ABC):
             Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
+        progressbar : bool, default True
+            Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``.  Pass
             ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
@@ -913,6 +916,7 @@ class SpatialModel(ABC):
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                progressbar=progressbar,
                 nuts_sampler=nuts_sampler,
                 **sample_kwargs,
             )
