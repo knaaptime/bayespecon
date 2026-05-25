@@ -28,13 +28,7 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from ..diagnostics.lmtests import (
-    OLS_PANEL_SUITE,
-    SAR_PANEL_SUITE,
-    SDEM_PANEL_SUITE,
-    SEM_PANEL_SUITE,
-)
-from ._sampler import use_jax_likelihood
+from .._backends.sampler_helpers import use_jax_likelihood
 from .panel_base import SpatialPanelModel
 from .priors import (
     PanelOLSREPriors,
@@ -124,8 +118,6 @@ class OLSPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
-
     _priors_cls = PanelOLSREPriors
 
     def __init__(self, **kwargs):
@@ -208,7 +200,7 @@ class OLSPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -310,8 +302,6 @@ class SARPanelRE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
-
     _priors_cls = PanelSARREPriors
 
     def __init__(self, **kwargs):
@@ -368,6 +358,12 @@ class SARPanelRE(SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
     ) -> "az.InferenceData":
         """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², ρ).
 
@@ -398,8 +394,7 @@ class SARPanelRE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._re_gibbs import REGibbsPriors
-        from .._samplers._re_gibbs_estimation import GaussianSARREGibbs
+        from ..samplers.panel import GaussianSARREGibbs, REGibbsPriors
 
         priors = REGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
@@ -422,7 +417,7 @@ class SARPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=self._W_eigs.real.astype(np.float64)
+            W_eigs=self._W_eigs_real
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -487,7 +482,7 @@ class SARPanelRE(SpatialPanelModel):
         az.InferenceData
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -495,24 +490,37 @@ class SARPanelRE(SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
 
-        # --- NUTS path ---
+        # --- NUTS path (default) ---
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
-        if "log_likelihood" in idata.groups():
-            self._attach_jacobian_corrected_log_likelihood(idata, "rho", T=self._T)
-        return idata
+
+        if compute_log_likelihood:
+            self._reconstruct_panel_log_likelihood(
+                spatial_param="rho",
+                nuts_sampler=nuts_sampler,
+                T_eff=self._T,
+            )
+
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values.
@@ -560,7 +568,7 @@ class SARPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -728,8 +736,6 @@ class SEMPanelRE(SpatialPanelModel):
     favouring near-Normal tails.  The lower bound of 2 ensures the
     variance exists.
     """
-
-    _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
     _priors_cls = PanelSEMREPriors
 
@@ -938,6 +944,12 @@ class SEMPanelRE(SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
     ) -> "az.InferenceData":
         """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², λ).
 
@@ -968,8 +980,7 @@ class SEMPanelRE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._re_gibbs import REGibbsPriors
-        from .._samplers._re_gibbs_estimation import GaussianSEMREGibbs
+        from ..samplers.panel import GaussianSEMREGibbs, REGibbsPriors
 
         priors = REGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
@@ -991,7 +1002,7 @@ class SEMPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=self._W_eigs.real.astype(np.float64)
+            W_eigs=self._W_eigs_real
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1056,7 +1067,7 @@ class SEMPanelRE(SpatialPanelModel):
         az.InferenceData
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -1064,74 +1075,37 @@ class SEMPanelRE(SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
 
-        # --- NUTS path ---
+        # --- NUTS path (default) ---
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
 
-        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
-            return idata
-
-        import xarray as xr
-
-        lam = idata.posterior["lam"].values
-        beta = idata.posterior["beta"].values
-        sigma = idata.posterior["sigma"].values
-        alpha = idata.posterior["alpha"].values
-
-        c, d = lam.shape
-        s = c * d
-        n = self._y.shape[0]
-        X = self._X
-        unit_idx = self._unit_idx
-
-        lam_f = lam.reshape(s)
-        beta_f = beta.reshape(s, beta.shape[-1])
-        sigma_f = sigma.reshape(s)
-        alpha_f = alpha.reshape(s, alpha.shape[-1])  # (s, N)
-
-        # resid = y - X@beta - alpha[unit_idx]
-        resid = self._y[None, :] - beta_f @ X.T - alpha_f[:, unit_idx]
-        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
-
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-
-            ll = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - ((nu_f[:, None] + 1) / 2)
-                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            )
-        else:
-            ll = -0.5 * (
-                (eps / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
+        if compute_log_likelihood:
+            self._reconstruct_panel_log_likelihood(
+                spatial_param="lam",
+                nuts_sampler=nuts_sampler,
+                T_eff=self._T,
             )
 
-        # Jacobian (respects logdet_method)
-        jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
-        ll = ll + jac[:, None] / n
-
-        ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
-        return idata
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values (on the observed y scale).
@@ -1172,7 +1146,7 @@ class SEMPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -1268,7 +1242,7 @@ class SDEMPanelRE(SpatialPanelModel):
     captured by the random effect rather than by within-unit demeaning.
     """
 
-    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
+    _has_wx_in_beta = True
 
     _priors_cls = PanelSDEMREPriors
 
@@ -1404,66 +1378,31 @@ class SDEMPanelRE(SpatialPanelModel):
     ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics."""
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
 
-        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
-            return idata
-
-        import xarray as xr
-
-        Z = np.hstack([self._X, self._WX])
-        lam = idata.posterior["lam"].values
-        beta = idata.posterior["beta"].values
-        sigma = idata.posterior["sigma"].values
-        alpha = idata.posterior["alpha"].values
-
-        c, d = lam.shape
-        s = c * d
-        n = self._y.shape[0]
-        unit_idx = self._unit_idx
-
-        lam_f = lam.reshape(s)
-        beta_f = beta.reshape(s, beta.shape[-1])
-        sigma_f = sigma.reshape(s)
-        alpha_f = alpha.reshape(s, alpha.shape[-1])
-
-        resid = self._y[None, :] - beta_f @ Z.T - alpha_f[:, unit_idx]
-        eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
-
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-
-            ll = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - ((nu_f[:, None] + 1) / 2)
-                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            )
-        else:
-            ll = -0.5 * (
-                (eps / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
+        if compute_log_likelihood:
+            self._reconstruct_panel_log_likelihood(
+                spatial_param="lam",
+                nuts_sampler=nuts_sampler,
+                T_eff=self._T,
             )
 
-        jac = self._logdet_numpy_vec_fn(lam_f) * self._T
-        ll = ll + jac[:, None] / n
-
-        ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
-        return idata
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         beta = self._posterior_mean("beta")

@@ -25,13 +25,13 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
-from bayespecon.logdet import (
-    chebyshev,
+from bayespecon._logdet import (
     compute_flow_traces,
     jax_logdet_chebyshev,
     jax_logdet_trace_poly,
     make_logdet_jax_fn,
 )
+from bayespecon._logdet._grids import chebyshev
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -241,21 +241,21 @@ class TestMakeLogdetJaxFn:
             )
 
     def test_trace_mc_method(self):
-        """trace_mc method matches exact within Chebyshev tolerance."""
+        """chebyshev + hutchinson matches exact within Chebyshev tolerance."""
         rng = np.random.default_rng(42)
         n = 10
         W_dense = rng.random((n, n))
         W_dense /= W_dense.sum(axis=1, keepdims=True)
         eigs = np.linalg.eigvals(W_dense).real
 
-        fn = make_logdet_jax_fn(W_dense, method="trace_mc")
+        fn = make_logdet_jax_fn(
+            W_dense, method="chebyshev", trace_estimator="hutchinson"
+        )
 
         for rho in [0.05, 0.2, 0.4]:
             approx = float(fn(jnp.float64(rho)))
             exact = _exact_logdet_eigenvalue(rho, eigs)
             rel_err = abs(approx - exact) / (abs(exact) + 1e-12)
-            # Chebyshev minimises absolute error, so relative error
-            # can be larger near rho=0 where logdet is small.
             assert rel_err < 0.05, (
                 f"rho={rho}: trace_mc={approx:.6f}, exact={exact:.6f}"
             )
@@ -346,33 +346,15 @@ class TestMakeLogdetJaxFn:
         # Chebyshev gradient should be close to exact eigenvalue gradient
         np.testing.assert_allclose(float(grad_cheb), float(grad_eig), rtol=0.05)
 
-    def test_trace_xtrace_method(self):
-        """trace_xtrace method matches exact within stochastic tolerance."""
-        rng = np.random.default_rng(42)
-        n = 10
-        W_dense = rng.random((n, n))
-        W_dense /= W_dense.sum(axis=1, keepdims=True)
-        eigs = np.linalg.eigvals(W_dense).real
-
-        fn = make_logdet_jax_fn(W_dense, method="trace_xtrace")
-
-        for rho in [0.05, 0.2, 0.4]:
-            approx = float(fn(jnp.float64(rho)))
-            exact = _exact_logdet_eigenvalue(rho, eigs)
-            rel_err = abs(approx - exact) / (abs(exact) + 1e-12)
-            assert rel_err < 0.05, (
-                f"rho={rho}: trace_xtrace={approx:.6f}, exact={exact:.6f}"
-            )
-
     def test_trace_hutchpp_method(self):
-        """trace_hutchpp method matches exact within stochastic tolerance."""
+        """chebyshev + hutchpp matches exact within stochastic tolerance."""
         rng = np.random.default_rng(42)
         n = 10
         W_dense = rng.random((n, n))
         W_dense /= W_dense.sum(axis=1, keepdims=True)
         eigs = np.linalg.eigvals(W_dense).real
 
-        fn = make_logdet_jax_fn(W_dense, method="trace_hutchpp")
+        fn = make_logdet_jax_fn(W_dense, method="chebyshev", trace_estimator="hutchpp")
 
         for rho in [0.05, 0.2, 0.4]:
             approx = float(fn(jnp.float64(rho)))
@@ -382,19 +364,58 @@ class TestMakeLogdetJaxFn:
                 f"rho={rho}: trace_hutchpp={approx:.6f}, exact={exact:.6f}"
             )
 
-    def test_trace_xtrace_autodiff(self):
-        """JAX grad works through trace_xtrace method."""
+    def test_trace_hutchpp_autodiff(self):
+        """JAX grad works through chebyshev + hutchpp."""
         W = _toy_w()
-        fn = make_logdet_jax_fn(W, method="trace_xtrace")
+        fn = make_logdet_jax_fn(W, method="chebyshev", trace_estimator="hutchpp")
+
+        grad_fn = jax.grad(fn)
+        g = grad_fn(jnp.float64(0.3))
+        assert jnp.isfinite(g)
+
+    def test_trace_hutchpp_jit(self):
+        """chebyshev + hutchpp function compiles inside jax.jit."""
+        W = _toy_w()
+        fn = make_logdet_jax_fn(W, method="chebyshev", trace_estimator="hutchpp")
+
+        @jax.jit
+        def compiled(rho):
+            return fn(rho)
+
+        result = float(compiled(jnp.float64(0.3)))
+        assert np.isfinite(result)
+
+    def test_trace_xtrace_method(self):
+        """chebyshev + xtrace matches exact within stochastic tolerance."""
+        rng = np.random.default_rng(42)
+        n = 10
+        W_dense = rng.random((n, n))
+        W_dense /= W_dense.sum(axis=1, keepdims=True)
+        eigs = np.linalg.eigvals(W_dense).real
+
+        fn = make_logdet_jax_fn(W_dense, method="chebyshev", trace_estimator="xtrace")
+
+        for rho in [0.05, 0.2, 0.4]:
+            approx = float(fn(jnp.float64(rho)))
+            exact = _exact_logdet_eigenvalue(rho, eigs)
+            rel_err = abs(approx - exact) / (abs(exact) + 1e-12)
+            assert rel_err < 0.05, (
+                f"rho={rho}: trace_xtrace={approx:.6f}, exact={exact:.6f}"
+            )
+
+    def test_trace_xtrace_autodiff(self):
+        """JAX grad works through chebyshev + xtrace."""
+        W = _toy_w()
+        fn = make_logdet_jax_fn(W, method="chebyshev", trace_estimator="xtrace")
 
         grad_fn = jax.grad(fn)
         g = grad_fn(jnp.float64(0.3))
         assert jnp.isfinite(g)
 
     def test_trace_xtrace_jit(self):
-        """trace_xtrace function compiles inside jax.jit."""
+        """chebyshev + xtrace function compiles inside jax.jit."""
         W = _toy_w()
-        fn = make_logdet_jax_fn(W, method="trace_xtrace")
+        fn = make_logdet_jax_fn(W, method="chebyshev", trace_estimator="xtrace")
 
         @jax.jit
         def compiled(rho):

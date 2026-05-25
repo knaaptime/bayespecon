@@ -1,4 +1,4 @@
-"""Tests for bayespecon.ops — Kronecker-factored flow solve ops.
+"""Tests for bayespecon._ops — Kronecker-factored flow solve ops.
 
 Covers:
 - Numerical equivalence of KroneckerFlowSolveOp vs reference Kronecker solve.
@@ -89,7 +89,7 @@ def _unrestricted_ref_matrix(rd, ro, rw, W, B):
 class TestSparseFlowSolveOp:
     @pytest.mark.parametrize("n", [3, 4])
     def test_matches_reference_unrestricted_solve(self, n):
-        from bayespecon.ops import SparseFlowSolveOp
+        from bayespecon._ops import SparseFlowSolveOp
 
         rng = np.random.default_rng(10)
         W = _ring_W(n)
@@ -112,7 +112,7 @@ class TestSparseFlowSolveOp:
 
 class TestSparseFlowSolveOpVJP:
     def test_vjp_rho_and_rhs(self):
-        from bayespecon.ops import SparseFlowSolveOp
+        from bayespecon._ops import SparseFlowSolveOp
 
         n = 3
         W = _ring_W(n)
@@ -146,7 +146,7 @@ class TestSparseFlowSolveOpVJP:
 class TestSparseFlowSolveMatrixOp:
     @pytest.mark.parametrize("T", [1, 3])
     def test_matches_reference_unrestricted_matrix_solve(self, T):
-        from bayespecon.ops import SparseFlowSolveMatrixOp
+        from bayespecon._ops import SparseFlowSolveMatrixOp
 
         n = 3
         rng = np.random.default_rng(12)
@@ -170,7 +170,7 @@ class TestSparseFlowSolveMatrixOp:
 
 class TestSparseFlowSolveMatrixOpVJP:
     def test_vjp_rho_and_rhs(self):
-        from bayespecon.ops import SparseFlowSolveMatrixOp
+        from bayespecon._ops import SparseFlowSolveMatrixOp
 
         n, T = 3, 2
         W = _ring_W(n)
@@ -204,7 +204,7 @@ class TestSparseFlowSolveMatrixOpVJP:
 class TestKroneckerFlowSolveOp:
     @pytest.mark.parametrize("n", [4, 6])
     def test_matches_reference_kron_solve(self, n):
-        from bayespecon.ops import KroneckerFlowSolveOp
+        from bayespecon._ops import KroneckerFlowSolveOp
 
         rng = np.random.default_rng(0)
         W = _ring_W(n)
@@ -223,7 +223,7 @@ class TestKroneckerFlowSolveOp:
         np.testing.assert_allclose(got, ref, atol=1e-10)
 
     def test_output_shape(self):
-        from bayespecon.ops import KroneckerFlowSolveOp
+        from bayespecon._ops import KroneckerFlowSolveOp
 
         n = 5
         W = _ring_W(n)
@@ -247,7 +247,7 @@ class TestKroneckerFlowSolveOp:
 class TestKroneckerFlowSolveOpVJP:
     def test_vjp_rho_d_rho_o(self):
         """verify_grad checks all inputs via finite differences."""
-        from bayespecon.ops import KroneckerFlowSolveOp
+        from bayespecon._ops import KroneckerFlowSolveOp
 
         n = 3
         W = _ring_W(n)
@@ -280,7 +280,7 @@ class TestKroneckerFlowSolveOpVJP:
 class TestKroneckerFlowSolveMatrixOp:
     @pytest.mark.parametrize("T", [1, 3])
     def test_matches_reference(self, T):
-        from bayespecon.ops import KroneckerFlowSolveMatrixOp
+        from bayespecon._ops import KroneckerFlowSolveMatrixOp
 
         n = 4
         rng = np.random.default_rng(3)
@@ -300,7 +300,7 @@ class TestKroneckerFlowSolveMatrixOp:
         np.testing.assert_allclose(got, ref, atol=1e-10)
 
     def test_output_shape(self):
-        from bayespecon.ops import KroneckerFlowSolveMatrixOp
+        from bayespecon._ops import KroneckerFlowSolveMatrixOp
 
         n, T = 4, 5
         W = _ring_W(n)
@@ -323,7 +323,7 @@ class TestKroneckerFlowSolveMatrixOp:
 
 class TestKroneckerFlowSolveMatrixOpVJP:
     def test_vjp_rho_d_rho_o(self):
-        from bayespecon.ops import KroneckerFlowSolveMatrixOp
+        from bayespecon._ops import KroneckerFlowSolveMatrixOp
 
         n, T = 3, 2
         W = _ring_W(n)
@@ -395,7 +395,7 @@ class TestSparseSARSolveOp:
 
     def test_matches_reference_solve(self):
         """SparseSARSolveOp output matches numpy.linalg.solve."""
-        from bayespecon.ops import SparseSARSolveOp
+        from bayespecon._ops import SparseSARSolveOp
 
         n = 20
         W = _ring_W(n)
@@ -420,7 +420,7 @@ class TestSparseSARSolveOp:
 
     def test_vjp_rho_and_b(self):
         """VJP (gradient) w.r.t. rho and b is numerically correct."""
-        from bayespecon.ops import SparseSARSolveOp
+        from bayespecon._ops import SparseSARSolveOp
 
         n = 10
         W = _ring_W(n)
@@ -465,7 +465,7 @@ class TestSparseSARSolveOp:
 class TestOptionalSparseBackends:
     def test_selects_umfpack_when_requested_and_installed(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon.ops import _select_sparse_backend
+        from bayespecon._ops import _select_sparse_backend
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
         monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
@@ -474,7 +474,7 @@ class TestOptionalSparseBackends:
 
     def test_sparse_vector_solver_routes_to_umfpack_backend(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
+        from bayespecon import _ops as ops_mod
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
         monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
@@ -501,8 +501,8 @@ class TestOptionalSparseBackends:
 
     def test_sparse_flow_solver_routes_to_umfpack_backend(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
-        from bayespecon.ops import SparseFlowSolveOp
+        from bayespecon import _ops as ops_mod
+        from bayespecon._ops import SparseFlowSolveOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
         monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
@@ -538,8 +538,8 @@ class TestOptionalSparseBackends:
 
     def test_sparse_flow_matrix_solver_routes_to_umfpack_backend(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
-        from bayespecon.ops import SparseFlowSolveMatrixOp
+        from bayespecon import _ops as ops_mod
+        from bayespecon._ops import SparseFlowSolveMatrixOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
         monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
@@ -574,8 +574,8 @@ class TestOptionalSparseBackends:
 
     def test_sparse_sar_forward_reuses_umfpack_factorization(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
-        from bayespecon.ops import SparseSARSolveOp
+        from bayespecon import _ops as ops_mod
+        from bayespecon._ops import SparseSARSolveOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
         monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
@@ -610,8 +610,8 @@ class TestOptionalSparseBackends:
 
     def test_sparse_sar_adjoint_reuses_umfpack_factorization(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
-        from bayespecon.ops import _SparseSARVJPOp
+        from bayespecon import _ops as ops_mod
+        from bayespecon._ops import _SparseSARVJPOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
         monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
@@ -647,8 +647,8 @@ class TestOptionalSparseBackends:
 
 class TestFlowSparseLUCache:
     def test_sparse_flow_scipy_lu_reused_for_same_rhos(self, monkeypatch):
-        from bayespecon import ops as ops_mod
-        from bayespecon.ops import SparseFlowSolveOp
+        from bayespecon import _ops as ops_mod
+        from bayespecon._ops import SparseFlowSolveOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "scipy")
         monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
@@ -683,7 +683,7 @@ class TestFlowSparseLUCache:
 class TestSparseSARSolveOpNumbaDispatch:
     def test_numba_dense_path_matches_default(self, monkeypatch):
         pytest.importorskip("numba")
-        from bayespecon.ops import SparseSARSolveOp
+        from bayespecon._ops import SparseSARSolveOp
 
         # Keep dense path active for this small n.
         monkeypatch.delenv("BAYESPECON_KRON_DENSE_MAX", raising=False)
@@ -710,7 +710,7 @@ class TestSparseSARSolveOpNumbaDispatch:
 
     def test_numba_sparse_path_has_no_pytensor_fallback_warning(self, monkeypatch):
         pytest.importorskip("numba")
-        from bayespecon.ops import SparseSARSolveOp
+        from bayespecon._ops import SparseSARSolveOp
 
         # Force sparse path by lowering dense threshold below n.
         monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "2")

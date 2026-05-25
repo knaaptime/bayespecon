@@ -15,8 +15,8 @@ from bayespecon._backends import (
     available_backends,
     resolve_backend,
 )
+from bayespecon._backends.sampler_helpers import _has_module
 from bayespecon.models import OLS, SAR
-from bayespecon.models._sampler import _has_module
 
 
 def _make_w(n: int = 5) -> Graph:

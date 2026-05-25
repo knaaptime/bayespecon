@@ -33,7 +33,6 @@ import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
-from ..diagnostics.lmtests import SAR_NEGBIN_SUITE
 from .base import SpatialModel
 from .priors import SARPriors
 
@@ -73,7 +72,6 @@ class SARNegativeBinomial(SpatialModel):
     """
 
     _priors_cls = SARPriors
-    _spatial_diagnostics_tests = SAR_NEGBIN_SUITE.tests
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -135,7 +133,7 @@ class SARNegativeBinomial(SpatialModel):
             # an O(n³) decomposition at model construction time that is only
             # consumed by the JAX eigen dispatch path. The PyMC NUTS path
             # uses sparse LU exclusively and never touches eigenvalues.
-            from ..ops import SparseSARSolveOp
+            from .._ops import SparseSARSolveOp
 
             _sar_solve_op = SparseSARSolveOp(self._W_sparse)
             z = pm.Normal("z", mu=0, sigma=1, dims="obs_id")
@@ -210,7 +208,7 @@ class SARNegativeBinomial(SpatialModel):
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs.real.astype(np.float64)
+        eigs = self._W_eigs_real
         mean_diag = _chunked_eig_means(rho_draws, eigs)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
@@ -446,7 +444,7 @@ class SARNegativeBinomial(SpatialModel):
         indirect_samples : np.ndarray, shape (G, n_effects)
         total_samples : np.ndarray, shape (G, n_effects)
         """
-        from ..ops import _make_cached_umfpack_solver
+        from .._ops import _make_cached_umfpack_solver
 
         W = self._W_sparse
         I_n = sp.eye(n, format="csr", dtype=np.float64)

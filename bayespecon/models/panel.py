@@ -7,16 +7,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ..diagnostics.lmtests import (
-    OLS_PANEL_SUITE,
-    SAR_PANEL_SUITE,
-    SDEM_PANEL_SUITE,
-    SDM_PANEL_SUITE,
-    SEM_PANEL_SUITE,
-    SLX_PANEL_SUITE,
-)
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs, use_jax_likelihood
-from .base import _write_log_likelihood_to_idata
+from .._backends.sampler_helpers import use_jax_likelihood
 from .panel_base import SpatialPanelModel
 from .priors import (
     PanelOLSPriors,
@@ -119,8 +110,6 @@ class OLSPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
-
-    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
 
     _priors_cls = PanelOLSPriors
 
@@ -294,8 +283,6 @@ class SARPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
-
     _priors_cls = PanelSARPriors
 
     def _build_pymc_model(self) -> pm.Model:
@@ -355,7 +342,7 @@ class SARPanelFE(SpatialPanelModel):
         is requested, the Jacobian correction is added post-sampling.
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -363,12 +350,7 @@ class SARPanelFE(SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
-                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-                use_mala=sample_kwargs.pop("use_mala", True),
-                use_slice=sample_kwargs.pop("use_slice", True),
-                slice_width=sample_kwargs.pop("slice_width", None),
-                chain_method=sample_kwargs.pop("chain_method", None),
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
@@ -378,30 +360,24 @@ class SARPanelFE(SpatialPanelModel):
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
-        model = self._build_pymc_model()
-        self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
 
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                idata_kwargs=idata_kwargs,
+        if compute_log_likelihood:
+            self._reconstruct_panel_log_likelihood(
+                spatial_param="rho",
                 nuts_sampler=nuts_sampler,
-                **sample_kwargs,
-            )
-
-        # --- Correct log_likelihood: add Jacobian contribution ---
-        # The pm.Normal("obs") auto-captures the Gaussian part, but the
-        # Jacobian log|I - rho*W|*T (added via pm.Potential) is absent.
-        if compute_log_likelihood and hasattr(self, "_idata"):
-            self._attach_jacobian_corrected_log_likelihood(
-                self._idata, "rho", T=self._T
+                T_eff=self._T,
             )
 
         return self._idata
@@ -468,8 +444,7 @@ class SARPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSARGibbs
+        from ..samplers.gaussian import GaussianGibbsPriors, GaussianSARGibbs
 
         default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
             self._X, list(self._feature_names)
@@ -493,7 +468,7 @@ class SARPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sar",
-            W_eigs=self._W_eigs.real.astype(np.float64)
+            W_eigs=self._W_eigs_real
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -572,7 +547,7 @@ class SARPanelFE(SpatialPanelModel):
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
         rho_draws.shape[0]
 
-        eigs = self._W_eigs.real.astype(np.float64)
+        eigs = self._W_eigs_real
         mean_diag = _chunked_eig_means(rho_draws, eigs)  # (G,)
 
         mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
@@ -676,8 +651,6 @@ class SEMPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
-
-    _spatial_diagnostics_tests = SEM_PANEL_SUITE.tests
 
     _priors_cls = PanelSEMPriors
 
@@ -820,7 +793,7 @@ class SEMPanelFE(SpatialPanelModel):
         pointwise log-likelihood manually after sampling only when needed.
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -828,12 +801,7 @@ class SEMPanelFE(SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
-                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-                use_mala=sample_kwargs.pop("use_mala", True),
-                use_slice=sample_kwargs.pop("use_slice", True),
-                slice_width=sample_kwargs.pop("slice_width", None),
-                chain_method=sample_kwargs.pop("chain_method", None),
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
@@ -843,76 +811,25 @@ class SEMPanelFE(SpatialPanelModel):
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
-        model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                idata_kwargs=idata_kwargs,
-                nuts_sampler=nuts_sampler,
-                **sample_kwargs,
-            )
-
-        # --- Compute complete pointwise log-likelihood ---
-        # On the default (pymc/numba) backend the model uses pm.Potential for
-        # both Gaussian and Jacobian terms, so nothing is auto-captured and
-        # we recompute from posterior draws here.  On JAX backends the model
-        # uses pm.CustomDist with an observed RV, so PyMC has already
-        # populated ``log_likelihood`` natively — skip the manual block.
-        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
-            nuts_sampler
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
-        if needs_manual_loglik:
-            idata = self._idata
-            X = self._X
-            lam = idata.posterior["lam"].values
-            beta = idata.posterior["beta"].values
-            sigma = idata.posterior["sigma"].values
 
-            c, d = lam.shape
-            s = c * d
-            n = self._y.shape[0]
-
-            lam_f = lam.reshape(s)
-            beta_f = beta.reshape(s, beta.shape[-1])
-            sigma_f = sigma.reshape(s)
-
-            resid = self._y[None, :] - beta_f @ X.T
-            eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
-
-            if self.robust:
-                nu_f = idata.posterior["nu"].values.reshape(s)
-                from scipy.special import gammaln
-
-                ll = (
-                    gammaln((nu_f[:, None] + 1) / 2)
-                    - gammaln(nu_f[:, None] / 2)
-                    - 0.5 * np.log(nu_f[:, None] * np.pi)
-                    - np.log(sigma_f[:, None])
-                    - ((nu_f[:, None] + 1) / 2)
-                    * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
-                )
-            else:
-                ll = -0.5 * (
-                    (eps / sigma_f[:, None]) ** 2
-                    + np.log(2.0 * np.pi)
-                    + 2.0 * np.log(sigma_f[:, None])
-                )
-
-            # Jacobian (respects logdet_method)
-            jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
-            ll = ll + jac[:, None] / n
-
-            ll = ll.reshape(c, d, n)
-            _write_log_likelihood_to_idata(idata, ll)
+        if compute_log_likelihood:
+            self._reconstruct_panel_log_likelihood(
+                spatial_param="lam",
+                nuts_sampler=nuts_sampler,
+                T_eff=self._T,
+            )
 
         return self._idata
 
@@ -978,8 +895,7 @@ class SEMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSEMGibbs
+        from ..samplers.gaussian import GaussianGibbsPriors, GaussianSEMGibbs
 
         default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
             self._X, list(self._feature_names)
@@ -1002,7 +918,7 @@ class SEMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sem",
-            W_eigs=self._W_eigs.real.astype(np.float64)
+            W_eigs=self._W_eigs_real
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1167,8 +1083,6 @@ class SDMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
-
     _has_wx_in_beta = True
 
     def _beta_names(self) -> list[str]:
@@ -1238,7 +1152,7 @@ class SDMPanelFE(SpatialPanelModel):
         is requested, the Jacobian correction is added post-sampling.
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -1246,12 +1160,7 @@ class SDMPanelFE(SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
-                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-                use_mala=sample_kwargs.pop("use_mala", True),
-                use_slice=sample_kwargs.pop("use_slice", True),
-                slice_width=sample_kwargs.pop("slice_width", None),
-                chain_method=sample_kwargs.pop("chain_method", None),
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
@@ -1261,30 +1170,24 @@ class SDMPanelFE(SpatialPanelModel):
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
-        model = self._build_pymc_model()
-        self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
 
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                idata_kwargs=idata_kwargs,
+        if compute_log_likelihood:
+            self._reconstruct_panel_log_likelihood(
+                spatial_param="rho",
                 nuts_sampler=nuts_sampler,
-                **sample_kwargs,
-            )
-
-        # --- Correct log_likelihood: add Jacobian contribution ---
-        # The pm.Normal("obs") auto-captures the Gaussian part, but the
-        # Jacobian log|I - rho*W|*T (added via pm.Potential) is absent.
-        if compute_log_likelihood and hasattr(self, "_idata"):
-            self._attach_jacobian_corrected_log_likelihood(
-                self._idata, "rho", T=self._T
+                T_eff=self._T,
             )
 
         return self._idata
@@ -1355,8 +1258,7 @@ class SDMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSARGibbs
+        from ..samplers.gaussian import GaussianGibbsPriors, GaussianSARGibbs
 
         Z = np.hstack([self._X, self._WX])
         feature_names = list(self._feature_names) + [
@@ -1385,7 +1287,7 @@ class SDMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdm",
-            W_eigs=self._W_eigs.real.astype(np.float64)
+            W_eigs=self._W_eigs_real
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1493,7 +1395,7 @@ class SDMPanelFE(SpatialPanelModel):
         beta1_draws = beta_draws[:, :k]  # (G, k)
         beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
-        eigs = self._W_eigs.real.astype(np.float64)
+        eigs = self._W_eigs_real
         mean_diag_M = _chunked_eig_means(rho_draws, eigs)  # (G,)
         mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)  # (G,)
 
@@ -1603,8 +1505,6 @@ class SDEMPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
-
-    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
 
     _has_wx_in_beta = True
 
@@ -1748,7 +1648,7 @@ class SDEMPanelFE(SpatialPanelModel):
         pointwise log-likelihood manually after sampling only when needed.
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -1756,12 +1656,7 @@ class SDEMPanelFE(SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
-                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-                use_mala=sample_kwargs.pop("use_mala", True),
-                use_slice=sample_kwargs.pop("use_slice", True),
-                slice_width=sample_kwargs.pop("slice_width", None),
-                chain_method=sample_kwargs.pop("chain_method", None),
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
@@ -1771,76 +1666,25 @@ class SDEMPanelFE(SpatialPanelModel):
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
-        model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                idata_kwargs=idata_kwargs,
-                nuts_sampler=nuts_sampler,
-                **sample_kwargs,
-            )
-
-        # --- Compute complete pointwise log-likelihood ---
-        # On the default (pymc/numba) backend the model uses pm.Potential for
-        # both Gaussian and Jacobian terms, so nothing is auto-captured and
-        # we recompute from posterior draws here.  On JAX backends the model
-        # uses pm.CustomDist with an observed RV, so PyMC has already
-        # populated ``log_likelihood`` natively — skip the manual block.
-        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
-            nuts_sampler
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
-        if needs_manual_loglik:
-            idata = self._idata
-            Z = np.hstack([self._X, self._WX])
-            lam = idata.posterior["lam"].values
-            beta = idata.posterior["beta"].values
-            sigma = idata.posterior["sigma"].values
 
-            c, d = lam.shape
-            s = c * d
-            n = self._y.shape[0]
-
-            lam_f = lam.reshape(s)
-            beta_f = beta.reshape(s, beta.shape[-1])
-            sigma_f = sigma.reshape(s)
-
-            resid = self._y[None, :] - beta_f @ Z.T
-            eps = resid - lam_f[:, None] * self._batch_sparse_lag(resid)
-
-            if self.robust:
-                nu_f = idata.posterior["nu"].values.reshape(s)
-                from scipy.special import gammaln
-
-                ll = (
-                    gammaln((nu_f[:, None] + 1) / 2)
-                    - gammaln(nu_f[:, None] / 2)
-                    - 0.5 * np.log(nu_f[:, None] * np.pi)
-                    - np.log(sigma_f[:, None])
-                    - ((nu_f[:, None] + 1) / 2)
-                    * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
-                )
-            else:
-                ll = -0.5 * (
-                    (eps / sigma_f[:, None]) ** 2
-                    + np.log(2.0 * np.pi)
-                    + 2.0 * np.log(sigma_f[:, None])
-                )
-
-            # Jacobian (respects logdet_method)
-            jac = self._logdet_numpy_vec_fn(lam_f) * self._T  # (n_draws,)
-            ll = ll + jac[:, None] / n
-
-            ll = ll.reshape(c, d, n)
-            _write_log_likelihood_to_idata(idata, ll)
+        if compute_log_likelihood:
+            self._reconstruct_panel_log_likelihood(
+                spatial_param="lam",
+                nuts_sampler=nuts_sampler,
+                T_eff=self._T,
+            )
 
         return self._idata
 
@@ -1910,8 +1754,7 @@ class SDEMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSEMGibbs
+        from ..samplers.gaussian import GaussianGibbsPriors, GaussianSEMGibbs
 
         Z = np.hstack([self._X, self._WX])
         feature_names = list(self._feature_names) + [
@@ -1939,7 +1782,7 @@ class SDEMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdem",
-            W_eigs=self._W_eigs.real.astype(np.float64)
+            W_eigs=self._W_eigs_real
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -2122,8 +1965,6 @@ class SLXPanelFE(SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
-
-    _spatial_diagnostics_tests = SLX_PANEL_SUITE.tests
 
     _has_wx_in_beta = True
 

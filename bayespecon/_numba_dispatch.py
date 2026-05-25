@@ -1,12 +1,12 @@
-"""Numba dispatch registrations for selected custom Ops in :mod:`bayespecon.ops`.
+"""Numba dispatch registrations for selected custom Ops in :mod:`bayespecon._ops`.
 
 Targets the cross-sectional SAR sparse solve family
-(:class:`~bayespecon.ops.SparseSARSolveOp`, :class:`~bayespecon.ops._SparseSARVJPOp`)
+(:class:`~bayespecon._ops.SparseSARSolveOp`, :class:`~bayespecon._ops._SparseSARVJPOp`)
 and the Kronecker-factored Poisson flow Ops
-(:class:`~bayespecon.ops.KroneckerFlowSolveOp`,
-:class:`~bayespecon.ops._KroneckerFlowVJPOp`,
-:class:`~bayespecon.ops.KroneckerFlowSolveMatrixOp`,
-:class:`~bayespecon.ops._KroneckerFlowVJPMatrixOp`).
+(:class:`~bayespecon._ops.KroneckerFlowSolveOp`,
+:class:`~bayespecon._ops._KroneckerFlowVJPOp`,
+:class:`~bayespecon._ops.KroneckerFlowSolveMatrixOp`,
+:class:`~bayespecon._ops._KroneckerFlowVJPMatrixOp`).
 
 When a dense ``W`` view is available (small ``n``), the cross-sectional SAR
 and the *vector* Kronecker Ops use pure Numba nopython kernels based on
@@ -56,7 +56,7 @@ def register_numba_dispatch() -> bool:
     import numpy as np
     from pytensor.link.numba.dispatch.basic import numba_funcify
 
-    from .ops import (
+    from ._ops import (
         KroneckerFlowSolveMatrixOp,
         KroneckerFlowSolveOp,
         SparseSARSolveOp,

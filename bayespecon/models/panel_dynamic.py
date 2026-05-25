@@ -32,16 +32,8 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from ..diagnostics.lmtests import (
-    OLS_PANEL_SUITE,
-    SAR_PANEL_SUITE,
-    SDEM_PANEL_SUITE,
-    SDM_PANEL_SUITE,
-    SEM_PANEL_DYNAMIC_SUITE,
-    SLX_PANEL_DYNAMIC_SUITE,
-)
-from ..logdet import get_cached_logdet_fn
-from .base import _write_log_likelihood_to_idata
+from .._logdet import get_cached_logdet_fn
+from .base import _pointwise_gaussian_loglik, _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 from .priors import (
     PanelOLSDynamicPriors,
@@ -90,7 +82,7 @@ class _DynamicPanelMixin:
         if isinstance(self, SARPanelDynamic):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             mean_diag = _chunked_eig_means(rho_draws, eigs)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             ni = self._nonintercept_indices
@@ -111,7 +103,7 @@ class _DynamicPanelMixin:
             beta_draws = _get_posterior_draws(idata, "beta")
             beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
             beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             mean_diag_M = _chunked_eig_means(rho_draws, eigs)
             mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
@@ -288,11 +280,84 @@ class _DynamicPanelMixin:
             self._dynamic_logdet_cache[key] = fn
         return fn
 
+    def _reconstruct_dynamic_log_likelihood(
+        self,
+        *,
+        spatial_param: str,
+        nuts_sampler: str,
+    ) -> None:
+        """Rebuild complete pointwise log-likelihood for dynamic panel models."""
+        if not hasattr(self, "_idata"):
+            return
+        if spatial_param not in {"rho", "lam"}:
+            return
+
+        # SEM/SDEM on JAX backends build an observed CustomDist and already
+        # have complete log_likelihood from PyMC.
+        if spatial_param == "lam" and self.backend.use_jax_likelihood(nuts_sampler):
+            return
+
+        self._prepare_dynamic_design()
+        idata = self._idata
+        n_obs = int(self._y_dyn.shape[0])
+
+        beta_raw = idata.posterior["beta"].values
+        beta_draws = beta_raw.reshape(-1, beta_raw.shape[-1])
+        x_cols = int(self._X_dyn.shape[1])
+        z_cols = int(self._X_dyn.shape[1] + self._WX_dyn.shape[1])
+        if beta_draws.shape[1] == x_cols:
+            design = self._X_dyn
+        elif beta_draws.shape[1] == z_cols:
+            design = np.hstack([self._X_dyn, self._WX_dyn])
+        else:
+            raise ValueError(
+                "beta draw width does not match dynamic design: "
+                f"{beta_draws.shape[1]} not in {{{x_cols}, {z_cols}}}."
+            )
+
+        phi_draws = idata.posterior["phi"].values.reshape(-1)
+        sigma_draws = idata.posterior["sigma"].values.reshape(-1)
+        nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
+        spatial_draws = idata.posterior[spatial_param].values.reshape(-1)
+
+        if spatial_param == "rho":
+            mu = (
+                phi_draws[:, None] * self._y_lag[None, :]
+                + spatial_draws[:, None] * self._Wy_dyn[None, :]
+                + beta_draws @ design.T
+            )
+            if "theta" in idata.posterior:
+                theta_draws = idata.posterior["theta"].values.reshape(-1)
+                mu = mu + theta_draws[:, None] * self._Wy_lag[None, :]
+            elif design.shape[1] == z_cols:
+                mu = mu - (
+                    spatial_draws[:, None] * phi_draws[:, None] * self._Wy_lag[None, :]
+                )
+            eps = self._y_dyn[None, :] - mu
+        else:
+            resid = (
+                self._y_dyn[None, :]
+                - phi_draws[:, None] * self._y_lag[None, :]
+                - beta_draws @ design.T
+            )
+            w_resid = self._batch_sparse_lag(resid, T_eff=self._n_time_eff)
+            eps = resid - spatial_draws[:, None] * w_resid
+
+        ll_data = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
+        jacobian = self._logdet_numpy_vec_fn(spatial_draws) * self._n_time_eff
+        ll_total = ll_data + jacobian[:, None] / n_obs
+
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        _write_log_likelihood_to_idata(
+            idata,
+            ll_total.reshape(n_chains, n_draws_per_chain, n_obs),
+        )
+
 
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelOLSDynamicPriors
 
-    _spatial_diagnostics_tests = OLS_PANEL_SUITE.tests
     """Dynamic panel regression without contemporaneous spatial dependence.
 
     Implements
@@ -443,7 +508,6 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDMRDynamicPriors
 
-    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
     """Dynamic restricted spatial Durbin panel regression.
 
     Implements
@@ -528,20 +592,30 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         is requested, the Jacobian correction is added post-sampling.
         """
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
-        if "log_likelihood" in idata.groups():
-            self._attach_jacobian_corrected_log_likelihood(
-                idata, "rho", T=self._n_time_eff
+
+        if compute_log_likelihood:
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="rho",
+                nuts_sampler=nuts_sampler,
             )
-        return idata
+
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -602,7 +676,6 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDMUDynamicPriors
 
-    _spatial_diagnostics_tests = SDM_PANEL_SUITE.tests
     """Dynamic unrestricted spatial Durbin panel regression.
 
     Implements
@@ -748,20 +821,30 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         is requested, the Jacobian correction is added post-sampling.
         """
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
-        if "log_likelihood" in idata.groups():
-            self._attach_jacobian_corrected_log_likelihood(
-                idata, "rho", T=self._n_time_eff
+
+        if compute_log_likelihood:
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="rho",
+                nuts_sampler=nuts_sampler,
             )
-        return idata
+
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -824,7 +907,6 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSARDynamicPriors
 
-    _spatial_diagnostics_tests = SAR_PANEL_SUITE.tests
     """Dynamic spatial-lag panel regression.
 
     Implements
@@ -952,20 +1034,30 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     ):
         """Sample posterior and attach Jacobian-corrected log-likelihood."""
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
-        if "log_likelihood" in idata.groups():
-            self._attach_jacobian_corrected_log_likelihood(
-                idata, "rho", T=self._n_time_eff
+
+        if compute_log_likelihood:
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="rho",
+                nuts_sampler=nuts_sampler,
             )
-        return idata
+
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -996,7 +1088,6 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSEMDynamicPriors
 
-    _spatial_diagnostics_tests = SEM_PANEL_DYNAMIC_SUITE.tests
     """Dynamic spatial-error panel regression.
 
     Implements
@@ -1185,73 +1276,30 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics."""
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
 
-        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
-            return idata
-
-        X = self._X_dyn
-        lam = idata.posterior["lam"].values
-        phi = idata.posterior["phi"].values
-        beta = idata.posterior["beta"].values
-        sigma = idata.posterior["sigma"].values
-
-        c, d = lam.shape
-        s = c * d
-        n = self._y_dyn.shape[0]
-        n_units = self._N
-        n_time_eff = self._n_time_eff
-        Wn = (
-            self._W_sparse.toarray()
-            if hasattr(self._W_sparse, "toarray")
-            else np.asarray(self._W_sparse)
-        )
-
-        lam_f = lam.reshape(s)
-        phi_f = phi.reshape(s)
-        beta_f = beta.reshape(s, beta.shape[-1])
-        sigma_f = sigma.reshape(s)
-
-        resid = (
-            self._y_dyn[None, :] - phi_f[:, None] * self._y_lag[None, :] - beta_f @ X.T
-        )
-        resid_block = resid.reshape(s, n_time_eff, n_units)
-        wy_block = resid_block @ Wn.T
-        eps = resid - lam_f[:, None] * wy_block.reshape(s, n)
-
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-
-            ll = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - ((nu_f[:, None] + 1) / 2)
-                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            )
-        else:
-            ll = -0.5 * (
-                (eps / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
+        if compute_log_likelihood:
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="lam",
+                nuts_sampler=nuts_sampler,
             )
 
-        jac = self._logdet_numpy_vec_fn(lam_f) * self._n_time_eff
-        ll = ll + jac[:, None] / n
-
-        ll = ll.reshape(c, d, n)
-        _write_log_likelihood_to_idata(idata, ll)
-        return idata
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -1274,7 +1322,6 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDEMDynamicPriors
 
-    _spatial_diagnostics_tests = SDEM_PANEL_SUITE.tests
     """Dynamic spatial Durbin error panel regression.
 
     Implements
@@ -1470,66 +1517,30 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics."""
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
 
-        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
-            return idata
-
-        Z = np.hstack([self._X_dyn, self._WX_dyn])
-        lam = idata.posterior["lam"].values
-        phi = idata.posterior["phi"].values
-        beta = idata.posterior["beta"].values
-        sigma = idata.posterior["sigma"].values
-
-        c, d = lam.shape
-        s = c * d
-        n = self._y_dyn.shape[0]
-
-        lam_f = lam.reshape(s)
-        phi_f = phi.reshape(s)
-        beta_f = beta.reshape(s, beta.shape[-1])
-        sigma_f = sigma.reshape(s)
-
-        resid = (
-            self._y_dyn[None, :] - phi_f[:, None] * self._y_lag[None, :] - beta_f @ Z.T
-        )
-        eps = resid - lam_f[:, None] * self._batch_sparse_lag(
-            resid, T_eff=self._n_time_eff
-        )
-
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-
-            ll = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - ((nu_f[:, None] + 1) / 2)
-                * np.log1p((eps / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            )
-        else:
-            ll = -0.5 * (
-                (eps / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
+        if compute_log_likelihood:
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="lam",
+                nuts_sampler=nuts_sampler,
             )
 
-        jac = self._logdet_numpy_vec_fn(lam_f) * self._n_time_eff
-        ll = ll + jac[:, None] / n
-
-        ll = ll.reshape(c, d, n)
-        _write_log_likelihood_to_idata(idata, ll)
-        return idata
+        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -1574,7 +1585,6 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSLXDynamicPriors
 
-    _spatial_diagnostics_tests = SLX_PANEL_DYNAMIC_SUITE.tests
     """Dynamic SLX panel regression.
 
     Implements

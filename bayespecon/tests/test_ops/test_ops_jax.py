@@ -1,4 +1,4 @@
-"""JAX dispatch parity tests for the custom Ops in :mod:`bayespecon.ops`.
+"""JAX dispatch parity tests for the custom Ops in :mod:`bayespecon._ops`.
 
 These tests are skipped when JAX is not installed.  They verify that each Op
 (forward and VJP) produces numerically identical outputs under the default
@@ -21,7 +21,7 @@ pytest.importorskip("jax")
 import pytensor
 import pytensor.tensor as pt
 
-from bayespecon.ops import (
+from bayespecon._ops import (
     KroneckerFlowSolveMatrixOp,
     KroneckerFlowSolveOp,
     SparseFlowSolveMatrixOp,
@@ -293,7 +293,10 @@ def test_sparse_flow_matrix_vjp_parity(kron_matrices):
 
 def test_sampler_resolution_with_jax_present():
     """When JAX is importable, requires_c_backend should not force a downgrade."""
-    from bayespecon.models._sampler import _jax_dispatches_available, enforce_c_backend
+    from bayespecon._backends.sampler_helpers import (
+        _jax_dispatches_available,
+        enforce_c_backend,
+    )
 
     assert _jax_dispatches_available() is True
     assert (

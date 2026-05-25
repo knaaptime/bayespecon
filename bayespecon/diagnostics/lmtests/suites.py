@@ -1,9 +1,10 @@
 """Diagnostic suites — named registries of Bayesian LM specification tests.
 
 A :class:`DiagnosticSuite` is a frozen, named tuple of
-``(test_callable, display_label)`` pairs.  Model classes set
-``_spatial_diagnostics_tests = SOME_SUITE.tests`` to declare which
-LM tests :meth:`SpatialModel.spatial_diagnostics` should run.
+``(test_callable, display_label)`` pairs.  Model classes are mapped to
+their diagnostic suite via the :data:`DIAGNOSTICS_REGISTRY` in
+:mod:`bayespecon.diagnostics.lmtests.registry`, which
+:meth:`SpatialModel.spatial_diagnostics` looks up at runtime.
 
 Each test callable lazily imports the corresponding function from
 :mod:`bayespecon.diagnostics.lmtests` on first call.  This keeps the
@@ -16,7 +17,8 @@ to which model".  Adding a new test family to a model means:
 1.  Implement the test function in ``lmtests/`` and export it from
     the package ``__init__``.
 2.  Add an entry (or build a new :class:`DiagnosticSuite`) here.
-3.  Point the model's ``_spatial_diagnostics_tests`` at it.
+3.  Register the suite in :data:`DIAGNOSTICS_REGISTRY` in
+    :mod:`bayespecon.diagnostics.lmtests.registry`.
 """
 
 from __future__ import annotations

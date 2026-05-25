@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
+import inspect
 import warnings
 from abc import ABC, abstractmethod
 from functools import cached_property
@@ -19,14 +19,18 @@ from libpysal.graph import Graph
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
 
-from ..logdet import (
-    _auto_logdet_method,
+from .._backends.sampler_helpers import (
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+    use_jax_likelihood,
+)
+from .._logdet import (
     make_logdet_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
     resolve_logdet_bounds,
 )
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from .._logdet._config import _auto_logdet_method
 
 
 def gelman_default_beta_prior(
@@ -278,18 +282,29 @@ class SpatialModel(ABC):
         each model's docstring for supported keys.
     logdet_method : str
         How to compute ``log|I - rho*W|``. ``"eigenvalue"`` (default for
-        ``n <= 2000``) pre-computes W's eigenvalues once and evaluates
+        ``n <= 500``) pre-computes W's eigenvalues once and evaluates
         O(n) per step; ``"exact"`` uses symbolic pytensor det (slow for
-        ``n > 500``); ``"dense_grid"`` uses dense eigenvalue grid +
+        ``n > 500``); ``"grid_dense"`` uses dense eigenvalue grid +
         cubic-spline interpolation (MATLAB-style ``lndetfull`` for dense
-        W); ``"sparse_grid"`` uses sparse-LU grid + cubic-spline
+        W); ``"grid_sparse"`` uses sparse-LU grid + cubic-spline
         interpolation (``lndetfull`` style for large sparse W);
-        ``"spline"`` uses sparse-LU + spline on ``[max(rho_min, 0),
-        rho_max]`` (``lndetint`` style); ``"mc"`` uses Monte Carlo
-        trace approximation (``lndetmc``); ``"ilu"`` uses ILU-based
-        approximation (``lndetichol`` analog); ``"chebyshev"`` (default
-        for ``n > 2000``) uses a Chebyshev polynomial approximation
-        evaluated via Clenshaw's algorithm.
+        ``"sparse_spline"`` uses sparse-LU + spline on
+        ``[max(rho_min, 0), rho_max]`` (``lndetint`` style); ``"grid_mc"``
+        uses Monte Carlo trace approximation (``lndetmc``); ``"grid_ilu"``
+        uses ILU-based approximation (``lndetichol`` analog);
+        ``"chebyshev"`` (default for ``n > 500``) uses a Chebyshev
+        polynomial approximation evaluated via Clenshaw's algorithm.
+        For large ``n`` the Chebyshev coefficients are built from a
+        stochastic trace estimator selected by ``trace_estimator``.
+    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
+        Stochastic trace estimator used to build the Chebyshev
+        coefficients when an eigendecomposition is unavailable.  Ignored
+        for non-Chebyshev methods.  See
+        ``docs/source/user-guide/logdet_profiling.ipynb`` for the
+        cost/accuracy frontier.
+    trace_k : int, optional
+        Number of probe vectors for the trace estimator.  Defaults:
+        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal,
         yielding a model that is robust to heavy-tailed outliers. When
@@ -303,7 +318,42 @@ class SpatialModel(ABC):
         By default all non-constant columns are lagged. Pass a subset to
         restrict which variables receive a spatial lag, e.g.
         ``w_vars=["income", "density"]``.
+
+    Attributes
+    ----------
+    _spatial_params : tuple[str, ...]
+        Spatial autoregressive parameters in the model (e.g. ``("rho",)``
+        for SAR, ``("lam",)`` for SEM).  Empty for OLS and SLX.
+    _lag_terms : tuple[str, ...]
+        Lagged terms present in the model specification (e.g. ``("Wy",)``
+        for SAR, ``("WX",)`` for SLX, ``("Wy", "WX")`` for SDM).
+    _jacobian_param : str or None
+        Name of the parameter that appears in the Jacobian determinant
+        ``log|I - param * W|``.  ``"rho"`` for SAR/SDM, ``"lam"`` for
+        SEM/SDEM, ``None`` for OLS/SLX (no Jacobian).
+    _has_wx_in_beta : bool
+        Whether the ``beta`` coefficient vector includes WX coefficients
+        (i.e. whether the design matrix is ``[X, WX]`` rather than just
+        ``X``).  True for SLX, SDM, SDEM.
+    _gibbs_class : str or None
+        Fully-qualified class name of the Gibbs sampler for this model
+        (e.g. ``"GaussianSARGibbs"``), or ``None`` if no Gibbs sampler
+        exists.  Used to look up the sampler at runtime to avoid circular
+        imports.
+    _model_type : str
+        Short lowercase model name used as the ``model_type`` argument to
+        the Gibbs sampler (e.g. ``"sar"``, ``"sdm"``).  Also used for
+        InferenceData coordinate labels.
     """
+
+    # --- Declarative model metadata ----------------------------------------
+    # Subclasses override these to declare their spatial structure.
+    _spatial_params: tuple[str, ...] = ()
+    _lag_terms: tuple[str, ...] = ()
+    _jacobian_param: str | None = None
+    _has_wx_in_beta: bool = False
+    _gibbs_class: str | None = None
+    _model_type: str = ""
 
     def __init__(
         self,
@@ -317,6 +367,8 @@ class SpatialModel(ABC):
         robust: bool = False,
         w_vars: Optional[list] = None,
         backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
+        trace_estimator: str = "hutchpp",
+        trace_k: int | None = None,
     ):
         # Resolve typed priors (dataclass) and dict view.
         from .priors import BasePriors, priors_as_dict, resolve_priors
@@ -325,6 +377,8 @@ class SpatialModel(ABC):
         self.priors_obj = resolve_priors(priors, _priors_cls)
         self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
+        self.trace_estimator = trace_estimator
+        self.trace_k = trace_k
         self.robust = robust
 
         # Resolve probabilistic backend (PyMC, NumPyro, BlackJAX, nutpie).
@@ -461,6 +515,12 @@ class SpatialModel(ABC):
             return None
         return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
+    @cached_property
+    def _W_eigs_real(self) -> np.ndarray | None:
+        """Real part of W eigenvalues as float64, computed lazily once."""
+        eigs = self._W_eigs
+        return None if eigs is None else eigs.real.astype(np.float64)
+
     @property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or dense W.
@@ -470,7 +530,7 @@ class SpatialModel(ABC):
         """
         if self._W_for_logdet_cache is None:
             if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs.real.astype(np.float64)
+                self._W_for_logdet_cache = self._W_eigs_real
             else:
                 self._W_for_logdet_cache = self._W_sparse.toarray().astype(np.float64)
         return self._W_for_logdet_cache
@@ -480,12 +540,16 @@ class SpatialModel(ABC):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
         if self._logdet_numpy_fn_cache is None:
             eigs = (
-                self._W_eigs.real
+                self._W_eigs_real
                 if self._resolved_logdet_method == "eigenvalue"
                 else None
             )
             self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
-                self._W_sparse, eigs, method=self.logdet_method
+                self._W_sparse,
+                eigs,
+                method=self.logdet_method,
+                trace_estimator=self.trace_estimator,
+                trace_k=self.trace_k,
             )
         return self._logdet_numpy_fn_cache
 
@@ -494,12 +558,16 @@ class SpatialModel(ABC):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
         if self._logdet_numpy_vec_fn_cache is None:
             eigs = (
-                self._W_eigs.real
+                self._W_eigs_real
                 if self._resolved_logdet_method == "eigenvalue"
                 else None
             )
             self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
-                self._W_sparse, eigs, method=self.logdet_method
+                self._W_sparse,
+                eigs,
+                method=self.logdet_method,
+                trace_estimator=self.trace_estimator,
+                trace_k=self.trace_k,
             )
         return self._logdet_numpy_vec_fn_cache
 
@@ -512,6 +580,8 @@ class SpatialModel(ABC):
                 method=self.logdet_method,
                 rho_min=self._logdet_bounds.rho_min,
                 rho_max=self._logdet_bounds.rho_max,
+                trace_estimator=self.trace_estimator,
+                trace_k=self.trace_k,
             )
         return self._logdet_pytensor_fn_cache
 
@@ -842,6 +912,7 @@ class SpatialModel(ABC):
         chains: int = 4,
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
+        progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
@@ -858,6 +929,8 @@ class SpatialModel(ABC):
             Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
+        progressbar : bool, default True
+            Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``.  Pass
             ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
@@ -869,18 +942,94 @@ class SpatialModel(ABC):
         arviz.InferenceData
         """
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        try:
-            model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        except TypeError:
-            # Subclasses that don't accept ``nuts_sampler`` build the same
-            # model on every backend.
-            model = self._build_pymc_model()
+        idata_kwargs = sample_kwargs.pop("idata_kwargs", None)
+        self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=False,
+            sample_kwargs=sample_kwargs,
+        )
+        return self._idata
+
+    def _fit_gibbs_dispatch(
+        self,
+        *,
+        draws: int,
+        tune: int,
+        chains: int,
+        random_seed: Optional[int],
+        thin: int,
+        n_jobs: int,
+        progressbar: bool,
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> az.InferenceData:
+        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs`.
+
+        This keeps model ``fit`` methods thin by centralizing how Gibbs-specific
+        kwargs are popped from ``sample_kwargs``.
+        """
+        sample_kwargs = dict(sample_kwargs or {})
+        return self._fit_gibbs(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+            mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+            use_mala=sample_kwargs.pop("use_mala", True),
+            use_slice=sample_kwargs.pop("use_slice", True),
+            slice_width=sample_kwargs.pop("slice_width", None),
+            chain_method=sample_kwargs.pop("chain_method", None),
+        )
+
+    def _fit_nuts(
+        self,
+        *,
+        draws: int,
+        tune: int,
+        chains: int,
+        target_accept: float,
+        random_seed: Optional[int],
+        progressbar: bool,
+        nuts_sampler: str = "pymc",
+        idata_kwargs: dict[str, Any] | None = None,
+        compute_log_likelihood: bool = False,
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> tuple[az.InferenceData, bool]:
+        """Shared NUTS sampling path used by model-specific ``fit`` methods.
+
+        Returns
+        -------
+        tuple[arviz.InferenceData, bool]
+            ``(idata, compute_log_likelihood)`` where the boolean reflects the
+            post-policy value after :func:`prepare_idata_kwargs`.
+        """
+        sample_kwargs = dict(sample_kwargs or {})
+        idata_kwargs = dict(idata_kwargs or {})
+
+        build_kwargs: dict[str, Any] = {}
+        build_sig = inspect.signature(self._build_pymc_model)
+        if "compute_log_likelihood" in build_sig.parameters:
+            build_kwargs["compute_log_likelihood"] = compute_log_likelihood
+        if "nuts_sampler" in build_sig.parameters:
+            build_kwargs["nuts_sampler"] = nuts_sampler
+
+        model = self._build_pymc_model(**build_kwargs)
         self._pymc_model = model
-        if "idata_kwargs" in sample_kwargs:
-            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
-                sample_kwargs["idata_kwargs"], model, nuts_sampler
-            )
+
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -888,9 +1037,210 @@ class SpatialModel(ABC):
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
                 nuts_sampler=nuts_sampler,
+                progressbar=progressbar,
                 **sample_kwargs,
             )
+        return self._idata, compute_log_likelihood
+
+    def _reconstruct_cross_sectional_log_likelihood(
+        self,
+        *,
+        nuts_sampler: str,
+    ) -> None:
+        """Rebuild complete pointwise log-likelihood for cross-sectional models.
+
+        Dispatches by spatial term type (``rho`` vs ``lam``) and whether the
+        model's beta vector includes WX terms.
+        """
+        if not hasattr(self, "_idata"):
+            return
+
+        spatial_param = self._jacobian_param
+        if spatial_param not in {"rho", "lam"}:
+            return
+
+        # SEM/SDEM on JAX backends build an observed CustomDist and already
+        # have complete log_likelihood from PyMC.
+        if spatial_param == "lam" and use_jax_likelihood(nuts_sampler):
+            return
+
+        idata = self._idata
+        n = int(self._y.shape[0])
+        Z = np.hstack([self._X, self._WX]) if self._has_wx_in_beta else self._X
+
+        spatial_draws = idata.posterior[spatial_param].values.reshape(-1)
+        beta_draws = idata.posterior["beta"].values.reshape(-1, Z.shape[1])
+        sigma_draws = idata.posterior["sigma"].values.reshape(-1)
+        nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
+
+        if spatial_param == "rho":
+            mu = spatial_draws[:, None] * self._Wy[None, :] + (beta_draws @ Z.T)
+            eps = self._y[None, :] - mu
+        else:
+            resid = self._y[None, :] - (beta_draws @ Z.T)
+            W_resid = (self._W_sparse @ resid.T).T
+            eps = resid - spatial_draws[:, None] * W_resid
+
+        ll_data = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
+        jacobian = self._logdet_numpy_vec_fn(spatial_draws)
+        ll_total = ll_data + jacobian[:, None] / n
+
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        _write_log_likelihood_to_idata(
+            idata,
+            ll_total.reshape(n_chains, n_draws_per_chain, n),
+        )
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> az.InferenceData:
+        """Sample posterior via 3-block Gaussian Gibbs.
+
+        Uses the model's :attr:`_gibbs_class` attribute to resolve the
+        appropriate Gibbs sampler class at runtime.  Only models with
+        ``_gibbs_class is not None`` support Gibbs sampling; calling this
+        method on OLS or SLX raises :exc:`NotImplementedError`.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup (burn-in) draws per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int or None
+            Seed for reproducibility.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup.
+        n_jobs : int, default -1
+            Number of parallel workers for the NumPy path.  ``-1`` uses
+            all CPUs.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        gibbs_method : str, default "numpy"
+            Execution backend: ``"numpy"`` for Python-loop Gibbs with
+            adaptive slice sampling, or ``"jax"`` for full-JIT Gibbs
+            with MALA for ρ/λ.
+        mala_step_size : float, default 0.05
+            Initial MALA step size for the JAX path.
+        use_mala : bool, default True
+            If True, use MALA for the ρ/λ update in the JAX path.
+        use_slice : bool, default True
+            If True, use slice sampling for the ρ/λ update.
+        slice_width : float or None, default None
+            Initial step-out width for slice sampling.
+        chain_method : str or None, default None
+            How to run multiple chains for the JAX path.
+
+        Returns
+        -------
+        arviz.InferenceData
+            With ``posterior``, ``log_likelihood``, and ``observed_data``
+            groups.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model has no Gibbs sampler (``_gibbs_class is None``)
+            or uses a robust (Student-t) likelihood.
+        """
+        if self._gibbs_class is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support Gibbs sampling. "
+                f"Use sampler='nuts' (the default)."
+            )
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        # --- Resolve Gibbs class (lazy import to avoid circular deps) ---
+        import importlib
+
+        from ..samplers.gaussian import GaussianGibbsPriors
+
+        gibbs_module = importlib.import_module(
+            "..samplers.gaussian", package=__package__
+        )
+        GibbsClass = getattr(gibbs_module, self._gibbs_class)
+
+        # --- Build design matrix and feature names ---
+        if self._has_wx_in_beta:
+            Z = np.hstack([self._X, self._WX])  # (n, 2k)
+            feature_names = list(self._feature_names) + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
+        else:
+            Z = self._X
+            feature_names = list(self._feature_names)
+
+        # --- Build priors ---
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            Z, feature_names
+        )
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        # --- Build Gibbs sampler kwargs ---
+        gibbs_kwargs: dict[str, Any] = dict(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type=self._model_type,
+            W_eigs=self._W_eigs_real
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+        )
+        # SAR/SDM need Wy; SEM/SDEM do not
+        if self._jacobian_param == "rho":
+            gibbs_kwargs["Wy"] = self._Wy
+
+        gibbs = GibbsClass(**gibbs_kwargs)
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            use_slice=use_slice,
+            slice_width=slice_width,
+            chain_method=chain_method,
+        )
         return self._idata
 
     def _attach_jacobian_corrected_log_likelihood(
@@ -1002,29 +1352,6 @@ class SpatialModel(ABC):
         summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
         return self._rename_summary_index(summary_df)
 
-    # ------------------------------------------------------------------
-    # Class-level registry of applicable Bayesian LM specification tests.
-    # Each subclass sets this to a list of (test_function, display_label)
-    # pairs.  The base spatial_diagnostics() method iterates over this
-    # list and builds a summary DataFrame.
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _lazy_lm_test(module: str, name: str):
-        """Return a callable that lazily imports ``name`` from ``module``.
-
-        Used in ``_spatial_diagnostics_tests`` registries to avoid
-        circular imports at module-load time.
-        """
-
-        def _fn(model):
-            mod = importlib.import_module(module)
-            return getattr(mod, name)(model)
-
-        return _fn
-
-    _spatial_diagnostics_tests: list[tuple] = []
-
     @staticmethod
     def _run_lm_diagnostics(model, tests: list[tuple]) -> pd.DataFrame:
         """Execute a registry of LM tests and return a tidy DataFrame.
@@ -1077,7 +1404,7 @@ class SpatialModel(ABC):
     def spatial_diagnostics(self) -> pd.DataFrame:
         """Run Bayesian LM specification tests and return a summary table.
 
-        Iterates over the class-level ``_spatial_diagnostics_tests`` registry
+        Looks up the diagnostic suite registered for this model class
         and calls each test function on this fitted model, collecting the
         results into a tidy DataFrame.  The set of tests depends on the
         model type — for example, an OLS model runs LM-Lag, LM-Error,
@@ -1137,7 +1464,15 @@ class SpatialModel(ABC):
         self._require_fit()
         self._require_W()
 
-        return self._run_lm_diagnostics(self, self._spatial_diagnostics_tests)
+        from ..diagnostics.lmtests.registry import get_diagnostic_suite
+
+        suite = get_diagnostic_suite(self)
+        if suite is None:
+            raise ValueError(
+                f"No diagnostic suite registered for {type(self).__name__}. "
+                f"Register one in bayespecon.diagnostics.lmtests.registry."
+            )
+        return self._run_lm_diagnostics(self, suite.tests)
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"

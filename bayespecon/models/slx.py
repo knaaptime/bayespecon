@@ -12,7 +12,6 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ..diagnostics.lmtests import SLX_SUITE
 from .base import SpatialModel
 from .priors import SLXPriors
 
@@ -102,8 +101,12 @@ class SLX(SpatialModel):
     """
 
     _priors_cls = SLXPriors
-
-    _spatial_diagnostics_tests = SLX_SUITE.tests
+    _spatial_params: tuple[str, ...] = ()
+    _lag_terms: tuple[str, ...] = ("WX",)
+    _jacobian_param: str | None = None
+    _has_wx_in_beta: bool = True
+    _gibbs_class: str | None = None
+    _model_type: str = "slx"
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]

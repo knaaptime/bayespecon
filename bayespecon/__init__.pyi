@@ -1,4 +1,7 @@
 from . import (
+    _ops as _ops,
+)
+from . import (
     dgp as dgp,
 )
 from . import (
@@ -10,26 +13,14 @@ from . import (
 from . import (
     models as models,
 )
-from . import (
-    ops as ops,
+from ._ops import (
+    SparseFlowSolveOp as SparseFlowSolveOp,
 )
-from ._samplers._gaussian_gibbs import (
-    GaussianGibbsCache as GaussianGibbsCache,
+from ._ops import (
+    kron_solve_matrix as kron_solve_matrix,
 )
-from ._samplers._gaussian_gibbs import (
-    GaussianGibbsPriors as GaussianGibbsPriors,
-)
-from ._samplers._gaussian_gibbs import (
-    GaussianGibbsState as GaussianGibbsState,
-)
-from ._samplers._gibbs_estimation import (
-    GaussianSARGibbs as GaussianSARGibbs,
-)
-from ._samplers._gibbs_estimation import (
-    GaussianSEMGibbs as GaussianSEMGibbs,
-)
-from ._samplers._gibbs_estimation import (
-    GibbsEstimation as GibbsEstimation,
+from ._ops import (
+    kron_solve_vec as kron_solve_vec,
 )
 from .config import (
     enable_compile_cache as enable_compile_cache,
@@ -257,17 +248,26 @@ from .models.flow import (
     SARFlowSeparable as SARFlowSeparable,
 )
 from .models.flow import (
+    SARNegBinFlowLatent as SARNegBinFlowLatent,
+)
+from .models.flow import (
+    SARNegBinFlowSeparableLatent as SARNegBinFlowSeparableLatent,
+)
+from .models.flow import (
     SEMFlow as SEMFlow,
 )
 from .models.flow import (
     SEMFlowSeparable as SEMFlowSeparable,
 )
-from .ops import (
-    SparseFlowSolveOp as SparseFlowSolveOp,
+from .samplers.gaussian._core import (
+    GaussianGibbsPriors as GaussianGibbsPriors,
 )
-from .ops import (
-    kron_solve_matrix as kron_solve_matrix,
+from .samplers.gaussian._estimation import (
+    GaussianSARGibbs as GaussianSARGibbs,
 )
-from .ops import (
-    kron_solve_vec as kron_solve_vec,
+from .samplers.gaussian._estimation import (
+    GaussianSEMGibbs as GaussianSEMGibbs,
+)
+from .samplers.gaussian._estimation import (
+    GibbsEstimation as GibbsEstimation,
 )

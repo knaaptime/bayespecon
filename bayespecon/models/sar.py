@@ -15,13 +15,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ..diagnostics.lmtests import SAR_SUITE
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
-from .base import (
-    SpatialModel,
-    _pointwise_gaussian_loglik,
-    _write_log_likelihood_to_idata,
-)
+from .base import SpatialModel
 from .priors import SARPriors
 
 
@@ -110,8 +104,12 @@ class SAR(SpatialModel):
     """
 
     _priors_cls = SARPriors
-
-    _spatial_diagnostics_tests = SAR_SUITE.tests
+    _spatial_params: tuple[str, ...] = ("rho",)
+    _lag_terms: tuple[str, ...] = ("Wy",)
+    _jacobian_param: str | None = "rho"
+    _has_wx_in_beta: bool = False
+    _gibbs_class: str | None = "GaussianSARGibbs"
+    _model_type: str = "sar"
 
     def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
         """Construct the PyMC model for SAR regression.
@@ -245,7 +243,7 @@ class SAR(SpatialModel):
         used for sampling.
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -253,12 +251,7 @@ class SAR(SpatialModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
-                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-                use_mala=sample_kwargs.pop("use_mala", True),
-                use_slice=sample_kwargs.pop("use_slice", True),
-                slice_width=sample_kwargs.pop("slice_width", None),
-                chain_method=sample_kwargs.pop("chain_method", None),
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
@@ -267,186 +260,22 @@ class SAR(SpatialModel):
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        # Build model with log_likelihood computation if requested
-        model = self._build_pymc_model(compute_log_likelihood=compute_log_likelihood)
-        self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                idata_kwargs=idata_kwargs,
-                nuts_sampler=nuts_sampler,
-                **sample_kwargs,
-            )
-
-        # --- Correct log_likelihood: add Jacobian contribution ---
-        # The pm.Normal("obs") auto-captures the Gaussian part, but the
-        # Jacobian log|I - rho*W| (added via pm.Potential) is absent.
-        # We recompute the complete pointwise LL and overwrite the group.
-        if compute_log_likelihood and hasattr(self, "_idata"):
-            idata = self._idata
-            n = self._y.shape[0]
-
-            rho_draws = idata.posterior["rho"].values.reshape(-1)  # (n_draws,)
-            beta_draws = idata.posterior["beta"].values.reshape(
-                -1, self._X.shape[1]
-            )  # (n_draws, k)
-            sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
-            nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
-
-            mu = rho_draws[:, None] * self._Wy[None, :] + (
-                beta_draws @ self._X.T
-            )  # (n_draws, n)
-            resid = self._y[None, :] - mu  # (n_draws, n)
-
-            ll_gauss = _pointwise_gaussian_loglik(resid, sigma_draws, nu_draws)
-            jacobian = self._logdet_numpy_vec_fn(rho_draws)  # (n_draws,)
-            ll_total = ll_gauss + jacobian[:, None] / n  # (n_draws, n)
-
-            n_chains = idata.posterior.sizes["chain"]
-            n_draws_per_chain = idata.posterior.sizes["draw"]
-            _write_log_likelihood_to_idata(
-                idata, ll_total.reshape(n_chains, n_draws_per_chain, n)
-            )
-
-        return self._idata
-
-    def _fit_gibbs(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
-        slice_width: float | None = None,
-        chain_method: str | None = None,
-    ) -> "az.InferenceData":
-        """Sample posterior via 3-block Gaussian Gibbs.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of post-warmup draws per chain.
-        tune : int, default 1000
-            Number of warmup (burn-in) draws per chain.
-        chains : int, default 4
-            Number of independent chains.
-        random_seed : int or None
-            Seed for reproducibility.
-        thin : int, default 1
-            Keep every ``thin``-th draw after warmup.
-        n_jobs : int, default -1
-            Number of parallel workers for the NumPy path. ``-1`` uses
-            all CPUs.  When ``n_jobs=1``, chains run sequentially with
-            progress bars.  When ``n_jobs>1`` (or ``-1``), chains run
-            in parallel via ``joblib``.  Ignored for the JAX path
-            (use ``chain_method`` instead).
-        progressbar : bool, default True
-            Show per-chain progress bars.
-        gibbs_method : str, default "numpy"
-            Execution backend: ``"numpy"`` for Python-loop Gibbs with
-            adaptive slice sampling, or ``"jax"`` for full-JIT Gibbs
-            with MALA for ρ.  The JAX path requires JAX and equinox.
-        mala_step_size : float, default 0.05
-            Initial MALA step size for the JAX path.
-        use_mala : bool, default True
-            If True, use MALA for the ρ update in the JAX path.
-            Ignored when ``use_slice=True``.
-        use_slice : bool, default False
-            If True, use slice sampling for the ρ/λ update in the
-            JAX path.  Slice sampling gives much better ESS per sample
-            than MALA.  Ignored when ``gibbs_method="numpy"``.
-        slice_width : float or None, default None
-            Initial step-out width for slice sampling.  If None, defaults
-            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
-            ``use_slice=False`` or ``gibbs_method="numpy"``.
-        chain_method : str or None, default None
-            How to run multiple chains for the JAX path.
-            ``"vectorized"`` uses ``jax.vmap`` for JAX-native
-            parallelism (all chains on one device).  ``"sequential"``
-            runs chains one after another with progress bars.
-            ``"parallel"`` is not supported for the JAX path.
-            If None, defaults to ``"vectorized"`` when
-            ``gibbs_method="jax"``.  Ignored for the NumPy path
-            (use ``n_jobs`` to control parallelism instead).
-
-        Returns
-        -------
-        az.InferenceData
-            With ``posterior``, ``log_likelihood``, and ``observed_data``
-            groups.
-
-        Raises
-        ------
-        NotImplementedError
-            If the model uses a robust (Student-t) likelihood.
-        """
-        if self.robust:
-            raise NotImplementedError(
-                "Gibbs sampling is not yet supported for robust (Student-t) "
-                "models. Use sampler='nuts' (the default)."
-            )
-
-        from .._samplers._gaussian_gibbs import GaussianGibbsPriors
-        from .._samplers._gibbs_estimation import GaussianSARGibbs
-
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            self._X, list(self._feature_names)
-        )
-        priors = GaussianGibbsPriors(
-            beta_mu=self.priors.get("beta_mu", default_beta_mu),
-            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
-            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
-            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
-            rho_lower=self._logdet_bounds.rho_min,
-            rho_upper=self._logdet_bounds.rho_max,
-        )
-
-        gibbs = GaussianSARGibbs(
-            y=self._y,
-            X=self._X,
-            W_sparse=self._W_sparse,
-            Wy=self._Wy,
-            priors=priors,
-            logdet_fn=self._logdet_numpy_fn,
-            logdet_vec_fn=self._logdet_numpy_vec_fn,
-            feature_names=list(self._feature_names),
-            model_type="sar",
-            W_eigs=self._W_eigs.real.astype(np.float64)
-            if self._resolved_logdet_method == "eigenvalue"
-            else None,
-            logdet_method=self.logdet_method,
-        )
-
-        self._idata = gibbs.fit(
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
-            thin=thin,
-            n_jobs=n_jobs,
             progressbar=progressbar,
-            gibbs_method=gibbs_method,
-            mala_step_size=mala_step_size,
-            use_mala=use_mala,
-            use_slice=use_slice,
-            slice_width=slice_width,
-            chain_method=chain_method,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
+
+        if compute_log_likelihood:
+            self._reconstruct_cross_sectional_log_likelihood(nuts_sampler=nuts_sampler)
+
         return self._idata
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
@@ -522,7 +351,7 @@ class SAR(SpatialModel):
         rho_draws.shape[0]
         beta_draws.shape[1]
 
-        eigs = self._W_eigs.real.astype(np.float64)  # (n,)
+        eigs = self._W_eigs_real  # (n,)
 
         # For each draw g, compute mean_diag and mean_rowsum of S = (I - rho*W)^{-1}
         # Using eigenvalues: diag(S) has entries 1/(1 - rho*omega_i)

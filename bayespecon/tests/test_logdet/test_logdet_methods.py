@@ -5,16 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon.logdet import (
-    chebyshev,
+from bayespecon._logdet import (
     clear_logdet_fn_cache,
     get_cached_logdet_fn,
-    ilu,
     make_logdet_fn,
-    mc,
-    sparse_grid,
-    spline,
 )
+from bayespecon._logdet._grids import chebyshev, ilu, mc, sparse_grid, spline
 
 
 def _toy_w() -> np.ndarray:
@@ -133,7 +129,7 @@ def test_chebyshev_accuracy_against_exact() -> None:
     import pytensor
     import pytensor.tensor as pt
 
-    from bayespecon.logdet import logdet_chebyshev
+    from bayespecon._logdet import logdet_chebyshev
 
     rho_sym = pt.scalar("rho")
     expr = logdet_chebyshev(rho_sym, coeffs, rmin=rmin, rmax=rmax)
@@ -196,7 +192,7 @@ def test_logdet_mc_poly_pytensor_matches_eigenvalue() -> None:
     import pytensor
     import pytensor.tensor as pt
 
-    from bayespecon.logdet import (
+    from bayespecon._logdet import (
         compute_flow_traces,
         logdet_eigenvalue,
         logdet_mc_poly_pytensor,
@@ -231,7 +227,7 @@ def test_logdet_mc_poly_pytensor_empty_traces() -> None:
     import pytensor
     import pytensor.tensor as pt
 
-    from bayespecon.logdet import logdet_mc_poly_pytensor
+    from bayespecon._logdet import logdet_mc_poly_pytensor
 
     rho_sym = pt.dscalar("rho")
     expr = logdet_mc_poly_pytensor(rho_sym, np.array([]))
@@ -240,12 +236,12 @@ def test_logdet_mc_poly_pytensor_empty_traces() -> None:
 
 
 def test_make_logdet_fn_mc_poly() -> None:
-    """make_logdet_fn with method='trace_mc' produces a valid callable."""
+    """make_logdet_fn with chebyshev + hutchinson trace produces a valid callable."""
     import pytensor
     import pytensor.tensor as pt
 
     W = _toy_w()
-    fn = make_logdet_fn(W, method="trace_mc")
+    fn = make_logdet_fn(W, method="chebyshev", trace_estimator="hutchinson")
     assert callable(fn)
 
     rho_sym = pt.dscalar("rho")
@@ -256,7 +252,7 @@ def test_make_logdet_fn_mc_poly() -> None:
         approx = float(compiled(rho))
         exact = np.linalg.slogdet(I - rho * W)[1]
         assert abs(approx - exact) < 0.1, (
-            f"rho={rho}: mc_poly={approx:.4f}, exact={exact:.4f}"
+            f"rho={rho}: chebyshev={approx:.4f}, exact={exact:.4f}"
         )
 
 
@@ -290,7 +286,7 @@ class TestMakeFlowSeparableLogdet:
         # Reference: exact eigenvalue-based answer
         rho_d_t = pt.dscalar("rd")
         rho_o_t = pt.dscalar("ro")
-        from bayespecon.logdet import logdet_eigenvalue
+        from bayespecon._logdet import logdet_eigenvalue
 
         ref_expr = n * logdet_eigenvalue(rho_d_t, eigs) + n * logdet_eigenvalue(
             rho_o_t, eigs
@@ -304,7 +300,7 @@ class TestMakeFlowSeparableLogdet:
         return self.pytensor.function([rho_d_t, rho_o_t], fn(rho_d_t, rho_o_t))
 
     def test_eigenvalue_method(self):
-        from bayespecon.logdet import make_flow_separable_logdet
+        from bayespecon._logdet import make_flow_separable_logdet
 
         fn = make_flow_separable_logdet(self.W_sp, self.n, method="eigenvalue")
         compiled = self._compile(fn)
@@ -312,7 +308,7 @@ class TestMakeFlowSeparableLogdet:
         assert abs(val - self.ref_val) < 1e-8
 
     def test_chebyshev_method(self):
-        from bayespecon.logdet import make_flow_separable_logdet
+        from bayespecon._logdet import make_flow_separable_logdet
 
         fn = make_flow_separable_logdet(
             self.W_sp, self.n, method="chebyshev", cheb_order=25
@@ -322,17 +318,21 @@ class TestMakeFlowSeparableLogdet:
         assert abs(val - self.ref_val) / (abs(self.ref_val) + 1e-12) < 0.02
 
     def test_mc_poly_method(self):
-        from bayespecon.logdet import make_flow_separable_logdet
+        from bayespecon._logdet import make_flow_separable_logdet
 
         fn = make_flow_separable_logdet(
-            self.W_sp, self.n, method="trace_mc", miter=50, riter=100, random_state=0
+            self.W_sp,
+            self.n,
+            method="chebyshev",
+            cheb_order=25,
+            trace_estimator="hutchinson",
         )
         compiled = self._compile(fn)
         val = float(compiled(self.rho_d, self.rho_o))
         assert abs(val - self.ref_val) / (abs(self.ref_val) + 1e-12) < 0.02
 
     def test_invalid_method_raises(self):
-        from bayespecon.logdet import make_flow_separable_logdet
+        from bayespecon._logdet import make_flow_separable_logdet
 
         with pytest.raises(ValueError, match="not recognised"):
             make_flow_separable_logdet(self.W_sp, self.n, method="sparse_spline")

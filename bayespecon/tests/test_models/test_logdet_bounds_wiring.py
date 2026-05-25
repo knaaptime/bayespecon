@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
-from bayespecon.logdet import LogdetBounds
+from bayespecon._logdet import LogdetBounds
 from bayespecon.models.sar import SAR
 from bayespecon.models.sem import SEM
 
