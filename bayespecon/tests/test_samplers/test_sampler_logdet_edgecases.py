@@ -1,4 +1,4 @@
-"""Fast unit tests for bayespecon.models._sampler and bayespecon.logdet edge cases.
+"""Fast unit tests for bayespecon._backends.sampler_helpers and bayespecon.logdet edge cases.
 
 Tests enforce_c_backend, prepare_compile_kwargs, prepare_idata_kwargs,
 logdet_exact, _build_logdet_grid large-matrix path, and _stable_rho_grid
@@ -10,15 +10,20 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon._logdet import (
-    _build_logdet_grid,
-    _stable_rho_grid,
-    logdet_exact,
-)
-from bayespecon.models._sampler import (
+from bayespecon._backends import sampler_helpers as _sampler
+from bayespecon._backends.sampler_helpers import (
     enforce_c_backend,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
+)
+from bayespecon._logdet import logdet_exact
+from bayespecon._logdet._config import _LOGDET_GRID_EIG_MAX
+from bayespecon._logdet._grids import (
+    _build_logdet_grid,
+    _stable_rho_grid,
+    mc,
+    sparse_grid,
+    spline,
 )
 
 # ---------------------------------------------------------------------------
@@ -42,8 +47,6 @@ class TestEnforceCBackend:
 
     def test_requires_c_backend_with_no_jax(self, monkeypatch):
         """When requires_c_backend=True and JAX dispatch unavailable, fall back to pymc."""
-        from bayespecon.models import _sampler
-
         monkeypatch.setattr(_sampler, "_jax_dispatches_available", lambda: False)
         result = enforce_c_backend(
             "blackjax", requires_c_backend=True, model_name="TestModel"
@@ -52,8 +55,6 @@ class TestEnforceCBackend:
 
     def test_requires_c_backend_with_jax_available(self, monkeypatch):
         """When JAX dispatch is available, the requested sampler is preserved."""
-        from bayespecon.models import _sampler
-
         monkeypatch.setattr(_sampler, "_jax_dispatches_available", lambda: True)
         result = enforce_c_backend(
             "blackjax", requires_c_backend=True, model_name="TestModel"
@@ -153,8 +154,6 @@ class TestPrepareCompileKwargs:
         assert isinstance(result, dict)
 
     def test_numba_missing_warns(self, monkeypatch):
-        from bayespecon.models import _sampler
-
         monkeypatch.setattr(_sampler, "_has_module", lambda name: False)
         with pytest.warns(UserWarning, match="numba is not installed"):
             prepare_compile_kwargs({}, nuts_sampler="pymc")
@@ -246,8 +245,6 @@ class TestBuildLogdetGrid:
 
     def test_large_matrix_slogdet_path(self):
         """For n > _LOGDET_GRID_EIG_MAX, uses slogdet loop."""
-        from bayespecon._logdet import _LOGDET_GRID_EIG_MAX
-
         n = _LOGDET_GRID_EIG_MAX + 1
         rng = np.random.default_rng(42)
         # Create a small random row-standardized W
@@ -269,8 +266,6 @@ class TestLogdetMC:
     """Tests for logdet.mc (Monte Carlo log-determinant)."""
 
     def test_basic(self):
-        from bayespecon._logdet import mc
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         result = mc(
             order=5, iter=10, W=W, rmin=0.01, rmax=0.99, grid=0.1, random_state=42
@@ -280,29 +275,21 @@ class TestLogdetMC:
         assert len(result["rho"]) == len(result["lndet"])
 
     def test_invalid_order_raises(self):
-        from bayespecon._logdet import mc
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="order must be positive"):
             mc(order=0, iter=10, W=W)
 
     def test_invalid_iter_raises(self):
-        from bayespecon._logdet import mc
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="iter must be positive"):
             mc(order=5, iter=0, W=W)
 
     def test_negative_rmin_raises(self):
-        from bayespecon._logdet import mc
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="nonnegative"):
             mc(order=5, iter=10, W=W, rmin=-0.5)
 
     def test_rmax_leq_rmin_raises(self):
-        from bayespecon._logdet import mc
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="rmax must be greater than rmin"):
             mc(order=5, iter=10, W=W, rmin=0.5, rmax=0.5)
@@ -317,8 +304,6 @@ class TestLogdetSpline:
     """Tests for logdet.spline (LU interpolation style)."""
 
     def test_basic(self):
-        from bayespecon._logdet import spline
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         result = spline(W, rmin=0.01, rmax=0.99, n_grid=50)
         assert "rho" in result
@@ -326,22 +311,16 @@ class TestLogdetSpline:
         assert len(result["rho"]) == len(result["lndet"])
 
     def test_small_n_grid_raises(self):
-        from bayespecon._logdet import spline
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="n_grid must be at least 20"):
             spline(W, n_grid=10)
 
     def test_negative_rmin_raises(self):
-        from bayespecon._logdet import spline
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="nonnegative"):
             spline(W, rmin=-0.5)
 
     def test_rmax_leq_rmin_raises(self):
-        from bayespecon._logdet import spline
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         with pytest.raises(ValueError, match="rmax must be greater than rmin"):
             spline(W, rmin=0.5, rmax=0.5)
@@ -356,8 +335,6 @@ class TestLogdetSparseGrid:
     """Tests for logdet.sparse_grid."""
 
     def test_basic(self):
-        from bayespecon._logdet import sparse_grid
-
         W = np.array([[0.0, 0.5, 0.5], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0]])
         result = sparse_grid(W, lmin=0.01, lmax=0.99, grid=0.1)
         assert "rho" in result

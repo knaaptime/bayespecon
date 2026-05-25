@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import warnings
 from abc import ABC, abstractmethod
 from functools import cached_property
@@ -18,14 +19,23 @@ from libpysal.graph import Graph
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
 
+from .._backends.sampler_helpers import (
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+    use_jax_likelihood,
+)
 from .._logdet import (
-    _auto_logdet_method,
     make_logdet_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
-from .base import _is_row_standardized_csr, gelman_default_beta_prior
+from .._logdet._config import _auto_logdet_method
+from .base import (
+    _is_row_standardized_csr,
+    _pointwise_gaussian_loglik,
+    _write_log_likelihood_to_idata,
+    gelman_default_beta_prior,
+)
 
 
 def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
@@ -566,6 +576,11 @@ class SpatialPanelModel(ABC):
         """
         return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
+    @cached_property
+    def _W_eigs_real(self) -> np.ndarray:
+        """Real part of W eigenvalues as float64, computed lazily once."""
+        return self._W_eigs.real.astype(np.float64)
+
     @property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or sparse W.
@@ -575,7 +590,7 @@ class SpatialPanelModel(ABC):
         """
         if self._W_for_logdet_cache is None:
             if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs.real.astype(np.float64)
+                self._W_for_logdet_cache = self._W_eigs_real
             else:
                 self._W_for_logdet_cache = self._W_sparse
         return self._W_for_logdet_cache
@@ -585,7 +600,7 @@ class SpatialPanelModel(ABC):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
         if self._logdet_numpy_fn_cache is None:
             eigs = (
-                self._W_eigs.real
+                self._W_eigs_real
                 if self._resolved_logdet_method == "eigenvalue"
                 else None
             )
@@ -604,7 +619,7 @@ class SpatialPanelModel(ABC):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
         if self._logdet_numpy_vec_fn_cache is None:
             eigs = (
-                self._W_eigs.real
+                self._W_eigs_real
                 if self._resolved_logdet_method == "eigenvalue"
                 else None
             )
@@ -1062,6 +1077,141 @@ class SpatialPanelModel(ABC):
             )
         return self._idata
 
+    def _fit_gibbs_dispatch(
+        self,
+        *,
+        draws: int,
+        tune: int,
+        chains: int,
+        random_seed: Optional[int],
+        thin: int,
+        n_jobs: int,
+        progressbar: bool,
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> az.InferenceData:
+        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs.
+
+        Centralizes how Gibbs-specific kwargs are popped from ``sample_kwargs``.
+        """
+        sample_kwargs = dict(sample_kwargs or {})
+        return self._fit_gibbs(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+            mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+            use_mala=sample_kwargs.pop("use_mala", True),
+            use_slice=sample_kwargs.pop("use_slice", True),
+            slice_width=sample_kwargs.pop("slice_width", None),
+            chain_method=sample_kwargs.pop("chain_method", None),
+        )
+
+    def _fit_nuts(
+        self,
+        *,
+        draws: int,
+        tune: int,
+        chains: int,
+        target_accept: float,
+        random_seed: Optional[int],
+        progressbar: bool,
+        nuts_sampler: str = "pymc",
+        idata_kwargs: dict[str, Any] | None = None,
+        compute_log_likelihood: bool = False,
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> tuple[az.InferenceData, bool]:
+        """Shared NUTS sampling path used by panel ``fit`` methods."""
+        sample_kwargs = dict(sample_kwargs or {})
+        idata_kwargs = dict(idata_kwargs or {})
+
+        build_kwargs: dict[str, Any] = {}
+        build_sig = inspect.signature(self._build_pymc_model)
+        if "nuts_sampler" in build_sig.parameters:
+            build_kwargs["nuts_sampler"] = nuts_sampler
+
+        model = self._build_pymc_model(**build_kwargs)
+        self._pymc_model = model
+
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+
+        with model:
+            self._idata = pm.sample(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                target_accept=target_accept,
+                random_seed=random_seed,
+                idata_kwargs=idata_kwargs,
+                nuts_sampler=nuts_sampler,
+                progressbar=progressbar,
+                **sample_kwargs,
+            )
+
+        return self._idata, compute_log_likelihood
+
+    def _reconstruct_panel_log_likelihood(
+        self,
+        *,
+        spatial_param: str,
+        nuts_sampler: str,
+        T_eff: int | None = None,
+    ) -> None:
+        """Rebuild complete pointwise log-likelihood for static panel models."""
+        if not hasattr(self, "_idata"):
+            return
+
+        if spatial_param not in {"rho", "lam"}:
+            return
+
+        # SEM/SDEM on JAX backends build an observed CustomDist and already
+        # have complete log_likelihood from PyMC.
+        if spatial_param == "lam" and use_jax_likelihood(nuts_sampler):
+            return
+
+        idata = self._idata
+        n = int(self._y.shape[0])
+        T_mult = int(self._T if T_eff is None else T_eff)
+        Z = np.hstack([self._X, self._WX]) if self._has_wx_in_beta else self._X
+
+        spatial_draws = idata.posterior[spatial_param].values.reshape(-1)
+        beta_draws = idata.posterior["beta"].values.reshape(-1, Z.shape[1])
+        sigma_draws = idata.posterior["sigma"].values.reshape(-1)
+        nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
+        alpha_component = None
+        if "alpha" in idata.posterior and hasattr(self, "_unit_idx"):
+            alpha_draws = idata.posterior["alpha"].values
+            alpha_flat = alpha_draws.reshape(-1, alpha_draws.shape[-1])
+            alpha_component = alpha_flat[:, np.asarray(self._unit_idx, dtype=np.int64)]
+
+        if spatial_param == "rho":
+            mu = spatial_draws[:, None] * self._Wy[None, :] + (beta_draws @ Z.T)
+            if alpha_component is not None:
+                mu = mu + alpha_component
+            eps = self._y[None, :] - mu
+        else:
+            resid = self._y[None, :] - (beta_draws @ Z.T)
+            if alpha_component is not None:
+                resid = resid - alpha_component
+            W_resid = self._batch_sparse_lag(resid, T_eff=T_mult)
+            eps = resid - spatial_draws[:, None] * W_resid
+
+        ll_data = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
+        jacobian = self._logdet_numpy_vec_fn(spatial_draws) * T_mult
+        ll_total = ll_data + jacobian[:, None] / n
+
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        _write_log_likelihood_to_idata(
+            idata,
+            ll_total.reshape(n_chains, n_draws_per_chain, n),
+        )
+
     def _attach_jacobian_corrected_log_likelihood(
         self,
         idata: az.InferenceData,
@@ -1245,8 +1395,8 @@ class SpatialPanelModel(ABC):
         spatial_diagnostics_decision : Model-selection decision based on
             the test results.
         """
-        from .base import SpatialModel
         from ..diagnostics.lmtests.registry import get_diagnostic_suite
+        from .base import SpatialModel
 
         self._require_fit()
         suite = get_diagnostic_suite(self)

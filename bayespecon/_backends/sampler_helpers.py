@@ -90,7 +90,12 @@ def enforce_c_backend(
         return nuts_sampler
     if _jax_dispatches_available():
         return nuts_sampler
-    _warn_c_backend_once(nuts_sampler, model_name)
+    _warn_once(
+        ("c_backend", nuts_sampler, model_name),
+        f"nuts_sampler={nuts_sampler!r} requested but {model_name} uses a custom "
+        "PyTensor Op without a JAX dispatch; falling back to "
+        "PyMC's default NUTS sampler.",
+    )
     return "pymc"
 
 
@@ -194,29 +199,18 @@ def prepare_compile_kwargs(
     if "compile_kwargs" in out:
         return out
     if not _has_module("numba"):
-        _warn_numba_missing_once()
+        _warn_once(
+            ("numba_missing",),
+            "numba is not installed; the PyMC NUTS sampler will use PyTensor's "
+            "default C compile mode.  Install 'numba' to enable the faster "
+            "NUMBA backend.",
+        )
         return out
     out["compile_kwargs"] = {"mode": "NUMBA"}
     return out
 
 
 @lru_cache(maxsize=None)
-def _warn_numba_missing_once() -> None:
-    warnings.warn(
-        "numba is not installed; the PyMC NUTS sampler will use PyTensor's "
-        "default C compile mode.  Install 'numba' to enable the faster "
-        "NUMBA backend.",
-        UserWarning,
-        stacklevel=3,
-    )
-
-
-@lru_cache(maxsize=None)
-def _warn_c_backend_once(sampler: str, model_name: str) -> None:
-    warnings.warn(
-        f"nuts_sampler={sampler!r} requested but {model_name} uses a custom "
-        "PyTensor Op without a JAX dispatch; falling back to "
-        "PyMC's default NUTS sampler.",
-        UserWarning,
-        stacklevel=3,
-    )
+def _warn_once(key: tuple, message: str) -> None:
+    del key
+    warnings.warn(message, UserWarning, stacklevel=3)

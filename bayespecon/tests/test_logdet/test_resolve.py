@@ -65,7 +65,6 @@ def test_resolve_none_large_n_auto_selects_chebyshev():
     assert resolve_logdet_method(None, n=10_000) == "chebyshev"
 
 
-
 def test_resolve_none_cutoff_env(monkeypatch):
     monkeypatch.setenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "50")
     assert resolve_logdet_method(None, n=100) == "chebyshev"

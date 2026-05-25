@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal, Mapping
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -27,6 +26,7 @@ _LOGDET_FN_CACHE: OrderedDict[tuple, Any] = OrderedDict()
 # ---------------------------------------------------------------------------
 # Enums and type aliases
 # ---------------------------------------------------------------------------
+
 
 class LogDetMethod(str, Enum):
     """Canonical names for the log-determinant approximation methods.
@@ -78,6 +78,7 @@ LogDetMethodName = Literal[
 # Dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class LogdetBounds:
     """Resolved logdet method and rho interval used for approximation."""
@@ -91,6 +92,7 @@ class LogdetBounds:
 # ---------------------------------------------------------------------------
 # Resolution functions
 # ---------------------------------------------------------------------------
+
 
 def resolve_logdet_method(method: str | None, *, n: int) -> str:
     """Validate ``method`` and auto-select when ``None``.

@@ -18,9 +18,6 @@ from .suites import DiagnosticSuite
 
 if TYPE_CHECKING:
     from ...models.base import SpatialModel
-    from ...models.panel_base import SpatialPanelModel
-    from ...models.flow import FlowModel
-    from ...models.flow_panel import FlowPanelModel
 
 # ---------------------------------------------------------------------------
 # Registry: model class → DiagnosticSuite
@@ -68,9 +65,9 @@ from .suites import (  # noqa: E402
     SAR_NEGBIN_SUITE,
     SAR_SUITE,
     SAR_TOBIT_SUITE,
+    SDEM_SUITE,
     SDM_SUITE,
     SDM_TOBIT_SUITE,
-    SDEM_SUITE,
     SEM_SUITE,
     SLX_SUITE,
 )
@@ -113,13 +110,13 @@ _register("bayespecon.models.flow.SARNegBinFlowSeparableLatent", FLOW_SUITE)
 
 from .suites import (  # noqa: E402
     OLS_PANEL_SUITE,
+    SAR_PANEL_SUITE,
     SDEM_PANEL_SUITE,
     SDM_PANEL_SUITE,
     SEM_PANEL_DYNAMIC_SUITE,
     SEM_PANEL_SUITE,
     SLX_PANEL_DYNAMIC_SUITE,
     SLX_PANEL_SUITE,
-    SAR_PANEL_SUITE,
 )
 
 # Panel FE

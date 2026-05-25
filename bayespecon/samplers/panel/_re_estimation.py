@@ -20,8 +20,8 @@ import scipy.sparse as sp
 
 _log = logging.getLogger(__name__)
 
-from ..gaussian._chain_runner import run_chains
 from .._utils._idata import gibbs_to_inference_data
+from ..gaussian._chain_runner import run_chains
 from ._re_core import (
     REGibbsCache,
     REGibbsPriors,

@@ -10,7 +10,7 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from scipy.interpolate import CubicSpline
 
-from ._config import _LOGDET_GRID_EIG_MAX, _resolve_trace_estimator, _default_trace_k
+from ._config import _LOGDET_GRID_EIG_MAX
 
 
 def _stable_rho_grid(

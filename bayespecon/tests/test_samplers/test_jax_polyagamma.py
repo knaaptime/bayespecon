@@ -25,7 +25,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
-from bayespecon._samplers._utils._jax_polyagamma import (
+from bayespecon.samplers._utils._jax_polyagamma import (
     jax_polyagamma,
     jax_polyagamma_normal,
 )

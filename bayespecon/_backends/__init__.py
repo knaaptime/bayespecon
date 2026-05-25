@@ -22,20 +22,20 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from ..models._sampler import (
+from .sampler_helpers import (
     _has_module,
     _jax_dispatches_available,
 )
-from ..models._sampler import (
+from .sampler_helpers import (
     enforce_c_backend as _enforce_c_backend,
 )
-from ..models._sampler import (
+from .sampler_helpers import (
     prepare_compile_kwargs as _prepare_compile_kwargs,
 )
-from ..models._sampler import (
+from .sampler_helpers import (
     prepare_idata_kwargs as _prepare_idata_kwargs,
 )
-from ..models._sampler import (
+from .sampler_helpers import (
     use_jax_likelihood as _use_jax_likelihood,
 )
 
@@ -91,7 +91,7 @@ class PyMCBackend:
     """PyMC implementation of :class:`ProbabilisticBackend`.
 
     Thin façade over the existing helpers in
-    :mod:`bayespecon.models._sampler`.  Honors the user's ``nuts_sampler``
+    :mod:`bayespecon._backends.sampler_helpers`.  Honors the user's ``nuts_sampler``
     keyword (defaulting to ``"pymc"``) so existing call sites that expose
     ``nuts_sampler="numpyro"`` etc. via ``sample_kwargs`` continue to work.
     """

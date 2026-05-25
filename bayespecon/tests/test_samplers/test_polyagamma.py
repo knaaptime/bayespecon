@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon._samplers._utils._polyagamma import sample_polyagamma
+from bayespecon.samplers._utils._polyagamma import sample_polyagamma
 
 
 class TestSamplePolyagamma:

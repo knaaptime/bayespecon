@@ -9,42 +9,31 @@ model classes and should not be imported directly by users.
 
 # Configuration, enums, type aliases, resolution
 from ._config import (
-    LogDetMethod,
-    LogdetBounds,
-    LogDetMethodName,
-    TraceEstimatorName,
     VALID_LOGDET_METHODS,
     VALID_TRACE_ESTIMATORS,
-    _LOGDET_FN_CACHE,
-    _LOGDET_FN_CACHE_MAXSIZE,
-    _LOGDET_GRID_EIG_MAX,
-    _auto_logdet_method,
-    _default_trace_k,
-    _resolve_trace_estimator,
+    LogdetBounds,
+    LogDetMethod,
+    LogDetMethodName,
+    TraceEstimatorName,
     resolve_logdet_bounds,
     resolve_logdet_method,
 )
 
-# Grid builders and Chebyshev coefficient computation
-from ._grids import (
-    _barry_pace_traces,
-    _build_logdet_grid,
-    _stable_rho_grid,
-    chebyshev,
-    ilu,
-    mc,
-    sparse_grid,
-    spline,
+# Flow-model logdet
+from ._flow import (
+    compute_flow_traces,
+    flow_logdet_numpy,
+    flow_logdet_pytensor,
+    make_flow_separable_logdet,
+    make_flow_separable_logdet_numpy,
 )
 
-# PyTensor symbolic evaluation
-from ._pytensor import (
-    _make_pytensor_interp_fn,
-    logdet_chebyshev,
-    logdet_eigenvalue,
-    logdet_exact,
-    logdet_interpolated,
-    logdet_mc_poly_pytensor,
+# Grid / polynomial primitives (used by edge-case tests and benchmarks)
+from ._grids import (
+    _stable_rho_grid,
+    chebyshev,
+    mc,
+    spline,
 )
 
 # JAX-native evaluation
@@ -56,10 +45,6 @@ from ._jax import (
 
 # NumPy factory functions and caching
 from ._numpy import (
-    _GRID_SPLINE_METHODS,
-    _build_grid_spline,
-    _hash_array,
-    _logdet_w_signature,
     clear_logdet_fn_cache,
     get_cached_logdet_fn,
     make_logdet_fn,
@@ -67,14 +52,13 @@ from ._numpy import (
     make_logdet_numpy_vec_fn,
 )
 
-# Flow-model logdet
-from ._flow import (
-    _flow_logdet_poly_coeffs,
-    compute_flow_traces,
-    flow_logdet_numpy,
-    flow_logdet_pytensor,
-    make_flow_separable_logdet,
-    make_flow_separable_logdet_numpy,
+# PyTensor symbolic evaluation
+from ._pytensor import (
+    logdet_chebyshev,
+    logdet_eigenvalue,
+    logdet_exact,
+    logdet_interpolated,
+    logdet_mc_poly_pytensor,
 )
 
 # Trace estimation (moved from _trace_estimation.py)
@@ -94,12 +78,6 @@ __all__ = [
     "VALID_TRACE_ESTIMATORS",
     "resolve_logdet_method",
     "resolve_logdet_bounds",
-    # Grid builders
-    "chebyshev",
-    "sparse_grid",
-    "spline",
-    "mc",
-    "ilu",
     # PyTensor
     "logdet_eigenvalue",
     "logdet_exact",
@@ -122,6 +100,11 @@ __all__ = [
     "compute_flow_traces",
     "make_flow_separable_logdet",
     "make_flow_separable_logdet_numpy",
+    # Grid / polynomial primitives
+    "_stable_rho_grid",
+    "chebyshev",
+    "mc",
+    "spline",
     # Trace estimation
     "traceax_available",
     "traceax_traces",

@@ -40,21 +40,21 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
+from .._backends.sampler_helpers import (
+    enforce_c_backend,
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+)
 from .._logdet import (
-    _flow_logdet_poly_coeffs,
     compute_flow_traces,
     flow_logdet_numpy,
     flow_logdet_pytensor,
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
+from .._logdet._flow import _flow_logdet_poly_coeffs
 from .._ops import kron_solve_matrix, kron_solve_vec
-from ._sampler import (
-    enforce_c_backend,
-    prepare_compile_kwargs,
-    prepare_idata_kwargs,
-)
+from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from .base import SpatialModel
 
 
@@ -414,7 +414,10 @@ class FlowModel(ABC):
             )
 
         # Pre-compute logdet data for separable constraint: log|Lo⊗Ld| = n*f(ρ_d) + n*f(ρ_o).
-        # Also keep _W_eigs for backward compatibility.
+        # Also keep _W_eigs for backward compatibility.  ``_W_eigs`` is
+        # populated only by the eigenvalue logdet path; ``_W_eigs_real`` is
+        # exposed as a property below that returns ``None`` when eigenvalues
+        # were not pre-computed (mirroring :class:`SpatialModel`).
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
@@ -665,6 +668,16 @@ class FlowModel(ABC):
         return self._idata
 
     @property
+    def _W_eigs_real(self) -> Optional[np.ndarray]:
+        """Real part of W eigenvalues as float64, or None when not pre-computed.
+
+        Mirrors :attr:`SpatialModel._W_eigs_real` so that downstream samplers
+        (e.g. the latent NB flow Gibbs) can request eigenvalues uniformly.
+        """
+        eigs = self._W_eigs
+        return None if eigs is None else np.asarray(eigs.real, dtype=np.float64)
+
+    @property
     def pymc_model(self) -> Optional[pm.Model]:
         """Return the PyMC model used for the most recent fit, or None."""
         return self._pymc_model
@@ -713,6 +726,7 @@ class FlowModel(ABC):
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
         from ..diagnostics.lmtests.registry import get_diagnostic_suite
+
         suite = get_diagnostic_suite(self)
         if suite is None:
             raise ValueError(
@@ -1776,7 +1790,7 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        
+
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
@@ -2753,7 +2767,7 @@ class SEMFlowSeparable(SEMFlow):
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        
+
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
@@ -2948,8 +2962,7 @@ class SARNegBinFlowLatent(FlowModel):
 
     def _build_pymc_model(self) -> pm.Model:
         raise NotImplementedError(
-            "SARNegBinFlowLatent uses a Gibbs sampler, not NUTS. "
-            "Call fit() instead."
+            "SARNegBinFlowLatent uses a Gibbs sampler, not NUTS. Call fit() instead."
         )
 
     def _compute_spatial_effects_posterior(
@@ -3015,15 +3028,14 @@ class SARNegBinFlowLatent(FlowModel):
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
-        from .._samplers.gaussian._chain_runner import run_chains
-        from .._samplers._utils._idata import gibbs_to_inference_data
-        from .._samplers.negbin._flow import (
+        from .._logdet import flow_logdet_numpy
+        from ..samplers._utils._idata import gibbs_to_inference_data
+        from ..samplers.gaussian._chain_runner import run_chains
+        from ..samplers.negbin._flow import (
             FlowGibbsCacheNS,
             FlowGibbsPriors,
-            FlowGibbsState,
             run_flow_chain_nonseparable,
         )
-        from .._logdet import flow_logdet_numpy
 
         y = self._y_int.astype(np.float64)
         X = self._X_design
@@ -3057,22 +3069,42 @@ class SARNegBinFlowLatent(FlowModel):
         WoWw = (Wo.T @ Ww + Ww.T @ Wo).tocsr()
 
         # Build flow logdet callable
-        logdet_fn = lambda rd, ro, rw: flow_logdet_numpy(
-            rd, ro, rw,
-            self._poly_a, self._poly_b, self._poly_c, self._poly_coeffs,
-            self._miter_a, self._miter_b, self._miter_c, self._miter_coeffs,
-            self.miter, self.titer,
-        )
+        def logdet_fn(rd, ro, rw):
+            return flow_logdet_numpy(
+                rd,
+                ro,
+                rw,
+                self._poly_a,
+                self._poly_b,
+                self._poly_c,
+                self._poly_coeffs,
+                self._miter_a,
+                self._miter_b,
+                self._miter_c,
+                self._miter_coeffs,
+                self.miter,
+                self.titer,
+            )
 
         # Build cache (immutable, safe to share across chains)
         cache = FlowGibbsCacheNS(
-            Wd=Wd, Wo=Wo, Ww=Ww,
-            Wd_sym=Wd_sym, Wo_sym=Wo_sym, Ww_sym=Ww_sym,
-            WdWd=WdWd, WoWo=WoWo, WwWw=WwWw,
-            WdWo=WdWo, WdWw=WdWw, WoWw=WoWw,
-            N=N, XtX=XtX,
+            Wd=Wd,
+            Wo=Wo,
+            Ww=Ww,
+            Wd_sym=Wd_sym,
+            Wo_sym=Wo_sym,
+            Ww_sym=Ww_sym,
+            WdWd=WdWd,
+            WoWo=WoWo,
+            WwWw=WwWw,
+            WdWo=WdWo,
+            WdWw=WdWw,
+            WoWw=WoWw,
+            N=N,
+            XtX=XtX,
             logdet_fn=logdet_fn,
-            rho_lower=priors.rho_lower, rho_upper=priors.rho_upper,
+            rho_lower=priors.rho_lower,
+            rho_upper=priors.rho_upper,
             rho_adaptive_width=True,
         )
 
@@ -3088,9 +3120,16 @@ class SARNegBinFlowLatent(FlowModel):
             rng = np.random.default_rng(seed)
             init = self._initialize_from_glm(rng)
             return run_flow_chain_nonseparable(
-                y=y, X=X, priors=priors, cache=cache, init=init,
-                draws=draws, tune=tune, thin=thin,
-                return_eta=return_eta, rng=rng,
+                y=y,
+                X=X,
+                priors=priors,
+                cache=cache,
+                init=init,
+                draws=draws,
+                tune=tune,
+                thin=thin,
+                return_eta=return_eta,
+                rng=rng,
                 chebyshev_degree=chebyshev_degree,
             )
 
@@ -3111,9 +3150,7 @@ class SARNegBinFlowLatent(FlowModel):
         for key in param_keys:
             arrays = [c[key] for c in chain_results]
             posterior_samples[key] = np.stack(arrays, axis=0)
-        posterior_samples["beta"] = np.stack(
-            [c["beta"] for c in chain_results], axis=0
-        )
+        posterior_samples["beta"] = np.stack([c["beta"] for c in chain_results], axis=0)
 
         feature_names = list(self._feature_names)
         coords = {"coefficient": feature_names}
@@ -3163,8 +3200,8 @@ class SARNegBinFlowLatent(FlowModel):
         else:
             alpha_init = 1.0
 
-        from .._samplers._utils._polyagamma import sample_polyagamma
-        from .._samplers.negbin._flow import FlowGibbsState
+        from ..samplers._utils._polyagamma import sample_polyagamma
+        from ..samplers.negbin._flow import FlowGibbsState
 
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 
@@ -3324,15 +3361,14 @@ class SARNegBinFlowSeparableLatent(FlowModel):
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
-        from .._samplers.gaussian._chain_runner import run_chains
-        from .._samplers._utils._idata import gibbs_to_inference_data
-        from .._samplers.negbin._flow import (
+        from .._logdet import make_logdet_numpy_fn
+        from ..samplers._utils._idata import gibbs_to_inference_data
+        from ..samplers.gaussian._chain_runner import run_chains
+        from ..samplers.negbin._flow import (
             FlowGibbsCache,
             FlowGibbsPriors,
-            FlowGibbsState,
             run_flow_chain_separable,
         )
-        from .._logdet import make_logdet_numpy_fn
 
         y = self._y_int.astype(np.float64)
         X = self._X_design
@@ -3356,14 +3392,14 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         # Build logdet callable for the n×n weight matrix
         logdet_fn = make_logdet_numpy_fn(
             W_sparse,
-            eigs=self._W_eigs.real if self._W_eigs is not None else None,
+            eigs=self._W_eigs_real,
             method=self.logdet_method,
         )
 
         cache = FlowGibbsCache(
             W_sparse=W_sparse,
             W_dense=W_sparse.toarray(),
-            W_eigs=self._W_eigs.real if self._W_eigs is not None else None,
+            W_eigs=self._W_eigs_real,
             n=n,
             XtX=XtX,
             logdet_fn=logdet_fn,
@@ -3384,9 +3420,17 @@ class SARNegBinFlowSeparableLatent(FlowModel):
             rng = np.random.default_rng(seed)
             init = self._initialize_from_glm(rng)
             return run_flow_chain_separable(
-                y=y, X=X, W_sparse=W_sparse, priors=priors, cache=cache,
-                init=init, draws=draws, tune=tune, thin=thin,
-                return_eta=return_eta, rng=rng,
+                y=y,
+                X=X,
+                W_sparse=W_sparse,
+                priors=priors,
+                cache=cache,
+                init=init,
+                draws=draws,
+                tune=tune,
+                thin=thin,
+                return_eta=return_eta,
+                rng=rng,
                 chebyshev_degree=chebyshev_degree,
             )
 
@@ -3411,9 +3455,7 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         posterior_samples["rho_w"] = (
             -posterior_samples["rho_d"] * posterior_samples["rho_o"]
         )
-        posterior_samples["beta"] = np.stack(
-            [c["beta"] for c in chain_results], axis=0
-        )
+        posterior_samples["beta"] = np.stack([c["beta"] for c in chain_results], axis=0)
 
         feature_names = list(self._feature_names)
         coords = {"coefficient": feature_names}
@@ -3462,8 +3504,8 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         else:
             alpha_init = 1.0
 
-        from .._samplers._utils._polyagamma import sample_polyagamma
-        from .._samplers.negbin._flow import FlowGibbsState
+        from ..samplers._utils._polyagamma import sample_polyagamma
+        from ..samplers.negbin._flow import FlowGibbsState
 
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 

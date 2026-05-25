@@ -10,14 +10,13 @@ import pytest
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from bayespecon._samplers.panel._kronecker import (
+from bayespecon.samplers.panel._kronecker import (
     kron_At_matvec,
     kron_eigenvalue_bounds,
     kron_logdet_A,
     kron_matvec,
     kron_P_matvec,
 )
-
 
 # ---------------------------------------------------------------------------
 # Kronecker matvec primitives
@@ -79,7 +78,10 @@ class TestKronLogdetA:
     def test_zero_rho_gives_zero(self):
         """log|A| = 0 when both rho_d and rho_o are zero."""
         n = 5
-        logdet_fn = lambda rho: n * np.log(abs(1 - rho))  # trivial W with single eigenvalue
+
+        def logdet_fn(rho):
+            return n * np.log(abs(1 - rho))  # trivial W with single eigenvalue
+
         result = kron_logdet_A(0.0, 0.0, n, logdet_fn)
         np.testing.assert_allclose(result, 0.0, atol=1e-12)
 
@@ -156,7 +158,7 @@ class TestFlowGibbsState:
     """Test FlowGibbsState construction."""
 
     def test_separable_state(self):
-        from bayespecon._samplers.negbin._flow import FlowGibbsState
+        from bayespecon.samplers.negbin._flow import FlowGibbsState
 
         N = 25
         k = 3
@@ -174,7 +176,7 @@ class TestFlowGibbsState:
         assert state.eta.shape == (N,)
 
     def test_nonseparable_state(self):
-        from bayespecon._samplers.negbin._flow import FlowGibbsState
+        from bayespecon.samplers.negbin._flow import FlowGibbsState
 
         N = 25
         k = 3
@@ -195,7 +197,7 @@ class TestFlowGibbsPriors:
     """Test FlowGibbsPriors defaults."""
 
     def test_defaults(self):
-        from bayespecon._samplers.negbin._flow import FlowGibbsPriors
+        from bayespecon.samplers.negbin._flow import FlowGibbsPriors
 
         priors = FlowGibbsPriors()
         assert priors.rho_lower == -0.999
@@ -236,9 +238,13 @@ class TestSARNegBinFlowLatentBuild:
         from bayespecon.models.flow import SARNegBinFlowLatent
 
         model = SARNegBinFlowLatent(
-            self.y, self.G, self.X,
+            self.y,
+            self.G,
+            self.X,
             col_names=self.col_names,
-            miter=5, titer=50, trace_seed=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         assert model._n == self.n
         assert model._N == self.N
@@ -246,21 +252,29 @@ class TestSARNegBinFlowLatentBuild:
     def test_nonseparable_rejects_noninteger_y(self):
         from bayespecon.models.flow import SARNegBinFlowLatent
 
-        y_float = np.array([0.5, 1.0, 2.0] * 9)[:self.N]
+        y_float = np.array([0.5, 1.0, 2.0] * 9)[: self.N]
         with pytest.raises(ValueError, match="integer-valued"):
             SARNegBinFlowLatent(
-                y_float, self.G, self.X,
+                y_float,
+                self.G,
+                self.X,
                 col_names=self.col_names,
-                miter=5, titer=50, trace_seed=0,
+                miter=5,
+                titer=50,
+                trace_seed=0,
             )
 
     def test_nonseparable_rejects_nuts_kwargs(self):
         from bayespecon.models.flow import SARNegBinFlowLatent
 
         model = SARNegBinFlowLatent(
-            self.y, self.G, self.X,
+            self.y,
+            self.G,
+            self.X,
             col_names=self.col_names,
-            miter=5, titer=50, trace_seed=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         with pytest.raises(TypeError, match="nuts_sampler"):
             model.fit(draws=10, nuts_sampler="blackjax")
@@ -269,7 +283,9 @@ class TestSARNegBinFlowLatentBuild:
         from bayespecon.models.flow import SARNegBinFlowSeparableLatent
 
         model = SARNegBinFlowSeparableLatent(
-            self.y, self.G, self.X,
+            self.y,
+            self.G,
+            self.X,
             col_names=self.col_names,
             trace_seed=0,
         )
@@ -278,10 +294,12 @@ class TestSARNegBinFlowLatentBuild:
     def test_separable_rejects_noninteger_y(self):
         from bayespecon.models.flow import SARNegBinFlowSeparableLatent
 
-        y_float = np.array([0.5, 1.0, 2.0] * 9)[:self.N]
+        y_float = np.array([0.5, 1.0, 2.0] * 9)[: self.N]
         with pytest.raises(ValueError, match="integer-valued"):
             SARNegBinFlowSeparableLatent(
-                y_float, self.G, self.X,
+                y_float,
+                self.G,
+                self.X,
                 col_names=self.col_names,
                 trace_seed=0,
             )
@@ -365,8 +383,12 @@ class TestSARNegBinFlowSeparableLatentRecovery:
             trace_seed=42,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         rho_d_mean = float(idata.posterior["rho_d"].mean())
@@ -385,8 +407,12 @@ class TestSARNegBinFlowSeparableLatentRecovery:
             trace_seed=42,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         rho_o_mean = float(idata.posterior["rho_o"].mean())
@@ -407,8 +433,12 @@ class TestSARNegBinFlowSeparableLatentRecovery:
             trace_seed=42,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         alpha_mean = float(idata.posterior["alpha"].mean())
@@ -428,8 +458,12 @@ class TestSARNegBinFlowSeparableLatentRecovery:
             trace_seed=42,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         n_chains = CHAINS
@@ -455,8 +489,12 @@ class TestSARNegBinFlowSeparableLatentRecovery:
             trace_seed=42,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         rho_d = idata.posterior["rho_d"].values
@@ -510,7 +548,9 @@ class TestSARNegBinFlowLatentRecovery:
             flow_nb_data_ns["G"],
             flow_nb_data_ns["X"],
             col_names=flow_nb_data_ns["col_names"],
-            miter=5, titer=50, trace_seed=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         idata = model.fit(
             draws=DRAWS,
@@ -537,11 +577,17 @@ class TestSARNegBinFlowLatentRecovery:
             flow_nb_data_ns["G"],
             flow_nb_data_ns["X"],
             col_names=flow_nb_data_ns["col_names"],
-            miter=5, titer=50, trace_seed=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         rho_d_mean = float(idata.posterior["rho_d"].mean())
@@ -557,11 +603,17 @@ class TestSARNegBinFlowLatentRecovery:
             flow_nb_data_ns["G"],
             flow_nb_data_ns["X"],
             col_names=flow_nb_data_ns["col_names"],
-            miter=5, titer=50, trace_seed=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         rho_o_mean = float(idata.posterior["rho_o"].mean())
@@ -579,11 +631,17 @@ class TestSARNegBinFlowLatentRecovery:
             flow_nb_data_ns["G"],
             flow_nb_data_ns["X"],
             col_names=flow_nb_data_ns["col_names"],
-            miter=5, titer=50, trace_seed=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         alpha_mean = float(idata.posterior["alpha"].mean())
@@ -600,11 +658,17 @@ class TestSARNegBinFlowLatentRecovery:
             flow_nb_data_ns["G"],
             flow_nb_data_ns["X"],
             col_names=flow_nb_data_ns["col_names"],
-            miter=5, titer=50, trace_seed=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         n_chains = CHAINS
@@ -627,11 +691,17 @@ class TestSARNegBinFlowLatentRecovery:
             flow_nb_data_ns["G"],
             flow_nb_data_ns["X"],
             col_names=flow_nb_data_ns["col_names"],
-            miter=5, titer=50, trace_seed=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
         )
         idata = model.fit(
-            draws=DRAWS, tune=TUNE, chains=CHAINS,
-            random_seed=42, n_jobs=1, progressbar=False,
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
         )
 
         rho_w_mean = float(idata.posterior["rho_w"].mean())

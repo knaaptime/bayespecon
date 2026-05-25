@@ -28,16 +28,16 @@ run_flow_chain_nonseparable
     Run a single flow PG Gibbs chain (non-separable model).
 """
 
-from ._core import GibbsState, GibbsPriors, GibbsCache, run_chain, JAXGibbsState
+from ._core import GibbsCache, GibbsPriors, GibbsState, JAXGibbsState, run_chain
 from ._flow import (
-    FlowGibbsState,
-    FlowGibbsPriors,
     FlowGibbsCache,
-    FlowGibbsSliceState,
     FlowGibbsCacheNS,
+    FlowGibbsPriors,
+    FlowGibbsSliceState,
     FlowGibbsSliceStateNS,
-    run_flow_chain_separable,
+    FlowGibbsState,
     run_flow_chain_nonseparable,
+    run_flow_chain_separable,
 )
 
 __all__ = [

@@ -681,7 +681,7 @@ def _sample_rho(
         jax.config.update("jax_enable_x64", True)
         import jax.numpy as jnp
 
-        from bayespecon._samplers._utils._spatial_normal import _jax_log_density_core
+        from bayespecon.samplers._utils._spatial_normal import _jax_log_density_core
 
         # Convert omega to JAX array (changes each Gibbs iteration,
         # but is constant across ρ candidates within one slice step)
@@ -795,7 +795,9 @@ def _sample_rho(
     if use_mode_centered and (sweep_idx % cache.rho_mode_update_freq == 0):
         # For mode-finding, use the exact dense-Cholesky log-density
         # (no stochastic Lanczos/CG) — it's 15× faster for n ≤ ~500.
-        from bayespecon._samplers._utils._spatial_normal import _jax_log_density_core_exact
+        from bayespecon.samplers._utils._spatial_normal import (
+            _jax_log_density_core_exact,
+        )
 
         _jax_logdens_exact_fn = jax.jit(
             lambda rho: _jax_log_density_core_exact(

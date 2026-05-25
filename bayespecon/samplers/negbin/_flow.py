@@ -50,7 +50,6 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from ..panel._kronecker import kron_At_matvec, kron_eigenvalue_bounds, kron_logdet_A, kron_matvec, kron_P_matvec
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (
     SliceWidthState,
@@ -62,9 +61,14 @@ from .._utils._spatial_normal import (
     cg_solve,
     chebyshev_sample,
     lanczos_logdet,
-    sample_spatial_normal,
 )
-
+from ..panel._kronecker import (
+    kron_At_matvec,
+    kron_eigenvalue_bounds,
+    kron_logdet_A,
+    kron_matvec,
+    kron_P_matvec,
+)
 
 # ---------------------------------------------------------------------------
 # Data classes for state, priors, and precomputed cache
@@ -566,8 +570,12 @@ def _sample_eta_separable(
 
     # Draw via Chebyshev polynomial approximation
     draw = chebyshev_sample(
-        P_op, rhs, rng=rng, degree=chebyshev_degree,
-        lambda_min=lambda_min, lambda_max=lambda_max,
+        P_op,
+        rhs,
+        rng=rng,
+        degree=chebyshev_degree,
+        lambda_min=lambda_min,
+        lambda_max=lambda_max,
     )
     return draw.x
 
@@ -1100,7 +1108,11 @@ def run_flow_chain_separable(
 
         # --- Block 2: η | ω, ρ_d, ρ_o, β, σ² (Kronecker) ---
         state.eta = _sample_eta_separable(
-            state, y, X, rng=rng, cache=cache,
+            state,
+            y,
+            X,
+            rng=rng,
+            cache=cache,
             chebyshev_degree=chebyshev_degree,
         )
 
@@ -1119,22 +1131,34 @@ def run_flow_chain_separable(
 
         # --- Block 5: ρ_d | · (collapsed, η integrated out) ---
         state.rho_d, log_density_rho_d = _sample_rho_separable(
-            state, cache, priors, y, X,
-            which_rho="rho_d", rng=rng,
+            state,
+            cache,
+            priors,
+            y,
+            X,
+            which_rho="rho_d",
+            rng=rng,
             slice_state=slice_state.rho_d,
             log_density_current=log_density_rho_d,
-            sweep_idx=i, tune=tune,
+            sweep_idx=i,
+            tune=tune,
         )
         # Update deterministic rho_w
         state.rho_w = -state.rho_d * state.rho_o
 
         # --- Block 6: ρ_o | · (collapsed, η integrated out) ---
         state.rho_o, log_density_rho_o = _sample_rho_separable(
-            state, cache, priors, y, X,
-            which_rho="rho_o", rng=rng,
+            state,
+            cache,
+            priors,
+            y,
+            X,
+            which_rho="rho_o",
+            rng=rng,
             slice_state=slice_state.rho_o,
             log_density_current=log_density_rho_o,
-            sweep_idx=i, tune=tune,
+            sweep_idx=i,
+            tune=tune,
         )
         # Update deterministic rho_w
         state.rho_w = -state.rho_d * state.rho_o
@@ -1264,13 +1288,22 @@ def run_flow_chain_nonseparable(
 
         # --- Block 2: η | ω, ρ_d, ρ_o, ρ_w, β, σ² (sparse N×N) ---
         state.eta = _sample_eta_nonseparable(
-            state, y, X, rng=rng, cache=cache,
+            state,
+            y,
+            X,
+            rng=rng,
+            cache=cache,
             chebyshev_degree=chebyshev_degree,
         )
 
         # Recompute Aη and Xβ with new eta
         I_N = sp.eye(N, format="csr")
-        A = I_N - state.rho_d * cache.Wd - state.rho_o * cache.Wo - state.rho_w * cache.Ww
+        A = (
+            I_N
+            - state.rho_d * cache.Wd
+            - state.rho_o * cache.Wo
+            - state.rho_w * cache.Ww
+        )
         A_eta = A @ state.eta
         Xbeta = X @ state.beta
 
@@ -1283,29 +1316,47 @@ def run_flow_chain_nonseparable(
 
         # --- Block 5: ρ_d | · (collapsed) ---
         state.rho_d, log_density_rho_d = _sample_rho_nonseparable(
-            state, cache, priors, y, X,
-            which_rho="rho_d", rng=rng,
+            state,
+            cache,
+            priors,
+            y,
+            X,
+            which_rho="rho_d",
+            rng=rng,
             slice_state=slice_state.rho_d,
             log_density_current=log_density_rho_d,
-            sweep_idx=i, tune=tune,
+            sweep_idx=i,
+            tune=tune,
         )
 
         # --- Block 6: ρ_o | · (collapsed) ---
         state.rho_o, log_density_rho_o = _sample_rho_nonseparable(
-            state, cache, priors, y, X,
-            which_rho="rho_o", rng=rng,
+            state,
+            cache,
+            priors,
+            y,
+            X,
+            which_rho="rho_o",
+            rng=rng,
             slice_state=slice_state.rho_o,
             log_density_current=log_density_rho_o,
-            sweep_idx=i, tune=tune,
+            sweep_idx=i,
+            tune=tune,
         )
 
         # --- Block 7: ρ_w | · (collapsed) ---
         state.rho_w, log_density_rho_w = _sample_rho_nonseparable(
-            state, cache, priors, y, X,
-            which_rho="rho_w", rng=rng,
+            state,
+            cache,
+            priors,
+            y,
+            X,
+            which_rho="rho_w",
+            rng=rng,
             slice_state=slice_state.rho_w,
             log_density_current=log_density_rho_w,
-            sweep_idx=i, tune=tune,
+            sweep_idx=i,
+            tune=tune,
         )
 
         # --- Block 8: α | y, η ---

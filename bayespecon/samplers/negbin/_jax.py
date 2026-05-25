@@ -160,14 +160,14 @@ def _make_gibbs_step_with_data(
 
             gibbs_step(state, key) -> (new_state, accept)
 
-        where ``state`` is a :class:`~bayespecon._samplers.negbin._core.JAXGibbsState`
+        where ``state`` is a :class:`~bayespecon.samplers.negbin._core.JAXGibbsState`
         and ``key`` is a JAX PRNG key.
     """
     import equinox as eqx
     import jax
     import jax.numpy as jnp
 
-    from bayespecon._samplers._utils._spatial_normal import (
+    from bayespecon.samplers._utils._spatial_normal import (
         jax_cg_solve,
         jax_lanczos_logdet,
     )
@@ -558,7 +558,7 @@ def _sample_alpha_python(state, y, alpha_sigma, rng):
     """
     from scipy.special import gammaln
 
-    from bayespecon._samplers._utils._slice import slice_sample_1d
+    from bayespecon.samplers._utils._slice import slice_sample_1d
 
     alpha = float(state.alpha)
     eta = np.asarray(state.eta)

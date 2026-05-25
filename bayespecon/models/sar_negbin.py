@@ -208,7 +208,7 @@ class SARNegativeBinomial(SpatialModel):
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs.real.astype(np.float64)
+        eigs = self._W_eigs_real
         mean_diag = _chunked_eig_means(rho_draws, eigs)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 

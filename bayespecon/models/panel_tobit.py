@@ -237,7 +237,7 @@ class SARPanelTobit(_PanelTobitBase):
         if isinstance(self, SARPanelTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -607,7 +607,7 @@ class SEMPanelTobit(_PanelTobitBase):
         if isinstance(self, SARPanelTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)

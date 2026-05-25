@@ -8,7 +8,12 @@ inside jax.jit and are autodiff-compatible via jax.grad.
 import numpy as np
 import scipy.sparse as sp
 
-from ._config import resolve_logdet_method, _resolve_trace_estimator, _default_trace_k, TraceEstimatorName
+from ._config import (
+    TraceEstimatorName,
+    _default_trace_k,
+    _resolve_trace_estimator,
+    resolve_logdet_method,
+)
 from ._grids import chebyshev
 
 

@@ -19,7 +19,8 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from bayespecon._samplers.gaussian._core import (
+from bayespecon._logdet import make_logdet_numpy_fn, make_logdet_numpy_vec_fn
+from bayespecon.samplers.gaussian._core import (
     GaussianGibbsCache,
     GaussianGibbsPriors,
     GaussianGibbsState,
@@ -33,14 +34,13 @@ from bayespecon._samplers.gaussian._core import (
     _sem_conditional_log_density,
     run_gaussian_chain,
 )
-from bayespecon._samplers.gaussian._loglik import (
+from bayespecon.samplers.gaussian._loglik import (
     ols_pointwise_loglik_numpy,
     sar_pointwise_loglik_numpy,
     sar_pointwise_loglik_vectorized,
     sem_pointwise_loglik_numpy,
     sem_pointwise_loglik_vectorized,
 )
-from bayespecon._logdet import make_logdet_numpy_fn, make_logdet_numpy_vec_fn
 from bayespecon.tests.helpers import W_to_graph, make_rook_W
 
 # Skip JAX tests when JAX is not installed
@@ -1118,7 +1118,7 @@ class TestGibbsProgressBarManager:
 
     def test_context_manager_enter_exit(self):
         """Manager enters and exits cleanly with progressbar=True."""
-        from bayespecon._samplers._utils._progress import GibbsProgressBarManager
+        from bayespecon.samplers._utils._progress import GibbsProgressBarManager
 
         pm = GibbsProgressBarManager(chains=2, draws=10, tune=5, progressbar=True)
         with pm:
@@ -1127,7 +1127,7 @@ class TestGibbsProgressBarManager:
 
     def test_context_manager_no_progressbar(self):
         """Manager is a no-op when progressbar=False."""
-        from bayespecon._samplers._utils._progress import GibbsProgressBarManager
+        from bayespecon.samplers._utils._progress import GibbsProgressBarManager
 
         pm = GibbsProgressBarManager(chains=2, draws=10, tune=5, progressbar=False)
         with pm:
@@ -1136,7 +1136,7 @@ class TestGibbsProgressBarManager:
 
     def test_update_advances_iteration(self):
         """update() advances the iteration counter."""
-        from bayespecon._samplers._utils._progress import GibbsProgressBarManager
+        from bayespecon.samplers._utils._progress import GibbsProgressBarManager
 
         pm = GibbsProgressBarManager(chains=1, draws=5, tune=2, progressbar=True)
         with pm:
@@ -1147,7 +1147,7 @@ class TestGibbsProgressBarManager:
 
     def test_update_noop_when_disabled(self):
         """update() is a no-op when progressbar=False."""
-        from bayespecon._samplers._utils._progress import GibbsProgressBarManager
+        from bayespecon.samplers._utils._progress import GibbsProgressBarManager
 
         pm = GibbsProgressBarManager(chains=1, draws=5, tune=2, progressbar=False)
         with pm:
@@ -1156,7 +1156,7 @@ class TestGibbsProgressBarManager:
 
     def test_accept_rate_tracking(self):
         """Accept rate is tracked and displayed."""
-        from bayespecon._samplers._utils._progress import GibbsProgressBarManager
+        from bayespecon.samplers._utils._progress import GibbsProgressBarManager
 
         pm = GibbsProgressBarManager(chains=1, draws=5, tune=2, progressbar=True)
         with pm:
@@ -1177,7 +1177,7 @@ class TestInformativeOutput:
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
         model = SAR(y=y, X=X, W=W)
-        with caplog.at_level("INFO", logger="bayespecon._samplers.gaussian._estimation"):
+        with caplog.at_level("INFO", logger="bayespecon.samplers.gaussian._estimation"):
             model.fit(
                 sampler="gibbs",
                 draws=10,
@@ -1198,7 +1198,7 @@ class TestInformativeOutput:
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
         model = SAR(y=y, X=X, W=W)
-        with caplog.at_level("INFO", logger="bayespecon._samplers.gaussian._estimation"):
+        with caplog.at_level("INFO", logger="bayespecon.samplers.gaussian._estimation"):
             model.fit(
                 sampler="gibbs",
                 draws=10,
@@ -1341,19 +1341,19 @@ class TestChainParallelism:
         import jax.numpy as jnp
         import scipy.sparse as sp
 
-        from bayespecon._samplers.gaussian._core import (
-            GaussianGibbsCache,
-            GaussianGibbsState,
-            _initialize_gaussian_gibbs,
-        )
-        from bayespecon._samplers.gaussian._estimation import GaussianGibbsPriors
-        from bayespecon._samplers.gaussian._jax import (
-            run_chains_jax_gibbs_vectorized,
-        )
         from bayespecon._logdet import (
             make_logdet_jax_fn,
             make_logdet_numpy_fn,
             make_logdet_numpy_vec_fn,
+        )
+        from bayespecon.samplers.gaussian._core import (
+            GaussianGibbsCache,
+            GaussianGibbsState,
+            _initialize_gaussian_gibbs,
+        )
+        from bayespecon.samplers.gaussian._estimation import GaussianGibbsPriors
+        from bayespecon.samplers.gaussian._jax import (
+            run_chains_jax_gibbs_vectorized,
         )
 
         y, X, W_dense, n = _make_sar_data()
@@ -1442,7 +1442,7 @@ class TestMultiprocessingContext:
 
     def test_default_context(self):
         """Default context is returned without error."""
-        from bayespecon._samplers.gaussian._chain_runner import (
+        from bayespecon.samplers.gaussian._chain_runner import (
             _initialize_multiprocessing_context,
         )
 
@@ -1455,7 +1455,7 @@ class TestMultiprocessingContext:
         import importlib.util
         import multiprocessing
 
-        from bayespecon._samplers.gaussian._chain_runner import (
+        from bayespecon.samplers.gaussian._chain_runner import (
             _initialize_multiprocessing_context,
         )
 
@@ -1471,7 +1471,7 @@ class TestMultiprocessingContext:
 
     def test_explicit_spawn(self):
         """Explicit 'spawn' context is returned."""
-        from bayespecon._samplers.gaussian._chain_runner import (
+        from bayespecon.samplers.gaussian._chain_runner import (
             _initialize_multiprocessing_context,
         )
 
@@ -1482,7 +1482,7 @@ class TestMultiprocessingContext:
         """When JAX is installed, default 'fork' is auto-switched."""
         import importlib.util
 
-        from bayespecon._samplers.gaussian._chain_runner import (
+        from bayespecon.samplers.gaussian._chain_runner import (
             _initialize_multiprocessing_context,
         )
 
@@ -1497,7 +1497,7 @@ class TestMultiprocessingContext:
         """User-specified 'fork' with JAX installed emits a warning."""
         import importlib.util
 
-        from bayespecon._samplers.gaussian._chain_runner import (
+        from bayespecon.samplers.gaussian._chain_runner import (
             _initialize_multiprocessing_context,
         )
 

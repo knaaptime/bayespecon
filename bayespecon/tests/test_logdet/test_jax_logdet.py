@@ -26,12 +26,12 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from bayespecon._logdet import (
-    chebyshev,
     compute_flow_traces,
     jax_logdet_chebyshev,
     jax_logdet_trace_poly,
     make_logdet_jax_fn,
 )
+from bayespecon._logdet._grids import chebyshev
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -354,9 +354,7 @@ class TestMakeLogdetJaxFn:
         W_dense /= W_dense.sum(axis=1, keepdims=True)
         eigs = np.linalg.eigvals(W_dense).real
 
-        fn = make_logdet_jax_fn(
-            W_dense, method="chebyshev", trace_estimator="hutchpp"
-        )
+        fn = make_logdet_jax_fn(W_dense, method="chebyshev", trace_estimator="hutchpp")
 
         for rho in [0.05, 0.2, 0.4]:
             approx = float(fn(jnp.float64(rho)))
@@ -395,9 +393,7 @@ class TestMakeLogdetJaxFn:
         W_dense /= W_dense.sum(axis=1, keepdims=True)
         eigs = np.linalg.eigvals(W_dense).real
 
-        fn = make_logdet_jax_fn(
-            W_dense, method="chebyshev", trace_estimator="xtrace"
-        )
+        fn = make_logdet_jax_fn(W_dense, method="chebyshev", trace_estimator="xtrace")
 
         for rho in [0.05, 0.2, 0.4]:
             approx = float(fn(jnp.float64(rho)))

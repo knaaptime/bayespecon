@@ -16,8 +16,8 @@ GaussianGibbsPriors
     Dataclass holding prior hyperparameters for the Gaussian Gibbs sampler.
 """
 
-from ._estimation import GibbsEstimation, GaussianSARGibbs, GaussianSEMGibbs
 from ._core import GaussianGibbsPriors
+from ._estimation import GaussianSARGibbs, GaussianSEMGibbs, GibbsEstimation
 
 __all__ = [
     "GibbsEstimation",

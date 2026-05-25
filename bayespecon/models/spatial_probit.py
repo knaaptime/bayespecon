@@ -26,7 +26,7 @@ from formulaic import model_matrix
 from libpysal.graph import Graph
 
 from .._backends import resolve_backend
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from .._backends.sampler_helpers import prepare_compile_kwargs, prepare_idata_kwargs
 from .priors import SpatialProbitPriors, priors_as_dict, resolve_priors
 
 

@@ -28,13 +28,13 @@ import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
-from .._samplers.gaussian._chain_runner import run_chains
-from .._samplers._utils._idata import gibbs_to_inference_data
-from .._samplers.negbin._jax import run_chain_jax
-from .._samplers._utils._slice import SliceWidthState
-from .._samplers._utils._spatial_normal import CholmodFactor, has_cholmod
-from .._samplers.negbin import GibbsCache, GibbsPriors, GibbsState, run_chain
 from .._logdet import make_logdet_numpy_fn
+from ..samplers._utils._idata import gibbs_to_inference_data
+from ..samplers._utils._slice import SliceWidthState
+from ..samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ..samplers.gaussian._chain_runner import run_chains
+from ..samplers.negbin import GibbsCache, GibbsPriors, GibbsState, run_chain
+from ..samplers.negbin._jax import run_chain_jax
 from .base import SpatialModel
 from .priors import SARPriors
 
@@ -101,7 +101,7 @@ class SARNegBinLatent(SpatialModel):
         bounds = self._logdet_bounds
         return make_logdet_numpy_fn(
             self._W_sparse,
-            eigs=self._W_eigs.real if self._W_eigs is not None else None,
+            eigs=self._W_eigs_real,
             method=bounds.method,
             rho_min=bounds.rho_min,
             rho_max=bounds.rho_max,
@@ -157,7 +157,7 @@ class SARNegBinLatent(SpatialModel):
             alpha_init = 1.0
 
         # ω₀: draw from PG(y + α, η)
-        from .._samplers._utils._polyagamma import sample_polyagamma
+        from ..samplers._utils._polyagamma import sample_polyagamma
 
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 
@@ -560,7 +560,7 @@ class SARNegBinLatent(SpatialModel):
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs.real.astype(np.float64)
+        eigs = self._W_eigs_real
         mean_diag = _chunked_eig_means(rho_draws, eigs)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 

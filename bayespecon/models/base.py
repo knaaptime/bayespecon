@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import warnings
 from abc import ABC, abstractmethod
 from functools import cached_property
@@ -18,14 +19,18 @@ from libpysal.graph import Graph
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
 
+from .._backends.sampler_helpers import (
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+    use_jax_likelihood,
+)
 from .._logdet import (
-    _auto_logdet_method,
     make_logdet_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
     resolve_logdet_bounds,
 )
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
+from .._logdet._config import _auto_logdet_method
 
 
 def gelman_default_beta_prior(
@@ -510,6 +515,12 @@ class SpatialModel(ABC):
             return None
         return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
+    @cached_property
+    def _W_eigs_real(self) -> np.ndarray | None:
+        """Real part of W eigenvalues as float64, computed lazily once."""
+        eigs = self._W_eigs
+        return None if eigs is None else eigs.real.astype(np.float64)
+
     @property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or dense W.
@@ -519,7 +530,7 @@ class SpatialModel(ABC):
         """
         if self._W_for_logdet_cache is None:
             if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs.real.astype(np.float64)
+                self._W_for_logdet_cache = self._W_eigs_real
             else:
                 self._W_for_logdet_cache = self._W_sparse.toarray().astype(np.float64)
         return self._W_for_logdet_cache
@@ -529,7 +540,7 @@ class SpatialModel(ABC):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
         if self._logdet_numpy_fn_cache is None:
             eigs = (
-                self._W_eigs.real
+                self._W_eigs_real
                 if self._resolved_logdet_method == "eigenvalue"
                 else None
             )
@@ -547,7 +558,7 @@ class SpatialModel(ABC):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
         if self._logdet_numpy_vec_fn_cache is None:
             eigs = (
-                self._W_eigs.real
+                self._W_eigs_real
                 if self._resolved_logdet_method == "eigenvalue"
                 else None
             )
@@ -931,18 +942,94 @@ class SpatialModel(ABC):
         arviz.InferenceData
         """
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        try:
-            model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        except TypeError:
-            # Subclasses that don't accept ``nuts_sampler`` build the same
-            # model on every backend.
-            model = self._build_pymc_model()
+        idata_kwargs = sample_kwargs.pop("idata_kwargs", None)
+        self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=False,
+            sample_kwargs=sample_kwargs,
+        )
+        return self._idata
+
+    def _fit_gibbs_dispatch(
+        self,
+        *,
+        draws: int,
+        tune: int,
+        chains: int,
+        random_seed: Optional[int],
+        thin: int,
+        n_jobs: int,
+        progressbar: bool,
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> az.InferenceData:
+        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs`.
+
+        This keeps model ``fit`` methods thin by centralizing how Gibbs-specific
+        kwargs are popped from ``sample_kwargs``.
+        """
+        sample_kwargs = dict(sample_kwargs or {})
+        return self._fit_gibbs(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+            mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
+            use_mala=sample_kwargs.pop("use_mala", True),
+            use_slice=sample_kwargs.pop("use_slice", True),
+            slice_width=sample_kwargs.pop("slice_width", None),
+            chain_method=sample_kwargs.pop("chain_method", None),
+        )
+
+    def _fit_nuts(
+        self,
+        *,
+        draws: int,
+        tune: int,
+        chains: int,
+        target_accept: float,
+        random_seed: Optional[int],
+        progressbar: bool,
+        nuts_sampler: str = "pymc",
+        idata_kwargs: dict[str, Any] | None = None,
+        compute_log_likelihood: bool = False,
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> tuple[az.InferenceData, bool]:
+        """Shared NUTS sampling path used by model-specific ``fit`` methods.
+
+        Returns
+        -------
+        tuple[arviz.InferenceData, bool]
+            ``(idata, compute_log_likelihood)`` where the boolean reflects the
+            post-policy value after :func:`prepare_idata_kwargs`.
+        """
+        sample_kwargs = dict(sample_kwargs or {})
+        idata_kwargs = dict(idata_kwargs or {})
+
+        build_kwargs: dict[str, Any] = {}
+        build_sig = inspect.signature(self._build_pymc_model)
+        if "compute_log_likelihood" in build_sig.parameters:
+            build_kwargs["compute_log_likelihood"] = compute_log_likelihood
+        if "nuts_sampler" in build_sig.parameters:
+            build_kwargs["nuts_sampler"] = nuts_sampler
+
+        model = self._build_pymc_model(**build_kwargs)
         self._pymc_model = model
-        if "idata_kwargs" in sample_kwargs:
-            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
-                sample_kwargs["idata_kwargs"], model, nuts_sampler
-            )
+
+        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
+
         with model:
             self._idata = pm.sample(
                 draws=draws,
@@ -950,11 +1037,62 @@ class SpatialModel(ABC):
                 chains=chains,
                 target_accept=target_accept,
                 random_seed=random_seed,
-                progressbar=progressbar,
+                idata_kwargs=idata_kwargs,
                 nuts_sampler=nuts_sampler,
+                progressbar=progressbar,
                 **sample_kwargs,
             )
-        return self._idata
+        return self._idata, compute_log_likelihood
+
+    def _reconstruct_cross_sectional_log_likelihood(
+        self,
+        *,
+        nuts_sampler: str,
+    ) -> None:
+        """Rebuild complete pointwise log-likelihood for cross-sectional models.
+
+        Dispatches by spatial term type (``rho`` vs ``lam``) and whether the
+        model's beta vector includes WX terms.
+        """
+        if not hasattr(self, "_idata"):
+            return
+
+        spatial_param = self._jacobian_param
+        if spatial_param not in {"rho", "lam"}:
+            return
+
+        # SEM/SDEM on JAX backends build an observed CustomDist and already
+        # have complete log_likelihood from PyMC.
+        if spatial_param == "lam" and use_jax_likelihood(nuts_sampler):
+            return
+
+        idata = self._idata
+        n = int(self._y.shape[0])
+        Z = np.hstack([self._X, self._WX]) if self._has_wx_in_beta else self._X
+
+        spatial_draws = idata.posterior[spatial_param].values.reshape(-1)
+        beta_draws = idata.posterior["beta"].values.reshape(-1, Z.shape[1])
+        sigma_draws = idata.posterior["sigma"].values.reshape(-1)
+        nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
+
+        if spatial_param == "rho":
+            mu = spatial_draws[:, None] * self._Wy[None, :] + (beta_draws @ Z.T)
+            eps = self._y[None, :] - mu
+        else:
+            resid = self._y[None, :] - (beta_draws @ Z.T)
+            W_resid = (self._W_sparse @ resid.T).T
+            eps = resid - spatial_draws[:, None] * W_resid
+
+        ll_data = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
+        jacobian = self._logdet_numpy_vec_fn(spatial_draws)
+        ll_total = ll_data + jacobian[:, None] / n
+
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        _write_log_likelihood_to_idata(
+            idata,
+            ll_total.reshape(n_chains, n_draws_per_chain, n),
+        )
 
     def _fit_gibbs(
         self,
@@ -1037,10 +1175,10 @@ class SpatialModel(ABC):
         # --- Resolve Gibbs class (lazy import to avoid circular deps) ---
         import importlib
 
-        from .._samplers.gaussian import GaussianGibbsPriors
+        from ..samplers.gaussian import GaussianGibbsPriors
 
         gibbs_module = importlib.import_module(
-            ".._samplers.gaussian", package=__package__
+            "..samplers.gaussian", package=__package__
         )
         GibbsClass = getattr(gibbs_module, self._gibbs_class)
 
@@ -1077,7 +1215,7 @@ class SpatialModel(ABC):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type=self._model_type,
-            W_eigs=self._W_eigs.real.astype(np.float64)
+            W_eigs=self._W_eigs_real
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1327,6 +1465,7 @@ class SpatialModel(ABC):
         self._require_W()
 
         from ..diagnostics.lmtests.registry import get_diagnostic_suite
+
         suite = get_diagnostic_suite(self)
         if suite is None:
             raise ValueError(

@@ -21,21 +21,21 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
+from .._backends.sampler_helpers import (
+    enforce_c_backend,
+    prepare_compile_kwargs,
+    prepare_idata_kwargs,
+)
 from .._logdet import (
-    _flow_logdet_poly_coeffs,
     compute_flow_traces,
     flow_logdet_numpy,
     flow_logdet_pytensor,
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
+from .._logdet._flow import _flow_logdet_poly_coeffs
 from .._ops import kron_solve_matrix
-from ._sampler import (
-    enforce_c_backend,
-    prepare_compile_kwargs,
-    prepare_idata_kwargs,
-)
+from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
 from .base import SpatialModel
 from .flow import (
     _build_flow_effect_masks,
@@ -462,6 +462,7 @@ class FlowPanelModel(ABC):
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
         from ..diagnostics.lmtests.registry import get_diagnostic_suite
+
         suite = get_diagnostic_suite(self)
         if suite is None:
             raise ValueError(
@@ -1194,11 +1195,11 @@ class SARFlowSeparablePanel(FlowPanelModel):
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        
+
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by 
+        Number of Monte Carlo probes (used by
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -1552,11 +1553,11 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        
+
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by 
+        Number of Monte Carlo probes (used by
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
@@ -2475,11 +2476,11 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
-        
+
     titer : int, default 800
         Geometric tail cutoff for series-based variants.
     trace_riter : int, default 50
-        Number of Monte Carlo probes (used by 
+        Number of Monte Carlo probes (used by
     trace_seed : int, optional
         Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional

@@ -6,18 +6,18 @@ import warnings
 
 import pytest
 
-from bayespecon.models import _sampler
-from bayespecon.models._sampler import prepare_compile_kwargs
+from bayespecon._backends import sampler_helpers as _sampler
+from bayespecon._backends.sampler_helpers import prepare_compile_kwargs
 
 
 @pytest.fixture(autouse=True)
 def _clear_caches():
     """Reset module-level caches between tests."""
     _sampler._has_module.cache_clear()
-    _sampler._warn_numba_missing_once.cache_clear()
+    _sampler._warn_once.cache_clear()
     yield
     _sampler._has_module.cache_clear()
-    _sampler._warn_numba_missing_once.cache_clear()
+    _sampler._warn_once.cache_clear()
 
 
 def test_non_pymc_sampler_passthrough():

@@ -16,14 +16,24 @@ Re-exports
 The most commonly-used symbols are re-exported here for backward
 compatibility.  New code should import from subpackages directly::
 
-    from bayespecon._samplers.gaussian import GaussianSARGibbs
-    from bayespecon._samplers.panel import REGibbsEstimation
-    from bayespecon._samplers.negbin import run_chain
+    from bayespecon.samplers.gaussian import GaussianSARGibbs
+    from bayespecon.samplers.panel import REGibbsEstimation
+    from bayespecon.samplers.negbin import run_chain
 """
 
-from .gaussian import GibbsEstimation, GaussianSARGibbs, GaussianSEMGibbs, GaussianGibbsPriors
-from .panel import REGibbsEstimation, GaussianSARREGibbs, GaussianSEMREGibbs, REGibbsPriors
-from .negbin import GibbsState, GibbsPriors, GibbsCache, run_chain
+from .gaussian import (
+    GaussianGibbsPriors,
+    GaussianSARGibbs,
+    GaussianSEMGibbs,
+    GibbsEstimation,
+)
+from .negbin import GibbsCache, GibbsPriors, GibbsState, run_chain
+from .panel import (
+    GaussianSARREGibbs,
+    GaussianSEMREGibbs,
+    REGibbsEstimation,
+    REGibbsPriors,
+)
 
 __all__ = [
     # Gaussian

@@ -2,8 +2,8 @@
 
 Supports sequential execution with rich progress bars, process-based
 parallelism via ``joblib.Parallel`` (with per-chain progress bars
-via a multiprocessing Queue), and JAX vectorized chains via
-``jax.vmap``.
+fed via a shared-memory counter block), and JAX vectorized chains
+via ``jax.vmap``.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import multiprocessing
 import platform
 import threading
 import warnings
+from multiprocessing import shared_memory
 from typing import Callable
 
 import numpy as np
@@ -146,52 +147,70 @@ def run_chains(
         n_workers = n_jobs if n_jobs > 0 else -1  # joblib uses -1 for all CPUs
 
         if progressbar:
-            # Per-chain progress bars via multiprocessing Queue + rich
-            from .._utils._progress import _ParallelProgressRenderer, _ParallelProgressReporter
-
-            manager = multiprocessing.Manager()
-            queue = manager.Queue()
-            stop_event = threading.Event()
-
-            renderer = _ParallelProgressRenderer(
-                n_chains=n_chains,
-                draws=draws,
-                tune=tune,
-                model_type=model_type,
-            )
-            reporters = [
-                _ParallelProgressReporter(queue, chain_id=c)
-                for c in range(n_chains)
-            ]
-
-            # Daemon thread drains the queue and updates rich bars
-            drain_thread = threading.Thread(
-                target=renderer.drain,
-                args=(queue, stop_event),
-                daemon=True,
+            # Per-chain progress bars via shared-memory counters + rich.
+            # Workers do two int64 stores per iteration (no IPC); a
+            # daemon thread on the main process polls the buffer at
+            # 10 Hz and updates the rich tasks.
+            from .._utils._progress import (
+                _ParallelProgressRenderer,
+                _SharedCounterReporter,
             )
 
-            with renderer:
-                drain_thread.start()
-                try:
-                    results = Parallel(n_jobs=n_workers)(
-                        delayed(chain_fn)(
-                            chain_id,
-                            seed,
-                            progress_manager=reporters[chain_id],
-                            chain_id_kw=chain_id,
+            # Layout: (n_chains, 2) int64 — [iteration, tuning_flag].
+            nbytes = n_chains * 2 * 8
+            shm = shared_memory.SharedMemory(create=True, size=nbytes)
+            try:
+                # Initialise: iteration=0 (not started), tuning_flag=1.
+                init_buf = np.ndarray((n_chains, 2), dtype=np.int64, buffer=shm.buf)
+                init_buf[:, 0] = 0
+                init_buf[:, 1] = 1
+                del init_buf
+
+                renderer = _ParallelProgressRenderer(
+                    n_chains=n_chains,
+                    draws=draws,
+                    tune=tune,
+                    model_type=model_type,
+                )
+                reporters = [
+                    _SharedCounterReporter(shm.name, c, n_chains)
+                    for c in range(n_chains)
+                ]
+
+                stop_event = threading.Event()
+                poll_thread = threading.Thread(
+                    target=renderer.poll,
+                    args=(shm.name, stop_event),
+                    kwargs={"interval": 0.1},
+                    daemon=True,
+                )
+
+                with renderer:
+                    poll_thread.start()
+                    try:
+                        results = Parallel(n_jobs=n_workers)(
+                            delayed(chain_fn)(
+                                chain_id,
+                                seed,
+                                progress_manager=reporters[chain_id],
+                                chain_id_kw=chain_id,
+                            )
+                            for chain_id, seed in enumerate(seeds)
                         )
-                        for chain_id, seed in enumerate(seeds)
-                    )
-                finally:
-                    stop_event.set()
-                    drain_thread.join(timeout=5.0)
-            return list(results)
+                    finally:
+                        stop_event.set()
+                        poll_thread.join(timeout=5.0)
+                return list(results)
+            finally:
+                shm.close()
+                try:
+                    shm.unlink()
+                except FileNotFoundError:
+                    pass
         else:
             # No progress bar — silent parallel execution
             results = Parallel(n_jobs=n_workers)(
-                delayed(chain_fn)(chain_id, seed)
-                for chain_id, seed in enumerate(seeds)
+                delayed(chain_fn)(chain_id, seed) for chain_id, seed in enumerate(seeds)
             )
             return list(results)
 

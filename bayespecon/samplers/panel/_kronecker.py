@@ -247,7 +247,7 @@ def kron_eigenvalue_bounds(
     typical for spatial precision matrices with small :math:`\rho`.
     """
     n = LdtLd.shape[0]
-    N = n * n
+    n * n
 
     # Diagonal of P: diag(LdtLd) ⊗ diag(LotLo) / sigma2 + omega
     diag_LdtLd = np.diag(LdtLd)  # (n,)
@@ -260,8 +260,8 @@ def kron_eigenvalue_bounds(
     # Row sums of |LdtLd| and |LotLo| (excluding diagonal)
     abs_LdtLd = np.abs(LdtLd)
     abs_LotLo = np.abs(LotLo)
-    row_sums_LdtLd = abs_LdtLd.sum(axis=1) - np.abs(diag_LdtLd)  # (n,)
-    row_sums_LotLo = abs_LotLo.sum(axis=1) - np.abs(diag_LotLo)  # (n,)
+    abs_LdtLd.sum(axis=1) - np.abs(diag_LdtLd)  # (n,)
+    abs_LotLo.sum(axis=1) - np.abs(diag_LotLo)  # (n,)
 
     # Gershgorin R_i for Kronecker product:
     # R_i = |diag_LdtLd[id]| * row_sums_LotLo[io] / sigma2

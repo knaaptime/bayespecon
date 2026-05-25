@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from bayespecon._samplers._utils._spatial_normal import (
+from bayespecon.samplers._utils._spatial_normal import (
     CholmodFactor,
     cg_solve,
     chebyshev_sample,

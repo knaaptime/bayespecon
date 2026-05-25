@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon._samplers._utils._truncnorm import sample_truncnorm
+from bayespecon.samplers._utils._truncnorm import sample_truncnorm
 
 
 class TestSampleTruncnorm:

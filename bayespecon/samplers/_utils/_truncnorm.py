@@ -1,7 +1,7 @@
 """Vectorized truncated-normal draws for probit/tobit augmentation.
 
 Future use by SpatialProbitGibbs and TobitGibbs. Included now for API
-stability so the ``_samplers`` package layout is settled from day one.
+stability so the ``samplers`` package layout is settled from day one.
 
 Uses the efficient algorithm from Robert (1995) for robust tail behavior.
 """

@@ -27,6 +27,7 @@ import scipy.sparse as sp
 
 _log = logging.getLogger(__name__)
 
+from .._utils._idata import gibbs_to_inference_data
 from ._chain_runner import run_chains
 from ._core import (
     GaussianGibbsCache,
@@ -34,7 +35,6 @@ from ._core import (
     _initialize_gaussian_gibbs,
     run_gaussian_chain,
 )
-from .._utils._idata import gibbs_to_inference_data
 
 
 class GibbsEstimation:

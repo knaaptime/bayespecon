@@ -144,7 +144,6 @@ class SARTobit(_SpatialTobitBase):
 
     _priors_cls = SARTobitPriors
 
-
     def _build_pymc_model(self) -> pm.Model:
         rho_lower = self.priors.get("rho_lower", -1.0)
         rho_upper = self.priors.get("rho_upper", 1.0)
@@ -207,7 +206,7 @@ class SARTobit(_SpatialTobitBase):
         if isinstance(self, SARTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -230,7 +229,7 @@ class SARTobit(_SpatialTobitBase):
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
             beta2_draws = beta_draws[:, k : k + kw]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)
@@ -450,7 +449,6 @@ class SEMTobit(_SpatialTobitBase):
 
     _priors_cls = SEMTobitPriors
 
-
     def _build_pymc_model(self) -> pm.Model:
         lam_lower = self.priors.get("lam_lower", -1.0)
         lam_upper = self.priors.get("lam_upper", 1.0)
@@ -503,7 +501,7 @@ class SEMTobit(_SpatialTobitBase):
         if isinstance(self, SARTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -526,7 +524,7 @@ class SEMTobit(_SpatialTobitBase):
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
             beta2_draws = beta_draws[:, k : k + kw]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)
@@ -733,7 +731,6 @@ class SDMTobit(_SpatialTobitBase):
 
     _priors_cls = SDMTobitPriors
 
-
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
@@ -819,7 +816,7 @@ class SDMTobit(_SpatialTobitBase):
         if isinstance(self, SARTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -842,7 +839,7 @@ class SDMTobit(_SpatialTobitBase):
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
             beta2_draws = beta_draws[:, k : k + kw]
-            eigs = self._W_eigs.real.astype(np.float64)
+            eigs = self._W_eigs_real
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)

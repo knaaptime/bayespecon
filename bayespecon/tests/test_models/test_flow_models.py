@@ -19,7 +19,7 @@ from bayespecon.tests.helpers import SAMPLE_KWARGS
 
 class TestBarryPaceTraces:
     def test_shape(self):
-        from bayespecon._logdet import _barry_pace_traces
+        from bayespecon._logdet._grids import _barry_pace_traces
 
         n = 10
         W = sp.random(n, n, density=0.3, format="csr", random_state=0, dtype=np.float64)
@@ -33,7 +33,7 @@ class TestBarryPaceTraces:
 
     def test_exact_tr_W_override(self):
         """tr(W) = 0 for zero-diagonal W must be set in row 0."""
-        from bayespecon._logdet import _barry_pace_traces
+        from bayespecon._logdet._grids import _barry_pace_traces
 
         n = 8
         W = sp.random(n, n, density=0.4, format="csr", random_state=1, dtype=np.float64)
@@ -50,8 +50,8 @@ class TestBarryPaceTraces:
 
 class TestComputeFlowTraces:
     def test_shape(self):
-        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon._logdet import compute_flow_traces
+        from bayespecon.dgp.flows import generate_flow_data
 
         n = 6
         G = generate_flow_data(n=n, seed=0)["G"]
@@ -61,8 +61,8 @@ class TestComputeFlowTraces:
 
     def test_tr_W2_close_to_exact(self):
         """tr(W^2) estimate should be within 20% of exact for ring graph."""
-        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon._logdet import compute_flow_traces
+        from bayespecon.dgp.flows import generate_flow_data
 
         n = 10
         G = generate_flow_data(n=n, seed=0)["G"]
@@ -75,7 +75,7 @@ class TestComputeFlowTraces:
 
 class TestFlowLogdetPolyCoeffs:
     def test_output_tuple_length(self):
-        from bayespecon._logdet import _flow_logdet_poly_coeffs
+        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
 
         n = 5
         miter = 3
@@ -84,7 +84,7 @@ class TestFlowLogdetPolyCoeffs:
         assert len(result) == 8
 
     def test_array_shapes_consistent(self):
-        from bayespecon._logdet import _flow_logdet_poly_coeffs
+        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
 
         n = 5
         miter = 4
@@ -102,7 +102,7 @@ class TestFlowLogdetPolyCoeffs:
 
     def test_k1_terms_zero_for_zero_diagonal_W(self):
         """For zero-diagonal W (tr(W)=0), all k=1 poly_coeffs should be 0."""
-        from bayespecon._logdet import _flow_logdet_poly_coeffs
+        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
 
         n = 6
         miter = 5
@@ -116,7 +116,7 @@ class TestFlowLogdetPolyCoeffs:
         np.testing.assert_allclose(poly_coeffs[k1_mask], 0.0, atol=1e-10)
 
     def test_raises_wrong_traces_length(self):
-        from bayespecon._logdet import _flow_logdet_poly_coeffs
+        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
 
         with pytest.raises(ValueError, match=r"len\(traces\)"):
             _flow_logdet_poly_coeffs(np.zeros(4), n=5, miter=3)
@@ -129,12 +129,12 @@ class TestFlowLogdetSeparableIdentity:
         """log|I| = 0, so at rho=0 the log-det should be ~0."""
         import pytensor.tensor as pt
 
-        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon._logdet import (
-            _flow_logdet_poly_coeffs,
             compute_flow_traces,
             flow_logdet_pytensor,
         )
+        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
+        from bayespecon.dgp.flows import generate_flow_data
 
         n = 5
         G = generate_flow_data(n=n, seed=0)["G"]
@@ -176,13 +176,13 @@ class TestFlowLogdetSeparableIdentity:
         import pytensor
         import pytensor.tensor as pt
 
-        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon._logdet import (
-            _flow_logdet_poly_coeffs,
             compute_flow_traces,
             flow_logdet_pytensor,
             logdet_eigenvalue,
         )
+        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
+        from bayespecon.dgp.flows import generate_flow_data
 
         n = 5
         G = generate_flow_data(n=n, seed=0)["G"]
@@ -671,8 +671,8 @@ class TestSparseFlowSolveOp:
 
     @pytest.fixture(autouse=True)
     def _build_op(self):
-        from bayespecon.dgp.flows import generate_flow_data
         from bayespecon._ops import SparseFlowSolveOp
+        from bayespecon.dgp.flows import generate_flow_data
 
         n = 4
         G = generate_flow_data(n=n, seed=0)["G"]

@@ -6,39 +6,33 @@ helpers.
 """
 
 import hashlib
-from collections import OrderedDict
-from typing import Any
 
 import numpy as np
-import pytensor.tensor as pt
 import scipy.sparse as sp
 from scipy.interpolate import CubicSpline
 
 from ._config import (
-    VALID_LOGDET_METHODS,
-    LogDetMethodName,
-    LogdetBounds,
-    TraceEstimatorName,
     _LOGDET_FN_CACHE,
     _LOGDET_FN_CACHE_MAXSIZE,
-    resolve_logdet_method,
-    _auto_logdet_method,
-    _resolve_trace_estimator,
+    VALID_LOGDET_METHODS,
+    TraceEstimatorName,
     _default_trace_k,
+    _resolve_trace_estimator,
+    resolve_logdet_method,
 )
 from ._grids import (
     _build_logdet_grid,
     chebyshev,
+    ilu,
+    mc,
     sparse_grid,
     spline,
-    mc,
-    ilu,
 )
 from ._pytensor import (
+    _make_pytensor_interp_fn,
+    logdet_chebyshev,
     logdet_eigenvalue,
     logdet_exact,
-    logdet_chebyshev,
-    _make_pytensor_interp_fn,
 )
 
 _GRID_SPLINE_METHODS = (

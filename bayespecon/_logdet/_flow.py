@@ -10,13 +10,13 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 
 from ._config import (
-    _resolve_trace_estimator,
-    _default_trace_k,
-    _auto_logdet_method,
     TraceEstimatorName,
+    _auto_logdet_method,
+    _default_trace_k,
+    _resolve_trace_estimator,
 )
 from ._grids import _barry_pace_traces, chebyshev
-from ._pytensor import logdet_eigenvalue, logdet_chebyshev
+from ._pytensor import logdet_chebyshev, logdet_eigenvalue
 
 
 def compute_flow_traces(

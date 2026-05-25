@@ -634,6 +634,40 @@
               we discuss related theoretical and empirical work.},
 }
 
+@article{meyer2021HutchOptimal,
+  title = {Hutch++: {{Optimal Stochastic Trace Estimation}}},
+  shorttitle = {Hutch++},
+  author = {Meyer, Raphael A. and Musco, Cameron and Musco, Christopher and
+            Woodruff, David P.},
+  year = 2021,
+  month = jan,
+  journal = {Proceedings of the SIAM Symposium on Simplicity in Algorithms
+             (SOSA)},
+  volume = {2021},
+  pages = {142--155},
+  issn = {2688-1837},
+  doi = {10.1137/1.9781611976496.16},
+  url = {https://pmc.ncbi.nlm.nih.gov/articles/PMC8553228/},
+  urldate = {2026-05-25},
+  abstract = {We study the problem of estimating the trace of a matrix A that
+              can only be accessed through matrix-vector multiplication. We
+              introduce a new randomized algorithm, Hutch++, which computes a (1
+              \textpm{} {$\varepsilon$}) approximation to tr(A) for any positive
+              semidefinite (PSD) A using just O(1/{$\varepsilon$}) matrix-vector
+              products. This improves on the ubiquitous Hutchinson's estimator,
+              which requires O(1/{$\varepsilon$}2) matrix-vector products. Our
+              approach is based on a simple technique for reducing the variance
+              of Hutchinson's estimator using a low-rank approximation step, and
+              is easy to implement and analyze. Moreover, we prove that, up to a
+              logarithmic factor, the complexity of Hutch++ is optimal amongst
+              all matrix-vector query algorithms, even when queries can be chosen
+              adaptively. We show that it significantly outperforms Hutchinson's
+              method in experiments. While our theory requires A to be positive
+              semidefinite, empirical gains extend to applications involving
+              non-PSD matrices, such as triangle estimation in networks.},
+  pmcid = {PMC8553228},
+  pmid = {34723248},
+}
 @article{micaletto2025MCSE,
   title = {Monte Carlo Standard Errors for Bridge Sampling Marginal Likelihood
            Estimation},
@@ -670,6 +704,7 @@
   archiveprefix = {arXiv},
   keywords = {Statistics - Computation,Statistics - Methodology},
 }
+
 @article{mutiso2022BayesianNegative,
   title = {Bayesian Negative Binomial Regression with Spatially Varying
            Dispersion: {{Modeling COVID-19}} Incidence in {{Georgia}}},
@@ -713,7 +748,6 @@
   archiveprefix = {arXiv},
   keywords = {Mathematics - Numerical Analysis},
 }
-
 @article{neal2003SliceSampling,
   title = {Slice Sampling},
   author = {Neal, Radford M.},
@@ -729,6 +763,7 @@
          },
   urldate = {2026-05-22},
 }
+
 @article{pace2004ChebyshevApproximation,
   title = {Chebyshev Approximation of Log-Determinants of Spatial Weight
            Matrices},
@@ -885,7 +920,6 @@
   year = 2003,
   publisher = {SIAM},
 }
-
 @incollection{smith2004BayesianProbit,
   title = {A {{Bayesian Probit Model}} with {{Spatial Dependencies}}},
   booktitle = {Advances in {{Econometrics}}},
@@ -1062,6 +1096,7 @@
   pages = {779--804},
   doi = {10.3758/BF03194105},
 }
+
 @article{wang2013PoissonlognormalConditionalautoregressive,
   title = {A {{Poisson-lognormal}} Conditional-Autoregressive Model for
            Multivariate Spatial Analysis of Pedestrian Crash Counts across
@@ -1078,7 +1113,6 @@
   urldate = {2026-05-20},
   langid = {english},
 }
-
 @article{wolf2018StochasticEfficiency,
   title = {Stochastic {{Efficiency}} of {{Bayesian Markov Chain Monte Carlo}} in
            {{Spatial Econometric Models}}: {{An Empirical Comparison}} of {{Exact

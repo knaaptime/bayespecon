@@ -130,6 +130,7 @@ EXPECTED_REGISTRIES = {
 def test_spatial_diagnostics_registries_match_expected():
     """Each model class should expose the expected ordered list of LM tests."""
     from bayespecon.diagnostics.lmtests.registry import get_diagnostic_suite
+
     for cls, expected_labels in EXPECTED_REGISTRIES.items():
         suite = get_diagnostic_suite(cls)
         assert suite is not None, f"No suite registered for {cls.__name__}"
@@ -142,6 +143,7 @@ def test_spatial_diagnostics_registries_match_expected():
 def test_slx_uses_slx_specific_lm_tests():
     """SLX uses Koley-Bera SLX-specific LM tests, not raw OLS LM tests."""
     from bayespecon.diagnostics.lmtests.registry import get_diagnostic_suite
+
     suite = get_diagnostic_suite(SLX)
     labels = [label for _, label in suite.tests]
     # Must not be empty placeholders

@@ -159,14 +159,12 @@ class TestXTraceEstimator:
             if abs(exact[k_idx]) > 0.5:
                 rel_err = abs(result[k_idx] - exact[k_idx]) / abs(exact[k_idx])
                 assert rel_err < 0.25, (
-                    f"k={k_idx + 1}: mean={result[k_idx]:.4f}, "
-                    f"exact={exact[k_idx]:.4f}"
+                    f"k={k_idx + 1}: mean={result[k_idx]:.4f}, exact={exact[k_idx]:.4f}"
                 )
             else:
                 abs_err = abs(result[k_idx] - exact[k_idx])
                 assert abs_err < 1.0, (
-                    f"k={k_idx + 1}: mean={result[k_idx]:.4f}, "
-                    f"exact={exact[k_idx]:.4f}"
+                    f"k={k_idx + 1}: mean={result[k_idx]:.4f}, exact={exact[k_idx]:.4f}"
                 )
 
     def test_falls_back_to_hutchinson_for_small_k(self):
@@ -256,7 +254,7 @@ class TestLogdetTraceHutchPP:
 class TestAutoSelection:
     def test_auto_prefers_chebyshev_for_large_n(self):
         """_auto_logdet_method picks eigenvalue for small n, chebyshev for large n."""
-        from bayespecon._logdet import _auto_logdet_method
+        from bayespecon._logdet._config import _auto_logdet_method
 
         assert _auto_logdet_method(100) == "eigenvalue"
         assert _auto_logdet_method(3000) == "chebyshev"
@@ -271,7 +269,7 @@ class TestAutoSelection:
 class TestChebyshevMCPath:
     def test_chebyshev_large_n_uses_traceax(self):
         """chebyshev() with n > 2000 uses traceax when available."""
-        from bayespecon._logdet import chebyshev
+        from bayespecon._logdet._grids import chebyshev
 
         # Create a larger W to trigger MC path (n > 2000)
         n = 50  # Too small for MC path; force it by mocking
@@ -283,7 +281,7 @@ class TestChebyshevMCPath:
 
     def test_chebyshev_mc_path_produces_valid_coeffs(self):
         """Chebyshev MC path (with or without traceax) produces valid coefficients."""
-        from bayespecon._logdet import chebyshev
+        from bayespecon._logdet._grids import chebyshev
 
         # Use a moderate n that triggers MC path only if n > 2000
         # For testing, we verify the function works for small n too

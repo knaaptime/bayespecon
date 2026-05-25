@@ -10,13 +10,14 @@ but does not advance the bar.
 
 from __future__ import annotations
 
-import multiprocessing
 import threading
 import time
 from collections.abc import Iterable
 from contextlib import nullcontext
+from multiprocessing import shared_memory
 from typing import Any
 
+import numpy as np
 from rich.box import SIMPLE_HEAD
 from rich.console import Console
 from rich.progress import (
@@ -328,31 +329,66 @@ class GibbsProgressBarManager:
 # ---------------------------------------------------------------------------
 
 
-class _ParallelProgressReporter:
-    """Picklable progress reporter for worker processes.
+class _SharedCounterReporter:
+    """Picklable shared-memory progress reporter for worker processes.
 
     Implements the same interface as :class:`GibbsProgressBarManager`
-    (``update``, ``start_chain``, ``set_accept_rate``) but serialises
-    updates as dicts on a :class:`multiprocessing.Queue` so that a
-    main-process renderer can display them.
-
-    This allows ``joblib.Parallel`` worker processes to report progress
-    back to the main process without holding any unpicklable ``rich``
-    objects.
+    (``update``, ``start_chain``, ``set_accept_rate``, ``refresh``)
+    but writes per-iteration progress into a shared-memory block
+    instead of sending IPC messages.  Each chain owns two ``int64``
+    slots ``[iteration, tuning_flag]`` in a flat ``(n_chains, 2)``
+    array.  Workers perform plain stores (no locks — single writer
+    per slot, single reader on the main process), so ``update()``
+    costs two memory writes rather than a pickle + syscall.
 
     Parameters
     ----------
-    queue : multiprocessing.Queue
-        Queue to post update messages on.
+    shm_name : str
+        Name of the :class:`multiprocessing.shared_memory.SharedMemory`
+        block allocated by the parent process.
     chain_id : int
         0-based chain index that this reporter represents.
+    n_chains : int
+        Total number of chains (needed to compute the buffer shape on
+        the worker side).
     """
 
-    def __init__(self, queue: multiprocessing.Queue, chain_id: int):
-        # Store the *context* queue so it survives pickling across
-        # process boundaries (Manager queues are already proxy objects).
-        self._queue = queue
+    def __init__(self, shm_name: str, chain_id: int, n_chains: int):
+        self._shm_name = shm_name
         self._chain_id = chain_id
+        self._n_chains = n_chains
+        # Lazy-opened on first use in the worker process so that the
+        # reporter pickles cleanly (open SharedMemory handles are not
+        # picklable across spawn/loky).
+        self._shm: shared_memory.SharedMemory | None = None
+        self._buf: np.ndarray | None = None
+
+    # -- pickle protocol --------------------------------------------------
+
+    def __reduce__(self):
+        return (
+            self.__class__,
+            (self._shm_name, self._chain_id, self._n_chains),
+        )
+
+    # -- internals --------------------------------------------------------
+
+    def _ensure_open(self) -> None:
+        if self._buf is None:
+            self._shm = shared_memory.SharedMemory(name=self._shm_name)
+            self._buf = np.ndarray(
+                (self._n_chains, 2), dtype=np.int64, buffer=self._shm.buf
+            )
+
+    def __del__(self):
+        # Best-effort close of the worker-side handle.  The parent
+        # owns the lifetime of the underlying segment (unlink).
+        shm = getattr(self, "_shm", None)
+        if shm is not None:
+            try:
+                shm.close()
+            except Exception:
+                pass
 
     # -- same interface as GibbsProgressBarManager -----------------------
 
@@ -363,37 +399,36 @@ class _ParallelProgressReporter:
         tuning: bool,
         accept: bool | None = None,
     ):
-        self._queue.put(
-            {
-                "type": "update",
-                "chain": self._chain_id,
-                "iteration": iteration,
-                "tuning": tuning,
-                "accept": accept,
-            }
-        )
+        # Two int64 stores.  No syscalls, no locks, ~10 ns.
+        self._ensure_open()
+        buf = self._buf
+        assert buf is not None
+        buf[self._chain_id, 0] = iteration + 1
+        buf[self._chain_id, 1] = 1 if tuning else 0
 
     def start_chain(self, chain_idx: int):
-        self._queue.put({"type": "start", "chain": self._chain_id})
+        # No-op: the renderer infers the chain start from the first
+        # non-zero iteration count in its periodic poll.
+        self._ensure_open()
 
     def set_accept_rate(self, chain_idx: int, rate: float):
-        # Aggregate accept rate is not useful per-iteration in
-        # parallel mode; the main-process renderer tracks running
-        # rates from individual accept booleans.
+        # Accept rate is not surfaced in parallel mode (would cost an
+        # extra SHM slab per chain).  The aggregate is available from
+        # the posterior after sampling.
         pass
 
     def refresh(self):
-        # No-op: the daemon drain thread continuously refreshes
-        # the rich progress display.
+        # No-op: the renderer's polling thread refreshes the display.
         pass
 
 
 class _ParallelProgressRenderer:
-    """Main-process renderer that reads queue messages and updates rich bars.
+    """Main-process renderer that polls shared memory and updates rich bars.
 
     Owns a :class:`_GibbsProgress` instance with one task per chain.
-    A daemon thread calls :meth:`drain` in a loop to consume messages
-    from the worker queue and update the corresponding tasks.
+    A daemon thread calls :meth:`poll` in a loop to snapshot a
+    shared-memory counter block written by worker processes and update
+    the corresponding tasks.
 
     Parameters
     ----------
@@ -419,11 +454,8 @@ class _ParallelProgressRenderer:
         self.tune = tune
         self.model_type = model_type
 
-        # Accept-rate tracking (mirrors GibbsProgressBarManager logic)
-        self._accept_counts: list[int] = [0] * n_chains
-        self._accept_totals: list[int] = [0] * n_chains
-
-        # Per-chain start times for speed reporting
+        # Per-chain start times for speed reporting (populated on first
+        # observed iteration during polling).
         self._chain_start_times: dict[int, float] = {}
 
         # Create the rich Progress instance (same layout as sequential)
@@ -489,92 +521,101 @@ class _ParallelProgressRenderer:
             self._progress.__exit__(*args)
             self._progress.console.print(summary)
 
-    def process_message(self, msg: dict) -> None:
-        """Process a single message from the worker queue.
+    def _apply_snapshot(
+        self,
+        snapshot: np.ndarray,
+        last_iter: np.ndarray,
+    ) -> None:
+        """Apply a shared-memory snapshot to the rich progress bars.
+
+        Updates each chain's task to absolute position ``draw_iter``
+        rather than advancing by a delta, so missed polls are
+        self-correcting.
 
         Parameters
         ----------
-        msg : dict
-            Message dict with ``"type"`` key (``"start"`` or ``"update"``).
+        snapshot : ndarray, shape (n_chains, 2), dtype int64
+            Copy of the shared-memory counter block.  Column 0 is the
+            1-based current iteration (0 = not started); column 1 is
+            the tuning flag (1 = tuning, 0 = sampling).
+        last_iter : ndarray, shape (n_chains,), dtype int64
+            Per-chain last-observed iteration count.  Mutated in place.
         """
-        msg_type = msg["type"]
-        chain = msg["chain"]
+        now = time.monotonic()
+        for c in range(self.n_chains):
+            cur_iter = int(snapshot[c, 0])
+            cur_tuning = int(snapshot[c, 1])
 
-        if msg_type == "start":
-            self._chain_start_times[chain] = time.monotonic()
+            if cur_iter == 0 and last_iter[c] == 0:
+                continue  # chain has not started yet
 
-        elif msg_type == "update":
-            iteration = msg["iteration"]
-            tuning = msg["tuning"]
-            accept = msg.get("accept")
+            # Record start time on first observed iteration.
+            if last_iter[c] == 0 and cur_iter > 0:
+                self._chain_start_times[c] = now
 
-            task_id = self._tasks[chain]
-            phase = "tune" if tuning else "draw"
+            task_id = self._tasks[c]
+            phase = "tune" if cur_tuning else "draw"
 
-            # Accept rate
-            if accept is not None:
-                self._accept_totals[chain] += 1
-                if accept:
-                    self._accept_counts[chain] += 1
-                rate = self._accept_counts[chain] / self._accept_totals[chain]
-                accept_str = f"{rate:.0%}"
-            else:
-                accept_str = "--"
-
-            # Speed
-            chain_start = self._chain_start_times.get(chain)
-            if chain_start is not None:
-                elapsed = time.monotonic() - chain_start
-            else:
-                elapsed = self._progress.tasks[task_id].elapsed or 0.0
-            if elapsed > 0:
-                speed_str = f"{(iteration + 1) / elapsed:.1f} draws/s"
+            chain_start = self._chain_start_times.get(c)
+            if chain_start is not None and now > chain_start:
+                speed_str = f"{cur_iter / (now - chain_start):.1f} draws/s"
             else:
                 speed_str = "--"
 
-            # Advance bar only during draw phase (like GibbsProgressBarManager)
-            if tuning:
+            if cur_tuning:
                 self._progress.update(
                     task_id,
                     phase=phase,
                     draw_iter=0,
-                    accept_rate=accept_str,
+                    accept_rate="--",
                     speed=speed_str,
+                    refresh=True,
                 )
             else:
-                draw_iter = iteration - self.tune + 1
+                draw_iter = max(0, cur_iter - self.tune)
                 self._progress.update(
                     task_id,
-                    advance=1,
+                    completed=draw_iter,
                     phase=phase,
                     draw_iter=draw_iter,
-                    accept_rate=accept_str,
+                    accept_rate="--",
                     speed=speed_str,
+                    refresh=True,
                 )
 
-    def drain(self, queue: multiprocessing.Queue, stop_event: threading.Event) -> None:
-        """Drain messages from *queue* until *stop_event* is set.
+            last_iter[c] = cur_iter
 
-        Intended to be run in a daemon thread.
+    def poll(
+        self,
+        shm_name: str,
+        stop_event: threading.Event,
+        interval: float = 0.1,
+    ) -> None:
+        """Poll the shared-memory counter block until *stop_event* is set.
+
+        Intended to be run in a daemon thread.  Snapshots the buffer at
+        ``interval`` seconds and updates each chain's rich task to its
+        current absolute position.
 
         Parameters
         ----------
-        queue : multiprocessing.Queue
-            The shared queue that workers post messages on.
+        shm_name : str
+            Name of the shared-memory block allocated by the parent.
         stop_event : threading.Event
-            When set, the loop exits after draining remaining messages.
+            When set, the loop performs one final snapshot and exits.
+        interval : float, default 0.1
+            Polling interval in seconds (10 Hz default).
         """
-        while not stop_event.is_set():
-            try:
-                msg = queue.get(timeout=0.1)
-            except Exception:
-                # queue.get raises Empty on timeout — just retry
-                continue
-            self.process_message(msg)
-        # Drain any remaining messages after stop signal
-        while not queue.empty():
-            try:
-                msg = queue.get_nowait()
-            except Exception:
-                break
-            self.process_message(msg)
+        shm = shared_memory.SharedMemory(name=shm_name)
+        try:
+            buf = np.ndarray((self.n_chains, 2), dtype=np.int64, buffer=shm.buf)
+            last_iter = np.zeros(self.n_chains, dtype=np.int64)
+
+            while not stop_event.wait(interval):
+                self._apply_snapshot(buf.copy(), last_iter)
+            # One final snapshot after stop to catch any iterations
+            # completed between the last poll and the stop signal.
+            self._apply_snapshot(buf.copy(), last_iter)
+            self._progress.refresh()
+        finally:
+            shm.close()

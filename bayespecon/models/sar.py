@@ -15,12 +15,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ._sampler import prepare_compile_kwargs, prepare_idata_kwargs
-from .base import (
-    SpatialModel,
-    _pointwise_gaussian_loglik,
-    _write_log_likelihood_to_idata,
-)
+from .base import SpatialModel
 from .priors import SARPriors
 
 
@@ -115,7 +110,6 @@ class SAR(SpatialModel):
     _has_wx_in_beta: bool = False
     _gibbs_class: str | None = "GaussianSARGibbs"
     _model_type: str = "sar"
-
 
     def _build_pymc_model(self, compute_log_likelihood: bool = False) -> pm.Model:
         """Construct the PyMC model for SAR regression.
@@ -249,7 +243,7 @@ class SAR(SpatialModel):
         used for sampling.
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -257,12 +251,7 @@ class SAR(SpatialModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
-                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-                use_mala=sample_kwargs.pop("use_mala", True),
-                use_slice=sample_kwargs.pop("use_slice", True),
-                slice_width=sample_kwargs.pop("slice_width", None),
-                chain_method=sample_kwargs.pop("chain_method", None),
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
@@ -271,56 +260,21 @@ class SAR(SpatialModel):
         idata_kwargs = idata_kwargs or {}
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
 
-        # Build model with log_likelihood computation if requested
-        model = self._build_pymc_model(compute_log_likelihood=compute_log_likelihood)
-        self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                idata_kwargs=idata_kwargs,
-                nuts_sampler=nuts_sampler,
-                progressbar=progressbar,
-                **sample_kwargs,
-            )
-
-        # --- Correct log_likelihood: add Jacobian contribution ---
-        # The pm.Normal("obs") auto-captures the Gaussian part, but the
-        # Jacobian log|I - rho*W| (added via pm.Potential) is absent.
-        # We recompute the complete pointwise LL and overwrite the group.
-        if compute_log_likelihood and hasattr(self, "_idata"):
-            idata = self._idata
-            n = self._y.shape[0]
-
-            rho_draws = idata.posterior["rho"].values.reshape(-1)  # (n_draws,)
-            beta_draws = idata.posterior["beta"].values.reshape(
-                -1, self._X.shape[1]
-            )  # (n_draws, k)
-            sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
-            nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
-
-            mu = rho_draws[:, None] * self._Wy[None, :] + (
-                beta_draws @ self._X.T
-            )  # (n_draws, n)
-            resid = self._y[None, :] - mu  # (n_draws, n)
-
-            ll_gauss = _pointwise_gaussian_loglik(resid, sigma_draws, nu_draws)
-            jacobian = self._logdet_numpy_vec_fn(rho_draws)  # (n_draws,)
-            ll_total = ll_gauss + jacobian[:, None] / n  # (n_draws, n)
-
-            n_chains = idata.posterior.sizes["chain"]
-            n_draws_per_chain = idata.posterior.sizes["draw"]
-            _write_log_likelihood_to_idata(
-                idata, ll_total.reshape(n_chains, n_draws_per_chain, n)
-            )
+        if compute_log_likelihood:
+            self._reconstruct_cross_sectional_log_likelihood(nuts_sampler=nuts_sampler)
 
         return self._idata
 
@@ -397,7 +351,7 @@ class SAR(SpatialModel):
         rho_draws.shape[0]
         beta_draws.shape[1]
 
-        eigs = self._W_eigs.real.astype(np.float64)  # (n,)
+        eigs = self._W_eigs_real  # (n,)
 
         # For each draw g, compute mean_diag and mean_rowsum of S = (I - rho*W)^{-1}
         # Using eigenvalues: diag(S) has entries 1/(1 - rho*omega_i)

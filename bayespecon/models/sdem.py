@@ -17,16 +17,8 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ._sampler import (
-    prepare_compile_kwargs,
-    prepare_idata_kwargs,
-    use_jax_likelihood,
-)
-from .base import (
-    SpatialModel,
-    _pointwise_gaussian_loglik,
-    _write_log_likelihood_to_idata,
-)
+from .._backends.sampler_helpers import use_jax_likelihood
+from .base import SpatialModel
 from .priors import SDEMPriors
 
 
@@ -124,7 +116,6 @@ class SDEM(SpatialModel):
     _gibbs_class: str | None = "GaussianSEMGibbs"
     _model_type: str = "sdem"
 
-
     def fit(
         self,
         draws: int = 2000,
@@ -210,7 +201,7 @@ class SDEM(SpatialModel):
         so PyMC populates ``log_likelihood`` natively.
         """
         if sampler == "gibbs":
-            return self._fit_gibbs(
+            return self._fit_gibbs_dispatch(
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -218,12 +209,7 @@ class SDEM(SpatialModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
-                gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-                mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-                use_mala=sample_kwargs.pop("use_mala", True),
-                use_slice=sample_kwargs.pop("use_slice", True),
-                slice_width=sample_kwargs.pop("slice_width", None),
-                chain_method=sample_kwargs.pop("chain_method", None),
+                sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
             raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
@@ -233,56 +219,21 @@ class SDEM(SpatialModel):
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
 
-        model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        self._pymc_model = model
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                idata_kwargs=idata_kwargs,
-                nuts_sampler=nuts_sampler,
-                progressbar=progressbar,
-                **sample_kwargs,
-            )
-
-        # --- Compute complete pointwise log-likelihood ---
-        # On the default (pymc/numba) backend SDEM uses pm.Potential for both
-        # Gaussian and Jacobian terms, so nothing is auto-captured.  On JAX
-        # backends the model is built via pm.CustomDist with an observed RV,
-        # so PyMC has already populated ``log_likelihood`` natively.
-        needs_manual_loglik = compute_log_likelihood and not use_jax_likelihood(
-            nuts_sampler
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
         )
-        if needs_manual_loglik:
-            idata = self._idata
-            n = self._y.shape[0]
-            Z = np.hstack([self._X, self._WX])  # (n, 2k)
-            W = self._W_dense
 
-            lam_draws = idata.posterior["lam"].values.reshape(-1)  # (n_draws,)
-            beta_draws = idata.posterior["beta"].values.reshape(
-                -1, Z.shape[1]
-            )  # (n_draws, 2k)
-            sigma_draws = idata.posterior["sigma"].values.reshape(-1)  # (n_draws,)
-            nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
-
-            resid = self._y[None, :] - (beta_draws @ Z.T)  # (n_draws, n)
-            eps = resid - lam_draws[:, None] * (resid @ W.T)  # (n_draws, n)
-
-            ll_gauss = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
-            jacobian = self._logdet_numpy_vec_fn(lam_draws)  # (n_draws,)
-            ll_total = ll_gauss + jacobian[:, None] / n  # (n_draws, n)
-
-            n_chains = idata.posterior.sizes["chain"]
-            n_draws_per_chain = idata.posterior.sizes["draw"]
-            _write_log_likelihood_to_idata(
-                idata, ll_total.reshape(n_chains, n_draws_per_chain, n)
-            )
+        if compute_log_likelihood:
+            self._reconstruct_cross_sectional_log_likelihood(nuts_sampler=nuts_sampler)
 
         return self._idata
 

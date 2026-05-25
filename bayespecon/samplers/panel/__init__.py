@@ -17,8 +17,8 @@ REGibbsPriors
     Dataclass holding prior hyperparameters for the RE Gibbs sampler.
 """
 
-from ._re_estimation import REGibbsEstimation, GaussianSARREGibbs, GaussianSEMREGibbs
 from ._re_core import REGibbsPriors
+from ._re_estimation import GaussianSARREGibbs, GaussianSEMREGibbs, REGibbsEstimation
 
 __all__ = [
     "REGibbsEstimation",

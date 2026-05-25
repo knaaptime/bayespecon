@@ -6,15 +6,11 @@ import numpy as np
 import pytest
 
 from bayespecon._logdet import (
-    chebyshev,
     clear_logdet_fn_cache,
     get_cached_logdet_fn,
-    ilu,
     make_logdet_fn,
-    mc,
-    sparse_grid,
-    spline,
 )
+from bayespecon._logdet._grids import chebyshev, ilu, mc, sparse_grid, spline
 
 
 def _toy_w() -> np.ndarray:

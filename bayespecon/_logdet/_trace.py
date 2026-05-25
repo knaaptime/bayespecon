@@ -241,8 +241,8 @@ def _xtrace_traces_numpy(
 
     # Scatter indices used to "un-delete" per-probe vectors back into length m
     # without materialising the big (n, m, m-1) gather of Y_2j[:, sel_i].
-    scatter_rows = np.repeat(eye_m, m - 1)        # (m*(m-1),)
-    scatter_cols = sel_indices.ravel()            # (m*(m-1),)
+    scatter_rows = np.repeat(eye_m, m - 1)  # (m*(m-1),)
+    scatter_cols = sel_indices.ravel()  # (m*(m-1),)
 
     traces = np.empty(order, dtype=np.float64)
     inv_m = 1.0 / m
@@ -255,8 +255,8 @@ def _xtrace_traces_numpy(
         Q_full, R_full = np.linalg.qr(Y_j, mode="reduced")
 
         # Per-moment caches: each is O(n m^2) once, then independent of i.
-        C_full = Q_full.T @ Y_2j          # (m, m) = Q_full^T (W^j) Q_full · R_full
-        P_full = Q_full.T @ Psi           # (m, m) = Q_full^T Psi
+        C_full = Q_full.T @ Y_2j  # (m, m) = Q_full^T (W^j) Q_full · R_full
+        P_full = Q_full.T @ Psi  # (m, m) = Q_full^T Psi
 
         # --- Batched leave-one-out small QR ------------------------------
         # R_stack[i] = R_full[:, sel_i]  with shape (m, m, m-1).
@@ -266,30 +266,30 @@ def _xtrace_traces_numpy(
 
         # --- Low-rank trace contribution: tr(Q_{-i}^T A Q_{-i}) ----------
         # = tr(U_i^T C_full[:, -i] T_i^{-1})  = tr(T_i^{-1} (U_i^T C_full[:, -i])).
-        C_stack = C_full[:, sel_indices].transpose(1, 0, 2)              # (m, m, m-1)
-        M_stack = np.einsum("imp,imq->ipq", U_stack, C_stack)            # (m, m-1, m-1)
-        Z_stack = np.linalg.solve(T_stack, M_stack)                      # T_i^{-1} M_i
-        lr_per_i = np.einsum("ikk->i", Z_stack)                          # (m,)
+        C_stack = C_full[:, sel_indices].transpose(1, 0, 2)  # (m, m, m-1)
+        M_stack = np.einsum("imp,imq->ipq", U_stack, C_stack)  # (m, m-1, m-1)
+        Z_stack = np.linalg.solve(T_stack, M_stack)  # T_i^{-1} M_i
+        lr_per_i = np.einsum("ikk->i", Z_stack)  # (m,)
 
         # --- Hutchinson residual against the LOO complement --------------
         # QTpsi[i]   = U_i^T P_full[:, i]                                 -> (m-1,)
         # u_full[i]  = U_i @ QTpsi[i]                                     -> (m,)
         # v[i]       = psi_i - Q_full @ u_full[i]
-        QTpsi_stack = np.einsum("imp,mi->ip", U_stack, P_full)            # (m, m-1)
-        u_full_stack = np.einsum("imp,ip->im", U_stack, QTpsi_stack)      # (m, m)
-        v_stack = Psi.T - u_full_stack @ Q_full.T                         # (m, n)
+        QTpsi_stack = np.einsum("imp,mi->ip", U_stack, P_full)  # (m, m-1)
+        u_full_stack = np.einsum("imp,ip->im", U_stack, QTpsi_stack)  # (m, m)
+        v_stack = Psi.T - u_full_stack @ Q_full.T  # (m, n)
 
         # A Q_{-i} @ QTpsi[i]  =  Y_2j[:, -i] @ (T_i^{-1} QTpsi[i]).
         # Pad t_solve back to length m (insert 0 at column i) and multiply once.
-        t_solve_stack = np.linalg.solve(
-            T_stack, QTpsi_stack[..., None]
-        )[..., 0]                                                          # (m, m-1)
+        t_solve_stack = np.linalg.solve(T_stack, QTpsi_stack[..., None])[
+            ..., 0
+        ]  # (m, m-1)
         T_pad = np.zeros((m, m), dtype=np.float64)
         T_pad[scatter_rows, scatter_cols] = t_solve_stack.ravel()
-        Av_proj_stack = T_pad @ Y_2j.T                                     # (m, n)
-        Av_stack = Y_j.T - Av_proj_stack                                   # (m, n)
+        Av_proj_stack = T_pad @ Y_2j.T  # (m, n)
+        Av_stack = Y_j.T - Av_proj_stack  # (m, n)
 
-        resid_per_i = np.einsum("in,in->i", v_stack, Av_stack)            # (m,)
+        resid_per_i = np.einsum("in,in->i", v_stack, Av_stack)  # (m,)
 
         traces[j - 1] = float((lr_per_i + resid_per_i).sum()) * inv_m
 

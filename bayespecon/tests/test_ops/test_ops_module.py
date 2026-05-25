@@ -474,7 +474,7 @@ class TestOptionalSparseBackends:
 
     def test_sparse_vector_solver_routes_to_umfpack_backend(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
+        from bayespecon import _ops as ops_mod
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
         monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
@@ -501,7 +501,7 @@ class TestOptionalSparseBackends:
 
     def test_sparse_flow_solver_routes_to_umfpack_backend(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
+        from bayespecon import _ops as ops_mod
         from bayespecon._ops import SparseFlowSolveOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
@@ -538,7 +538,7 @@ class TestOptionalSparseBackends:
 
     def test_sparse_flow_matrix_solver_routes_to_umfpack_backend(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
+        from bayespecon import _ops as ops_mod
         from bayespecon._ops import SparseFlowSolveMatrixOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
@@ -574,7 +574,7 @@ class TestOptionalSparseBackends:
 
     def test_sparse_sar_forward_reuses_umfpack_factorization(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
+        from bayespecon import _ops as ops_mod
         from bayespecon._ops import SparseSARSolveOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
@@ -610,7 +610,7 @@ class TestOptionalSparseBackends:
 
     def test_sparse_sar_adjoint_reuses_umfpack_factorization(self, monkeypatch):
         pytest.importorskip("scikits.umfpack")
-        from bayespecon import ops as ops_mod
+        from bayespecon import _ops as ops_mod
         from bayespecon._ops import _SparseSARVJPOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
@@ -647,7 +647,7 @@ class TestOptionalSparseBackends:
 
 class TestFlowSparseLUCache:
     def test_sparse_flow_scipy_lu_reused_for_same_rhos(self, monkeypatch):
-        from bayespecon import ops as ops_mod
+        from bayespecon import _ops as ops_mod
         from bayespecon._ops import SparseFlowSolveOp
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "scipy")

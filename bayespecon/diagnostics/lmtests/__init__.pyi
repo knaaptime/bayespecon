@@ -220,6 +220,9 @@ from .panel import (
 from .panel import (
     bayesian_panel_robust_lm_wx_test as bayesian_panel_robust_lm_wx_test,
 )
+from .registry import (
+    get_diagnostic_suite as get_diagnostic_suite,
+)
 from .suites import (
     FLOW_INTRA_SUITE as FLOW_INTRA_SUITE,
 )
@@ -282,7 +285,4 @@ from .suites import (
 )
 from .suites import (
     DiagnosticSuite as DiagnosticSuite,
-)
-from .registry import (
-    get_diagnostic_suite as get_diagnostic_suite,
 )
