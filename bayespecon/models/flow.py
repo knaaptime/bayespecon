@@ -3045,7 +3045,8 @@ class SARNegBinFlowLatent(FlowModel):
         priors = FlowGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", 1.0),
             alpha_sigma=self.priors.get("alpha_sigma", 10.0),
             rho_lower=self.priors.get("rho_lower", -0.999),
             rho_upper=self.priors.get("rho_upper", 0.999),
@@ -3379,7 +3380,8 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         priors = FlowGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", 1.0),
             alpha_sigma=self.priors.get("alpha_sigma", 10.0),
             rho_lower=self.priors.get("rho_lower", -0.999),
             rho_upper=self.priors.get("rho_upper", 0.999),
