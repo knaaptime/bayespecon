@@ -14,8 +14,9 @@ Architecture
 ------------
 The sampler uses:
 
-- **PG sampling**: Sum-of-exponentials method with K=20 terms
-  (``jax_polyagamma``), giving ~2% mean bias but fully JIT-compatible.
+- **PG sampling**: Alternating-series method with K=10 terms using
+  ``jax.random.gamma`` for Gamma(h, 1) draws, preserving the correct
+  variance (Var[PG] ∝ h, not h²).  Fully JIT-compatible.
 - **η and β draws**: Dense Cholesky factorisation via ``jnp.linalg.cholesky``
   and ``jnp.linalg.solve``.  O(n³) but fast for n ≤ ~2000.
 - **σ² draw**: Conjugate inverse-Gamma (direct, no solve needed).
@@ -117,7 +118,8 @@ def _make_gibbs_step_with_data(
     priors : GibbsPriors
         Prior hyperparameters.
     pg_n_terms : int
-        Number of PG sum-of-exponentials terms.
+        Number of alternating-series terms for the PG approximation.
+        Values below 20 can cause the Gibbs chain to diverge.
     mh_proposal_sd : float
         Ignored (kept for API compatibility). The ρ update now uses
         slice sampling with a fixed step-out width of 0.2.
@@ -202,15 +204,19 @@ def _make_gibbs_step_with_data(
 
         key_omega, key_eta, key_beta, key_sigma2, key_rho = jax.random.split(key, 5)
 
-        # ── Block 1: ω ~ PG(y + α, η) — sum-of-exponentials ──
+        # ── Block 1: ω ~ PG(y + α, η) — alternating-series with Gamma draws ──
+        # PG(h, z) = (1/(2π²)) Σ_{k=0}^{K-1} g_k / ((k+0.5)² + z²/(4π²))
+        # where g_k ~ Gamma(h, 1).  Using Gamma(h,1) instead of h·Exp(1)
+        # preserves the correct variance (Var[PG] ∝ h, not h²).
         h = y_jax + alpha  # shape parameters
         z = eta  # tilting parameters
         Z = jnp.abs(z) / 2.0
         denominators = (k_idx + 0.5) ** 2 + (Z[:, None] / pi) ** 2  # (n, K)
-        u = jax.random.uniform(key_omega, shape=(n, pg_n_terms), dtype=jnp.float64)
-        e = -jnp.log(u)  # Exp(1) draws
-        pg1 = jnp.sum(e / denominators, axis=1) / (2.0 * pi2)  # (n,)
-        omega_new = jnp.maximum(pg1 * h, 1e-6)
+        g = jax.random.gamma(
+            key_omega, h[:, None] * jnp.ones((1, pg_n_terms)), dtype=jnp.float64
+        )  # (n, K) Gamma(h, 1) draws
+        pg1 = jnp.sum(g / denominators, axis=1) / (2.0 * pi2)  # (n,)
+        omega_new = jnp.maximum(pg1, 1e-6)
 
         # ── Block 2: η | ω, ρ, β, σ² — dense Cholesky solve ──
         inv_s2 = 1.0 / sigma2
@@ -650,7 +656,7 @@ def run_chain_jax(
     return_eta: bool = False,
     rng=None,
     mh_proposal_sd: float = 0.05,
-    pg_n_terms: int = 10,
+    pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
     use_mala: bool = True,
@@ -695,7 +701,8 @@ def run_chain_jax(
         Ignored (kept for API compatibility). The ρ update now uses
         slice sampling with a fixed step-out width of 0.2.
     pg_n_terms : int
-        Number of PG sum-of-exponentials terms.
+        Number of alternating-series terms for the PG approximation.
+        Values below 20 can cause the Gibbs chain to diverge.
     n_probes : int
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int

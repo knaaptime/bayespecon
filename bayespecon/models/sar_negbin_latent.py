@@ -181,7 +181,7 @@ class SARNegBinLatent(SpatialModel):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "auto",
-        pg_n_terms: int = 10,
+        pg_n_terms: int = 25,
         n_probes: int = 5,
         lanczos_deg: int = 15,
         mh_proposal_sd: float = 0.05,
@@ -227,10 +227,12 @@ class SARNegBinLatent(SpatialModel):
               JAX with float64 enabled.  Viable for n ≤ ~10 000 on
               machines with ≥ 32 GB RAM (the dense matrices need
               ~800 MB at n = 10 000).
-        pg_n_terms : int, default 20
-            Number of sum-of-exponentials terms for the JAX Pólya–Gamma
+        pg_n_terms : int, default 25
+            Number of alternating-series terms for the JAX Pólya–Gamma
             sampler.  Higher values reduce bias at the cost of more compute.
-            Only used when ``gibbs_method="jax_dense"``.
+            Values below 20 can cause the Gibbs chain to diverge due to
+            excessive variance in the PG approximation.  Only used when
+            ``gibbs_method="jax_dense"``.
         n_probes : int, default 10
             Number of Lanczos probe vectors for stochastic log|P|
             estimation.  Only used when ``gibbs_method="jax_dense"``.
