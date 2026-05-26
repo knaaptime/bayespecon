@@ -151,12 +151,13 @@ class GibbsPriors:
     """Prior hyperparameters for the SAR-NB Gibbs sampler.
 
     All priors are weakly informative by default, matching the
-    ``SARNegativeBinomial`` defaults.
+    ``GaussianGibbsPriors`` convention.
     """
 
     beta_mu: np.ndarray | float = 0.0
     beta_sigma: np.ndarray | float = 1e6
-    sigma_sigma: float = 10.0  # HalfNormal scale for σ
+    sigma2_alpha: float = 2.0  # InverseGamma shape for σ²
+    sigma2_beta: float = 1.0  # InverseGamma scale for σ²
     alpha_sigma: float = 10.0  # HalfNormal scale for α
     rho_lower: float = -0.999
     rho_upper: float = 0.999
@@ -440,20 +441,19 @@ def _sample_sigma2(
 ) -> float:
     """Block 4: Draw σ² | η, ρ, β — conjugate inverse-gamma.
 
-    Prior: σ ~ HalfNormal(σ_σ), which on the σ² scale contributes
-    p(σ²) ∝ σ^{-1} exp(-σ²/(2σ_σ²)), adding 0.5 to the InvGamma
-    shape and σ_σ^{-2}/2 to the rate.
+    Prior: σ² ~ InverseGamma(α_σ, β_σ), conjugate with the Gaussian
+    likelihood.
 
     Posterior: σ² | · ~ InvGamma(a_post, b_post) where
-        a_post = n/2 + 1/2 + 1 = (n + 3)/2
-        b_post = ||A_ρ η - Xβ||²/2 + 1/(2σ_σ²)
+        a_post = α_σ + n/2
+        b_post = β_σ + ||A_ρ η - Xβ||²/2
 
     Parameters
     ----------
     state : GibbsState
         Current state (uses sigma2).
     priors : GibbsPriors
-        Prior hyperparameters (uses sigma_sigma).
+        Prior hyperparameters (uses sigma2_alpha, sigma2_beta).
     A_rho_eta : ndarray of shape (n,)
         A_ρ @ η = (I - ρW) @ η.
     Xbeta : ndarray of shape (n,)
@@ -469,11 +469,8 @@ def _sample_sigma2(
     n = len(A_rho_eta)
     r = A_rho_eta - Xbeta  # residual
 
-    # HalfNormal(σ_σ) prior on σ → InvGamma contribution:
-    # shape += 0.5, rate += 1/(2*σ_σ²)
-    sigma_sigma = priors.sigma_sigma
-    a_post = n / 2.0 + 0.5 + 1.0  # (n + 3) / 2
-    b_post = float(r @ r) / 2.0 + 1.0 / (2.0 * sigma_sigma**2)
+    a_post = priors.sigma2_alpha + n / 2.0
+    b_post = priors.sigma2_beta + float(r @ r) / 2.0
 
     # Draw sigma2 ~ InvGamma(a_post, b_post)
     # InvGamma(a, b) has density ∝ x^{-(a+1)} exp(-b/x)
@@ -923,8 +920,8 @@ def _sample_alpha(
         log_lik = (
             gammaln(y + alpha)
             - gammaln(alpha)
-            + y * np.log(mu / (mu + alpha))
-            + alpha * np.log(alpha / (mu + alpha))
+            + y * np.log(np.maximum(mu / (mu + alpha), 1e-300))
+            + alpha * np.log(np.maximum(alpha / (mu + alpha), 1e-300))
         )
         total_log_lik = np.sum(log_lik)
 
@@ -1067,9 +1064,6 @@ def run_chain(
     # Precompute X^T X (already in cache)
     XtX = cache.XtX
 
-    # Track log-density at current rho for caching
-    log_density_rho = None
-
     for i in range(total_iters):
         # --- Block 1: ω | η, α ---
         state.omega = _sample_omega(y, state.alpha, state.eta, rng=rng)
@@ -1090,6 +1084,10 @@ def run_chain(
         state.sigma2 = _sample_sigma2(state, priors, A_rho_eta, Xbeta, rng=rng)
 
         # --- Block 5: ρ | β, σ², ω, α, y (collapsed, η integrated out) ---
+        # NOTE: The collapsed ρ conditional changes every iteration because
+        # ω, β, σ², and α all change.  We must NOT cache log_density_rho
+        # across iterations — the stale value would make the slice level
+        # wrong and cause ρ to get stuck.
         state.rho, log_density_rho = _sample_rho(
             state,
             cache,
@@ -1097,7 +1095,7 @@ def run_chain(
             y,
             X,
             rng=rng,
-            log_density_current=log_density_rho,
+            log_density_current=None,
             sweep_idx=i,
             tune=tune,
         )

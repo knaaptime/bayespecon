@@ -116,12 +116,14 @@ class FlowGibbsState:
 class FlowGibbsPriors:
     """Prior hyperparameters for the flow Gibbs sampler.
 
-    All priors are weakly informative by default.
+    All priors are weakly informative by default, matching the
+    ``GaussianGibbsPriors`` convention.
     """
 
     beta_mu: np.ndarray | float = 0.0
     beta_sigma: np.ndarray | float = 1e6
-    sigma_sigma: float = 10.0  # HalfNormal scale for σ
+    sigma2_alpha: float = 2.0  # InverseGamma shape for σ²
+    sigma2_beta: float = 1.0  # InverseGamma scale for σ²
     alpha_sigma: float = 10.0  # HalfNormal scale for α
     rho_lower: float = -0.999
     rho_upper: float = 0.999
@@ -320,31 +322,23 @@ def _sample_sigma2_flow(
 ) -> float:
     r"""Block 4: Draw :math:`\sigma^2 \mid \eta, \rho, \beta` — conjugate inverse-gamma.
 
-    Prior: :math:`\sigma \sim \mathrm{HalfNormal}(\sigma_\sigma)`, which on the
-    :math:`\sigma^2` scale contributes
-
-    .. math::
-
-        p(\sigma^2) \propto \sigma^{-1}
-            \exp\!\bigl(-\sigma^2 / (2\sigma_\sigma^2)\bigr),
-
-    adding 0.5 to the InvGamma shape and :math:`1/(2\sigma_\sigma^2)` to the rate.
+    Prior: :math:`\sigma^2 \sim \mathrm{InvGamma}(\alpha_\sigma, \beta_\sigma)`,
+    which is conjugate with the Gaussian likelihood.
 
     Posterior: :math:`\sigma^2 \mid \cdot \sim \mathrm{InvGamma}(a_{\mathrm{post}}, b_{\mathrm{post}})`
 
     .. math::
 
-        a_{\mathrm{post}} = N/2 + 1/2 + 1 = (N + 3)/2
+        a_{\mathrm{post}} = \alpha_\sigma + N/2
 
-        b_{\mathrm{post}} = \|A_\rho\,\eta - X\beta\|^2 / 2
-            + 1 / (2\sigma_\sigma^2)
+        b_{\mathrm{post}} = \beta_\sigma + \|A_\rho\,\eta - X\beta\|^2 / 2
 
     Parameters
     ----------
     state : FlowGibbsState
         Current state (uses sigma2).
     priors : FlowGibbsPriors
-        Prior hyperparameters (uses sigma_sigma).
+        Prior hyperparameters (uses sigma2_alpha, sigma2_beta).
     A_eta : ndarray of shape (N,)
         :math:`A\,\eta`.
     Xbeta : ndarray of shape (N,)
@@ -360,9 +354,8 @@ def _sample_sigma2_flow(
     N = len(A_eta)
     r = A_eta - Xbeta
 
-    sigma_sigma = priors.sigma_sigma
-    a_post = N / 2.0 + 0.5 + 1.0
-    b_post = float(r @ r) / 2.0 + 1.0 / (2.0 * sigma_sigma**2)
+    a_post = priors.sigma2_alpha + N / 2.0
+    b_post = priors.sigma2_beta + float(r @ r) / 2.0
 
     sigma2_new = 1.0 / rng.gamma(shape=a_post, scale=1.0 / b_post)
     return sigma2_new

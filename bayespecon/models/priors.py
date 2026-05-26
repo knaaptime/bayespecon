@@ -67,8 +67,8 @@ class BasePriors:
         scale-aware (~ Var(y)).
     sigma_sigma
         Half-normal scale on σ.  **Tobit/Probit models only.**  Ignored
-        by the Gaussian path, which uses ``sigma2_alpha`` /
-        ``sigma2_beta``.
+        by the Gaussian and NB paths, which use ``sigma2_alpha`` /
+        ``sigma2_beta`` (InverseGamma on σ²).
     nu_lam
         Rate of the Exponential prior on Student-t degrees of freedom when
         ``robust=True``.  Mean ``1/nu_lam`` (default mean ≈ 30).

@@ -838,9 +838,6 @@ def run_gaussian_chain(
     rho_range = cache.rho_upper - cache.rho_lower
     slice_state = SliceWidthState(w=rho_range * 0.1)
 
-    # Cached log-density for ρ/λ
-    log_density_rho = None
-
     # Precompute Wy for SAR/SDM
     Wy = cache.Wy
 
@@ -882,8 +879,11 @@ def run_gaussian_chain(
         )
 
         # --- Block 3: ρ/λ | β, σ², y (slice sampling) ---
+        # NOTE: The collapsed ρ/λ conditional changes every iteration because
+        # β and σ² change.  We must NOT cache the log-density across
+        # iterations — the stale value would make the slice level wrong.
         if model_type in ("sar", "sdm"):
-            state.rho, log_density_rho = _sample_rho_sar(
+            state.rho, _ = _sample_rho_sar(
                 state,
                 cache,
                 priors,
@@ -894,10 +894,10 @@ def run_gaussian_chain(
                 k,
                 rng,
                 slice_state,
-                log_density_rho,
+                None,
             )
         else:  # sem, sdem
-            state.rho, log_density_rho = _sample_lam_sem_collapsed(
+            state.rho, _ = _sample_lam_sem_collapsed(
                 state,
                 cache,
                 priors,
@@ -907,7 +907,7 @@ def run_gaussian_chain(
                 k,
                 rng,
                 slice_state,
-                log_density_rho,
+                None,
             )
 
         # Store post-warmup draws

@@ -273,7 +273,7 @@ def test_sar_negbin_jax_logp_grad_with_lineax(monkeypatch):
             # X @ beta = 0, which BiCGStab cannot start from).
             ip["beta"] = np.array([0.3, 0.6])
             ip["rho_interval__"] = np.array(0.4)
-            ip["sigma_log__"] = np.array(0.0)
+            ip["sigma2_log__"] = np.array(0.0)
             ip["z"] = np.zeros(X.shape[0])
             logp_fn = pm_model.compile_logp(mode="JAX")
             dlogp_fn = pm_model.compile_dlogp(mode="JAX")
