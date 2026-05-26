@@ -1,0 +1,23 @@
+﻿bayespecon.GaussianSARGibbs
+===========================
+
+.. currentmodule:: bayespecon
+
+.. autoclass:: GaussianSARGibbs
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~GaussianSARGibbs.__init__
+      ~GaussianSARGibbs.fit
+   
+   
+
+   
+   
+   

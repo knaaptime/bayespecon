@@ -1,0 +1,6 @@
+﻿bayespecon.\_logdet.logdet\_exact
+=================================
+
+.. currentmodule:: bayespecon._logdet
+
+.. autofunction:: logdet_exact

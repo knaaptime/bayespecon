@@ -1,6 +1,0 @@
-﻿bayespecon.logdet.spline
-========================
-
-.. currentmodule:: bayespecon.logdet
-
-.. autofunction:: spline

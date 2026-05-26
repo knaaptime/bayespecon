@@ -1,0 +1,6 @@
+﻿bayespecon.\_logdet.jax\_logdet\_trace\_poly
+============================================
+
+.. currentmodule:: bayespecon._logdet
+
+.. autofunction:: jax_logdet_trace_poly

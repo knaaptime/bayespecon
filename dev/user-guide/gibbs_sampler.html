@@ -1455,9 +1455,10 @@
 <p>Only ρ is non-conjugate, and it’s a scalar — making the update trivial.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># --- NUTS (default) ---</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># --- NUTS  ---</span>
 <span class="n">model_nuts</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
 <span class="n">idata_nuts</span> <span class="o">=</span> <span class="n">model_nuts</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nuts&quot;</span><span class="p">,</span>
     <span class="n">draws</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>
     <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
     <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
@@ -1474,7 +1475,7 @@
     <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
     <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
     <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span>
-    <span class="n">n_jobs</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">n_jobs</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
     <span class="n">idata_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;log_likelihood&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
 <span class="p">)</span>
 
@@ -1491,16 +1492,28 @@
 </div>
 </div>
 <div class="cell_output docutils container">
+<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Initializing NUTS using jitter+adapt_diag...
+Multiprocess sampling (4 chains in 2 jobs)
+NUTS: [rho, beta, sigma2]
+Sampling 4 chains for 1_000 tune and 2_000 draw iterations (4_000 + 8_000 draws total) took 16 seconds.
+</code></pre></div>
+</div>
 <div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
 for Jupyter support
   warnings.warn('install "ipywidgets" for Jupyter support')
 </pre>
 </div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Sampling 4 chains for 1000 tune and 2000 draw iterations, 4 x 3,000 draws total took 3s (4132 draws/s)
-NUTS posterior means:
-  rho   = 0.4074
-  beta  = [45.9925485  -1.04618758 -0.26122261]
-  sigma = 10.4943
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
+for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Sampling <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> chains for <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">1000</span> tune and <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2000</span> draw iterations, <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> x <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3</span>,<span style="color: #008080; text-decoration-color: #008080; font-weight: bold">000</span> draws total took 5s <span style="font-weight: bold">(</span><span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2358</span> draws/s<span style="font-weight: bold">)</span>
+</pre>
+</div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>NUTS posterior means:
+  rho   = 0.4076
+  beta  = [45.96578678 -1.051098   -0.2580071 ]
+  sigma = 10.4814
 
 Gibbs posterior means:
   rho   = 0.4074
@@ -1517,12 +1530,12 @@ Gibbs posterior means:
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>rho         8002.0
-sigma       7017.0
-sigma2      7017.0
-beta[x0]    8134.0
-beta[x1]    7962.0
-beta[x2]    8045.0
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>beta[x0]    3313.0
+beta[x1]    3581.0
+beta[x2]    4056.0
+rho         3902.0
+sigma2      4677.0
+sigma       4677.0
 Name: ess_bulk, dtype: float64
 </code></pre></div>
 </div>
@@ -1576,36 +1589,42 @@ Name: ess_bulk, dtype: float64
 </tr>
 <tr class="row-odd"><td><p><strong>JAX</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">&quot;jax&quot;</span></code></p></td>
-<td><p>MALA (gradient-guided) or RW-MH</p></td>
+<td><p>Slice sampling (default), MALA, or RW-MH</p></td>
 <td><p>Yes (<code class="docutils literal notranslate"><span class="pre">&#64;eqx.filter_jit</span></code>)</p></td>
 <td><p>JAX + equinox</p></td>
 </tr>
 </tbody>
 </table>
 <h3 id="numpy-path-default">NumPy path (default)<a class="headerlink" href="#numpy-path-default" title="Link to this heading">¶</a></h3>
-<p>The NumPy path uses adaptive slice sampling for ρ/λ. It’s pure Python/NumPy — no JAX dependency. Best for moderate <span class="math notranslate nohighlight">\(n\)</span> (up to ~1000). Chains run sequentially by default (<code class="docutils literal notranslate"><span class="pre">chain_method=&quot;sequential&quot;</span></code>).</p>
+<p>The NumPy path uses adaptive slice sampling for ρ/λ. It’s pure Python/NumPy — no JAX dependency. Best for moderate <span class="math notranslate nohighlight">\(n\)</span> (up to ~1000). Chains run in <strong>parallel by default</strong> (<code class="docutils literal notranslate"><span class="pre">n_jobs=-1</span></code> uses all CPUs via <code class="docutils literal notranslate"><span class="pre">joblib</span></code>). Set <code class="docutils literal notranslate"><span class="pre">n_jobs=1</span></code> for sequential execution with progress bars.</p>
 <h3 id="jax-path">JAX path<a class="headerlink" href="#jax-path" title="Link to this heading">¶</a></h3>
-<p>The JAX path compiles the entire 3-block Gibbs step into a single XLA kernel via <code class="docutils literal notranslate"><span class="pre">&#64;eqx.filter_jit</span></code>. It uses MALA (Metropolis-adjusted Langevin algorithm) for ρ/λ by default, which leverages <code class="docutils literal notranslate"><span class="pre">jax.value_and_grad</span></code> on the collapsed log-density for gradient-guided proposals. Best for large <span class="math notranslate nohighlight">\(n\)</span> where JIT compilation amortizes over many iterations. Chains run in parallel via <code class="docutils literal notranslate"><span class="pre">jax.vmap</span></code> by default (<code class="docutils literal notranslate"><span class="pre">chain_method=&quot;vectorized&quot;</span></code>).</p>
+<p>The JAX path compiles the entire 3-block Gibbs step into a single XLA kernel via <code class="docutils literal notranslate"><span class="pre">&#64;eqx.filter_jit</span></code>. It supports three ρ/λ samplers:</p>
+<ul class="simple">
+<li><p><strong>Slice sampling</strong> (default, <code class="docutils literal notranslate"><span class="pre">use_slice=True</span></code>): Neal (2003) slice sampling with persistent interval reuse. Best ESS per sample.</p></li>
+<li><p><strong>MALA</strong> (<code class="docutils literal notranslate"><span class="pre">use_mala=True,</span> <span class="pre">use_slice=False</span></code>): Metropolis-adjusted Langevin algorithm with JAX autodiff for exact gradients.</p></li>
+<li><p><strong>RW-MH</strong> (<code class="docutils literal notranslate"><span class="pre">use_mala=False,</span> <span class="pre">use_slice=False</span></code>): Random-walk Metropolis–Hastings. Simplest but worst mixing.</p></li>
+</ul>
+<p>Best for large <span class="math notranslate nohighlight">\(n\)</span> where JIT compilation amortizes over many iterations. Chains run in parallel via <code class="docutils literal notranslate"><span class="pre">jax.vmap</span></code> by default (<code class="docutils literal notranslate"><span class="pre">chain_method=&quot;vectorized&quot;</span></code>).</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># JAX Gibbs path with MALA</span>
-<span class="n">model_jax</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
-<span class="n">idata_jax</span> <span class="o">=</span> <span class="n">model_jax</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># JAX Gibbs with MALA (gradient-guided proposals)</span>
+<span class="n">model_jax_mala</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
+<span class="n">idata_jax_mala</span> <span class="o">=</span> <span class="n">model_jax_mala</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
     <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;gibbs&quot;</span><span class="p">,</span>
-    <span class="n">gibbs_method</span><span class="o">=</span><span class="s2">&quot;jax&quot;</span><span class="p">,</span>  <span class="c1"># JAX JIT backend (defaults to chain_method=&quot;vectorized&quot;)</span>
+    <span class="n">gibbs_method</span><span class="o">=</span><span class="s2">&quot;jax&quot;</span><span class="p">,</span>
     <span class="n">draws</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>
     <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
     <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
     <span class="n">random_seed</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span>
     <span class="n">use_mala</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">use_slice</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">use_slice</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>  <span class="c1"># MALA instead of slice</span>
 <span class="p">)</span>
 
-<span class="c1"># JAX Gibbs path with slice</span>
-<span class="n">model_rw</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
-<span class="n">idata_rw</span> <span class="o">=</span> <span class="n">model_rw</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
+<span class="c1"># JAX Gibbs with slice sampling (default for JAX path)</span>
+<span class="n">model_jax_slice</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">)</span>
+<span class="n">idata_jax_slice</span> <span class="o">=</span> <span class="n">model_jax_slice</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span>
     <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;gibbs&quot;</span><span class="p">,</span>
-    <span class="n">gibbs_method</span><span class="o">=</span><span class="s2">&quot;jax&quot;</span><span class="p">,</span>
+    <span class="n">gibbs_method</span><span class="o">=</span><span class="s2">&quot;jax&quot;</span><span class="p">,</span>  <span class="c1"># slice sampling is the default</span>
     <span class="n">draws</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>
     <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
     <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
@@ -1613,12 +1632,12 @@ Name: ess_bulk, dtype: float64
 <span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;JAX MALA posterior means:&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  rho   = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">idata_jax</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;rho&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  sigma = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">idata_jax</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;sigma&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  rho   = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">idata_jax_mala</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;rho&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  sigma = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">idata_jax_mala</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;sigma&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">()</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;JAX Slice posterior means:&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  rho   = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">idata_rw</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;rho&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  sigma = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">idata_rw</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;sigma&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  rho   = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">idata_jax_slice</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;rho&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  sigma = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">idata_jax_slice</span><span class="o">.</span><span class="n">posterior</span><span class="p">[</span><span class="s1">&#39;sigma&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -1628,9 +1647,12 @@ for Jupyter support
   warnings.warn('install "ipywidgets" for Jupyter support')
 </pre>
 </div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Sampling 4 chains for 1000 tune and 2000 draw iterations, 4 x 3,000 draws total took 4s (3109 draws/s)
-Sampling 4 chains for 1000 tune and 2000 draw iterations, 4 x 3,000 draws total took 4s (3279 draws/s)
-JAX MALA posterior means:
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Sampling <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> chains for <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">1000</span> tune and <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2000</span> draw iterations, <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> x <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3</span>,<span style="color: #008080; text-decoration-color: #008080; font-weight: bold">000</span> draws total took 4s <span style="font-weight: bold">(</span><span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3030</span> draws/s<span style="font-weight: bold">)</span>
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Sampling <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> chains for <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">1000</span> tune and <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2000</span> draw iterations, <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> x <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3</span>,<span style="color: #008080; text-decoration-color: #008080; font-weight: bold">000</span> draws total took 4s <span style="font-weight: bold">(</span><span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3215</span> draws/s<span style="font-weight: bold">)</span>
+</pre>
+</div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>JAX MALA posterior means:
   rho   = 0.4289
   sigma = 10.4654
 
@@ -1639,8 +1661,7 @@ JAX Slice posterior means:
   sigma = 10.5022
 </code></pre></div>
 </div>
-<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div></div>
+</div>
 </div>
 <h2 id="log-determinant-method-choices">Log-Determinant Method Choices<a class="headerlink" href="#log-determinant-method-choices" title="Link to this heading">¶</a></h2>
 <p>The spatial Jacobian <span class="math notranslate nohighlight">\(\log|I - \rho W|\)</span> is the computational bottleneck. <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> supports several approximation methods:</p>
@@ -1648,6 +1669,7 @@ JAX Slice posterior means:
 <thead>
 <tr class="row-odd"><th class="head"><p>Method</p></th>
 <th class="head"><p><code class="docutils literal notranslate"><span class="pre">logdet_method</span></code></p></th>
+<th class="head"><p>Extra option</p></th>
 <th class="head"><p>Precompute</p></th>
 <th class="head"><p>Per-ρ cost</p></th>
 <th class="head"><p>JIT-compatible</p></th>
@@ -1657,6 +1679,7 @@ JAX Slice posterior means:
 <tbody>
 <tr class="row-even"><td><p>Eigenvalue</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">&quot;eigenvalue&quot;</span></code></p></td>
+<td><p>—</p></td>
 <td><p>O(n³)</p></td>
 <td><p>O(n)</p></td>
 <td><p>✅</p></td>
@@ -1664,21 +1687,23 @@ JAX Slice posterior means:
 </tr>
 <tr class="row-odd"><td><p>Chebyshev</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">&quot;chebyshev&quot;</span></code></p></td>
-<td><p>O(nm)</p></td>
+<td><p>exact coefficients when feasible</p></td>
+<td><p>O(n³) or O(nm)</p></td>
 <td><p>O(m)</p></td>
 <td><p>✅</p></td>
-<td><p>n &lt; 5000</p></td>
+<td><p>default for n ≥ 500</p></td>
 </tr>
-<tr class="row-even"><td><p>Trace MC</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">&quot;trace_mc&quot;</span></code></p></td>
-<td><p>O(m)</p></td>
+<tr class="row-even"><td><p>Chebyshev + stochastic traces</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&quot;chebyshev&quot;</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">trace_estimator=&quot;hutchpp&quot;</span></code> (default), <code class="docutils literal notranslate"><span class="pre">&quot;hutchinson&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;xtrace&quot;</span></code></p></td>
+<td><p>O(kmn)</p></td>
 <td><p>O(m)</p></td>
 <td><p>✅</p></td>
-<td><p>n &gt; 5000</p></td>
+<td><p>large sparse W</p></td>
 </tr>
 </tbody>
 </table>
-<p>The Gibbs sampler automatically uses the same logdet method as the model. For the JAX path, all methods are JIT-compatible.</p>
+<p>The Gibbs sampler automatically uses the same logdet configuration as the model. For the JAX path, the supported public choices are JIT-compatible.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><code><span class="c1"># Chebyshev logdet with JAX Gibbs</span>
@@ -1704,8 +1729,9 @@ for Jupyter support
   warnings.warn('install "ipywidgets" for Jupyter support')
 </pre>
 </div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
-</div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Sampling 4 chains for 1000 tune and 2000 draw iterations, 4 x 3,000 draws total took 4s (2782 draws/s)
-Chebyshev logdet + JAX Gibbs: rho = 0.4050
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Sampling <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> chains for <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">1000</span> tune and <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2000</span> draw iterations, <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> x <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3</span>,<span style="color: #008080; text-decoration-color: #008080; font-weight: bold">000</span> draws total took 4s <span style="font-weight: bold">(</span><span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2961</span> draws/s<span style="font-weight: bold">)</span>
+</pre>
+</div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>Chebyshev logdet + JAX Gibbs: rho = 0.4050
 </code></pre></div>
 </div>
 </div>
@@ -1794,12 +1820,33 @@ Chebyshev logdet + JAX Gibbs: rho = 0.4050
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>SEM Gibbs: lam = 0.5549, sigma = 10.4000
+<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
+for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Sampling <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> chains for <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">1000</span> tune and <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2000</span> draw iterations, <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> x <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3</span>,<span style="color: #008080; text-decoration-color: #008080; font-weight: bold">000</span> draws total took 3s <span style="font-weight: bold">(</span><span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4027</span> draws/s<span style="font-weight: bold">)</span>
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
+for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre>
+</div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span><code>SEM Gibbs: lam = 0.5549, sigma = 10.4000
 SDM Gibbs: rho = 0.3989, beta shape = (4, 2000, 5)
 SDEM Gibbs: lam = 0.4959, beta shape = (4, 2000, 5)
 </code></pre></div>
 </div>
-</div>
+<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Sampling <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> chains for <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">1000</span> tune and <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2000</span> draw iterations, <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> x <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3</span>,<span style="color: #008080; text-decoration-color: #008080; font-weight: bold">000</span> draws total took 2s <span style="font-weight: bold">(</span><span style="color: #008080; text-decoration-color: #008080; font-weight: bold">7491</span> draws/s<span style="font-weight: bold">)</span>
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
+for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Sampling <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> chains for <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">1000</span> tune and <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2000</span> draw iterations, <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> x <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3</span>,<span style="color: #008080; text-decoration-color: #008080; font-weight: bold">000</span> draws total took 3s <span style="font-weight: bold">(</span><span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3917</span> draws/s<span style="font-weight: bold">)</span>
+</pre>
+</div></div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
@@ -2085,7 +2132,7 @@ Robust-LM-Error     0.844670
 <p>The block-Gibbs sampler for Gaussian spatial models in <code class="docutils literal notranslate"><span class="pre">bayespecon</span></code> provides:</p>
 <ol class="arabic simple">
 <li><p><strong>Same output format</strong> as NUTS (<code class="docutils literal notranslate"><span class="pre">az.InferenceData</span></code> with <code class="docutils literal notranslate"><span class="pre">posterior</span></code>, <code class="docutils literal notranslate"><span class="pre">log_likelihood</span></code>, <code class="docutils literal notranslate"><span class="pre">observed_data</span></code>)</p></li>
-<li><p><strong>Two backends</strong>: NumPy (adaptive slice, <code class="docutils literal notranslate"><span class="pre">n_jobs</span></code> controls parallelism) and JAX (MALA or RW-MH, <code class="docutils literal notranslate"><span class="pre">chain_method</span></code> controls parallelism)</p></li>
+<li><p><strong>Two backends</strong>: NumPy (adaptive slice, <code class="docutils literal notranslate"><span class="pre">n_jobs</span></code> controls parallelism, default parallel) and JAX (slice/MALA/RW-MH, <code class="docutils literal notranslate"><span class="pre">chain_method</span></code> controls parallelism, default vectorized)</p></li>
 <li><p><strong>All four Gaussian models</strong>: SAR, SEM, SDM, SDEM</p></li>
 <li><p><strong>Full ArviZ compatibility</strong>: LOO, WAIC, summary, plot</p></li>
 <li><p><strong>Full diagnostics compatibility</strong>: Bayesian LM tests, spatial diagnostics</p></li>
@@ -2099,11 +2146,14 @@ Robust-LM-Error     0.844670
 <span class="c1"># NumPy Gibbs with sequential chains (for debugging)</span>
 <span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;gibbs&quot;</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">n_jobs</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 
-<span class="c1"># JAX Gibbs with MALA (chains run in parallel via vmap by default)</span>
+<span class="c1"># JAX Gibbs with slice sampling (default for JAX path)</span>
 <span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;gibbs&quot;</span><span class="p">,</span> <span class="n">gibbs_method</span><span class="o">=</span><span class="s2">&quot;jax&quot;</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
 
+<span class="c1"># JAX Gibbs with MALA</span>
+<span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;gibbs&quot;</span><span class="p">,</span> <span class="n">gibbs_method</span><span class="o">=</span><span class="s2">&quot;jax&quot;</span><span class="p">,</span> <span class="n">use_mala</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">use_slice</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+
 <span class="c1"># JAX Gibbs with RW-MH</span>
-<span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;gibbs&quot;</span><span class="p">,</span> <span class="n">gibbs_method</span><span class="o">=</span><span class="s2">&quot;jax&quot;</span><span class="p">,</span> <span class="n">use_mala</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+<span class="n">idata</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;gibbs&quot;</span><span class="p">,</span> <span class="n">gibbs_method</span><span class="o">=</span><span class="s2">&quot;jax&quot;</span><span class="p">,</span> <span class="n">use_mala</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">use_slice</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">draws</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span> <span class="n">tune</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">chains</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
 
 <span class="c1"># Chebyshev logdet + JAX Gibbs</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">SAR</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">X</span><span class="o">=</span><span class="n">X</span><span class="p">,</span> <span class="n">W</span><span class="o">=</span><span class="n">W</span><span class="p">,</span> <span class="n">logdet_method</span><span class="o">=</span><span class="s2">&quot;chebyshev&quot;</span><span class="p">)</span>

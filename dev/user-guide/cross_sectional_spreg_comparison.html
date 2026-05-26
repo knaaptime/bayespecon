@@ -1444,7 +1444,7 @@ Sampling 4 chains for 1_000 tune and 1_000 draw iterations (4_000 + 4_000 draws 
 <h3 id="sampler-adequacy-for-rho">Sampler adequacy for <span class="math notranslate nohighlight">\(\rho\)</span><a class="headerlink" href="#sampler-adequacy-for-rho" title="Link to this heading">¶</a></h3>
 <p>Before trusting the SAR posterior summary above, verify that the
 spatial parameter <span class="math notranslate nohighlight">\(\rho\)</span> has been sampled efficiently. Wolf, Anselin
-&amp; Arribas-Bel (2018) <span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id49" title="Levi John Wolf, Luc Anselin, and Daniel Arribas-Bel. Stochastic Efficiency of Bayesian Markov Chain Monte Carlo in Spatial Econometric Models: An Empirical Comparison of Exact Sampling Methods. Geographical Analysis, 50(1):97–119, 2018. URL: https://onlinelibrary.wiley.com/doi/abs/10.1111/gean.12135 (visited on 2026-04-20), doi:10.1111/gean.12135.">Wolf <em>et al.</em>, 2018</a>]</span> show that
+&amp; Arribas-Bel (2018) <span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id53" title="Levi John Wolf, Luc Anselin, and Daniel Arribas-Bel. Stochastic Efficiency of Bayesian Markov Chain Monte Carlo in Spatial Econometric Models: An Empirical Comparison of Exact Sampling Methods. Geographical Analysis, 50(1):97–119, 2018. URL: https://onlinelibrary.wiley.com/doi/abs/10.1111/gean.12135 (visited on 2026-04-20), doi:10.1111/gean.12135.">Wolf <em>et al.</em>, 2018</a>]</span> show that
 <span class="math notranslate nohighlight">\(\rho\)</span> tends to mix slowly, so a chain that converges in mean can
 still under-cover the tails by 10–12 %.</p>
 <div class="cell docutils container">
@@ -2151,7 +2151,14 @@ Impacts computed using the &#39;simple&#39; method.
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output text_html"><div>
+<div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">/home/runner/micromamba/envs/test/lib/python3.14/site-packages/rich/live.py:260: UserWarning: install "ipywidgets" 
+for Jupyter support
+  warnings.warn('install "ipywidgets" for Jupyter support')
+</pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
+</div><div class="output text_html"><pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">Sampling <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> chains for <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">1000</span> tune and <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">2000</span> draw iterations, <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">4</span> x <span style="color: #008080; text-decoration-color: #008080; font-weight: bold">3</span>,<span style="color: #008080; text-decoration-color: #008080; font-weight: bold">000</span> draws total took 2s <span style="font-weight: bold">(</span><span style="color: #008080; text-decoration-color: #008080; font-weight: bold">7225</span> draws/s<span style="font-weight: bold">)</span>
+</pre>
+</div><div class="output text_html"><div>
 <style scoped>
     .dataframe tbody tr th:only-of-type {
         vertical-align: middle;
@@ -2183,62 +2190,62 @@ Impacts computed using the &#39;simple&#39; method.
   <tbody>
     <tr>
       <th>rho</th>
-      <td>0.463</td>
-      <td>0.029</td>
-      <td>0.409</td>
-      <td>0.517</td>
+      <td>0.490</td>
+      <td>0.030</td>
+      <td>0.433</td>
+      <td>0.546</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>7411.0</td>
-      <td>6040.0</td>
+      <td>8409.0</td>
+      <td>6102.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>sigma</th>
-      <td>1.052</td>
+      <td>1.077</td>
       <td>0.019</td>
-      <td>1.017</td>
-      <td>1.088</td>
+      <td>1.039</td>
+      <td>1.111</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>7117.0</td>
-      <td>7542.0</td>
+      <td>7994.0</td>
+      <td>7473.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>sigma2</th>
-      <td>1.106</td>
-      <td>0.040</td>
-      <td>1.030</td>
-      <td>1.179</td>
+      <td>1.159</td>
+      <td>0.041</td>
+      <td>1.080</td>
+      <td>1.234</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>7117.0</td>
-      <td>7542.0</td>
+      <td>7994.0</td>
+      <td>7473.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>Intercept</th>
-      <td>1.079</td>
+      <td>1.004</td>
       <td>0.064</td>
-      <td>0.958</td>
-      <td>1.196</td>
+      <td>0.884</td>
+      <td>1.125</td>
       <td>0.001</td>
       <td>0.001</td>
-      <td>7537.0</td>
-      <td>6490.0</td>
+      <td>8377.0</td>
+      <td>6549.0</td>
       <td>1.0</td>
     </tr>
     <tr>
       <th>X_1</th>
-      <td>-1.077</td>
+      <td>-0.987</td>
       <td>0.027</td>
-      <td>-1.128</td>
-      <td>-1.026</td>
+      <td>-1.039</td>
+      <td>-0.935</td>
       <td>0.000</td>
       <td>0.000</td>
-      <td>7902.0</td>
-      <td>7955.0</td>
+      <td>8005.0</td>
+      <td>8085.0</td>
       <td>1.0</td>
     </tr>
   </tbody>
@@ -2302,17 +2309,17 @@ Impacts computed using the &#39;simple&#39; method.
   <tbody>
     <tr>
       <th>X_1</th>
-      <td>-1.11699</td>
-      <td>-1.172798</td>
-      <td>-1.059813</td>
+      <td>-1.029497</td>
+      <td>-1.087445</td>
+      <td>-0.971668</td>
       <td>0.0</td>
-      <td>-0.893108</td>
-      <td>-1.110791</td>
-      <td>-0.702177</td>
+      <td>-0.912236</td>
+      <td>-1.154061</td>
+      <td>-0.710385</td>
       <td>0.0</td>
-      <td>-2.010098</td>
-      <td>-2.258359</td>
-      <td>-1.789753</td>
+      <td>-1.941734</td>
+      <td>-2.216333</td>
+      <td>-1.707385</td>
       <td>0.0</td>
     </tr>
   </tbody>
@@ -2350,29 +2357,29 @@ SUMMARY OF OUTPUT: SPATIAL TWO STAGE LEAST SQUARES
 Data set            :     unknown
 Weights matrix      :     unknown
 Dependent Variable  :           y                Number of Observations:        1600
-Mean dependent var  :      2.0215                Number of Variables   :           3
-S.D. dependent var  :      1.5700                Degrees of Freedom    :        1597
-Pseudo R-squared    :      0.5504
-Spatial Pseudo R-squared:  0.4928
+Mean dependent var  :      1.9266                Number of Variables   :           3
+S.D. dependent var  :      1.5490                Degrees of Freedom    :        1597
+Pseudo R-squared    :      0.5152
+Spatial Pseudo R-squared:  0.4441
 
 ------------------------------------------------------------------------------------
             Variable     Coefficient       Std.Error     z-Statistic     Probability
 ------------------------------------------------------------------------------------
-            CONSTANT         1.14006         0.10154        11.22760         0.00000
-                 X_1        -1.07986         0.02792       -38.67629         0.00000
-                 W_y         0.43262         0.04841         8.93559         0.00000
+            CONSTANT         1.07676         0.10942         9.84083         0.00000
+                 X_1        -0.99025         0.02809       -35.25234         0.00000
+                 W_y         0.45223         0.05498         8.22523         0.00000
 ------------------------------------------------------------------------------------
 Instrumented: W_y
 Instruments: W_X_1
 
 DIAGNOSTICS FOR SPATIAL DEPENDENCE
 TEST                              DF         VALUE           PROB
-Anselin-Kelejian Test             1          0.349           0.5548
+Anselin-Kelejian Test             1          0.590           0.4426
 
 SPATIAL LAG MODEL IMPACTS
 Impacts computed using the &#39;simple&#39; method.
             Variable         Direct        Indirect          Total
-                 X_1        -1.0799         -0.8234         -1.9032
+                 X_1        -0.9902         -0.8175         -1.8078
 ================================ END OF REPORT =====================================
 </code></pre></div>
 </div>

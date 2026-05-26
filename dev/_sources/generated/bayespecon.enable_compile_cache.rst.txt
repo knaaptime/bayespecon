@@ -1,0 +1,6 @@
+﻿bayespecon.enable\_compile\_cache
+=================================
+
+.. currentmodule:: bayespecon
+
+.. autofunction:: enable_compile_cache

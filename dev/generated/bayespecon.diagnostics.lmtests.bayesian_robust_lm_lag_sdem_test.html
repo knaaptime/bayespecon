@@ -916,7 +916,7 @@
   
   
   <span class="md-ellipsis">
-    <span>Cross Sectional Spatial Models</span>
+    <span>Cross-<wbr>Sectional Spatial Models</span>
     
   </span>
   
@@ -935,12 +935,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#panel-spatial-models" class="md-nav__link">
+      <a href="../api.html#panel-spatial-models-fixed-effects" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Panel Spatial Models</span>
+    <span>Panel Spatial Models <wbr>(Fixed Effects)</span>
     
   </span>
   
@@ -1799,11 +1799,26 @@
 
               
             
-          </ul>
-        </nav>
-      
-    </li>
+              
+                
   
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#mcmc-efficiency" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>MCMC Efficiency</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
   
 
               
@@ -1816,18 +1831,27 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#log-determinant-methods" class="md-nav__link">
+      <a href="../api.html#spatial-cross-validation" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Log-<wbr>Determinant Methods</span>
+    <span>Spatial Cross-<wbr>Validation</span>
     
   </span>
   
 
       </a>
     </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
   
 
               
@@ -1888,12 +1912,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+      <a href="../api.html#gibbs-samplers" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Gibbs Sampler</span>
+    <span>Gibbs Samplers</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#configuration" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Configuration</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#internal-modules" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Internal Modules</span>
     
   </span>
   
@@ -2214,7 +2286,7 @@ spatial lag, with the WX block already absorbed in the SDEM mean
 structure and the SDEM error parameter <span class="math notranslate nohighlight">\(\lambda\)</span> absorbed via a
 posterior-mean filter
 (<span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id12" title="Osman Doğan, Süleyman Taşpınar, and Anil K. Bera. A Bayesian robust chi-squared test for testing simple hypotheses. Journal of Econometrics, 222(2):933–958, 2021. URL: https://www.sciencedirect.com/science/article/pii/S0304407620303018 (visited on 2026-04-21), doi:10.1016/j.jeconom.2020.07.046.">Doğan <em>et al.</em>, 2021</a>]</span>, Proposition 3;
-<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id23" title="Malabika Koley and Anil K. Bera. To use, or not to use the spatial Durbin model? – that is the question. Spatial Economic Analysis, 19(1):30–56, 2024. URL: https://doi.org/10.1080/17421772.2023.2256810 (visited on 2025-05-21), doi:10.1080/17421772.2023.2256810.">Koley and Bera, 2024</a>]</span>).</p>
+<span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id25" title="Malabika Koley and Anil K. Bera. To use, or not to use the spatial Durbin model? – that is the question. Spatial Economic Analysis, 19(1):30–56, 2024. URL: https://doi.org/10.1080/17421772.2023.2256810 (visited on 2025-05-21), doi:10.1080/17421772.2023.2256810.">Koley and Bera, 2024</a>]</span>).</p>
 <p>For each posterior draw of <span class="math notranslate nohighlight">\((\beta, \gamma, \lambda,
 \sigma^2)\)</span> from the SDEM fit the whitened residual is</p>
 <div class="math notranslate nohighlight">
@@ -2241,7 +2313,7 @@ no-op and the statistic reduces to</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_sdem_test-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_sdem_test-parameters" title="Permalink to this headline">¶</a></dt>
 <dd class="field-odd"><dl class="simple api-field highlight">
-<dt id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_sdem_test.model"><span class="sig-name descname">model</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference internal" href="bayespecon.models.SDEM.html#bayespecon.models.SDEM" title="bayespecon.models.SDEM (Python class) — Bayesian Spatial Durbin Error Model.">SDEM</a></span></span><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_sdem_test.model" title="Permalink to this definition">¶</a></dt><dd><p>Fitted SDEM model with <code class="docutils literal notranslate"><span class="pre">inference_data</span></code> containing posterior
+<dt id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_sdem_test.model"><span class="sig-name descname">model</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference internal" href="bayespecon.SDEM.html#bayespecon.SDEM" title="bayespecon.SDEM (Python class) — Bayesian Spatial Durbin Error Model.">SDEM</a></span></span><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_lag_sdem_test.model" title="Permalink to this definition">¶</a></dt><dd><p>Fitted SDEM model with <code class="docutils literal notranslate"><span class="pre">inference_data</span></code> containing posterior
 draws for <code class="docutils literal notranslate"><span class="pre">beta</span></code> (covering <code class="docutils literal notranslate"><span class="pre">[X,</span> <span class="pre">WX]</span></code>), <code class="docutils literal notranslate"><span class="pre">lam</span></code> (or
 <code class="docutils literal notranslate"><span class="pre">lambda</span></code>), and <code class="docutils literal notranslate"><span class="pre">sigma</span></code>.</p>
 </dd>

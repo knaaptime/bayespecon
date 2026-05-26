@@ -916,7 +916,7 @@
   
   
   <span class="md-ellipsis">
-    <span>Cross Sectional Spatial Models</span>
+    <span>Cross-<wbr>Sectional Spatial Models</span>
     
   </span>
   
@@ -935,12 +935,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#panel-spatial-models" class="md-nav__link">
+      <a href="../api.html#panel-spatial-models-fixed-effects" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Panel Spatial Models</span>
+    <span>Panel Spatial Models <wbr>(Fixed Effects)</span>
     
   </span>
   
@@ -1799,11 +1799,26 @@
 
               
             
-          </ul>
-        </nav>
-      
-    </li>
+              
+                
   
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#mcmc-efficiency" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>MCMC Efficiency</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
   
 
               
@@ -1816,18 +1831,27 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#log-determinant-methods" class="md-nav__link">
+      <a href="../api.html#spatial-cross-validation" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Log-<wbr>Determinant Methods</span>
+    <span>Spatial Cross-<wbr>Validation</span>
     
   </span>
   
 
       </a>
     </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
   
 
               
@@ -1888,12 +1912,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+      <a href="../api.html#gibbs-samplers" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Gibbs Sampler</span>
+    <span>Gibbs Samplers</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#configuration" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Configuration</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#internal-modules" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Internal Modules</span>
     
   </span>
   
@@ -2249,7 +2321,7 @@ V_{\rho\rho}\)</span> and per-draw statistic</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test-parameters" title="Permalink to this headline">¶</a></dt>
 <dd class="field-odd"><dl class="simple api-field highlight">
-<dt id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test.model"><span class="sig-name descname">model</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference internal" href="bayespecon.models.SAR.html#bayespecon.models.SAR" title="bayespecon.models.SAR (Python class) — Bayesian Spatial Autoregressive (Spatial Lag) model.">SAR</a></span></span><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test.model" title="Permalink to this definition">¶</a></dt><dd><p>Fitted SAR model exposing <code class="docutils literal notranslate"><span class="pre">inference_data</span></code> with posterior draws
+<dt id="bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test.model"><span class="sig-name descname">model</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference internal" href="bayespecon.SAR.html#bayespecon.SAR" title="bayespecon.SAR (Python class) — Bayesian Spatial Autoregressive (Spatial Lag) model.">SAR</a></span></span><a class="headerlink" href="#bayespecon.diagnostics.lmtests.bayesian_robust_lm_error_sar_test.model" title="Permalink to this definition">¶</a></dt><dd><p>Fitted SAR model exposing <code class="docutils literal notranslate"><span class="pre">inference_data</span></code> with posterior draws
 of <code class="docutils literal notranslate"><span class="pre">beta</span></code>, <code class="docutils literal notranslate"><span class="pre">rho</span></code>, <code class="docutils literal notranslate"><span class="pre">sigma</span></code> and the cached <code class="docutils literal notranslate"><span class="pre">_y</span></code>, <code class="docutils literal notranslate"><span class="pre">_X</span></code>,
 <code class="docutils literal notranslate"><span class="pre">_Wy</span></code>, <code class="docutils literal notranslate"><span class="pre">_W_sparse</span></code>, <code class="docutils literal notranslate"><span class="pre">_W_dense</span></code>, <code class="docutils literal notranslate"><span class="pre">_T_ww</span></code> attributes.</p>
 </dd>

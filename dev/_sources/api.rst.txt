@@ -5,6 +5,13 @@
 API reference
 =============
 
+The public API of ``bayespecon`` is everything reachable from the
+top-level ``bayespecon`` namespace (model classes, samplers, DGPs,
+diagnostics, graph helpers).  Internal subpackages are prefixed with
+an underscore (``_logdet``, ``_ops``, ``_backends``, ``_jax_dispatch``,
+``_numba_dispatch``); they are documented here for reference but their
+APIs are not covered by the package's stability guarantees and may
+change without deprecation.
 
 
 Base Classes
@@ -15,21 +22,20 @@ Base Classes
 .. autosummary::
    :toctree: generated/
 
-   SpatialModel :no-index:
-
+   SpatialModel
 
 .. currentmodule:: bayespecon.models.panel_base
 
 .. autosummary::
    :toctree: generated/
 
-   SpatialPanelModel :no-index:
+   SpatialPanelModel
 
 
-Cross Sectional Spatial Models
+Cross-Sectional Spatial Models
 ------------------------------
 
-.. currentmodule:: bayespecon.models
+.. currentmodule:: bayespecon
 
 .. autosummary::
    :toctree: generated/
@@ -42,10 +48,8 @@ Cross Sectional Spatial Models
    SDEM
 
 
-Panel Spatial Models
------------------------
-
-.. currentmodule:: bayespecon.models
+Panel Spatial Models (Fixed Effects)
+------------------------------------
 
 .. autosummary::
    :toctree: generated/
@@ -57,10 +61,9 @@ Panel Spatial Models
    SDEMPanelFE
    SLXPanelFE
 
-Panel Spatial Models (Random Effects)
---------------------------------------
 
-.. currentmodule:: bayespecon.models
+Panel Spatial Models (Random Effects)
+-------------------------------------
 
 .. autosummary::
    :toctree: generated/
@@ -70,10 +73,9 @@ Panel Spatial Models (Random Effects)
    SEMPanelRE
    SDEMPanelRE
 
+
 Dynamic Panel Spatial Models
 ----------------------------
-
-.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
@@ -90,28 +92,25 @@ Dynamic Panel Spatial Models
 Non-Linear Spatial Models
 -------------------------
 
-.. currentmodule:: bayespecon.models
-
 .. autosummary::
    :toctree: generated/
 
-   SpatialProbit :no-index:
+   SpatialProbit
    SARTobit
    SEMTobit
    SDMTobit
+   SARNegativeBinomial
+   SARNegBinLatent
 
 
 Panel Spatial Models (Tobit)
------------------------------
-
-.. currentmodule:: bayespecon.models
+----------------------------
 
 .. autosummary::
    :toctree: generated/
 
    SARPanelTobit
    SEMPanelTobit
-
 
 
 Flow Models
@@ -129,6 +128,11 @@ Flow Models
    SARFlowSeparable
    PoissonSARFlow
    PoissonSARFlowSeparable
+   NegativeBinomialFlow
+   NegativeBinomialSARFlow
+   NegativeBinomialSARFlowSeparable
+   SARNegBinFlowLatent
+   SARNegBinFlowSeparableLatent
    SEMFlow
    SEMFlowSeparable
 
@@ -148,13 +152,15 @@ Panel Flow Models
    SARFlowSeparablePanel
    PoissonSARFlowPanel
    PoissonSARFlowSeparablePanel
+   NegativeBinomialFlowPanel
+   NegativeBinomialSARFlowPanel
+   NegativeBinomialSARFlowSeparablePanel
    SEMFlowPanel
    SEMFlowSeparablePanel
 
 
-
 Bayesian Diagnostics
----------------------
+--------------------
 
 .. currentmodule:: bayespecon.diagnostics.lmtests
 
@@ -182,10 +188,9 @@ Bayesian Diagnostics
    bayesian_robust_lm_lag_sem_test
    bayesian_robust_lm_wx_sem_test
 
+
 Panel Bayesian LM Tests
 ^^^^^^^^^^^^^^^^^^^^^^^
-
-.. currentmodule:: bayespecon.diagnostics.lmtests
 
 .. autosummary::
    :toctree: generated/
@@ -204,10 +209,9 @@ Panel Bayesian LM Tests
    bayesian_panel_robust_lm_wx_test
    bayesian_panel_robust_lm_error_sdem_test
 
+
 Flow Bayesian LM Tests
 ^^^^^^^^^^^^^^^^^^^^^^
-
-.. currentmodule:: bayespecon.diagnostics.lmtests
 
 .. autosummary::
    :toctree: generated/
@@ -226,18 +230,18 @@ Flow Bayesian LM Tests
    bayesian_panel_lm_flow_intra_test
    bayesian_panel_lm_flow_joint_test
 
+
 Diagnostic Test Suites
 ^^^^^^^^^^^^^^^^^^^^^^
 
 Pre-bundled collections of LM tests used by ``model.spatial_diagnostics()``
 and the decision-tree renderers.
 
-.. currentmodule:: bayespecon.diagnostics.lmtests
-
 .. autosummary::
    :toctree: generated/
 
    DiagnosticSuite
+   get_diagnostic_suite
    OLS_SUITE
    OLS_PANEL_SUITE
    SAR_SUITE
@@ -262,74 +266,37 @@ and the decision-tree renderers.
 
 Bayesian Model Comparison
 ^^^^^^^^^^^^^^^^^^^^^^^^^
-.. currentmodule:: bayespecon.diagnostics.bayesfactor
+
+.. currentmodule:: bayespecon.diagnostics
 
 .. autosummary::
    :toctree: generated/
 
+   ModelComparison
    bayes_factor_compare_models
    bic_to_bf
    compile_log_posterior
    post_prob
 
 
-Log-Determinant Methods
------------------------
-
-.. currentmodule:: bayespecon.logdet
-
-Method resolution and bound handling
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Positive-only methods (``sparse_spline``, ``grid_mc``) auto-restrict the
-rho/lambda support to ``[1e-5, 1.0]`` when the prior or method default
-would otherwise admit negative values.  Explicit ``rho_min``/``rho_max``
-overrides still raise.
+MCMC Efficiency
+^^^^^^^^^^^^^^^
 
 .. autosummary::
    :toctree: generated/
 
-   LogDetMethod
-   LogdetBounds
-   resolve_logdet_method
-   resolve_logdet_bounds
+   SpatialMCMCReport
+   spatial_mcmc_diagnostic
 
-Builders
-^^^^^^^^
 
-.. autosummary::
-   :toctree: generated/
-
-   make_logdet_fn
-   make_logdet_numpy_fn
-   make_logdet_numpy_vec_fn
-
-Kernel evaluators and approximations
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Spatial Cross-Validation
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. autosummary::
    :toctree: generated/
 
-   logdet_eigenvalue
-   logdet_exact
-   logdet_chebyshev
-   logdet_interpolated
-   logdet_mc_poly_pytensor
-   mc
-   chebyshev
-   ilu
-   sparse_grid
-   spline
-
-Flow log-determinants
-^^^^^^^^^^^^^^^^^^^^^
-
-.. autosummary::
-   :toctree: generated/
-
-   flow_logdet_pytensor
-   flow_logdet_numpy
-   compute_flow_traces
+   SpatialCVResult
+   spatial_kfold
 
 
 Data Generating Processes
@@ -338,10 +305,10 @@ Data Generating Processes
 .. note::
 
    The cross-sectional and (scalar) panel DGP simulators accept ``W``
-   (Graph/sparse/dense) and ``gdf`` inputs.  You may provide both together;
-   in that case ``W`` is used for simulation and is checked against ``gdf``
-   for dimensional compatibility (a ``ValueError`` is raised when they do
-   not describe the same number of spatial units).
+   (Graph/sparse/dense) and ``gdf`` inputs.  You may provide both
+   together; in that case ``W`` is used for simulation and is checked
+   against ``gdf`` for dimensional compatibility (a ``ValueError`` is
+   raised when they do not describe the same number of spatial units).
 
    The flow DGPs below take ``G`` (libpysal Graph), ``gdf``, ``n``, and
    ``knn_k`` instead.  All four are optional: when none is supplied the
@@ -354,16 +321,17 @@ Data Generating Processes
 .. autosummary::
    :toctree: generated/
 
-   simulate_sar
    simulate_ols
+   simulate_sar
    simulate_sem
    simulate_slx
    simulate_sdm
    simulate_sdem
+   simulate_sar_negbin
+   simulate_spatial_probit
    simulate_sar_tobit
    simulate_sem_tobit
    simulate_sdm_tobit
-   simulate_spatial_probit
    simulate_panel_ols_fe
    simulate_panel_sar_fe
    simulate_panel_sem_fe
@@ -383,6 +351,7 @@ Data Generating Processes
    simulate_panel_sar_tobit_fe
    simulate_panel_sem_tobit_fe
 
+
 Flow Data Generating Processes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -398,10 +367,8 @@ predictor (also exposed in the result dict as ``"eta_vec"`` /
 ``"eta"``).  Pass ``distribution="normal"`` to recover the legacy
 Gaussian-on-y behaviour.  The Gaussian-likelihood flow models in
 ``bayespecon.models.flow`` operate on the latent scale, so fit on
-``np.log(y)`` to recover the SAR parameters.  The Poisson DGPs are
-unchanged.
-
-.. currentmodule:: bayespecon.dgp
+``np.log(y)`` to recover the SAR parameters.  The Poisson and Negative
+Binomial DGPs are unchanged.
 
 .. autosummary::
    :toctree: generated/
@@ -410,10 +377,18 @@ unchanged.
    generate_flow_data_separable
    generate_poisson_flow_data
    generate_poisson_flow_data_separable
+   generate_negbin_flow_data
+   generate_negbin_flow_data_separable
+   generate_sem_flow_data
+   generate_sem_flow_data_separable
    generate_panel_flow_data
    generate_panel_flow_data_separable
    generate_panel_poisson_flow_data
    generate_panel_poisson_flow_data_separable
+   generate_panel_negbin_flow_data
+   generate_panel_negbin_flow_data_separable
+   generate_panel_sem_flow_data
+   generate_panel_sem_flow_data_separable
 
 
 Graph Utilities
@@ -426,6 +401,7 @@ Graph Utilities
 
    FlowDesignMatrix
    flow_design_matrix
+   flow_design_matrix_asymmetric
    flow_design_matrix_with_orig
    flow_weight_matrices
    destination_weights
@@ -433,13 +409,15 @@ Graph Utilities
    network_weights
 
 
-Gibbs Sampler
--------------
+Gibbs Samplers
+--------------
 
 Block-Gibbs samplers for Gaussian spatial models.  These bypass NUTS
-entirely and exploit conditional conjugacy for faster sampling.
+entirely and exploit conditional conjugacy for faster sampling.  All
+four symbols are re-exported from the top-level ``bayespecon``
+namespace.
 
-.. currentmodule:: bayespecon._samplers._gibbs_estimation
+.. currentmodule:: bayespecon
 
 .. autosummary::
    :toctree: generated/
@@ -447,12 +425,135 @@ entirely and exploit conditional conjugacy for faster sampling.
    GibbsEstimation
    GaussianSARGibbs
    GaussianSEMGibbs
+   GaussianGibbsPriors
 
-.. currentmodule:: bayespecon._samplers._gaussian_gibbs
+
+Configuration
+-------------
+
+.. currentmodule:: bayespecon
 
 .. autosummary::
    :toctree: generated/
 
-   GaussianGibbsState
-   GaussianGibbsPriors
-   GaussianGibbsCache
+   enable_compile_cache
+
+
+Internal Modules
+----------------
+
+The following subpackages are private (underscore-prefixed).  They
+back the public model classes and samplers and may change without
+deprecation; they are documented here for reference and for users
+writing custom extensions.
+
+Custom PyTensor Ops (``bayespecon._ops``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Differentiable sparse and Kronecker-structured linear solves with
+adjoint-method gradients, used inside the flow-model PyMC graphs.
+
+.. currentmodule:: bayespecon._ops
+
+.. autosummary::
+   :toctree: generated/
+
+   SparseFlowSolveOp
+   SparseFlowSolveMatrixOp
+   KroneckerFlowSolveOp
+   KroneckerFlowSolveMatrixOp
+   kron_solve_vec
+   kron_solve_matrix
+
+
+Log-Determinant Methods (``bayespecon._logdet``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. currentmodule:: bayespecon._logdet
+
+Positive-only methods (``sparse_spline``, ``grid_mc``) auto-restrict
+the rho/lambda support to ``[1e-5, 1.0]`` when the prior or method
+default would otherwise admit negative values.  Explicit
+``rho_min``/``rho_max`` overrides still raise.
+
+Method resolution and bound handling
+""""""""""""""""""""""""""""""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   LogDetMethod
+   LogdetBounds
+   resolve_logdet_method
+   resolve_logdet_bounds
+
+Factories
+"""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   make_logdet_fn
+   make_logdet_numpy_fn
+   make_logdet_numpy_vec_fn
+   make_logdet_jax_fn
+   get_cached_logdet_fn
+   clear_logdet_fn_cache
+
+PyTensor kernels
+""""""""""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   logdet_eigenvalue
+   logdet_exact
+   logdet_chebyshev
+   logdet_interpolated
+   logdet_mc_poly_pytensor
+
+JAX kernels
+"""""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   jax_logdet_chebyshev
+   jax_logdet_trace_poly
+
+Grid / polynomial primitives
+""""""""""""""""""""""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   mc
+   chebyshev
+   spline
+
+Flow log-determinants
+"""""""""""""""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   flow_logdet_pytensor
+   flow_logdet_numpy
+   compute_flow_traces
+   make_flow_separable_logdet
+   make_flow_separable_logdet_numpy
+
+Stochastic trace estimation
+"""""""""""""""""""""""""""
+
+The XTrace (Epperly–Tropp–Webber 2024) and Hutch++ (Meyer et al. 2021)
+estimators are implemented natively in NumPy + SciPy sparse and used
+inside the Chebyshev log-determinant path.  Selection is via the
+``trace_estimator=`` keyword on each model.
+
+.. autosummary::
+   :toctree: generated/
+
+   traceax_available
+   traceax_traces
+   traceax_traces_for_chebyshev

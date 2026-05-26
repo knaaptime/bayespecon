@@ -14,7 +14,7 @@
         <link rel="prev" href="bayespecon.diagnostics.lmtests.bayesian_panel_lm_flow_joint_test.html">
       
       
-        <link rel="next" href="bayespecon.diagnostics.lmtests.OLS_SUITE.html">
+        <link rel="next" href="bayespecon.diagnostics.lmtests.get_diagnostic_suite.html">
       
       
       <link rel="icon" href="../_static/pysal_favicon.ico">
@@ -916,7 +916,7 @@
   
   
   <span class="md-ellipsis">
-    <span>Cross Sectional Spatial Models</span>
+    <span>Cross-<wbr>Sectional Spatial Models</span>
     
   </span>
   
@@ -935,12 +935,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#panel-spatial-models" class="md-nav__link">
+      <a href="../api.html#panel-spatial-models-fixed-effects" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Panel Spatial Models</span>
+    <span>Panel Spatial Models <wbr>(Fixed Effects)</span>
     
   </span>
   
@@ -1870,6 +1870,30 @@
   
   
     <li class="md-nav__item">
+      <a href="bayespecon.diagnostics.lmtests.get_diagnostic_suite.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>bayespecon.<wbr>diagnostics.<wbr>lmtests.<wbr>get_<wbr>diagnostic_<wbr>suite</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="bayespecon.diagnostics.lmtests.OLS_SUITE.html" class="md-nav__link">
         
   
@@ -2375,11 +2399,26 @@
 
               
             
-          </ul>
-        </nav>
-      
-    </li>
+              
+                
   
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#mcmc-efficiency" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>MCMC Efficiency</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
   
 
               
@@ -2392,18 +2431,27 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#log-determinant-methods" class="md-nav__link">
+      <a href="../api.html#spatial-cross-validation" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Log-<wbr>Determinant Methods</span>
+    <span>Spatial Cross-<wbr>Validation</span>
     
   </span>
   
 
       </a>
     </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
   
 
               
@@ -2464,12 +2512,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+      <a href="../api.html#gibbs-samplers" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Gibbs Sampler</span>
+    <span>Gibbs Samplers</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#configuration" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Configuration</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#internal-modules" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Internal Modules</span>
     
   </span>
   
@@ -2823,7 +2919,7 @@
 <h1 id="bayespecon-diagnostics-lmtests-diagnosticsuite">bayespecon.diagnostics.lmtests.DiagnosticSuite<a class="headerlink" href="#bayespecon-diagnostics-lmtests-diagnosticsuite" title="Link to this heading">¶</a></h1>
 <dl class="py class objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.diagnostics.lmtests.DiagnosticSuite">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">bayespecon.diagnostics.lmtests.</span></span><span class="sig-name descname"><span class="pre">DiagnosticSuite</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.lmtests.DiagnosticSuite" title="bayespecon.diagnostics.lmtests.DiagnosticSuite.__init__.name (Python parameter)"><span class="n"><span class="pre">name</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.lmtests.DiagnosticSuite" title="bayespecon.diagnostics.lmtests.DiagnosticSuite.__init__.tests (Python parameter)"><span class="n"><span class="pre">tests</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/diagnostics/lmtests/suites.py#L55-L69"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.diagnostics.lmtests.DiagnosticSuite" title="Link to this definition">¶</a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">bayespecon.diagnostics.lmtests.</span></span><span class="sig-name descname"><span class="pre">DiagnosticSuite</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.lmtests.DiagnosticSuite" title="bayespecon.diagnostics.lmtests.DiagnosticSuite.__init__.name (Python parameter)"><span class="n"><span class="pre">name</span></span></a></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.diagnostics.lmtests.DiagnosticSuite" title="bayespecon.diagnostics.lmtests.DiagnosticSuite.__init__.tests (Python parameter)"><span class="n"><span class="pre">tests</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/diagnostics/lmtests/suites.py#L57-L71"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.diagnostics.lmtests.DiagnosticSuite" title="Link to this definition">¶</a></dt>
 <dd><p>Named, immutable registry of Bayesian LM specification tests.</p>
 <dl class="py attribute objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.diagnostics.lmtests.DiagnosticSuite.name">

@@ -1,0 +1,6 @@
+﻿bayespecon.\_logdet.get\_cached\_logdet\_fn
+===========================================
+
+.. currentmodule:: bayespecon._logdet
+
+.. autofunction:: get_cached_logdet_fn

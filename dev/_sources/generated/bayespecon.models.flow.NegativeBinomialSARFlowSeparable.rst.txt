@@ -1,0 +1,37 @@
+﻿bayespecon.models.flow.NegativeBinomialSARFlowSeparable
+=======================================================
+
+.. currentmodule:: bayespecon.models.flow
+
+.. autoclass:: NegativeBinomialSARFlowSeparable
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~NegativeBinomialSARFlowSeparable.__init__
+      ~NegativeBinomialSARFlowSeparable.fit
+      ~NegativeBinomialSARFlowSeparable.fit_approx
+      ~NegativeBinomialSARFlowSeparable.posterior_predictive
+      ~NegativeBinomialSARFlowSeparable.spatial_diagnostics
+      ~NegativeBinomialSARFlowSeparable.spatial_diagnostics_decision
+      ~NegativeBinomialSARFlowSeparable.spatial_effects
+      ~NegativeBinomialSARFlowSeparable.summary
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~NegativeBinomialSARFlowSeparable.approximation
+      ~NegativeBinomialSARFlowSeparable.inference_data
+      ~NegativeBinomialSARFlowSeparable.pymc_model
+   
+   

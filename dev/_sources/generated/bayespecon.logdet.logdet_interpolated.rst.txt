@@ -1,6 +1,0 @@
-﻿bayespecon.logdet.logdet\_interpolated
-======================================
-
-.. currentmodule:: bayespecon.logdet
-
-.. autofunction:: logdet_interpolated

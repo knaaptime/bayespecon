@@ -1,0 +1,6 @@
+﻿bayespecon.\_logdet.jax\_logdet\_chebyshev
+==========================================
+
+.. currentmodule:: bayespecon._logdet
+
+.. autofunction:: jax_logdet_chebyshev

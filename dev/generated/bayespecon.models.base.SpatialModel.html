@@ -1089,6 +1089,30 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel.__init__.trace_estimator" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel.__init__.trace_estimator (Python parameter) — Stochastic trace estimator used to build the Chebyshev coefficients when an eigendecomposition is unavailable."><span>trace_<wbr>estimator</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel.__init__.trace_k" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel.__init__.trace_k (Python parameter) — Number of probe vectors for the trace estimator."><span>trace_<wbr>k</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#bayespecon.models.base.SpatialModel.__init__.robust" class="md-nav__link">
     
       <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
@@ -1107,6 +1131,174 @@
     
     <span class="md-ellipsis">
       <span title="bayespecon.models.base.SpatialModel.__init__.w_vars (Python parameter) — Names of X columns to spatially lag."><span>w_<wbr>vars</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._spatial_params" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._spatial_params (Python attribute) — Spatial autoregressive parameters in the model (e.g. (&#34;rho&#34;,) for SAR, (&#34;lam&#34;,) for SEM).  Empty for OLS and SLX."><span>_<wbr>spatial_<wbr>params</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_spatial_params">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._spatial_params-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._lag_terms" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._lag_terms (Python attribute) — Lagged terms present in the model specification (e.g. (&#34;Wy&#34;,) for SAR, (&#34;WX&#34;,) for SLX, (&#34;Wy&#34;, &#34;WX&#34;) for SDM)."><span>_<wbr>lag_<wbr>terms</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_lag_terms">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._lag_terms-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._jacobian_param" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._jacobian_param (Python attribute) — Name of the parameter that appears in the Jacobian determinant log|I - param * W|.  &#34;rho&#34; for SAR/SDM, &#34;lam&#34; for SEM/SDEM, None for OLS/SLX (no Jacobian)."><span>_<wbr>jacobian_<wbr>param</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_jacobian_param">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._jacobian_param-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._has_wx_in_beta" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._has_wx_in_beta (Python attribute) — Whether the beta coefficient vector includes WX coefficients (i.e. whether the design matrix is [X, WX] rather than just X).  True for SLX, SDM, SDEM."><span>_<wbr>has_<wbr>wx_<wbr>in_<wbr>beta</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_has_wx_in_beta">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._has_wx_in_beta-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._gibbs_class" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._gibbs_class (Python attribute) — Fully-qualified class name of the Gibbs sampler for this model (e.g. &#34;GaussianSARGibbs&#34;), or None if no Gibbs sampler exists.  Used to look up the sampler at runtime to avoid circular imports."><span>_<wbr>gibbs_<wbr>class</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_gibbs_class">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._gibbs_class-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._model_type" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._model_type (Python attribute) — Short lowercase model name used as the model_type argument to the Gibbs sampler (e.g. &#34;sar&#34;, &#34;sdm&#34;).  Also used for InferenceData coordinate labels."><span>_<wbr>model_<wbr>type</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_model_type">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._model_type-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
     </span>
   </a>
   
@@ -1208,6 +1400,18 @@
     
     <span class="md-ellipsis">
       <span title="bayespecon.models.base.SpatialModel.fit.random_seed (Python parameter) — Seed for reproducibility."><span>random_<wbr>seed</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel.fit.progressbar" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel.fit.progressbar (Python parameter) — Show progress bar during sampling."><span>progressbar</span></span>
     </span>
   </a>
   
@@ -1727,7 +1931,7 @@
   
   
   <span class="md-ellipsis">
-    <span>Cross Sectional Spatial Models</span>
+    <span>Cross-<wbr>Sectional Spatial Models</span>
     
   </span>
   
@@ -1746,12 +1950,12 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#panel-spatial-models" class="md-nav__link">
+      <a href="../api.html#panel-spatial-models-fixed-effects" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Panel Spatial Models</span>
+    <span>Panel Spatial Models <wbr>(Fixed Effects)</span>
     
   </span>
   
@@ -1914,30 +2118,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#log-determinant-methods" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    <span>Log-<wbr>Determinant Methods</span>
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../api.html#data-generating-processes" class="md-nav__link">
         
   
@@ -1986,12 +2166,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../api.html#gibbs-sampler" class="md-nav__link">
+      <a href="../api.html#gibbs-samplers" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
-    <span>Gibbs Sampler</span>
+    <span>Gibbs Samplers</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#configuration" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Configuration</span>
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api.html#internal-modules" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    <span>Internal Modules</span>
     
   </span>
   
@@ -2321,6 +2549,30 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel.__init__.trace_estimator" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel.__init__.trace_estimator (Python parameter) — Stochastic trace estimator used to build the Chebyshev coefficients when an eigendecomposition is unavailable."><span>trace_<wbr>estimator</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel.__init__.trace_k" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel.__init__.trace_k (Python parameter) — Number of probe vectors for the trace estimator."><span>trace_<wbr>k</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#bayespecon.models.base.SpatialModel.__init__.robust" class="md-nav__link">
     
       <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
@@ -2339,6 +2591,174 @@
     
     <span class="md-ellipsis">
       <span title="bayespecon.models.base.SpatialModel.__init__.w_vars (Python parameter) — Names of X columns to spatially lag."><span>w_<wbr>vars</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._spatial_params" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._spatial_params (Python attribute) — Spatial autoregressive parameters in the model (e.g. (&#34;rho&#34;,) for SAR, (&#34;lam&#34;,) for SEM).  Empty for OLS and SLX."><span>_<wbr>spatial_<wbr>params</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_spatial_params">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._spatial_params-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._lag_terms" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._lag_terms (Python attribute) — Lagged terms present in the model specification (e.g. (&#34;Wy&#34;,) for SAR, (&#34;WX&#34;,) for SLX, (&#34;Wy&#34;, &#34;WX&#34;) for SDM)."><span>_<wbr>lag_<wbr>terms</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_lag_terms">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._lag_terms-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._jacobian_param" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._jacobian_param (Python attribute) — Name of the parameter that appears in the Jacobian determinant log|I - param * W|.  &#34;rho&#34; for SAR/SDM, &#34;lam&#34; for SEM/SDEM, None for OLS/SLX (no Jacobian)."><span>_<wbr>jacobian_<wbr>param</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_jacobian_param">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._jacobian_param-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._has_wx_in_beta" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._has_wx_in_beta (Python attribute) — Whether the beta coefficient vector includes WX coefficients (i.e. whether the design matrix is [X, WX] rather than just X).  True for SLX, SDM, SDEM."><span>_<wbr>has_<wbr>wx_<wbr>in_<wbr>beta</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_has_wx_in_beta">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._has_wx_in_beta-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._gibbs_class" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._gibbs_class (Python attribute) — Fully-qualified class name of the Gibbs sampler for this model (e.g. &#34;GaussianSARGibbs&#34;), or None if no Gibbs sampler exists.  Used to look up the sampler at runtime to avoid circular imports."><span>_<wbr>gibbs_<wbr>class</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_gibbs_class">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._gibbs_class-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._model_type" class="md-nav__link">
+    
+      <span aria-label="Python attribute" class="objinfo-icon objinfo-icon__alias" title="Python attribute">A</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel._model_type (Python attribute) — Short lowercase model name used as the model_type argument to the Gibbs sampler (e.g. &#34;sar&#34;, &#34;sdm&#34;).  Also used for InferenceData coordinate labels."><span>_<wbr>model_<wbr>type</span></span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="_model_type">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel._model_type-type" class="md-nav__link">
+    
+    <span class="md-ellipsis">
+      <span>Type</span>
     </span>
   </a>
   
@@ -2440,6 +2860,18 @@
     
     <span class="md-ellipsis">
       <span title="bayespecon.models.base.SpatialModel.fit.random_seed (Python parameter) — Seed for reproducibility."><span>random_<wbr>seed</span></span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bayespecon.models.base.SpatialModel.fit.progressbar" class="md-nav__link">
+    
+      <span aria-label="Python parameter" class="objinfo-icon objinfo-icon__sub-data" title="Python parameter">p</span>
+    
+    <span class="md-ellipsis">
+      <span title="bayespecon.models.base.SpatialModel.fit.progressbar (Python parameter) — Show progress bar during sampling."><span>progressbar</span></span>
     </span>
   </a>
   
@@ -2931,9 +3363,9 @@
 <h1 id="bayespecon-models-base-spatialmodel">bayespecon.models.base.SpatialModel<a class="headerlink" href="#bayespecon-models-base-spatialmodel" title="Link to this heading">¶</a></h1>
 <dl class="py class objdesc">
 <dt class="sig sig-object highlight sig-wrap py" id="bayespecon.models.base.SpatialModel">
-<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">bayespecon.models.base.</span></span><span class="sig-name descname"><span class="pre">SpatialModel</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.formula" title="bayespecon.models.base.SpatialModel.__init__.formula (Python parameter) — Wilkinson-style formula string, e.g."><span class="n"><span class="pre">formula</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.data" title="bayespecon.models.base.SpatialModel.__init__.data (Python parameter) — Data source when using formula mode."><span class="n"><span class="pre">data</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.y" title="bayespecon.models.base.SpatialModel.__init__.y (Python parameter) — Dependent variable."><span class="n"><span class="pre">y</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.X" title="bayespecon.models.base.SpatialModel.__init__.X (Python parameter) — Predictor matrix."><span class="n"><span class="pre">X</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.W" title="bayespecon.models.base.SpatialModel.__init__.W (Python parameter) — Spatial weights matrix of shape (n, n)."><span class="n"><span class="pre">W</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.priors" title="bayespecon.models.base.SpatialModel.__init__.priors (Python parameter) — Override default priors."><span class="n"><span class="pre">priors</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.logdet_method" title="bayespecon.models.base.SpatialModel.__init__.logdet_method (Python parameter) — How to compute log|I - rho*W|."><span class="n"><span class="pre">logdet_method</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.robust" title="bayespecon.models.base.SpatialModel.__init__.robust (Python parameter) — If True, use a Student-t error distribution instead of Normal, yielding a model that is robust to heavy-tailed outliers."><span class="n"><span class="pre">robust</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.w_vars" title="bayespecon.models.base.SpatialModel.__init__.w_vars (Python parameter) — Names of X columns to spatially lag."><span class="n"><span class="pre">w_vars</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel" title="bayespecon.models.base.SpatialModel.__init__.backend (Python parameter)"><span class="n"><span class="pre">backend</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L250-L1447"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel" title="Link to this definition">¶</a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">bayespecon.models.base.</span></span><span class="sig-name descname"><span class="pre">SpatialModel</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.formula" title="bayespecon.models.base.SpatialModel.__init__.formula (Python parameter) — Wilkinson-style formula string, e.g."><span class="n"><span class="pre">formula</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.data" title="bayespecon.models.base.SpatialModel.__init__.data (Python parameter) — Data source when using formula mode."><span class="n"><span class="pre">data</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.y" title="bayespecon.models.base.SpatialModel.__init__.y (Python parameter) — Dependent variable."><span class="n"><span class="pre">y</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.X" title="bayespecon.models.base.SpatialModel.__init__.X (Python parameter) — Predictor matrix."><span class="n"><span class="pre">X</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.W" title="bayespecon.models.base.SpatialModel.__init__.W (Python parameter) — Spatial weights matrix of shape (n, n)."><span class="n"><span class="pre">W</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.priors" title="bayespecon.models.base.SpatialModel.__init__.priors (Python parameter) — Override default priors."><span class="n"><span class="pre">priors</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.logdet_method" title="bayespecon.models.base.SpatialModel.__init__.logdet_method (Python parameter) — How to compute log|I - rho*W|."><span class="n"><span class="pre">logdet_method</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.robust" title="bayespecon.models.base.SpatialModel.__init__.robust (Python parameter) — If True, use a Student-t error distribution instead of Normal, yielding a model that is robust to heavy-tailed outliers."><span class="n"><span class="pre">robust</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.w_vars" title="bayespecon.models.base.SpatialModel.__init__.w_vars (Python parameter) — Names of X columns to spatially lag."><span class="n"><span class="pre">w_vars</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel" title="bayespecon.models.base.SpatialModel.__init__.backend (Python parameter)"><span class="n"><span class="pre">backend</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.trace_estimator" title="bayespecon.models.base.SpatialModel.__init__.trace_estimator (Python parameter) — Stochastic trace estimator used to build the Chebyshev coefficients when an eigendecomposition is unavailable."><span class="n"><span class="pre">trace_estimator</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="s1">&#39;hutchpp&#39;</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.trace_k" title="bayespecon.models.base.SpatialModel.__init__.trace_k (Python parameter) — Number of probe vectors for the trace estimator."><span class="n"><span class="pre">trace_k</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L254-L1782"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel" title="Link to this definition">¶</a></dt>
 <dd><p>Base class for Bayesian spatial regression models. Models follow the notation
-of <span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id2" title="Luc Anselin. Spatial Econometrics: Methods and Models. Volume 4. Springer Netherlands, 1988. ISBN 978-90-481-8311-1. URL: http://www.amazon.com/Spatial-Econometrics-Methods-Operational-Regional/dp/9024737354, arXiv:1011.1669v3, doi:10.1007/978-94-015-7799-1.">Anselin, 1988</a>]</span> and <span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id25" title="J LeSage and R K Pace. Introduction to Spatial Econometrics. CRC Press, 2009.">LeSage and Pace, 2009</a>]</span>.
+of <span class="bibtex-citation" id="id1">[<a class="reference internal" href="../references.html#id2" title="Luc Anselin. Spatial Econometrics: Methods and Models. Volume 4. Springer Netherlands, 1988. ISBN 978-90-481-8311-1. URL: http://www.amazon.com/Spatial-Econometrics-Methods-Operational-Regional/dp/9024737354, arXiv:1011.1669v3, doi:10.1007/978-94-015-7799-1.">Anselin, 1988</a>]</span> and <span class="bibtex-citation" id="id2">[<a class="reference internal" href="../references.html#id27" title="J LeSage and R K Pace. Introduction to Spatial Econometrics. CRC Press, 2009.">LeSage and Pace, 2009</a>]</span>.
 The API supports both formula and matrix input modes.</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.models.base.SpatialModel-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel-parameters" title="Permalink to this headline">¶</a></dt>
@@ -2961,18 +3393,29 @@ W should be row-standardised; a <a class="reference external" href="https://docs
 each model’s docstring for supported keys.</p>
 </dd>
 <dt id="bayespecon.models.base.SpatialModel.__init__.logdet_method"><span class="sig-name descname">logdet_method</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></span></span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.__init__.logdet_method" title="Permalink to this definition">¶</a></dt><dd><p>How to compute <code class="docutils literal notranslate"><span class="pre">log|I</span> <span class="pre">-</span> <span class="pre">rho*W|</span></code>. <code class="docutils literal notranslate"><span class="pre">&quot;eigenvalue&quot;</span></code> (default for
-<code class="docutils literal notranslate"><span class="pre">n</span> <span class="pre">&lt;=</span> <span class="pre">2000</span></code>) pre-computes W’s eigenvalues once and evaluates
+<code class="docutils literal notranslate"><span class="pre">n</span> <span class="pre">&lt;=</span> <span class="pre">500</span></code>) pre-computes W’s eigenvalues once and evaluates
 O(n) per step; <code class="docutils literal notranslate"><span class="pre">&quot;exact&quot;</span></code> uses symbolic pytensor det (slow for
-<code class="docutils literal notranslate"><span class="pre">n</span> <span class="pre">&gt;</span> <span class="pre">500</span></code>); <code class="docutils literal notranslate"><span class="pre">&quot;dense_grid&quot;</span></code> uses dense eigenvalue grid +
+<code class="docutils literal notranslate"><span class="pre">n</span> <span class="pre">&gt;</span> <span class="pre">500</span></code>); <code class="docutils literal notranslate"><span class="pre">&quot;grid_dense&quot;</span></code> uses dense eigenvalue grid +
 cubic-spline interpolation (MATLAB-style <code class="docutils literal notranslate"><span class="pre">lndetfull</span></code> for dense
-W); <code class="docutils literal notranslate"><span class="pre">&quot;sparse_grid&quot;</span></code> uses sparse-LU grid + cubic-spline
+W); <code class="docutils literal notranslate"><span class="pre">&quot;grid_sparse&quot;</span></code> uses sparse-LU grid + cubic-spline
 interpolation (<code class="docutils literal notranslate"><span class="pre">lndetfull</span></code> style for large sparse W);
-<code class="docutils literal notranslate"><span class="pre">&quot;spline&quot;</span></code> uses sparse-LU + spline on <code class="docutils literal notranslate"><span class="pre">[max(rho_min,</span> <span class="pre">0),</span>
-<span class="pre">rho_max]</span></code> (<code class="docutils literal notranslate"><span class="pre">lndetint</span></code> style); <code class="docutils literal notranslate"><span class="pre">&quot;mc&quot;</span></code> uses Monte Carlo
-trace approximation (<code class="docutils literal notranslate"><span class="pre">lndetmc</span></code>); <code class="docutils literal notranslate"><span class="pre">&quot;ilu&quot;</span></code> uses ILU-based
-approximation (<code class="docutils literal notranslate"><span class="pre">lndetichol</span></code> analog); <code class="docutils literal notranslate"><span class="pre">&quot;chebyshev&quot;</span></code> (default
-for <code class="docutils literal notranslate"><span class="pre">n</span> <span class="pre">&gt;</span> <span class="pre">2000</span></code>) uses a Chebyshev polynomial approximation
-evaluated via Clenshaw’s algorithm.</p>
+<code class="docutils literal notranslate"><span class="pre">&quot;sparse_spline&quot;</span></code> uses sparse-LU + spline on
+<code class="docutils literal notranslate"><span class="pre">[max(rho_min,</span> <span class="pre">0),</span> <span class="pre">rho_max]</span></code> (<code class="docutils literal notranslate"><span class="pre">lndetint</span></code> style); <code class="docutils literal notranslate"><span class="pre">&quot;grid_mc&quot;</span></code>
+uses Monte Carlo trace approximation (<code class="docutils literal notranslate"><span class="pre">lndetmc</span></code>); <code class="docutils literal notranslate"><span class="pre">&quot;grid_ilu&quot;</span></code>
+uses ILU-based approximation (<code class="docutils literal notranslate"><span class="pre">lndetichol</span></code> analog);
+<code class="docutils literal notranslate"><span class="pre">&quot;chebyshev&quot;</span></code> (default for <code class="docutils literal notranslate"><span class="pre">n</span> <span class="pre">&gt;</span> <span class="pre">500</span></code>) uses a Chebyshev
+polynomial approximation evaluated via Clenshaw’s algorithm.
+For large <code class="docutils literal notranslate"><span class="pre">n</span></code> the Chebyshev coefficients are built from a
+stochastic trace estimator selected by <code class="docutils literal notranslate"><span class="pre">trace_estimator</span></code>.</p>
+</dd>
+<dt id="bayespecon.models.base.SpatialModel.__init__.trace_estimator"><span class="sig-name descname">trace_estimator</span><span class="p"> : </span><span class="desctype"><span class="desctype">{&quot;hutchinson&quot;, &quot;hutchpp&quot;, &quot;xtrace&quot;}, default &quot;hutchpp&quot;</span></span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.__init__.trace_estimator" title="Permalink to this definition">¶</a></dt><dd><p>Stochastic trace estimator used to build the Chebyshev
+coefficients when an eigendecomposition is unavailable.  Ignored
+for non-Chebyshev methods.  See
+<code class="docutils literal notranslate"><span class="pre">docs/source/user-guide/logdet_profiling.ipynb</span></code> for the
+cost/accuracy frontier.</p>
+</dd>
+<dt id="bayespecon.models.base.SpatialModel.__init__.trace_k"><span class="sig-name descname">trace_k</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a>, optional</span></span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.__init__.trace_k" title="Permalink to this definition">¶</a></dt><dd><p>Number of probe vectors for the trace estimator.  Defaults:
+<code class="docutils literal notranslate"><span class="pre">30</span></code> (hutchinson), <code class="docutils literal notranslate"><span class="pre">50</span></code> (hutchpp), <code class="docutils literal notranslate"><span class="pre">25</span></code> (xtrace).</p>
 </dd>
 <dt id="bayespecon.models.base.SpatialModel.__init__.robust"><span class="sig-name descname">robust</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a>, default False</span></span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.__init__.robust" title="Permalink to this definition">¶</a></dt><dd><p>If True, use a Student-t error distribution instead of Normal,
 yielding a model that is robust to heavy-tailed outliers. When
@@ -2990,9 +3433,86 @@ restrict which variables receive a spatial lag, e.g.
 </dl>
 </dd>
 </dl>
+<dl class="py attribute objdesc">
+<dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel._spatial_params">
+<span class="sig-name descname"><span class="pre">_spatial_params</span></span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel._spatial_params" title="Link to this definition">¶</a></dt>
+<dd><p>Spatial autoregressive parameters in the model (e.g. <code class="docutils literal notranslate"><span class="pre">(&quot;rho&quot;,)</span></code>
+for SAR, <code class="docutils literal notranslate"><span class="pre">(&quot;lam&quot;,)</span></code> for SEM).  Empty for OLS and SLX.</p>
+<dl class="field-list simple">
+<dt class="field-odd" id="bayespecon.models.base.SpatialModel._spatial_params-type">Type<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel._spatial_params-type" title="Permalink to this headline">¶</a></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a>, …]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute objdesc">
+<dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel._lag_terms">
+<span class="sig-name descname"><span class="pre">_lag_terms</span></span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel._lag_terms" title="Link to this definition">¶</a></dt>
+<dd><p>Lagged terms present in the model specification (e.g. <code class="docutils literal notranslate"><span class="pre">(&quot;Wy&quot;,)</span></code>
+for SAR, <code class="docutils literal notranslate"><span class="pre">(&quot;WX&quot;,)</span></code> for SLX, <code class="docutils literal notranslate"><span class="pre">(&quot;Wy&quot;,</span> <span class="pre">&quot;WX&quot;)</span></code> for SDM).</p>
+<dl class="field-list simple">
+<dt class="field-odd" id="bayespecon.models.base.SpatialModel._lag_terms-type">Type<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel._lag_terms-type" title="Permalink to this headline">¶</a></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)">tuple</a>[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a>, …]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute objdesc">
+<dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel._jacobian_param">
+<span class="sig-name descname"><span class="pre">_jacobian_param</span></span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel._jacobian_param" title="Link to this definition">¶</a></dt>
+<dd><p>Name of the parameter that appears in the Jacobian determinant
+<code class="docutils literal notranslate"><span class="pre">log|I</span> <span class="pre">-</span> <span class="pre">param</span> <span class="pre">*</span> <span class="pre">W|</span></code>.  <code class="docutils literal notranslate"><span class="pre">&quot;rho&quot;</span></code> for SAR/SDM, <code class="docutils literal notranslate"><span class="pre">&quot;lam&quot;</span></code> for
+SEM/SDEM, <code class="docutils literal notranslate"><span class="pre">None</span></code> for OLS/SLX (no Jacobian).</p>
+<dl class="field-list simple">
+<dt class="field-odd" id="bayespecon.models.base.SpatialModel._jacobian_param-type">Type<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel._jacobian_param-type" title="Permalink to this headline">¶</a></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a> or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute objdesc">
+<dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel._has_wx_in_beta">
+<span class="sig-name descname"><span class="pre">_has_wx_in_beta</span></span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel._has_wx_in_beta" title="Link to this definition">¶</a></dt>
+<dd><p>Whether the <code class="docutils literal notranslate"><span class="pre">beta</span></code> coefficient vector includes WX coefficients
+(i.e. whether the design matrix is <code class="docutils literal notranslate"><span class="pre">[X,</span> <span class="pre">WX]</span></code> rather than just
+<code class="docutils literal notranslate"><span class="pre">X</span></code>).  True for SLX, SDM, SDEM.</p>
+<dl class="field-list simple">
+<dt class="field-odd" id="bayespecon.models.base.SpatialModel._has_wx_in_beta-type">Type<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel._has_wx_in_beta-type" title="Permalink to this headline">¶</a></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute objdesc">
+<dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel._gibbs_class">
+<span class="sig-name descname"><span class="pre">_gibbs_class</span></span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel._gibbs_class" title="Link to this definition">¶</a></dt>
+<dd><p>Fully-qualified class name of the Gibbs sampler for this model
+(e.g. <code class="docutils literal notranslate"><span class="pre">&quot;GaussianSARGibbs&quot;</span></code>), or <code class="docutils literal notranslate"><span class="pre">None</span></code> if no Gibbs sampler
+exists.  Used to look up the sampler at runtime to avoid circular
+imports.</p>
+<dl class="field-list simple">
+<dt class="field-odd" id="bayespecon.models.base.SpatialModel._gibbs_class-type">Type<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel._gibbs_class-type" title="Permalink to this headline">¶</a></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a> or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute objdesc">
+<dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel._model_type">
+<span class="sig-name descname"><span class="pre">_model_type</span></span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel._model_type" title="Link to this definition">¶</a></dt>
+<dd><p>Short lowercase model name used as the <code class="docutils literal notranslate"><span class="pre">model_type</span></code> argument to
+the Gibbs sampler (e.g. <code class="docutils literal notranslate"><span class="pre">&quot;sar&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;sdm&quot;</span></code>).  Also used for
+InferenceData coordinate labels.</p>
+<dl class="field-list simple">
+<dt class="field-odd" id="bayespecon.models.base.SpatialModel._model_type-type">Type<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel._model_type-type" title="Permalink to this headline">¶</a></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py method objdesc">
 <dt class="sig sig-object highlight sig-wrap py" id="bayespecon.models.base.SpatialModel.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.formula" title="bayespecon.models.base.SpatialModel.__init__.formula (Python parameter) — Wilkinson-style formula string, e.g."><span class="n"><span class="pre">formula</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.data" title="bayespecon.models.base.SpatialModel.__init__.data (Python parameter) — Data source when using formula mode."><span class="n"><span class="pre">data</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.y" title="bayespecon.models.base.SpatialModel.__init__.y (Python parameter) — Dependent variable."><span class="n"><span class="pre">y</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.X" title="bayespecon.models.base.SpatialModel.__init__.X (Python parameter) — Predictor matrix."><span class="n"><span class="pre">X</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.W" title="bayespecon.models.base.SpatialModel.__init__.W (Python parameter) — Spatial weights matrix of shape (n, n)."><span class="n"><span class="pre">W</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.priors" title="bayespecon.models.base.SpatialModel.__init__.priors (Python parameter) — Override default priors."><span class="n"><span class="pre">priors</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.logdet_method" title="bayespecon.models.base.SpatialModel.__init__.logdet_method (Python parameter) — How to compute log|I - rho*W|."><span class="n"><span class="pre">logdet_method</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.robust" title="bayespecon.models.base.SpatialModel.__init__.robust (Python parameter) — If True, use a Student-t error distribution instead of Normal, yielding a model that is robust to heavy-tailed outliers."><span class="n"><span class="pre">robust</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.w_vars" title="bayespecon.models.base.SpatialModel.__init__.w_vars (Python parameter) — Names of X columns to spatially lag."><span class="n"><span class="pre">w_vars</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel" title="bayespecon.models.base.SpatialModel.__init__.backend (Python parameter)"><span class="n"><span class="pre">backend</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L308-L417"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.__init__" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.formula" title="bayespecon.models.base.SpatialModel.__init__.formula (Python parameter) — Wilkinson-style formula string, e.g."><span class="n"><span class="pre">formula</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.data" title="bayespecon.models.base.SpatialModel.__init__.data (Python parameter) — Data source when using formula mode."><span class="n"><span class="pre">data</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.y" title="bayespecon.models.base.SpatialModel.__init__.y (Python parameter) — Dependent variable."><span class="n"><span class="pre">y</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.X" title="bayespecon.models.base.SpatialModel.__init__.X (Python parameter) — Predictor matrix."><span class="n"><span class="pre">X</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.W" title="bayespecon.models.base.SpatialModel.__init__.W (Python parameter) — Spatial weights matrix of shape (n, n)."><span class="n"><span class="pre">W</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.priors" title="bayespecon.models.base.SpatialModel.__init__.priors (Python parameter) — Override default priors."><span class="n"><span class="pre">priors</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.logdet_method" title="bayespecon.models.base.SpatialModel.__init__.logdet_method (Python parameter) — How to compute log|I - rho*W|."><span class="n"><span class="pre">logdet_method</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.robust" title="bayespecon.models.base.SpatialModel.__init__.robust (Python parameter) — If True, use a Student-t error distribution instead of Normal, yielding a model that is robust to heavy-tailed outliers."><span class="n"><span class="pre">robust</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.w_vars" title="bayespecon.models.base.SpatialModel.__init__.w_vars (Python parameter) — Names of X columns to spatially lag."><span class="n"><span class="pre">w_vars</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel" title="bayespecon.models.base.SpatialModel.__init__.backend (Python parameter)"><span class="n"><span class="pre">backend</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.trace_estimator" title="bayespecon.models.base.SpatialModel.__init__.trace_estimator (Python parameter) — Stochastic trace estimator used to build the Chebyshev coefficients when an eigendecomposition is unavailable."><span class="n"><span class="pre">trace_estimator</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="s1">&#39;hutchpp&#39;</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.__init__.trace_k" title="bayespecon.models.base.SpatialModel.__init__.trace_k (Python parameter) — Number of probe vectors for the trace estimator."><span class="n"><span class="pre">trace_k</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L358-L471"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.__init__" title="Link to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <p class="rubric">Methods</p>
@@ -3037,7 +3557,7 @@ restrict which variables receive a spatial lag, e.g.
 </table>
 <dl class="py method objdesc">
 <dt class="sig sig-object highlight sig-wrap py" id="bayespecon.models.base.SpatialModel.fit">
-<span class="sig-name descname"><span class="pre">fit</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.draws" title="bayespecon.models.base.SpatialModel.fit.draws (Python parameter) — Number of posterior samples per chain (after tuning)."><span class="n"><span class="pre">draws</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">2000</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.tune" title="bayespecon.models.base.SpatialModel.fit.tune (Python parameter) — Number of tuning (burn-in) steps per chain."><span class="n"><span class="pre">tune</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">1000</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.chains" title="bayespecon.models.base.SpatialModel.fit.chains (Python parameter) — Number of parallel chains."><span class="n"><span class="pre">chains</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">4</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.target_accept" title="bayespecon.models.base.SpatialModel.fit.target_accept (Python parameter) — Target acceptance rate for NUTS."><span class="n"><span class="pre">target_accept</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">0.9</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.random_seed" title="bayespecon.models.base.SpatialModel.fit.random_seed (Python parameter) — Seed for reproducibility."><span class="n"><span class="pre">random_seed</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><span class="o"><span class="pre">**</span></span><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.sample_kwargs" title="bayespecon.models.base.SpatialModel.fit.sample_kwargs (Python parameter) — Additional keyword arguments forwarded to pm.sample."><span class="n"><span class="pre">sample_kwargs</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L838-L894"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fit" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">fit</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.draws" title="bayespecon.models.base.SpatialModel.fit.draws (Python parameter) — Number of posterior samples per chain (after tuning)."><span class="n"><span class="pre">draws</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">2000</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.tune" title="bayespecon.models.base.SpatialModel.fit.tune (Python parameter) — Number of tuning (burn-in) steps per chain."><span class="n"><span class="pre">tune</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">1000</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.chains" title="bayespecon.models.base.SpatialModel.fit.chains (Python parameter) — Number of parallel chains."><span class="n"><span class="pre">chains</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mi">4</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.target_accept" title="bayespecon.models.base.SpatialModel.fit.target_accept (Python parameter) — Target acceptance rate for NUTS."><span class="n"><span class="pre">target_accept</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">0.9</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.random_seed" title="bayespecon.models.base.SpatialModel.fit.random_seed (Python parameter) — Seed for reproducibility."><span class="n"><span class="pre">random_seed</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.progressbar" title="bayespecon.models.base.SpatialModel.fit.progressbar (Python parameter) — Show progress bar during sampling."><span class="n"><span class="pre">progressbar</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">True</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><span class="o"><span class="pre">**</span></span><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.fit.sample_kwargs" title="bayespecon.models.base.SpatialModel.fit.sample_kwargs (Python parameter) — Additional keyword arguments forwarded to pm.sample."><span class="n"><span class="pre">sample_kwargs</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L908-L958"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fit" title="Link to this definition">¶</a></dt>
 <dd><p>Draw samples from the posterior.</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.models.base.SpatialModel.fit-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fit-parameters" title="Permalink to this headline">¶</a></dt>
@@ -3051,6 +3571,8 @@ restrict which variables receive a spatial lag, e.g.
 <dt id="bayespecon.models.base.SpatialModel.fit.target_accept"><span class="sig-name descname">target_accept</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></span></span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fit.target_accept" title="Permalink to this definition">¶</a></dt><dd><p>Target acceptance rate for NUTS.</p>
 </dd>
 <dt id="bayespecon.models.base.SpatialModel.fit.random_seed"><span class="sig-name descname">random_seed</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)">int</a>, optional</span></span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fit.random_seed" title="Permalink to this definition">¶</a></dt><dd><p>Seed for reproducibility.</p>
+</dd>
+<dt id="bayespecon.models.base.SpatialModel.fit.progressbar"><span class="sig-name descname">progressbar</span><span class="p"> : </span><span class="desctype"><span class="desctype"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)">bool</a>, default True</span></span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fit.progressbar" title="Permalink to this definition">¶</a></dt><dd><p>Show progress bar during sampling.</p>
 </dd>
 <dt id="bayespecon.models.base.SpatialModel.fit.sample_kwargs"><span class="o">**</span><span class="n sig-name">sample_kwargs</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fit.sample_kwargs" title="Permalink to this definition">¶</a></dt><dd><p>Additional keyword arguments forwarded to <code class="docutils literal notranslate"><span class="pre">pm.sample</span></code>.  Pass
 <code class="docutils literal notranslate"><span class="pre">nuts_sampler=&quot;blackjax&quot;</span></code> (or <code class="docutils literal notranslate"><span class="pre">&quot;numpyro&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;nutpie&quot;</span></code>) to
@@ -3067,7 +3589,7 @@ sampler.</p>
 
 <dl class="py method objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel.fitted_values">
-<span class="sig-name descname"><span class="pre">fitted_values</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1421-L1430"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fitted_values" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">fitted_values</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1756-L1765"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fitted_values" title="Link to this definition">¶</a></dt>
 <dd><p>Return fitted values at posterior mean parameters.</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.models.base.SpatialModel.fitted_values-returns">Returns<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.fitted_values-returns" title="Permalink to this headline">¶</a></dt>
@@ -3116,7 +3638,7 @@ has not been fit yet.</p>
 
 <dl class="py method objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel.residuals">
-<span class="sig-name descname"><span class="pre">residuals</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1432-L1441"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.residuals" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">residuals</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1767-L1776"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.residuals" title="Link to this definition">¶</a></dt>
 <dd><p>Return residuals on the observed scale.</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.models.base.SpatialModel.residuals-returns">Returns<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.residuals-returns" title="Permalink to this headline">¶</a></dt>
@@ -3130,9 +3652,9 @@ has not been fit yet.</p>
 
 <dl class="py method objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel.spatial_diagnostics">
-<span class="sig-name descname"><span class="pre">spatial_diagnostics</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1077-L1140"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.spatial_diagnostics" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">spatial_diagnostics</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1404-L1475"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.spatial_diagnostics" title="Link to this definition">¶</a></dt>
 <dd><p>Run Bayesian LM specification tests and return a summary table.</p>
-<p>Iterates over the class-level <code class="docutils literal notranslate"><span class="pre">_spatial_diagnostics_tests</span></code> registry
+<p>Looks up the diagnostic suite registered for this model class
 and calls each test function on this fitted model, collecting the
 results into a tidy DataFrame.  The set of tests depends on the
 model type — for example, an OLS model runs LM-Lag, LM-Error,
@@ -3209,9 +3731,9 @@ time.</p>
 
 <dl class="py method objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel.spatial_diagnostics_decision">
-<span class="sig-name descname"><span class="pre">spatial_diagnostics_decision</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.spatial_diagnostics_decision.alpha" title="bayespecon.models.base.SpatialModel.spatial_diagnostics_decision.alpha (Python parameter) — Significance level for the Bayesian p-values."><span class="n"><span class="pre">alpha</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">0.05</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.spatial_diagnostics_decision.format" title="bayespecon.models.base.SpatialModel.spatial_diagnostics_decision.format (Python parameter) — Output format."><span class="n"><span class="pre">format</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="s1">&#39;graphviz&#39;</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1142-L1283"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.spatial_diagnostics_decision" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">spatial_diagnostics_decision</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.spatial_diagnostics_decision.alpha" title="bayespecon.models.base.SpatialModel.spatial_diagnostics_decision.alpha (Python parameter) — Significance level for the Bayesian p-values."><span class="n"><span class="pre">alpha</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="mf">0.05</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.spatial_diagnostics_decision.format" title="bayespecon.models.base.SpatialModel.spatial_diagnostics_decision.format (Python parameter) — Output format."><span class="n"><span class="pre">format</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="s1">&#39;graphviz&#39;</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1477-L1618"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.spatial_diagnostics_decision" title="Link to this definition">¶</a></dt>
 <dd><p>Return a model-selection decision from Bayesian LM test results.</p>
-<p>Implements the decision tree from <span class="bibtex-citation" id="id3">Koley and Bera [<a class="reference internal" href="../references.html#id23" title="Malabika Koley and Anil K. Bera. To use, or not to use the spatial Durbin model? – that is the question. Spatial Economic Analysis, 19(1):30–56, 2024. URL: https://doi.org/10.1080/17421772.2023.2256810 (visited on 2025-05-21), doi:10.1080/17421772.2023.2256810.">2024</a>]</span>
+<p>Implements the decision tree from <span class="bibtex-citation" id="id3">Koley and Bera [<a class="reference internal" href="../references.html#id25" title="Malabika Koley and Anil K. Bera. To use, or not to use the spatial Durbin model? – that is the question. Spatial Economic Analysis, 19(1):30–56, 2024. URL: https://doi.org/10.1080/17421772.2023.2256810 (visited on 2025-05-21), doi:10.1080/17421772.2023.2256810.">2024</a>]</span>
 (the Bayesian analogue of the classical <code class="docutils literal notranslate"><span class="pre">stge_kb</span></code> procedure
 in <span class="bibtex-citation" id="id4">Anselin <em>et al.</em> [<a class="reference internal" href="../references.html#id4" title="Luc Anselin, Anil Bera, Raymond J G M Florax, and M Yoon. Simple diagnostic tests for spatial dependence. Regional Science and Urban Economics, 26:77–104, 1996. doi:10.1016/0166-0462(95)02111-6.">1996</a>]</span>).  The decision logic
 depends on the current model type and the pattern of significant
@@ -3275,17 +3797,17 @@ string when <code class="docutils literal notranslate"><span class="pre">format=
 </dl>
 </div>
 <p class="rubric">References</p>
-<p><span class="bibtex-citation" id="id5">Koley and Bera [<a class="reference internal" href="../references.html#id23" title="Malabika Koley and Anil K. Bera. To use, or not to use the spatial Durbin model? – that is the question. Spatial Economic Analysis, 19(1):30–56, 2024. URL: https://doi.org/10.1080/17421772.2023.2256810 (visited on 2025-05-21), doi:10.1080/17421772.2023.2256810.">2024</a>]</span>, <span class="bibtex-citation" id="id6">Anselin <em>et al.</em> [<a class="reference internal" href="../references.html#id4" title="Luc Anselin, Anil Bera, Raymond J G M Florax, and M Yoon. Simple diagnostic tests for spatial dependence. Regional Science and Urban Economics, 26:77–104, 1996. doi:10.1016/0166-0462(95)02111-6.">1996</a>]</span></p>
+<p><span class="bibtex-citation" id="id5">Koley and Bera [<a class="reference internal" href="../references.html#id25" title="Malabika Koley and Anil K. Bera. To use, or not to use the spatial Durbin model? – that is the question. Spatial Economic Analysis, 19(1):30–56, 2024. URL: https://doi.org/10.1080/17421772.2023.2256810 (visited on 2025-05-21), doi:10.1080/17421772.2023.2256810.">2024</a>]</span>, <span class="bibtex-citation" id="id6">Anselin <em>et al.</em> [<a class="reference internal" href="../references.html#id4" title="Luc Anselin, Anil Bera, Raymond J G M Florax, and M Yoon. Simple diagnostic tests for spatial dependence. Regional Science and Urban Economics, 26:77–104, 1996. doi:10.1016/0166-0462(95)02111-6.">1996</a>]</span></p>
 </dd></dl>
 
 <dl class="py method objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel.spatial_effects">
-<span class="sig-name descname"><span class="pre">spatial_effects</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.spatial_effects.return_posterior_samples" title="bayespecon.models.base.SpatialModel.spatial_effects.return_posterior_samples (Python parameter) — If True, return a (DataFrame, dict) tuple where the dict contains the full posterior draws under keys &quot;direct&quot;, &quot;indirect&quot;, and &quot;total&quot;."><span class="n"><span class="pre">return_posterior_samples</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1285-L1365"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.spatial_effects" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">spatial_effects</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.spatial_effects.return_posterior_samples" title="bayespecon.models.base.SpatialModel.spatial_effects.return_posterior_samples (Python parameter) — If True, return a (DataFrame, dict) tuple where the dict contains the full posterior draws under keys &quot;direct&quot;, &quot;indirect&quot;, and &quot;total&quot;."><span class="n"><span class="pre">return_posterior_samples</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">False</span></code></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1620-L1700"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.spatial_effects" title="Link to this definition">¶</a></dt>
 <dd><p>Compute Bayesian inference for direct, indirect, and total impacts.</p>
 <p>Computes impact measures for each posterior draw, then summarises
 the posterior distribution with means, 95% credible intervals, and
 Bayesian p-values.  This is the fully Bayesian analog of the
-simulation-based approach in <span class="bibtex-citation" id="id7">LeSage and Pace [<a class="reference internal" href="../references.html#id25" title="J LeSage and R K Pace. Introduction to Spatial Econometrics. CRC Press, 2009.">2009</a>]</span>
+simulation-based approach in <span class="bibtex-citation" id="id7">LeSage and Pace [<a class="reference internal" href="../references.html#id27" title="J LeSage and R K Pace. Introduction to Spatial Econometrics. CRC Press, 2009.">2009</a>]</span>
 and the asymptotic variance formulas in
 <span class="bibtex-citation" id="id8">Arbia <em>et al.</em> [<a class="reference internal" href="../references.html#id6" title="Giuseppe Arbia, Anil K. Bera, Osman Doğan, and Süleyman Taş pınar. Testing Impact Measures in Spatial Autoregressive Models. International Regional Science Review, 43(1-2):40–75, January 2020. URL: https://doi.org/10.1177/0160017619826264 (visited on 2023-11-18), doi:10.1177/0160017619826264.">2020</a>]</span>.</p>
 <p>Models without a spatial lag on y do not exhibit global
@@ -3320,7 +3842,7 @@ to a <code class="docutils literal notranslate"><span class="pre">(G,</span> <sp
 
 <dl class="py method objdesc">
 <dt class="sig sig-object highlight py" id="bayespecon.models.base.SpatialModel.summary">
-<span class="sig-name descname"><span class="pre">summary</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.summary.var_names" title="bayespecon.models.base.SpatialModel.summary.var_names (Python parameter) — Variable names to include in the summary."><span class="n"><span class="pre">var_names</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><span class="o"><span class="pre">**</span></span><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.summary.kwargs" title="bayespecon.models.base.SpatialModel.summary.kwargs (Python parameter) — Additional arguments passed to arviz.summary()."><span class="n"><span class="pre">kwargs</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L986-L1003"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.summary" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">summary</span></span><span class="sig-paren">(</span><span class="sig-param-decl"><em class="sig-param"><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.summary.var_names" title="bayespecon.models.base.SpatialModel.summary.var_names (Python parameter) — Variable names to include in the summary."><span class="n"><span class="pre">var_names</span></span></a><span class="o"><span class="pre">=</span></span><code class="code python default_value docutils literal highlight highlight-python"><span class="kc">None</span></code></em>, </span><span class="sig-param-decl"><em class="sig-param"><span class="o"><span class="pre">**</span></span><a class="n reference internal" href="#bayespecon.models.base.SpatialModel.summary.kwargs" title="bayespecon.models.base.SpatialModel.summary.kwargs (Python parameter) — Additional arguments passed to arviz.summary()."><span class="n"><span class="pre">kwargs</span></span></a></em></span><span class="sig-paren">)</span><a class="reference external" href="https://github.com/pysal/bayespecon/blob/main/bayespecon/models/base.py#L1336-L1353"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#bayespecon.models.base.SpatialModel.summary" title="Link to this definition">¶</a></dt>
 <dd><p>Return posterior summary table.</p>
 <dl class="field-list simple">
 <dt class="field-odd" id="bayespecon.models.base.SpatialModel.summary-parameters">Parameters<span class="colon">:</span><a class="headerlink" href="#bayespecon.models.base.SpatialModel.summary-parameters" title="Permalink to this headline">¶</a></dt>

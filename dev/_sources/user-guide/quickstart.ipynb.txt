@@ -113,6 +113,13 @@
    "cell_type": "markdown",
    "metadata": {},
    "source": [
+    "Notice all the estimated beta parameters are biased upward."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
     "### Use `arviz` to inspect fit\n",
     "\n",
     "the `fit` method attaches an `inference_data` object to each model that can be used directly with `arviz` functions"
@@ -246,47 +253,6 @@
    "source": [
     "effects = sar.spatial_effects()\n",
     "effects"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "## 7. Access the PyMC Model for Customization\n",
-    "\n",
-    "Every `bayespecon` model compiles to a `pymc.Model` object. You can inspect it, add custom variables, or re-sample with different settings."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# The PyMC model is available as a property\n",
-    "pm_model = sar.pymc_model\n",
-    "print(pm_model)\n",
-    "\n",
-    "# List all named variables\n",
-    "print(\"Named vars:\", list(pm_model.named_vars.keys()))"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "## Summary\n",
-    "\n",
-    "In this quickstart we:\n",
-    "\n",
-    "1. Loaded spatial data and built a queen contiguity weights matrix\n",
-    "2. Fit a baseline OLS model\n",
-    "3. Ran Bayesian LM diagnostics to detect spatial dependence\n",
-    "4. Used the decision tree to recommend a SAR model\n",
-    "5. Fit the SAR model and computed spatial effects\n",
-    "6. Accessed the underlying PyMC model for further customization\n",
-    "\n",
-    "For more advanced topics (panel models, flow models, negative binomial counts, robust regression, bridge sampling for Bayes factors), see the other notebooks in this guide."
    ]
   },
   {

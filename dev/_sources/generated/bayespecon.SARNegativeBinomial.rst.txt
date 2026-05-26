@@ -1,0 +1,36 @@
+﻿bayespecon.SARNegativeBinomial
+==============================
+
+.. currentmodule:: bayespecon
+
+.. autoclass:: SARNegativeBinomial
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~SARNegativeBinomial.__init__
+      ~SARNegativeBinomial.fit
+      ~SARNegativeBinomial.fitted_values
+      ~SARNegativeBinomial.residuals
+      ~SARNegativeBinomial.spatial_diagnostics
+      ~SARNegativeBinomial.spatial_diagnostics_decision
+      ~SARNegativeBinomial.spatial_effects
+      ~SARNegativeBinomial.summary
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~SARNegativeBinomial.inference_data
+      ~SARNegativeBinomial.pymc_model
+   
+   

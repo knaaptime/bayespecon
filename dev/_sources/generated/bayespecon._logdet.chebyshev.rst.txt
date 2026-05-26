@@ -1,0 +1,6 @@
+﻿bayespecon.\_logdet.chebyshev
+=============================
+
+.. currentmodule:: bayespecon._logdet
+
+.. autofunction:: chebyshev

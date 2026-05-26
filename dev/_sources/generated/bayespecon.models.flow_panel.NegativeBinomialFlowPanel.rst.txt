@@ -1,0 +1,37 @@
+﻿bayespecon.models.flow\_panel.NegativeBinomialFlowPanel
+=======================================================
+
+.. currentmodule:: bayespecon.models.flow_panel
+
+.. autoclass:: NegativeBinomialFlowPanel
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~NegativeBinomialFlowPanel.__init__
+      ~NegativeBinomialFlowPanel.fit
+      ~NegativeBinomialFlowPanel.fit_approx
+      ~NegativeBinomialFlowPanel.posterior_predictive
+      ~NegativeBinomialFlowPanel.spatial_diagnostics
+      ~NegativeBinomialFlowPanel.spatial_diagnostics_decision
+      ~NegativeBinomialFlowPanel.spatial_effects
+      ~NegativeBinomialFlowPanel.summary
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~NegativeBinomialFlowPanel.approximation
+      ~NegativeBinomialFlowPanel.inference_data
+      ~NegativeBinomialFlowPanel.pymc_model
+   
+   

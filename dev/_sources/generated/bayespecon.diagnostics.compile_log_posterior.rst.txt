@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.compile\_log\_posterior
+==============================================
+
+.. currentmodule:: bayespecon.diagnostics
+
+.. autofunction:: compile_log_posterior

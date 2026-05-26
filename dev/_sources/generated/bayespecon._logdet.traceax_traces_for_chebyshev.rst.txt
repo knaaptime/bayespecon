@@ -1,0 +1,6 @@
+﻿bayespecon.\_logdet.traceax\_traces\_for\_chebyshev
+===================================================
+
+.. currentmodule:: bayespecon._logdet
+
+.. autofunction:: traceax_traces_for_chebyshev

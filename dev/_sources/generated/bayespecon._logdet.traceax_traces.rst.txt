@@ -1,0 +1,6 @@
+﻿bayespecon.\_logdet.traceax\_traces
+===================================
+
+.. currentmodule:: bayespecon._logdet
+
+.. autofunction:: traceax_traces

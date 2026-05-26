@@ -1,0 +1,23 @@
+﻿bayespecon.GibbsEstimation
+==========================
+
+.. currentmodule:: bayespecon
+
+.. autoclass:: GibbsEstimation
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~GibbsEstimation.__init__
+      ~GibbsEstimation.fit
+   
+   
+
+   
+   
+   

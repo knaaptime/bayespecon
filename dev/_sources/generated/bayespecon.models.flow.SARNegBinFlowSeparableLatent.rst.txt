@@ -1,0 +1,37 @@
+﻿bayespecon.models.flow.SARNegBinFlowSeparableLatent
+===================================================
+
+.. currentmodule:: bayespecon.models.flow
+
+.. autoclass:: SARNegBinFlowSeparableLatent
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~SARNegBinFlowSeparableLatent.__init__
+      ~SARNegBinFlowSeparableLatent.fit
+      ~SARNegBinFlowSeparableLatent.fit_approx
+      ~SARNegBinFlowSeparableLatent.posterior_predictive
+      ~SARNegBinFlowSeparableLatent.spatial_diagnostics
+      ~SARNegBinFlowSeparableLatent.spatial_diagnostics_decision
+      ~SARNegBinFlowSeparableLatent.spatial_effects
+      ~SARNegBinFlowSeparableLatent.summary
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~SARNegBinFlowSeparableLatent.approximation
+      ~SARNegBinFlowSeparableLatent.inference_data
+      ~SARNegBinFlowSeparableLatent.pymc_model
+   
+   

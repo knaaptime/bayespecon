@@ -1,0 +1,6 @@
+﻿bayespecon.\_logdet.make\_flow\_separable\_logdet\_numpy
+========================================================
+
+.. currentmodule:: bayespecon._logdet
+
+.. autofunction:: make_flow_separable_logdet_numpy

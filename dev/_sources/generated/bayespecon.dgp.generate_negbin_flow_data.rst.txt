@@ -1,0 +1,6 @@
+﻿bayespecon.dgp.generate\_negbin\_flow\_data
+===========================================
+
+.. currentmodule:: bayespecon.dgp
+
+.. autofunction:: generate_negbin_flow_data

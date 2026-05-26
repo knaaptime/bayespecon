@@ -1,6 +1,0 @@
-﻿bayespecon.logdet.mc
-====================
-
-.. currentmodule:: bayespecon.logdet
-
-.. autofunction:: mc
