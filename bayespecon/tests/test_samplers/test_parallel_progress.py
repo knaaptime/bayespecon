@@ -21,7 +21,6 @@ from bayespecon.samplers._utils._progress import (
     _SharedCounterReporter,
 )
 
-
 # ---------------------------------------------------------------------------
 # Module-level helpers (need to be picklable for loky worker tests).
 # ---------------------------------------------------------------------------
