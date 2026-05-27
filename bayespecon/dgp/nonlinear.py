@@ -205,3 +205,155 @@ def simulate_spatial_probit(
             "n_per_region": n_per_region,
         },
     }
+
+
+def simulate_sar_logit(
+    W=None,
+    gdf=None,
+    n: int | None = None,
+    rho: float = 0.35,
+    beta: np.ndarray | None = None,
+    rng: np.random.Generator | None = None,
+    seed: int | None = None,
+    contiguity: str = "queen",
+    **kwargs,
+) -> dict:
+    """Simulate SAR-logit binary outcome data.
+
+    DGP
+    ---
+    ``eta = (I - rho W)^{-1} (X beta + nu)``, ``nu ~ N(0, I)``,
+    ``y ~ Bernoulli(logit^{-1}(eta))``.
+
+    Parameters
+    ----------
+    W, gdf
+        Spatial unit structure. If ``W`` is provided it takes precedence;
+        otherwise ``gdf`` is used with ``contiguity``.
+    rho : float, default=0.35
+        Spatial autoregressive parameter.
+    beta : np.ndarray, optional
+        Coefficients including intercept. Defaults to ``[0.3, 1.0]``.
+    rng, seed
+        Random state controls.
+    contiguity : str, default="queen"
+        GeoDataFrame neighbor rule when ``W`` is omitted.
+
+    Returns
+    -------
+    dict
+        Keys: ``y``, ``X``, ``W_sparse``, ``W_graph``, ``eta_true``,
+        ``params_true``.
+    """
+    rng = ensure_rng(rng, seed)
+    Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
+    n_obs = Wd.shape[0]
+
+    if beta is None:
+        beta = np.array([0.3, 1.0], dtype=float)
+    beta = np.asarray(beta, dtype=float)
+
+    import scipy.sparse as sp
+
+    W_sparse = sp.csr_matrix(Wd)
+
+    X = make_design_matrix(rng, n_obs, k=max(len(beta) - 1, 0), add_intercept=True)
+
+    # Generate latent field: eta = (I - rho W)^{-1} (X beta + nu)
+    nu = rng.standard_normal(n_obs)
+    Xbeta = X @ beta
+    A_rho_inv = sp.linalg.spsolve(
+        sp.eye(n_obs, format="csr") - rho * W_sparse, Xbeta + nu
+    )
+    eta = A_rho_inv
+
+    # Binary response: y ~ Bernoulli(logit^{-1}(eta))
+    probs = 1.0 / (1.0 + np.exp(-eta))
+    y = rng.binomial(1, probs).astype(float)
+
+    return {
+        "y": y,
+        "X": X,
+        "W_sparse": W_sparse,
+        "W_graph": Wg,
+        "eta_true": eta,
+        "params_true": {
+            "rho": rho,
+            "beta": beta,
+        },
+    }
+
+
+def simulate_sem_logit(
+    W=None,
+    gdf=None,
+    n: int | None = None,
+    lam: float = 0.35,
+    beta: np.ndarray | None = None,
+    rng: np.random.Generator | None = None,
+    seed: int | None = None,
+    contiguity: str = "queen",
+    **kwargs,
+) -> dict:
+    """Simulate SEM-logit binary outcome data.
+
+    DGP
+    ---
+    ``eta = X beta + (I - lam W)^{-1} nu``, ``nu ~ N(0, I)``,
+    ``y ~ Bernoulli(logit^{-1}(eta))``.
+
+    Parameters
+    ----------
+    W, gdf
+        Spatial unit structure. If ``W`` is provided it takes precedence;
+        otherwise ``gdf`` is used with ``contiguity``.
+    lam : float, default 0.35
+        Spatial error parameter.
+    beta : np.ndarray, optional
+        Coefficients including intercept. Defaults to ``[0.3, 1.0]``.
+    rng, seed
+        Random state controls.
+    contiguity : str, default "queen"
+        GeoDataFrame neighbor rule when ``W`` is omitted.
+
+    Returns
+    -------
+    dict
+        Keys: ``y``, ``X``, ``W_sparse``, ``W_graph``, ``eta_true``,
+        ``params_true``.
+    """
+    rng = ensure_rng(rng, seed)
+    Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
+    n_obs = Wd.shape[0]
+
+    if beta is None:
+        beta = np.array([0.3, 1.0], dtype=float)
+    beta = np.asarray(beta, dtype=float)
+
+    import scipy.sparse as sp
+
+    W_sparse = sp.csr_matrix(Wd)
+
+    X = make_design_matrix(rng, n_obs, k=max(len(beta) - 1, 0), add_intercept=True)
+
+    # Generate latent field: eta = X beta + (I - lam W)^{-1} nu
+    nu = rng.standard_normal(n_obs)
+    Xbeta = X @ beta
+    A_lam_inv = sp.linalg.spsolve(sp.eye(n_obs, format="csr") - lam * W_sparse, nu)
+    eta = Xbeta + A_lam_inv
+
+    # Binary response: y ~ Bernoulli(logit^{-1}(eta))
+    probs = 1.0 / (1.0 + np.exp(-eta))
+    y = rng.binomial(1, probs).astype(float)
+
+    return {
+        "y": y,
+        "X": X,
+        "W_sparse": W_sparse,
+        "W_graph": Wg,
+        "eta_true": eta,
+        "params_true": {
+            "lam": lam,
+            "beta": beta,
+        },
+    }

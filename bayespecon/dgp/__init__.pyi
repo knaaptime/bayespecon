@@ -68,10 +68,16 @@ from .flows import (
     generate_sem_flow_data_separable as generate_sem_flow_data_separable,
 )
 from .nonlinear import (
+    simulate_sar_logit as simulate_sar_logit,
+)
+from .nonlinear import (
     simulate_sar_tobit as simulate_sar_tobit,
 )
 from .nonlinear import (
     simulate_sdm_tobit as simulate_sdm_tobit,
+)
+from .nonlinear import (
+    simulate_sem_logit as simulate_sem_logit,
 )
 from .nonlinear import (
     simulate_sem_tobit as simulate_sem_tobit,

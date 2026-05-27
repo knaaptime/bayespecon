@@ -176,12 +176,48 @@ class SpatialProbitPriors:
     sigma_a_sigma: float = 2.0
 
 
+@dataclass(frozen=True)
+class SpatialLogitPriors:
+    """Priors for :class:`bayespecon.models.SARSpatialLogit`.
+
+    Like :class:`SpatialProbitPriors` but without ``sigma_a_sigma``
+    (the logit model has no regional random effect).  There is no
+    ``sigma`` parameter because the logit link absorbs the noise scale.
+    """
+
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+    beta_mu: float = 0.0
+    beta_sigma: float = 10.0
+
+
+@dataclass
+class SEMSpatialLogitPriors:
+    """Priors for :class:`bayespecon.models.SEMSpatialLogit`.
+
+    Like :class:`SpatialLogitPriors` but with ``lam_lower``/``lam_upper``
+    instead of ``rho_lower``/``rho_upper``.
+    """
+
+    lam_lower: float = -0.999
+    lam_upper: float = 0.999
+    beta_mu: float = 0.0
+    beta_sigma: float = 10.0
+
+
 # ---------------------------------------------------------------------------
 # Resolution helper
 # ---------------------------------------------------------------------------
 
 
-PriorsLike = Union[Mapping[str, Any], BasePriors, "SpatialProbitPriors", None]
+PriorsLike = Union[
+    Mapping[str, Any],
+    BasePriors,
+    "SpatialProbitPriors",
+    "SpatialLogitPriors",
+    "SEMSpatialLogitPriors",
+    None,
+]
 
 
 def resolve_priors(
@@ -435,6 +471,8 @@ __all__ = [
     "SEMTobitPriors",
     "SDMTobitPriors",
     "SpatialProbitPriors",
+    "SpatialLogitPriors",
+    "SEMSpatialLogitPriors",
     "PanelBasePriors",
     "PanelOLSPriors",
     "PanelSLXPriors",

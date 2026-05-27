@@ -193,11 +193,11 @@ class GibbsProgressBarManager:
             ipy_widget = getattr(self._progress.live, "ipy_widget", None)
             if ipy_widget is not None:
                 with ipy_widget:
-                    self._progress.console.print(summary)
+                    print(summary)
                 self._progress.__exit__(*args)
             else:
                 self._progress.__exit__(*args)
-                self._progress.console.print(summary)
+                print(summary)
 
     def start_chain(self, chain_idx: int) -> None:
         """Record the start time for a chain.
@@ -515,11 +515,11 @@ class _ParallelProgressRenderer:
         ipy_widget = getattr(self._progress.live, "ipy_widget", None)
         if ipy_widget is not None:
             with ipy_widget:
-                self._progress.console.print(summary)
+                print(summary)
             self._progress.__exit__(*args)
         else:
             self._progress.__exit__(*args)
-            self._progress.console.print(summary)
+            print(summary)
 
     def _apply_snapshot(
         self,

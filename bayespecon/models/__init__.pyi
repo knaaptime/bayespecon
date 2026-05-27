@@ -110,7 +110,9 @@ from .sar_negbin_latent import SARNegBinLatent as SARNegativeBinomialLatent
 from .sdem import SDEM as SDEM
 from .sdm import SDM as SDM
 from .sem import SEM as SEM
+from .sem_spatial_logit import SEMSpatialLogit as SEMSpatialLogit
 from .slx import SLX as SLX
+from .spatial_logit import SARSpatialLogit as SARSpatialLogit
 from .spatial_probit import SpatialProbit as SpatialProbit
 from .tobit import (
     SARTobit as SARTobit,

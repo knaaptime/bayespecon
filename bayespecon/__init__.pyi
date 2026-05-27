@@ -167,6 +167,9 @@ from .models import (
     SARPanelTobit as SARPanelTobit,
 )
 from .models import (
+    SARSpatialLogit as SARSpatialLogit,
+)
+from .models import (
     SARTobit as SARTobit,
 )
 from .models import (
@@ -207,6 +210,9 @@ from .models import (
 )
 from .models import (
     SEMPanelTobit as SEMPanelTobit,
+)
+from .models import (
+    SEMSpatialLogit as SEMSpatialLogit,
 )
 from .models import (
     SEMTobit as SEMTobit,
