@@ -21,27 +21,27 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from .._backends.sampler_helpers import (
+from ..._backends.sampler_helpers import (
     enforce_c_backend,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
 )
-from .._logdet import (
+from ..._logdet import (
     compute_flow_traces,
     flow_logdet_numpy,
     flow_logdet_pytensor,
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from .._logdet._flow import _flow_logdet_poly_coeffs
-from .._ops import kron_solve_matrix
-from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
-from .base import SpatialModel
-from .flow import (
+from ..._logdet._flow import _flow_logdet_poly_coeffs
+from ..._ops import kron_solve_matrix
+from ...graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
+from ..base import SpatialModel
+from ..flow import (
     _build_flow_effect_masks,
     _compute_flow_effects_lesage,
 )
-from .panel_base import _demean_panel
+from ..panel_base import _demean_panel
 
 
 class FlowPanelModel(ABC):
@@ -514,8 +514,8 @@ class FlowPanelModel(ABC):
         NotImplementedError
             If the model is not a separable SAR flow panel model.
         """
-        from ..samplers._utils._idata import gibbs_to_inference_data
-        from ..samplers.panel_flow import (
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.panel_flow import (
             PanelGaussianPriors,
             run_gaussian_panel_flow_chain,
         )
@@ -637,7 +637,7 @@ class FlowPanelModel(ABC):
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
-        from ..diagnostics.lmtests.registry import get_diagnostic_suite
+        from ...diagnostics.lmtests.registry import get_diagnostic_suite
 
         suite = get_diagnostic_suite(self)
         if suite is None:
@@ -671,7 +671,7 @@ class FlowPanelModel(ABC):
         -------
         str or graphviz.Digraph
         """
-        from ..diagnostics import _decision_trees as _dt
+        from ...diagnostics import _decision_trees as _dt
 
         diag = self.spatial_diagnostics()
         model_type = self.__class__.__name__
@@ -814,8 +814,8 @@ class FlowPanelModel(ABC):
         ``mode`` semantics (auto / combined / separate destination-origin
         sides per Thomas-Agnan & LeSage 2014, §83.5.2).
         """
-        from ..diagnostics.spatial_effects import _compute_bayesian_pvalue
-        from .flow import _EFFECT_KEYS
+        from ...diagnostics.spatial_effects import _compute_bayesian_pvalue
+        from ..flow import _EFFECT_KEYS
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
@@ -1024,7 +1024,7 @@ class FlowPanelModel(ABC):
             rho_w_draws = rho_w_draws[:n_draws_total]
             beta_draws = beta_draws[:n_draws_total]
 
-        from .flow import _EFFECT_KEYS
+        from ..flow import _EFFECT_KEYS
 
         out: dict[str, np.ndarray] = {}
         for side in ("dest", "orig"):
@@ -1104,7 +1104,7 @@ class FlowPanelModel(ABC):
             rho_o_draws = rho_o_draws[:n_draws_total]
             beta_draws = beta_draws[:n_draws_total]
 
-        from .flow import _EFFECT_KEYS
+        from ..flow import _EFFECT_KEYS
 
         out: dict[str, np.ndarray] = {}
         for side in ("dest", "orig"):
@@ -1578,7 +1578,7 @@ class PoissonSARFlowPanel(FlowPanelModel):
         self._y_int_vec: np.ndarray = y_arr.reshape(-1).astype(np.int64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import SparseFlowSolveMatrixOp
+        from ..._ops import SparseFlowSolveMatrixOp
 
         if self.logdet_method != "traces":
             raise ValueError(
@@ -1790,7 +1790,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         self._y_int_vec: np.ndarray = y_arr.reshape(-1).astype(np.int64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import KroneckerFlowSolveMatrixOp
+        from ..._ops import KroneckerFlowSolveMatrixOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -2035,7 +2035,7 @@ class OLSFlowPanel(FlowPanelModel):
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
 
         # Local import avoids a circular import at module load time.
-        from .flow import _EFFECT_KEYS
+        from ..flow import _EFFECT_KEYS
 
         idata = self._idata
         n = self._n
@@ -2221,7 +2221,7 @@ class NegativeBinomialSARFlowPanel(PoissonSARFlowPanel):
     """Panel NB2 SAR flow model with unrestricted dependence parameters."""
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import SparseFlowSolveMatrixOp
+        from ..._ops import SparseFlowSolveMatrixOp
 
         if self.logdet_method != "traces":
             raise ValueError(
@@ -2290,7 +2290,7 @@ class NegativeBinomialSARFlowSeparablePanel(PoissonSARFlowSeparablePanel):
     """Panel separable NB2 SAR flow model."""
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import KroneckerFlowSolveMatrixOp
+        from ..._ops import KroneckerFlowSolveMatrixOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -2809,7 +2809,7 @@ def _ols_panel_effects(
     :class:`SEMFlowSeparablePanel` — all of which have :math:`\\mathbb{E}[y]
     = X\\beta` (no :math:`X`-mediated spillovers).
     """
-    from .flow import _EFFECT_KEYS
+    from ..flow import _EFFECT_KEYS
 
     beta_draws = idata.posterior["beta"].values.reshape(-1, len(feature_names))
 

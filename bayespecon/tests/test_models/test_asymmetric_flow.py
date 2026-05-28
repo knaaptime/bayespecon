@@ -300,7 +300,7 @@ class TestModelAsymmetric:
     def test_model_infers_kd_ko_from_colnames(self):
         """FlowModel infers k_d and k_o from dest_*/orig_* column names."""
         from bayespecon.dgp.flows import generate_flow_data
-        from bayespecon.models.flow import SARFlow
+        from bayespecon.models.flow._flow import SARFlow
 
         data = generate_flow_data(
             n=5,
@@ -327,7 +327,7 @@ class TestModelAsymmetric:
     def test_effects_asymmetric_shape(self):
         """Spatial effects have correct shapes when k_d ≠ k_o."""
         from bayespecon.dgp.flows import generate_flow_data
-        from bayespecon.models.flow import OLSFlow
+        from bayespecon.models.flow._flow import OLSFlow
 
         data = generate_flow_data(
             n=5,
@@ -356,7 +356,7 @@ class TestModelAsymmetric:
     def test_effects_symmetric_shape(self):
         """Spatial effects have correct shapes when k_d == k_o (symmetric)."""
         from bayespecon.dgp.flows import generate_flow_data
-        from bayespecon.models.flow import OLSFlow
+        from bayespecon.models.flow._flow import OLSFlow
 
         data = generate_flow_data(
             n=5,

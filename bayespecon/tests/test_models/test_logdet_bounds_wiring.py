@@ -10,8 +10,8 @@ import numpy as np
 import scipy.sparse as sp
 
 from bayespecon._logdet import LogdetBounds
-from bayespecon.models.sar import SAR
-from bayespecon.models.sem import SEM
+from bayespecon.models.cross_section.sar import SAR
+from bayespecon.models.cross_section.sem import SEM
 
 
 def _toy_inputs(n: int = 25, seed: int = 0):

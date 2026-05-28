@@ -576,6 +576,9 @@ def _run_chain_jax_gibbs_scanned(
     -------
     final_state : JAXGaussianGibbsState
         State after ``n_iters`` steps.
+    final_key : jax.random.PRNGKey
+        PRNG key after ``n_iters`` splits, so chunked runs can resume
+        the chain deterministically.
     rhos : jax.numpy.ndarray of shape (n_iters,)
         Trace of ρ/λ values.
     betas : jax.numpy.ndarray of shape (n_iters, k)
@@ -597,15 +600,17 @@ def _run_chain_jax_gibbs_scanned(
             (state.rho, state.beta, state.sigma2, accept),
         )
 
-    (final_state, _, total_accept), (rhos, betas, sigma2s, accepts) = jax.lax.scan(
-        scan_body,
-        (init_state, key, jnp.float64(0.0)),
-        None,
-        length=n_iters,
+    (final_state, final_key, total_accept), (rhos, betas, sigma2s, accepts) = (
+        jax.lax.scan(
+            scan_body,
+            (init_state, key, jnp.float64(0.0)),
+            None,
+            length=n_iters,
+        )
     )
 
     accept_rate = total_accept / jnp.float64(n_iters)
-    return final_state, rhos, betas, sigma2s, accept_rate
+    return final_state, final_key, rhos, betas, sigma2s, accept_rate
 
 
 # ---------------------------------------------------------------------------
@@ -791,7 +796,7 @@ def run_chain_jax_gaussian(
     # ── Phase 1: Warmup via jax.lax.scan ──
     if tune > 0:
         key, warmup_key = jax.random.split(key)
-        state, _, _, _, warmup_accept_rate = _run_chain_jax_gibbs_scanned(
+        state, _, _, _, _, warmup_accept_rate = _run_chain_jax_gibbs_scanned(
             gibbs_step,
             state,
             warmup_key,
@@ -828,7 +833,7 @@ def run_chain_jax_gaussian(
 
     # ── Phase 2: Post-warmup draws via jax.lax.scan ──
     key, draw_key = jax.random.split(key)
-    state, rhos, betas, sigma2s, draw_accept_rate = _run_chain_jax_gibbs_scanned(
+    state, _, rhos, betas, sigma2s, draw_accept_rate = _run_chain_jax_gibbs_scanned(
         gibbs_step,
         state,
         draw_key,
@@ -1063,26 +1068,59 @@ def run_chains_jax_gibbs_vectorized(
             for c in range(chains):
                 pm.start_chain(c)
 
-        # ── Phase 1: Warmup via vmap ──
+        # Chunk both phases into ~20 segments so the progress bar
+        # advances smoothly and Python regains control between
+        # segments.  Chunk sizes are Python constants so each kernel
+        # JIT-compiles once and is reused across chunks.
+        warmup_chunk = max(1, tune // 20) if tune > 0 else 1
+        draws_chunk = max(1, draws // 20) if draws > 0 else 1
+
+        # ── Phase 1: Warmup via vmap (chunked) ──
         if tune > 0:
             warmup_keys = keys
 
-            def run_warmup(state, key):
+            def _warmup_chunk(state, key, step_size, n):
                 return _run_chain_jax_gibbs_scanned(
-                    gibbs_step, state, key, tune, jnp.float64(mala_step_size)
+                    gibbs_step, state, key, n, step_size
                 )
 
-            final_states, _, _, _, warmup_rates = jax.vmap(run_warmup)(
-                init_states, warmup_keys
+            warmup_vmap = jax.jit(
+                lambda s, k: jax.vmap(
+                    lambda s_, k_: _warmup_chunk(
+                        s_, k_, jnp.float64(mala_step_size), warmup_chunk
+                    )
+                )(s, k)
             )
+
+            state = init_states
+            chunk_keys = warmup_keys
+            accept_sum = jnp.zeros(chains, dtype=jnp.float64)
+            iter_done = 0
+            while iter_done < tune:
+                step = min(warmup_chunk, tune - iter_done)
+                if step == warmup_chunk:
+                    state, chunk_keys, _, _, _, chunk_rate = warmup_vmap(
+                        state, chunk_keys
+                    )
+                else:
+                    state, chunk_keys, _, _, _, chunk_rate = jax.vmap(
+                        lambda s_, k_: _warmup_chunk(
+                            s_, k_, jnp.float64(mala_step_size), step
+                        )
+                    )(state, chunk_keys)
+                jax.block_until_ready(state.rho)
+                accept_sum = accept_sum + chunk_rate * jnp.float64(step)
+                iter_done += step
+                if pm is not None:
+                    for c in range(chains):
+                        pm.update(c, iter_done - 1, tuning=True, accept=None)
+
+            final_states = state
+            warmup_rates = accept_sum / jnp.float64(tune)
 
             # Adapt step size per-chain using individual warmup acceptance rates
             if use_mala:
                 target_rate = 0.574
-                # Per-chain adaptation: each chain gets its own step size
-                # based on its own acceptance rate during warmup.
-                # Chains with acceptance rate outside (0, 1) keep the
-                # initial step size (no adaptation).
                 safe_rates = jnp.where(
                     (warmup_rates > 0) & (warmup_rates < 1),
                     warmup_rates,
@@ -1092,35 +1130,56 @@ def run_chains_jax_gibbs_vectorized(
                 adapted_step_sizes = jnp.float64(mala_step_size) * adapt_factors
             else:
                 adapted_step_sizes = jnp.full(chains, jnp.float64(mala_step_size))
-
-            # Update progress bar for warmup phase (all chains at once)
-            if pm is not None:
-                for c in range(chains):
-                    for i in range(tune):
-                        pm.update(c, i, tuning=True, accept=None)
-                pm.refresh()
         else:
             final_states = init_states
             adapted_step_sizes = jnp.full(chains, jnp.float64(mala_step_size))
 
-        # ── Phase 2: Post-warmup draws via vmap ──
+        # ── Phase 2: Post-warmup draws via vmap (chunked) ──
         draw_keys = jax.random.split(jax.random.fold_in(master_key, 1), chains)
 
-        def run_draws(state, key, step_size):
-            return _run_chain_jax_gibbs_scanned(
-                gibbs_step, state, key, draws, step_size
-            )
+        def _draws_chunk(state, key, step_size, n):
+            return _run_chain_jax_gibbs_scanned(gibbs_step, state, key, n, step_size)
 
-        _, rhos, betas, sigma2s, accept_rates = jax.vmap(run_draws)(
-            final_states, draw_keys, adapted_step_sizes
+        draws_vmap = jax.jit(
+            lambda s, k, ss: jax.vmap(
+                lambda s_, k_, ss_: _draws_chunk(s_, k_, ss_, draws_chunk)
+            )(s, k, ss)
         )
 
-        # Update progress bar for draw phase (all chains at once)
+        state = final_states
+        chunk_keys = draw_keys
+        rho_chunks: list[np.ndarray] = []
+        beta_chunks: list[np.ndarray] = []
+        sigma2_chunks: list[np.ndarray] = []
+        draw_accept_sum = jnp.zeros(chains, dtype=jnp.float64)
+        iter_done = 0
+        while iter_done < draws:
+            step = min(draws_chunk, draws - iter_done)
+            if step == draws_chunk:
+                state, chunk_keys, rhos_c, betas_c, sigma2s_c, chunk_rate = draws_vmap(
+                    state, chunk_keys, adapted_step_sizes
+                )
+            else:
+                state, chunk_keys, rhos_c, betas_c, sigma2s_c, chunk_rate = jax.vmap(
+                    lambda s_, k_, ss_: _draws_chunk(s_, k_, ss_, step)
+                )(state, chunk_keys, adapted_step_sizes)
+            rho_chunks.append(np.asarray(rhos_c))
+            beta_chunks.append(np.asarray(betas_c))
+            sigma2_chunks.append(np.asarray(sigma2s_c))
+            draw_accept_sum = draw_accept_sum + chunk_rate * jnp.float64(step)
+            iter_done += step
+            if pm is not None:
+                for c in range(chains):
+                    pm.update(c, tune + iter_done - 1, tuning=False, accept=None)
+
+        rhos = np.concatenate(rho_chunks, axis=1)
+        betas = np.concatenate(beta_chunks, axis=1)
+        sigma2s = np.concatenate(sigma2_chunks, axis=1)
+        accept_rates = draw_accept_sum / jnp.float64(draws)
+
+        # Set the aggregate MALA/MH accept rate for each chain
         if pm is not None:
             for c in range(chains):
-                for i in range(tune, tune + draws):
-                    pm.update(c, i, tuning=False, accept=None)
-                # Set the aggregate MALA/MH accept rate for this chain
                 pm.set_accept_rate(c, float(accept_rates[c]))
             pm.refresh()
 

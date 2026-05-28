@@ -85,9 +85,12 @@ class TestSARNegBinLatentBuild:
 # Parameter recovery tests (marked slow/recovery)
 # ---------------------------------------------------------------------------
 
-# Larger grid for parameter recovery — n=100 gives enough information
+# Larger grid for parameter recovery — n=1024 gives enough information
 # for the Gibbs sampler to recover parameters with tight tolerances.
-SIDE = 10  # 100 cross-sectional units
+# (With only n=100 the NB dispersion ``alpha`` is weakly identified and
+# the sampler can drift toward ``alpha ≈ 0``, which breaks the
+# Pólya–Gamma draw used in the omega update.)
+SIDE = 32  # 1024 cross-sectional units
 RHO_TRUE = 0.4
 BETA_TRUE = np.array([0.5, 0.8])
 ALPHA_TRUE = 2.0
@@ -99,7 +102,7 @@ CHAINS = 2
 
 @pytest.fixture(scope="module")
 def sar_nb_data():
-    """Simulated SAR-NB data from the structural-form DGP (n=100)."""
+    """Simulated SAR-NB data from the structural-form DGP (n=1024)."""
     rng = np.random.default_rng(42)
     W_dense = make_rook_W(SIDE)
     W_graph = W_to_graph(W_dense)
@@ -118,7 +121,7 @@ def sar_nb_data():
 class TestSARNegBinLatentRecovery:
     """Parameter recovery tests for the Gibbs sampler.
 
-    Uses n=100 (10×10 rook grid) with 1000 draws × 2 chains so that
+    Uses n=1024 (32×32 rook grid) with 1000 draws × 2 chains so that
     posterior summaries are precise enough for meaningful tolerance checks.
     """
 
@@ -187,7 +190,7 @@ class TestSARNegBinLatentRecovery:
 
         rho_mean = float(idata.posterior["rho"].mean())
         # The collapsed ρ update integrates out η, giving much better
-        # mixing than the conditional update.  With n=100 and
+        # mixing than the conditional update.  With n=1024 and
         # sigma2=0.5, the posterior mean should be within 0.2 of truth.
         assert abs(rho_mean - RHO_TRUE) < 0.2, (
             f"rho_mean={rho_mean:.3f} too far from rho_true={RHO_TRUE}"
@@ -294,3 +297,59 @@ class TestSARNegBinLatentRecovery:
 
         # With thin=2, we keep 100/2 = 50 draws
         assert idata.posterior["rho"].shape[1] == 50
+
+
+# ---------------------------------------------------------------------------
+# JAX vmap (gibbs_method="jax_dense") path
+# ---------------------------------------------------------------------------
+
+
+jax = pytest.importorskip("jax")
+
+
+@pytest.mark.slow
+class TestSARNegBinLatentJaxVectorized:
+    """The jax_dense path should run all chains together via jax.vmap."""
+
+    def test_jax_dense_runs_and_shapes(self, sar_nb_data):
+        y = sar_nb_data["y"]
+        X = sar_nb_data["X"]
+        W = sar_nb_data["W_graph"]
+
+        model = SARNegBinLatent(y=y, X=X, W=W)
+        idata = model.fit(
+            draws=40,
+            tune=20,
+            chains=2,
+            random_seed=0,
+            n_jobs=1,
+            progressbar=False,
+            gibbs_method="jax_dense",
+        )
+        rho = idata.posterior["rho"].values
+        beta = idata.posterior["beta"].values
+        sigma = idata.posterior["sigma"].values
+        alpha = idata.posterior["alpha"].values
+        assert rho.shape == (2, 40)
+        assert beta.shape == (2, 40, X.shape[1])
+        assert sigma.shape == (2, 40)
+        assert alpha.shape == (2, 40)
+        # Distinct chains should not be byte-identical.
+        assert not np.allclose(rho[0], rho[1])
+
+    def test_jax_dense_rejects_return_eta(self, sar_nb_data):
+        y = sar_nb_data["y"]
+        X = sar_nb_data["X"]
+        W = sar_nb_data["W_graph"]
+        model = SARNegBinLatent(y=y, X=X, W=W)
+        with pytest.raises(NotImplementedError, match="return_eta"):
+            model.fit(
+                draws=4,
+                tune=2,
+                chains=1,
+                random_seed=0,
+                n_jobs=1,
+                progressbar=False,
+                gibbs_method="jax_dense",
+                return_eta=True,
+            )

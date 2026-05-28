@@ -16,8 +16,8 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from .base import SpatialModel
-from .priors import SARTobitPriors, SDMTobitPriors, SEMTobitPriors
+from ..base import SpatialModel
+from ..priors import SARTobitPriors, SDMTobitPriors, SEMTobitPriors
 
 
 class _SpatialTobitBase(SpatialModel):
@@ -199,14 +199,14 @@ class SARTobit(_SpatialTobitBase):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
 
         if isinstance(self, SARTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -229,7 +229,7 @@ class SARTobit(_SpatialTobitBase):
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
             beta2_draws = beta_draws[:, k : k + kw]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)
@@ -494,14 +494,14 @@ class SEMTobit(_SpatialTobitBase):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
 
         if isinstance(self, SARTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -524,7 +524,7 @@ class SEMTobit(_SpatialTobitBase):
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
             beta2_draws = beta_draws[:, k : k + kw]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)
@@ -809,14 +809,14 @@ class SDMTobit(_SpatialTobitBase):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
 
         if isinstance(self, SARTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -839,7 +839,7 @@ class SDMTobit(_SpatialTobitBase):
             kw = self._WX.shape[1]
             beta1_draws = beta_draws[:, :k]
             beta2_draws = beta_draws[:, k : k + kw]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag_M = np.mean(inv_eigs, axis=1)
             mean_diag_MW = np.mean((eigs * inv_eigs).real, axis=1)

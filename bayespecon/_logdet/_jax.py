@@ -282,8 +282,10 @@ def make_logdet_jax_fn(
 
     if method == "eigenvalue":
         if eigs is None:
-            eigs = np.linalg.eigvals(W_sparse.toarray()).real
-        _eigs = eigs.real.astype(np.float64)
+            eigs = np.linalg.eigvals(W_sparse.toarray())
+        # Keep complex eigenvalues — jnp.abs computes the complex modulus
+        # correctly for non-symmetric W.
+        _eigs = np.asarray(eigs, dtype=np.complex128)
 
         def _jax_eigenvalue(rho):
             import jax.numpy as jnp

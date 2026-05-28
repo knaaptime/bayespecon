@@ -609,6 +609,8 @@ def run_chain(
     thin: int = 1,
     return_eta: bool = False,
     rng=None,
+    progress_manager=None,
+    chain_id: int = 0,
 ) -> dict:
     """Run one chain of the SAR-logit Gibbs sampler.
 
@@ -705,6 +707,9 @@ def run_chain(
                 eta_norm_samples[idx] = float(state.eta @ state.eta)
                 if return_eta:
                     eta_samples[idx] = state.eta
+
+        if progress_manager is not None:
+            progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
 
     result = {
         "rho": rho_samples,
@@ -1383,6 +1388,8 @@ def run_chain_sem(
     thin: int = 1,
     return_eta: bool = False,
     rng=None,
+    progress_manager=None,
+    chain_id: int = 0,
 ) -> dict:
     """Run one chain of the SEM-logit Gibbs sampler.
 
@@ -1476,6 +1483,9 @@ def run_chain_sem(
                 eta_norm_samples[idx] = float(state.eta @ state.eta)
                 if return_eta:
                     eta_samples[idx] = state.eta
+
+        if progress_manager is not None:
+            progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
 
     result = {
         "lam": lam_samples,

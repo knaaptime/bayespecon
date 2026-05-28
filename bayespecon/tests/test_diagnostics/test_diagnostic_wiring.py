@@ -58,8 +58,8 @@ from bayespecon import (
     SDMPanelFE,
     SLXPanelFE,
 )
-from bayespecon.models.flow import OLSFlow, SARFlow
-from bayespecon.models.flow_panel import OLSFlowPanel
+from bayespecon.models.flow._flow import OLSFlow, SARFlow
+from bayespecon.models.flow_panel._panel import OLSFlowPanel
 
 EXPECTED_REGISTRIES = {
     OLS: [
@@ -152,8 +152,8 @@ def test_slx_uses_slx_specific_lm_tests():
 
 def test_flow_models_expose_decision_api():
     """FlowModel and FlowPanelModel must expose spatial_diagnostics_decision."""
-    from bayespecon.models.flow import FlowModel
-    from bayespecon.models.flow_panel import FlowPanelModel
+    from bayespecon.models.flow._flow import FlowModel
+    from bayespecon.models.flow_panel._panel import FlowPanelModel
 
     assert hasattr(FlowModel, "spatial_diagnostics_decision")
     assert callable(FlowModel.spatial_diagnostics_decision)

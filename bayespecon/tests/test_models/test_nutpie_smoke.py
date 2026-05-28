@@ -29,7 +29,7 @@ from bayespecon import (
     SEMPanelRE,
     dgp,
 )
-from bayespecon.models.flow import (
+from bayespecon.models.flow._flow import (
     PoissonFlow,
     PoissonSARFlow,
     PoissonSARFlowSeparable,

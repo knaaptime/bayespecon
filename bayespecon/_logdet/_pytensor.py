@@ -14,7 +14,7 @@ from ._grids import _build_logdet_grid
 def logdet_eigenvalue(rho, eigs: np.ndarray) -> pt.TensorVariable:
     """Eigenvalue-based log|I - rho*W|.
 
-    Pre-compute ``eigs = np.linalg.eigvals(W).real`` once; each evaluation
+    Pre-compute ``eigs = np.linalg.eigvals(W)`` once; each evaluation
     costs O(n) and is exactly differentiable by pytensor autodiff.
 
     Parameters
@@ -22,7 +22,7 @@ def logdet_eigenvalue(rho, eigs: np.ndarray) -> pt.TensorVariable:
     rho : pytensor scalar
         Spatial parameter (rho or lambda).
     eigs : np.ndarray
-        Real parts of W's eigenvalues, shape (n,).
+        Eigenvalues of W (complex or real), shape (n,).
 
     Returns
     -------
@@ -39,11 +39,28 @@ def logdet_eigenvalue(rho, eigs: np.ndarray) -> pt.TensorVariable:
     and produces a very large negative penalty rather than a hard NaN.
     Callers should still constrain ``rho`` away from ``1 / eig_max`` via
     the prior bounds.
+
+    For complex eigenvalues ``λᵢ = a + bi``, the modulus squared is
+    ``|1 - ρλᵢ|² = (1 - ρa)² + (ρb)²``, so
+    ``log|1 - ρλᵢ| = 0.5 * log((1 - ρa)² + (ρb)²)``.
+    This formulation avoids ``pt.abs`` on complex tensors, which lacks
+    a gradient in PyTensor.
     """
-    eigs_t = pt.as_tensor_variable(eigs.astype(np.float64))
-    arg = pt.abs(1.0 - rho * eigs_t)
-    safe = pt.maximum(arg, 1e-300)
-    return pt.sum(pt.log(safe))
+    eigs_arr = np.asarray(eigs)
+    eigs_real = eigs_arr.real.astype(np.float64)
+    eigs_imag = eigs_arr.imag.astype(np.float64)
+
+    eigs_real_t = pt.as_tensor_variable(eigs_real)
+    eigs_imag_t = pt.as_tensor_variable(eigs_imag)
+
+    # |1 - ρλᵢ|² = (1 - ρ·Re(λᵢ))² + (ρ·Im(λᵢ))²
+    # For real eigenvalues (Im=0), this reduces to (1 - ρ·λᵢ)²,
+    # and 0.5*log((1-ρλ)²) = log|1-ρλ|, which is correct.
+    re = 1.0 - rho * eigs_real_t
+    im = rho * eigs_imag_t
+    mod_sq = re**2 + im**2
+    safe = pt.maximum(mod_sq, 1e-300)
+    return 0.5 * pt.sum(pt.log(safe))
 
 
 def logdet_exact(rho, W_dense: np.ndarray) -> pt.TensorVariable:

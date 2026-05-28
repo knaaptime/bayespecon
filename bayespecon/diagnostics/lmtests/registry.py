@@ -73,36 +73,41 @@ from .suites import (  # noqa: E402
 )
 
 # Cross-sectional
-_register("bayespecon.models.ols.OLS", OLS_SUITE)
-_register("bayespecon.models.sar.SAR", SAR_SUITE)
-_register("bayespecon.models.sem.SEM", SEM_SUITE)
-_register("bayespecon.models.slx.SLX", SLX_SUITE)
-_register("bayespecon.models.sdm.SDM", SDM_SUITE)
-_register("bayespecon.models.sdem.SDEM", SDEM_SUITE)
+_register("bayespecon.models.cross_section.ols.OLS", OLS_SUITE)
+_register("bayespecon.models.cross_section.sar.SAR", SAR_SUITE)
+_register("bayespecon.models.cross_section.sem.SEM", SEM_SUITE)
+_register("bayespecon.models.cross_section.slx.SLX", SLX_SUITE)
+_register("bayespecon.models.cross_section.sdm.SDM", SDM_SUITE)
+_register("bayespecon.models.cross_section.sdem.SDEM", SDEM_SUITE)
 
 # Tobit
-_register("bayespecon.models.tobit.SARTobit", SAR_TOBIT_SUITE)
-_register("bayespecon.models.tobit.SEMTobit", SEM_SUITE)
-_register("bayespecon.models.tobit.SDMTobit", SDM_TOBIT_SUITE)
+_register("bayespecon.models.cross_section.tobit.SARTobit", SAR_TOBIT_SUITE)
+_register("bayespecon.models.cross_section.tobit.SEMTobit", SEM_SUITE)
+_register("bayespecon.models.cross_section.tobit.SDMTobit", SDM_TOBIT_SUITE)
 
 # NegBin
-_register("bayespecon.models.sar_negbin.SARNegativeBinomial", SAR_NEGBIN_SUITE)
-_register("bayespecon.models.sar_negbin_latent.SARNegBinLatent", SAR_NEGBIN_SUITE)
+_register(
+    "bayespecon.models.cross_section.sar_negbin.SARNegativeBinomial", SAR_NEGBIN_SUITE
+)
+_register(
+    "bayespecon.models.cross_section.sar_negbin_latent.SARNegBinLatent",
+    SAR_NEGBIN_SUITE,
+)
 
 # Flow (cross-sectional)
-_register("bayespecon.models.flow.SARFlow", FLOW_SUITE)
-_register("bayespecon.models.flow.SARFlowSeparable", FLOW_SUITE)
-_register("bayespecon.models.flow.PoissonSARFlow", FLOW_SUITE)
-_register("bayespecon.models.flow.PoissonSARFlowSeparable", FLOW_SUITE)
-_register("bayespecon.models.flow.NegativeBinomialSARFlow", FLOW_SUITE)
-_register("bayespecon.models.flow.NegativeBinomialSARFlowSeparable", FLOW_SUITE)
-_register("bayespecon.models.flow.OLSFlow", FLOW_INTRA_SUITE)
-_register("bayespecon.models.flow.PoissonFlow", FLOW_INTRA_SUITE)
-_register("bayespecon.models.flow.NegativeBinomialFlow", FLOW_INTRA_SUITE)
-_register("bayespecon.models.flow.SEMFlow", FLOW_SUITE)
-_register("bayespecon.models.flow.SEMFlowSeparable", FLOW_SUITE)
-_register("bayespecon.models.flow.SARNegBinFlowLatent", FLOW_SUITE)
-_register("bayespecon.models.flow.SARNegBinFlowSeparableLatent", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.SARFlow", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.SARFlowSeparable", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.PoissonSARFlow", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.PoissonSARFlowSeparable", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.NegativeBinomialSARFlow", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.NegativeBinomialSARFlowSeparable", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.OLSFlow", FLOW_INTRA_SUITE)
+_register("bayespecon.models.flow._flow.PoissonFlow", FLOW_INTRA_SUITE)
+_register("bayespecon.models.flow._flow.NegativeBinomialFlow", FLOW_INTRA_SUITE)
+_register("bayespecon.models.flow._flow.SEMFlow", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.SEMFlowSeparable", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.SARNegBinFlowLatent", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.SARNegBinFlowSeparableLatent", FLOW_SUITE)
 
 # ---------------------------------------------------------------------------
 # Panel models
@@ -120,37 +125,39 @@ from .suites import (  # noqa: E402
 )
 
 # Panel FE
-_register("bayespecon.models.panel.OLSPanelFE", OLS_PANEL_SUITE)
-_register("bayespecon.models.panel.SARPanelFE", SAR_PANEL_SUITE)
-_register("bayespecon.models.panel.SEMPanelFE", SEM_PANEL_SUITE)
-_register("bayespecon.models.panel.SDMPanelFE", SDM_PANEL_SUITE)
-_register("bayespecon.models.panel.SDEMPanelFE", SDEM_PANEL_SUITE)
-_register("bayespecon.models.panel.SLXPanelFE", SLX_PANEL_SUITE)
+_register("bayespecon.models.panel._fe.OLSPanelFE", OLS_PANEL_SUITE)
+_register("bayespecon.models.panel._fe.SARPanelFE", SAR_PANEL_SUITE)
+_register("bayespecon.models.panel._fe.SEMPanelFE", SEM_PANEL_SUITE)
+_register("bayespecon.models.panel._fe.SDMPanelFE", SDM_PANEL_SUITE)
+_register("bayespecon.models.panel._fe.SDEMPanelFE", SDEM_PANEL_SUITE)
+_register("bayespecon.models.panel._fe.SLXPanelFE", SLX_PANEL_SUITE)
 
 # Panel RE
-_register("bayespecon.models.panel_re.OLSPanelRE", OLS_PANEL_SUITE)
-_register("bayespecon.models.panel_re.SARPanelRE", SAR_PANEL_SUITE)
-_register("bayespecon.models.panel_re.SEMPanelRE", SEM_PANEL_SUITE)
-_register("bayespecon.models.panel_re.SDEMPanelRE", SDEM_PANEL_SUITE)
+_register("bayespecon.models.panel._re.OLSPanelRE", OLS_PANEL_SUITE)
+_register("bayespecon.models.panel._re.SARPanelRE", SAR_PANEL_SUITE)
+_register("bayespecon.models.panel._re.SEMPanelRE", SEM_PANEL_SUITE)
+_register("bayespecon.models.panel._re.SDEMPanelRE", SDEM_PANEL_SUITE)
 
 # Panel Dynamic
-_register("bayespecon.models.panel_dynamic.OLSPanelDynamic", OLS_PANEL_SUITE)
-_register("bayespecon.models.panel_dynamic.SDMRPanelDynamic", SDM_PANEL_SUITE)
-_register("bayespecon.models.panel_dynamic.SDMUPanelDynamic", SDM_PANEL_SUITE)
-_register("bayespecon.models.panel_dynamic.SARPanelDynamic", SAR_PANEL_SUITE)
-_register("bayespecon.models.panel_dynamic.SEMPanelDynamic", SEM_PANEL_DYNAMIC_SUITE)
-_register("bayespecon.models.panel_dynamic.SDEMPanelDynamic", SDEM_PANEL_SUITE)
-_register("bayespecon.models.panel_dynamic.SLXPanelDynamic", SLX_PANEL_DYNAMIC_SUITE)
+_register("bayespecon.models.panel._dynamic.OLSPanelDynamic", OLS_PANEL_SUITE)
+_register("bayespecon.models.panel._dynamic.SDMRPanelDynamic", SDM_PANEL_SUITE)
+_register("bayespecon.models.panel._dynamic.SDMUPanelDynamic", SDM_PANEL_SUITE)
+_register("bayespecon.models.panel._dynamic.SARPanelDynamic", SAR_PANEL_SUITE)
+_register("bayespecon.models.panel._dynamic.SEMPanelDynamic", SEM_PANEL_DYNAMIC_SUITE)
+_register("bayespecon.models.panel._dynamic.SDEMPanelDynamic", SDEM_PANEL_SUITE)
+_register("bayespecon.models.panel._dynamic.SLXPanelDynamic", SLX_PANEL_DYNAMIC_SUITE)
 
 # Panel Tobit
-_register("bayespecon.models.panel_tobit.SARPanelTobit", SAR_PANEL_SUITE)
-_register("bayespecon.models.panel_tobit.SEMPanelTobit", SEM_PANEL_DYNAMIC_SUITE)
+_register("bayespecon.models.panel._tobit.SARPanelTobit", SAR_PANEL_SUITE)
+_register("bayespecon.models.panel._tobit.SEMPanelTobit", SEM_PANEL_DYNAMIC_SUITE)
 
 # Flow Panel
-_register("bayespecon.models.flow_panel.SARFlowPanel", FLOW_PANEL_SUITE)
-_register("bayespecon.models.flow_panel.SARFlowSeparablePanel", FLOW_PANEL_SUITE)
-_register("bayespecon.models.flow_panel.PoissonSARFlowPanel", FLOW_PANEL_SUITE)
-_register("bayespecon.models.flow_panel.PoissonSARFlowSeparablePanel", FLOW_PANEL_SUITE)
-_register("bayespecon.models.flow_panel.OLSFlowPanel", FLOW_PANEL_SUITE)
-_register("bayespecon.models.flow_panel.SEMFlowPanel", FLOW_PANEL_SUITE)
-_register("bayespecon.models.flow_panel.SEMFlowSeparablePanel", FLOW_PANEL_SUITE)
+_register("bayespecon.models.flow_panel._panel.SARFlowPanel", FLOW_PANEL_SUITE)
+_register("bayespecon.models.flow_panel._panel.SARFlowSeparablePanel", FLOW_PANEL_SUITE)
+_register("bayespecon.models.flow_panel._panel.PoissonSARFlowPanel", FLOW_PANEL_SUITE)
+_register(
+    "bayespecon.models.flow_panel._panel.PoissonSARFlowSeparablePanel", FLOW_PANEL_SUITE
+)
+_register("bayespecon.models.flow_panel._panel.OLSFlowPanel", FLOW_PANEL_SUITE)
+_register("bayespecon.models.flow_panel._panel.SEMFlowPanel", FLOW_PANEL_SUITE)
+_register("bayespecon.models.flow_panel._panel.SEMFlowSeparablePanel", FLOW_PANEL_SUITE)

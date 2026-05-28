@@ -36,7 +36,15 @@ def test_enum_str_equality():
 
 @pytest.mark.parametrize("name", sorted(CANONICAL_METHODS))
 def test_resolve_accepts_canonical_names(name):
-    assert resolve_logdet_method(name, n=100) == name
+    # "exact" is an accepted public name but resolves to "eigenvalue"
+    # (mathematically identical, but with O(n) per-call cost instead of O(n^3)).
+    expected = "eigenvalue" if name == "exact" else name
+    assert resolve_logdet_method(name, n=100) == expected
+
+
+def test_resolve_exact_aliases_to_eigenvalue():
+    assert resolve_logdet_method("exact", n=100) == "eigenvalue"
+    assert resolve_logdet_method("exact", n=10_000) == "eigenvalue"
 
 
 def test_resolve_unknown_method_raises_with_list():

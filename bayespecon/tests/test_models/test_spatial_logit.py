@@ -8,9 +8,9 @@ import pytest
 import scipy.sparse as sp
 
 from bayespecon import dgp
+from bayespecon.models.cross_section.sem_spatial_logit import SEMSpatialLogit
+from bayespecon.models.cross_section.spatial_logit import SARSpatialLogit
 from bayespecon.models.priors import SEMSpatialLogitPriors, SpatialLogitPriors
-from bayespecon.models.sem_spatial_logit import SEMSpatialLogit
-from bayespecon.models.spatial_logit import SARSpatialLogit
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 
@@ -342,3 +342,186 @@ class TestSEMFitIntegration:
         assert "beta" in idata.posterior
         assert idata.posterior["lam"].shape[0] == 2  # chains
         assert idata.posterior["beta"].shape[-1] == 2  # k coefficients
+
+
+class TestProgressForwarding:
+    """Progress callbacks should be forwarded into logit chain runners."""
+
+    def test_sar_fit_forwards_progress_manager(self, monkeypatch):
+        """SARSpatialLogit.fit should pass progress_manager through to run_chain."""
+        y, X, W = _binary_data()
+        model = SARSpatialLogit(y=y, X=X, W=W)
+        seen: dict[str, object] = {}
+
+        def _fake_run_chain(
+            y,
+            X,
+            W_sparse,
+            priors,
+            cache,
+            init,
+            draws,
+            tune,
+            thin=1,
+            return_eta=False,
+            rng=None,
+            progress_manager=None,
+            chain_id=0,
+        ):
+            seen["progress_manager"] = progress_manager
+            seen["chain_id"] = chain_id
+            n_keep = draws // thin if thin > 0 else draws
+            n, k = X.shape
+            return {
+                "rho": np.zeros(n_keep),
+                "beta": np.zeros((n_keep, k)),
+                "log_lik": np.zeros((n_keep, n)),
+                "eta_norm": np.zeros(n_keep),
+            }
+
+        monkeypatch.setattr(
+            "bayespecon.models.cross_section.spatial_logit.run_chain",
+            _fake_run_chain,
+        )
+
+        model.fit(
+            draws=4,
+            tune=2,
+            chains=1,
+            random_seed=0,
+            n_jobs=1,
+            progressbar=True,
+            gibbs_method="factorize",
+        )
+
+        assert seen["progress_manager"] is not None
+        assert seen["chain_id"] == 0
+
+    def test_sem_fit_forwards_progress_manager(self, monkeypatch):
+        """SEMSpatialLogit.fit should pass progress_manager through to run_chain_sem."""
+        y, X, W = _binary_data()
+        model = SEMSpatialLogit(y=y, X=X, W=W)
+        seen: dict[str, object] = {}
+
+        def _fake_run_chain_sem(
+            y,
+            X,
+            W_sparse,
+            priors,
+            cache,
+            init,
+            draws,
+            tune,
+            thin=1,
+            return_eta=False,
+            rng=None,
+            progress_manager=None,
+            chain_id=0,
+        ):
+            seen["progress_manager"] = progress_manager
+            seen["chain_id"] = chain_id
+            n_keep = draws // thin if thin > 0 else draws
+            n, k = X.shape
+            return {
+                "lam": np.zeros(n_keep),
+                "beta": np.zeros((n_keep, k)),
+                "log_lik": np.zeros((n_keep, n)),
+                "eta_norm": np.zeros(n_keep),
+            }
+
+        monkeypatch.setattr(
+            "bayespecon.models.cross_section.sem_spatial_logit.run_chain_sem",
+            _fake_run_chain_sem,
+        )
+
+        model.fit(
+            draws=4,
+            tune=2,
+            chains=1,
+            random_seed=0,
+            n_jobs=1,
+            progressbar=True,
+            gibbs_method="factorize",
+        )
+
+        assert seen["progress_manager"] is not None
+        assert seen["chain_id"] == 0
+
+
+# ---------------------------------------------------------------------------
+# JAX vmap (gibbs_method="jax_dense") path
+# ---------------------------------------------------------------------------
+
+
+jax = pytest.importorskip("jax")
+
+
+class TestJaxVectorizedFit:
+    """The jax_dense path should run all chains together via jax.vmap."""
+
+    def test_sar_jax_dense_runs_and_shapes(self):
+        y, X, W = _binary_data()
+        model = SARSpatialLogit(y=y, X=X, W=W)
+        idata = model.fit(
+            draws=20,
+            tune=10,
+            chains=2,
+            random_seed=0,
+            n_jobs=1,
+            progressbar=False,
+            gibbs_method="jax_dense",
+        )
+        rho = idata.posterior["rho"].values
+        beta = idata.posterior["beta"].values
+        assert rho.shape == (2, 20)
+        assert beta.shape == (2, 20, X.shape[1])
+        # Distinct chains should not be byte-identical.
+        assert not np.allclose(rho[0], rho[1])
+
+    def test_sar_jax_dense_rejects_return_eta(self):
+        y, X, W = _binary_data()
+        model = SARSpatialLogit(y=y, X=X, W=W)
+        with pytest.raises(NotImplementedError, match="return_eta"):
+            model.fit(
+                draws=4,
+                tune=2,
+                chains=1,
+                random_seed=0,
+                n_jobs=1,
+                progressbar=False,
+                gibbs_method="jax_dense",
+                return_eta=True,
+            )
+
+    def test_sem_jax_dense_runs_and_shapes(self):
+        y, X, W = _binary_data()
+        model = SEMSpatialLogit(y=y, X=X, W=W)
+        idata = model.fit(
+            draws=20,
+            tune=10,
+            chains=2,
+            random_seed=0,
+            n_jobs=1,
+            progressbar=False,
+            gibbs_method="jax_dense",
+        )
+        lam = idata.posterior["lam"].values
+        beta = idata.posterior["beta"].values
+        assert lam.shape == (2, 20)
+        assert beta.shape == (2, 20, X.shape[1])
+        assert not np.allclose(lam[0], lam[1])
+
+    def test_sem_jax_dense_rejects_return_eta(self):
+        y, X, W = _binary_data()
+        model = SEMSpatialLogit(y=y, X=X, W=W)
+        with pytest.raises(NotImplementedError, match="return_eta"):
+            model.fit(
+                draws=4,
+                tune=2,
+                chains=1,
+                random_seed=0,
+                n_jobs=1,
+                progressbar=False,
+                gibbs_method="jax_dense",
+                return_eta=True,
+            )

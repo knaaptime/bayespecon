@@ -106,7 +106,7 @@ class TestSemFlowConstruction:
         self.y_vec = out["y_vec"]
 
     def test_sem_flow_builds(self):
-        from bayespecon.models.flow import SEMFlow
+        from bayespecon.models.flow._flow import SEMFlow
 
         model = SEMFlow(
             self.y_vec,
@@ -125,7 +125,7 @@ class TestSemFlowConstruction:
         assert model._Ww_X.shape == self.X.shape
 
     def test_sem_flow_separable_builds(self):
-        from bayespecon.models.flow import SEMFlowSeparable
+        from bayespecon.models.flow._flow import SEMFlowSeparable
 
         model = SEMFlowSeparable(
             self.y_vec,
@@ -137,7 +137,7 @@ class TestSemFlowConstruction:
         assert model._n == self.n
 
     def test_pymc_model_builds(self):
-        from bayespecon.models.flow import SEMFlow
+        from bayespecon.models.flow._flow import SEMFlow
 
         model = SEMFlow(
             self.y_vec,
@@ -152,7 +152,7 @@ class TestSemFlowConstruction:
         assert pm_model is not None
 
     def test_pymc_model_separable_builds(self):
-        from bayespecon.models.flow import SEMFlowSeparable
+        from bayespecon.models.flow._flow import SEMFlowSeparable
 
         model = SEMFlowSeparable(
             self.y_vec,
@@ -173,7 +173,7 @@ class TestSemFlowConstruction:
 class TestSemFlowRecovery:
     def test_parameter_recovery_normal(self):
         from bayespecon.dgp.flows import generate_sem_flow_data
-        from bayespecon.models.flow import SEMFlow
+        from bayespecon.models.flow._flow import SEMFlow
 
         rho_d_true, rho_o_true, rho_w_true = 0.25, 0.20, 0.10
         beta_d_true = [1.0, -0.5]
@@ -237,7 +237,7 @@ class TestSemFlowRecovery:
     def test_separable_constraint_holds(self):
         """SEMFlowSeparable should impose lam_w = -lam_d * lam_o exactly."""
         from bayespecon.dgp.flows import generate_sem_flow_data_separable
-        from bayespecon.models.flow import SEMFlowSeparable
+        from bayespecon.models.flow._flow import SEMFlowSeparable
 
         data = generate_sem_flow_data_separable(
             n=10,

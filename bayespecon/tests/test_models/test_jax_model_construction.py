@@ -108,7 +108,7 @@ class TestSEMModelConstruction:
         self.y, self.X, self.W, self.W_dense, self.n = _cs_data()
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         return SEM(
             y=self.y,
@@ -147,7 +147,7 @@ class TestSDEMModelConstruction:
         self.y, self.X, self.W, self.W_dense, self.n = _cs_data()
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.sdem import SDEM
+        from bayespecon.models.cross_section.sdem import SDEM
 
         return SDEM(
             y=self.y,
@@ -192,7 +192,7 @@ class TestSEMPanelFEModelConstruction:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.panel import SEMPanelFE
+        from bayespecon.models.panel._fe import SEMPanelFE
 
         return SEMPanelFE(
             y=self.y,
@@ -234,7 +234,7 @@ class TestSDEMPanelFEModelConstruction:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.panel import SDEMPanelFE
+        from bayespecon.models.panel._fe import SDEMPanelFE
 
         return SDEMPanelFE(
             y=self.y,
@@ -277,7 +277,7 @@ class TestSEMPanelREModelConstruction:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.panel_re import SEMPanelRE
+        from bayespecon.models.panel._re import SEMPanelRE
 
         return SEMPanelRE(
             y=self.y,
@@ -319,7 +319,7 @@ class TestSDEMPanelREModelConstruction:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.panel_re import SDEMPanelRE
+        from bayespecon.models.panel._re import SDEMPanelRE
 
         return SDEMPanelRE(
             y=self.y,
@@ -362,7 +362,7 @@ class TestSEMPanelDynamicModelConstruction:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.panel_dynamic import SEMPanelDynamic
+        from bayespecon.models.panel._dynamic import SEMPanelDynamic
 
         return SEMPanelDynamic(
             y=self.y,
@@ -403,7 +403,7 @@ class TestSDEMPanelDynamicModelConstruction:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.panel_dynamic import SDEMPanelDynamic
+        from bayespecon.models.panel._dynamic import SDEMPanelDynamic
 
         return SDEMPanelDynamic(
             y=self.y,
@@ -447,7 +447,7 @@ class TestSEMPanelTobitModelConstruction:
         self.y = np.where(self.y > 0, self.y, 0.0)
 
     def _make_model(self, robust: bool = False, nuts_sampler: str = "pymc"):
-        from bayespecon.models.panel_tobit import SEMPanelTobit
+        from bayespecon.models.panel._tobit import SEMPanelTobit
 
         return SEMPanelTobit(
             y=self.y,
@@ -495,7 +495,7 @@ class TestFitDispatchesNutsSampler:
 
     def test_sem_fit_passes_nuts_sampler(self):
         """SEM.fit() should pass nuts_sampler to _build_pymc_model()."""
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         model = SEM(y=self.y, X=self.X, W=self.W, logdet_method="eigenvalue")
         # Just build the model — don't sample
@@ -504,7 +504,7 @@ class TestFitDispatchesNutsSampler:
 
     def test_sdem_fit_passes_nuts_sampler(self):
         """SDEM.fit() should pass nuts_sampler to _build_pymc_model()."""
-        from bayespecon.models.sdem import SDEM
+        from bayespecon.models.cross_section.sdem import SDEM
 
         model = SDEM(
             y=self.y,
@@ -518,7 +518,7 @@ class TestFitDispatchesNutsSampler:
 
     def test_base_fit_try_except_fallback(self):
         """SpatialModel.fit() should fall back if _build_pymc_model() doesn't accept nuts_sampler."""
-        from bayespecon.models.ols import OLS
+        from bayespecon.models.cross_section.ols import OLS
 
         model = OLS(y=self.y, X=self.X, W=self.W)
         # OLS._build_pymc_model() doesn't accept nuts_sampler, but fit()

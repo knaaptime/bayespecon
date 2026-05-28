@@ -296,6 +296,10 @@ class SpatialPanelModel(ABC):
     # vector (SDM, SDEM, SLX) should set this to True.
     _has_wx_in_beta: bool = False
 
+    # Subclasses with a spatial autoregressive term should set this to
+    # "rho" (spatial lag) or "lam" (spatial error).  OLS/SLX leave it None.
+    _jacobian_param: str | None = None
+
     def __init__(
         self,
         formula: Optional[str] = None,
@@ -576,11 +580,6 @@ class SpatialPanelModel(ABC):
         """
         return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
-    @cached_property
-    def _W_eigs_real(self) -> np.ndarray:
-        """Real part of W eigenvalues as float64, computed lazily once."""
-        return self._W_eigs.real.astype(np.float64)
-
     @property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or sparse W.
@@ -590,7 +589,7 @@ class SpatialPanelModel(ABC):
         """
         if self._W_for_logdet_cache is None:
             if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs_real
+                self._W_for_logdet_cache = self._W_eigs
             else:
                 self._W_for_logdet_cache = self._W_sparse
         return self._W_for_logdet_cache
@@ -600,9 +599,7 @@ class SpatialPanelModel(ABC):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
         if self._logdet_numpy_fn_cache is None:
             eigs = (
-                self._W_eigs_real
-                if self._resolved_logdet_method == "eigenvalue"
-                else None
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
             )
             self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
                 self._W_sparse,
@@ -619,9 +616,7 @@ class SpatialPanelModel(ABC):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
         if self._logdet_numpy_vec_fn_cache is None:
             eigs = (
-                self._W_eigs_real
-                if self._resolved_logdet_method == "eigenvalue"
-                else None
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
             )
             self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
                 self._W_sparse,
@@ -750,9 +745,11 @@ class SpatialPanelModel(ABC):
         if not hasattr(self, "_eig_inv_ones_N"):
             Wn = self._W_sparse.toarray().astype(np.float64)
             eigs, V = np.linalg.eig(Wn)
-            self._W_eigs_N = eigs.real.astype(np.float64)
-            self._V_N = V.real.astype(np.float64)
-            self._eig_inv_ones_N = np.linalg.solve(self._V_N, np.ones(Wn.shape[0]))
+            self._W_eigs_N = eigs.astype(np.complex128)
+            self._V_N = V.astype(np.complex128)
+            self._eig_inv_ones_N = np.linalg.solve(
+                self._V_N, np.ones(Wn.shape[0], dtype=np.complex128)
+            )
 
         c = self._eig_inv_ones_N
         eigs = self._W_eigs_N

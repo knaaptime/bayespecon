@@ -515,12 +515,6 @@ class SpatialModel(ABC):
             return None
         return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
 
-    @cached_property
-    def _W_eigs_real(self) -> np.ndarray | None:
-        """Real part of W eigenvalues as float64, computed lazily once."""
-        eigs = self._W_eigs
-        return None if eigs is None else eigs.real.astype(np.float64)
-
     @property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or dense W.
@@ -530,7 +524,7 @@ class SpatialModel(ABC):
         """
         if self._W_for_logdet_cache is None:
             if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs_real
+                self._W_for_logdet_cache = self._W_eigs
             else:
                 self._W_for_logdet_cache = self._W_sparse.toarray().astype(np.float64)
         return self._W_for_logdet_cache
@@ -540,9 +534,7 @@ class SpatialModel(ABC):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
         if self._logdet_numpy_fn_cache is None:
             eigs = (
-                self._W_eigs_real
-                if self._resolved_logdet_method == "eigenvalue"
-                else None
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
             )
             self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
                 self._W_sparse,
@@ -558,9 +550,7 @@ class SpatialModel(ABC):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
         if self._logdet_numpy_vec_fn_cache is None:
             eigs = (
-                self._W_eigs_real
-                if self._resolved_logdet_method == "eigenvalue"
-                else None
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
             )
             self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
                 self._W_sparse,
@@ -653,8 +643,8 @@ class SpatialModel(ABC):
 
         return _chunked_eig_means(
             rho_draws,
-            eigs.real.astype(np.float64),
-            weights=(V_col_sums * c).real.astype(np.float64),
+            eigs,
+            weights=V_col_sums * c,
         )
 
     def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
@@ -691,8 +681,8 @@ class SpatialModel(ABC):
 
         return _chunked_eig_means(
             rho_draws,
-            eigs.real.astype(np.float64),
-            weights=(eigs * V_col_sums * c).real.astype(np.float64),
+            eigs,
+            weights=eigs * V_col_sums * c,
         )
 
     @property
@@ -1215,7 +1205,7 @@ class SpatialModel(ABC):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type=self._model_type,
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,

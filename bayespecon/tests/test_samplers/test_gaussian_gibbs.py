@@ -675,7 +675,7 @@ class TestGibbsVsNUTS:
     """
 
     def test_sar_gibbs_vs_nuts(self):
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data(rho_true=0.4)
         W = W_to_graph(W_dense)
@@ -713,7 +713,7 @@ class TestGibbsVsNUTS:
         np.testing.assert_allclose(beta_nuts, beta_gibbs, atol=0.15)
 
     def test_sem_gibbs_vs_nuts(self):
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         y, X, W_dense, n = _make_sem_data(lam_true=0.4)
         W = W_to_graph(W_dense)
@@ -746,7 +746,7 @@ class TestGibbsVsNUTS:
             np.testing.assert_allclose(mean_nuts, mean_gibbs, atol=0.15)
 
     def test_sdm_gibbs_vs_nuts(self):
-        from bayespecon.models.sdm import SDM
+        from bayespecon.models.cross_section.sdm import SDM
 
         y, X, W_dense, n = _make_sar_data(rho_true=0.3)
         W = W_to_graph(W_dense)
@@ -778,7 +778,7 @@ class TestGibbsVsNUTS:
         np.testing.assert_allclose(mean_nuts, mean_gibbs, atol=0.15)
 
     def test_sdem_gibbs_vs_nuts(self):
-        from bayespecon.models.sdem import SDEM
+        from bayespecon.models.cross_section.sdem import SDEM
 
         y, X, W_dense, n = _make_sem_data(lam_true=0.3)
         W = W_to_graph(W_dense)
@@ -820,7 +820,7 @@ class TestInferenceDataCompat:
 
     @pytest.fixture
     def sar_idata(self):
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -883,7 +883,7 @@ class TestJAXGaussianGibbs:
     """Tests for the JAX JIT Gaussian Gibbs path."""
 
     def test_sar_jax_produces_valid_idata(self):
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -904,7 +904,7 @@ class TestJAXGaussianGibbs:
         assert float(idata.posterior["rho"].mean()) != 0  # not stuck at init
 
     def test_sem_jax_produces_valid_idata(self):
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         y, X, W_dense, n = _make_sem_data()
         W = W_to_graph(W_dense)
@@ -922,7 +922,7 @@ class TestJAXGaussianGibbs:
         assert "lam" in idata.posterior.data_vars
 
     def test_sdm_jax_produces_valid_idata(self):
-        from bayespecon.models.sdm import SDM
+        from bayespecon.models.cross_section.sdm import SDM
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -941,7 +941,7 @@ class TestJAXGaussianGibbs:
         assert idata.posterior["beta"].shape[-1] == 3  # intercept + x + W*x
 
     def test_sdem_jax_produces_valid_idata(self):
-        from bayespecon.models.sdem import SDEM
+        from bayespecon.models.cross_section.sdem import SDEM
 
         y, X, W_dense, n = _make_sem_data()
         W = W_to_graph(W_dense)
@@ -960,7 +960,7 @@ class TestJAXGaussianGibbs:
 
     def test_rw_mh_option(self):
         """use_mala=False should use RW-MH instead of MALA."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -980,7 +980,7 @@ class TestJAXGaussianGibbs:
 
     def test_jax_loo_works(self):
         """LOO should work with JAX-produced InferenceData."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1000,7 +1000,7 @@ class TestJAXGaussianGibbs:
 
     def test_chebyshev_logdet_with_jax(self):
         """Chebyshev logdet method should work with JAX path."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1028,7 +1028,7 @@ class TestEdgeCases:
 
     def test_robust_raises(self):
         """Gibbs should raise NotImplementedError for robust models."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1038,7 +1038,7 @@ class TestEdgeCases:
 
     def test_tiny_n(self):
         """Gibbs should work with very small n."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data(side=3)  # n=9
         W = W_to_graph(W_dense)
@@ -1063,7 +1063,7 @@ class TestEdgeCases:
         X = np.ones((n, 1))
         y = 1.0 + 0.3 * (W_dense @ np.ones(n)) + 0.5 * rng.standard_normal(n)
 
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         model = SAR(y=y, X=X, W=W)
         idata = model.fit(
@@ -1079,7 +1079,7 @@ class TestEdgeCases:
 
     def test_invalid_sampler_raises(self):
         """Invalid sampler name should raise ValueError."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1089,7 +1089,7 @@ class TestEdgeCases:
 
     def test_invalid_gibbs_method_falls_back(self):
         """Invalid gibbs_method falls back to numpy path (no error raised)."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1135,15 +1135,18 @@ class TestGibbsProgressBarManager:
             assert len(pm._tasks) == 0
 
     def test_update_advances_iteration(self):
-        """update() advances the iteration counter."""
+        """update() advances completed progress in tune and draw phases."""
         from bayespecon.samplers._utils._progress import GibbsProgressBarManager
 
         pm = GibbsProgressBarManager(chains=1, draws=5, tune=2, progressbar=True)
         with pm:
+            task = pm._progress.tasks[pm._tasks[0]]
             pm.update(0, 0, tuning=True, accept=None)
+            assert task.completed == 1
             pm.update(0, 1, tuning=True, accept=None)
+            assert task.completed == 2
             pm.update(0, 2, tuning=False, accept=True)
-            # No assertion on internal state — just verify no errors
+            assert task.completed == 3
 
     def test_update_noop_when_disabled(self):
         """update() is a no-op when progressbar=False."""
@@ -1166,13 +1169,28 @@ class TestGibbsProgressBarManager:
             assert pm._accept_counts[0] == 1
             assert pm._accept_totals[0] == 2
 
+    def test_exit_forces_final_refresh(self):
+        """__exit__ forces one final refresh for notebook rendering."""
+        from bayespecon.samplers._utils._progress import GibbsProgressBarManager
+
+        pm = GibbsProgressBarManager(chains=1, draws=5, tune=2, progressbar=True)
+        pm._progress.live.auto_refresh = False
+        refresh_calls = {"count": 0}
+
+        with pm:
+            pm._progress.refresh = lambda: refresh_calls.__setitem__(
+                "count", refresh_calls["count"] + 1
+            )
+
+        assert refresh_calls["count"] == 1
+
 
 class TestInformativeOutput:
     """Tests for logging output from GibbsEstimation."""
 
     def test_numpy_path_logs_sampling_info(self, caplog):
         """NumPy path logs sampling start and completion."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1193,7 +1211,7 @@ class TestInformativeOutput:
     def test_jax_path_logs_sampler_name(self, caplog):
         """JAX path logs MALA/RW-MH sampler name."""
         pytest.importorskip("jax")
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1219,7 +1237,7 @@ class TestChainParallelism:
 
     def test_sequential_numpy(self):
         """n_jobs=1 runs NumPy chains sequentially."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1238,7 +1256,7 @@ class TestChainParallelism:
 
     def test_parallel_numpy(self):
         """n_jobs=2 runs NumPy chains in parallel via joblib."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1257,7 +1275,7 @@ class TestChainParallelism:
 
     def test_parallel_numpy_all_cpus(self):
         """n_jobs=-1 runs NumPy chains in parallel using all CPUs."""
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1277,7 +1295,7 @@ class TestChainParallelism:
     def test_vectorized_jax(self):
         """chain_method='vectorized' works for JAX path."""
         pytest.importorskip("jax")
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1298,7 +1316,7 @@ class TestChainParallelism:
     def test_jax_default_is_vectorized(self):
         """JAX path defaults to chain_method='vectorized'."""
         pytest.importorskip("jax")
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
@@ -1318,7 +1336,7 @@ class TestChainParallelism:
     def test_parallel_jax_raises(self):
         """chain_method='parallel' raises NotImplementedError for JAX."""
         pytest.importorskip("jax")
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)

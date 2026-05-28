@@ -119,6 +119,13 @@ def resolve_logdet_method(method: str | None, *, n: int) -> str:
     if method not in VALID_LOGDET_METHODS:
         valid = ", ".join(sorted(VALID_LOGDET_METHODS))
         raise ValueError(f"Unknown logdet method: {method!r}. Valid options: {valid}.")
+    # "exact" is mathematically identical to "eigenvalue" (both compute
+    # log|det(I - rho*W)| without approximation) but the eigenvalue path
+    # is O(n) per call after a one-time O(n^3) decomposition, whereas the
+    # pytensor "exact" path recomputes O(n^3) every call.  Alias for
+    # consistency across numpy / JAX / pytensor builders.
+    if method == "exact":
+        return "eigenvalue"
     return method
 
 

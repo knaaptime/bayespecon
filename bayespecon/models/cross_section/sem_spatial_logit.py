@@ -34,20 +34,22 @@ import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
-from .._logdet import make_logdet_numpy_fn
-from ..samplers._utils._idata import gibbs_to_inference_data
-from ..samplers._utils._slice import SliceWidthState
-from ..samplers._utils._spatial_normal import CholmodFactor, has_cholmod
-from ..samplers.gaussian._chain_runner import run_chains
-from ..samplers.logit import (
+from ..._logdet import make_logdet_numpy_fn
+from ...samplers._utils._idata import gibbs_to_inference_data
+from ...samplers._utils._slice import SliceWidthState
+from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers.gaussian._chain_runner import run_chains
+from ...samplers.logit import (
     SEMLogitGibbsCache,
     SEMLogitGibbsPriors,
     SEMLogitGibbsState,
     run_chain_sem,
 )
-from ..samplers.logit._jax import run_chain_jax_sem
-from .base import SpatialModel
-from .priors import SEMSpatialLogitPriors, resolve_priors
+from ...samplers.logit._jax import (
+    run_chains_jax_sem_vectorized,
+)
+from ..base import SpatialModel
+from ..priors import SEMSpatialLogitPriors, resolve_priors
 
 
 class SEMSpatialLogit(SpatialModel):
@@ -135,10 +137,12 @@ class SEMSpatialLogit(SpatialModel):
         bounds = self._logdet_bounds
         return make_logdet_numpy_fn(
             self._W_sparse,
-            eigs=self._W_eigs_real,
+            eigs=self._W_eigs,
             method=bounds.method,
             rho_min=bounds.rho_min,
             rho_max=bounds.rho_max,
+            trace_estimator=self.trace_estimator,
+            trace_k=self.trace_k,
         )
 
     # ------------------------------------------------------------------
@@ -173,7 +177,7 @@ class SEMSpatialLogit(SpatialModel):
         lam_init = 0.0
 
         # ω₀: draw from PG(1, η)
-        from ..samplers._utils._polyagamma import sample_polyagamma
+        from ...samplers._utils._polyagamma import sample_polyagamma
 
         omega_init = sample_polyagamma(np.ones(n), eta_init, rng=rng)
 
@@ -342,7 +346,7 @@ class SEMSpatialLogit(SpatialModel):
             W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
             WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
 
-            from .._logdet import make_logdet_jax_fn
+            from ..._logdet import make_logdet_jax_fn
 
             bounds = self._logdet_bounds
             logdet_jax = make_logdet_jax_fn(
@@ -350,6 +354,8 @@ class SEMSpatialLogit(SpatialModel):
                 method=bounds.method,
                 rho_min=bounds.rho_min,
                 rho_max=bounds.rho_max,
+                trace_estimator=self.trace_estimator,
+                trace_k=self.trace_k,
             )
 
         cache = SEMLogitGibbsCache(
@@ -382,50 +388,72 @@ class SEMSpatialLogit(SpatialModel):
         # Define the per-chain function
         _use_jax_full = sample_method == "jax_dense"
 
-        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
-            rng = np.random.default_rng(seed)
-            init = self._initialize_from_ols(rng)
-            if _use_jax_full:
-                return run_chain_jax_sem(
+        # JAX dense path: run all chains together via jax.vmap so the
+        # Gibbs step JITs once and every chain executes inside one
+        # fused XLA program.
+        if _use_jax_full:
+            if return_eta:
+                raise NotImplementedError(
+                    "return_eta=True is not supported with gibbs_method='jax_dense'. "
+                    "Use gibbs_method='factorize' if you need the full latent field stored."
+                )
+            chain_inits = [
+                self._initialize_from_ols(np.random.default_rng(seed)) for seed in seeds
+            ]
+            chain_results = run_chains_jax_sem_vectorized(
+                y=y,
+                X=X,
+                W_sparse=W_sparse,
+                W_sym_dense=W_sym_dense,
+                WtW_dense=WtW_dense,
+                logdet_jax=logdet_jax,
+                priors=priors,
+                inits=chain_inits,
+                draws=draws,
+                tune=tune,
+                thin=thin,
+                jax_seeds=seeds,
+                pg_n_terms=pg_n_terms,
+                n_probes=n_probes,
+                lanczos_deg=lanczos_deg,
+                progressbar=progressbar,
+            )
+        else:
+
+            def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
+                rng = np.random.default_rng(seed)
+                init = self._initialize_from_ols(rng)
+                progress_chain_id = chain_id if chain_id_kw is None else chain_id_kw
+                return run_chain_sem(
                     y=y,
                     X=X,
                     W_sparse=W_sparse,
-                    W_sym_dense=W_sym_dense,
-                    WtW_dense=WtW_dense,
-                    logdet_jax=logdet_jax,
                     priors=priors,
+                    cache=cache,
                     init=init,
                     draws=draws,
                     tune=tune,
                     thin=thin,
                     return_eta=return_eta,
                     rng=rng,
-                    pg_n_terms=pg_n_terms,
-                    n_probes=n_probes,
-                    lanczos_deg=lanczos_deg,
+                    progress_manager=progress_manager,
+                    chain_id=progress_chain_id,
                 )
-            return run_chain_sem(
-                y=y,
-                X=X,
-                W_sparse=W_sparse,
-                priors=priors,
-                cache=cache,
-                init=init,
+
+            # Non-JAX paths parallelise across chains when the user
+            # requests multiple workers.
+            parallel = n_jobs != 1
+            chain_results = run_chains(
+                chain_fn=_run_one_chain,
+                n_chains=chains,
+                seeds=seeds,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                parallel=parallel,
                 draws=draws,
                 tune=tune,
-                thin=thin,
-                return_eta=return_eta,
-                rng=rng,
+                model_type="sem_logit",
             )
-
-        # Run chains
-        chain_results = run_chains(
-            chain_fn=_run_one_chain,
-            n_chains=chains,
-            seeds=seeds,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-        )
 
         # Assemble InferenceData
         param_keys = ["lam"]
@@ -523,7 +551,7 @@ class SEMSpatialLogit(SpatialModel):
 
         For SEM, direct effects equal β and indirect effects are zero.
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")

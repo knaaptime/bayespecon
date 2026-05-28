@@ -11,14 +11,13 @@ W is optional at construction time.
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
-import pytensor.tensor as pt
 
-from .base import SpatialModel
-from .priors import OLSPriors
+from .._mixins import GaussianLikelihoodMixin
+from ..base import SpatialModel
+from ..priors import OLSPriors
 
 
-class OLS(SpatialModel):
+class OLS(GaussianLikelihoodMixin, SpatialModel):
     """Bayesian ordinary least squares cross-sectional regression.
 
     .. math::
@@ -88,37 +87,6 @@ class OLS(SpatialModel):
     _has_wx_in_beta: bool = False
     _gibbs_class: str | None = None
     _model_type: str = "ols"
-
-    def _build_pymc_model(self) -> pm.Model:
-        """Construct the PyMC model for Bayesian OLS regression.
-
-        Returns
-        -------
-        pymc.Model
-            Compiled probabilistic model object with Normal or Student-t
-            likelihood depending on ``self.robust``.
-        """
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            self._X, list(self._feature_names)
-        )
-        beta_mu = self.priors.get("beta_mu", default_beta_mu)
-        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
-
-        with pm.Model(coords=self._model_coords()) as model:
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-            mu = pt.dot(self._X, beta)
-            if self.robust:
-                self._add_nu_prior(model)
-                nu = model["nu"]
-                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
-            else:
-                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
-
-        return model
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         """Not applicable — OLS has no spatial lag structure.

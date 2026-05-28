@@ -33,8 +33,8 @@ import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
-from .base import SpatialModel
-from .priors import SARPriors
+from ..base import SpatialModel
+from ..priors import SARPriors
 
 
 class SARNegativeBinomial(SpatialModel):
@@ -135,7 +135,7 @@ class SARNegativeBinomial(SpatialModel):
             # an O(n³) decomposition at model construction time that is only
             # consumed by the JAX eigen dispatch path. The PyMC NUTS path
             # uses sparse LU exclusively and never touches eigenvalues.
-            from .._ops import SparseSARSolveOp
+            from ..._ops import SparseSARSolveOp
 
             _sar_solve_op = SparseSARSolveOp(self._W_sparse)
             z = pm.Normal("z", mu=0, sigma=1, dims="obs_id")
@@ -203,14 +203,14 @@ class SARNegativeBinomial(SpatialModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior impacts on the log-mean scale for each draw."""
-        from ..diagnostics.lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
+        from ...diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs_real
+        eigs = self._W_eigs
         mean_diag = _chunked_eig_means(rho_draws, eigs)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
@@ -266,7 +266,7 @@ class SARNegativeBinomial(SpatialModel):
         :math:`O(n^2)` to :math:`O(\text{nnz})` and avoiding the
         :math:`O(n^3)` eigendecomposition entirely.
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
@@ -446,7 +446,7 @@ class SARNegativeBinomial(SpatialModel):
         indirect_samples : np.ndarray, shape (G, n_effects)
         total_samples : np.ndarray, shape (G, n_effects)
         """
-        from .._ops import _make_cached_umfpack_solver
+        from ..._ops import _make_cached_umfpack_solver
 
         W = self._W_sparse
         I_n = sp.eye(n, format="csr", dtype=np.float64)
@@ -544,7 +544,7 @@ class SARNegativeBinomial(SpatialModel):
             when :math:`n` exceeds
             :attr:`_COUNT_EFFECTS_EIGEN_MAX_N` (default 2000).
         """
-        from ..diagnostics.spatial_effects import _build_effects_dataframe
+        from ...diagnostics.spatial_effects import _build_effects_dataframe
 
         if scale == "logmean":
             return super().spatial_effects(

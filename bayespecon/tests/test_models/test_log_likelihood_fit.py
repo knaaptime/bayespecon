@@ -42,9 +42,9 @@ from bayespecon import (
     SEMTobit,
 )
 from bayespecon.models.base import SpatialModel
+from bayespecon.models.cross_section.tobit import _SpatialTobitBase
+from bayespecon.models.panel._tobit import _PanelTobitBase
 from bayespecon.models.panel_base import SpatialPanelModel
-from bayespecon.models.panel_tobit import _PanelTobitBase
-from bayespecon.models.tobit import _SpatialTobitBase
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 # ---------------------------------------------------------------------------

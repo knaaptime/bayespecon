@@ -31,20 +31,20 @@ import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
-from .._logdet import make_logdet_numpy_fn
-from ..samplers._utils._idata import gibbs_to_inference_data
-from ..samplers._utils._slice import SliceWidthState
-from ..samplers._utils._spatial_normal import CholmodFactor, has_cholmod
-from ..samplers.gaussian._chain_runner import run_chains
-from ..samplers.logit import (
+from ..._logdet import make_logdet_numpy_fn
+from ...samplers._utils._idata import gibbs_to_inference_data
+from ...samplers._utils._slice import SliceWidthState
+from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers.gaussian._chain_runner import run_chains
+from ...samplers.logit import (
     LogitGibbsCache,
     LogitGibbsPriors,
     LogitGibbsState,
     run_chain,
 )
-from ..samplers.logit._jax import run_chain_jax
-from .base import SpatialModel
-from .priors import SpatialLogitPriors, resolve_priors
+from ...samplers.logit._jax import run_chains_jax_vectorized
+from ..base import SpatialModel
+from ..priors import SpatialLogitPriors, resolve_priors
 
 
 class SARSpatialLogit(SpatialModel):
@@ -132,10 +132,12 @@ class SARSpatialLogit(SpatialModel):
         bounds = self._logdet_bounds
         return make_logdet_numpy_fn(
             self._W_sparse,
-            eigs=self._W_eigs_real,
+            eigs=self._W_eigs,
             method=bounds.method,
             rho_min=bounds.rho_min,
             rho_max=bounds.rho_max,
+            trace_estimator=self.trace_estimator,
+            trace_k=self.trace_k,
         )
 
     # ------------------------------------------------------------------
@@ -172,7 +174,7 @@ class SARSpatialLogit(SpatialModel):
         rho_init = 0.0
 
         # ω₀: draw from PG(1, η)
-        from ..samplers._utils._polyagamma import sample_polyagamma
+        from ...samplers._utils._polyagamma import sample_polyagamma
 
         omega_init = sample_polyagamma(np.ones(n), eta_init, rng=rng)
 
@@ -341,7 +343,7 @@ class SARSpatialLogit(SpatialModel):
             W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
             WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
 
-            from .._logdet import make_logdet_jax_fn
+            from ..._logdet import make_logdet_jax_fn
 
             bounds = self._logdet_bounds
             logdet_jax = make_logdet_jax_fn(
@@ -349,6 +351,8 @@ class SARSpatialLogit(SpatialModel):
                 method=bounds.method,
                 rho_min=bounds.rho_min,
                 rho_max=bounds.rho_max,
+                trace_estimator=self.trace_estimator,
+                trace_k=self.trace_k,
             )
 
         cache = LogitGibbsCache(
@@ -381,50 +385,74 @@ class SARSpatialLogit(SpatialModel):
         # Define the per-chain function
         _use_jax_full = sample_method == "jax_dense"
 
-        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
-            rng = np.random.default_rng(seed)
-            init = self._initialize_from_ols(rng)
-            if _use_jax_full:
-                return run_chain_jax(
+        # JAX dense path: run all chains in parallel via jax.vmap.  This
+        # JITs the Gibbs step once and executes every chain as a single
+        # fused XLA program, which is strictly faster than driving the
+        # per-chain Python loop ``chains`` times.
+        if _use_jax_full:
+            if return_eta:
+                raise NotImplementedError(
+                    "return_eta=True is not supported with gibbs_method='jax_dense'. "
+                    "Use gibbs_method='factorize' (or 'auto' on systems without "
+                    "CHOLMOD-only data) if you need the full latent field stored."
+                )
+            chain_inits = [
+                self._initialize_from_ols(np.random.default_rng(seed)) for seed in seeds
+            ]
+            chain_results = run_chains_jax_vectorized(
+                y=y,
+                X=X,
+                W_sparse=W_sparse,
+                W_sym_dense=W_sym_dense,
+                WtW_dense=WtW_dense,
+                logdet_jax=logdet_jax,
+                priors=priors,
+                inits=chain_inits,
+                draws=draws,
+                tune=tune,
+                thin=thin,
+                jax_seeds=seeds,
+                pg_n_terms=pg_n_terms,
+                n_probes=n_probes,
+                lanczos_deg=lanczos_deg,
+                progressbar=progressbar,
+            )
+        else:
+
+            def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
+                rng = np.random.default_rng(seed)
+                init = self._initialize_from_ols(rng)
+                progress_chain_id = chain_id if chain_id_kw is None else chain_id_kw
+                return run_chain(
                     y=y,
                     X=X,
                     W_sparse=W_sparse,
-                    W_sym_dense=W_sym_dense,
-                    WtW_dense=WtW_dense,
-                    logdet_jax=logdet_jax,
                     priors=priors,
+                    cache=cache,
                     init=init,
                     draws=draws,
                     tune=tune,
                     thin=thin,
                     return_eta=return_eta,
                     rng=rng,
-                    pg_n_terms=pg_n_terms,
-                    n_probes=n_probes,
-                    lanczos_deg=lanczos_deg,
+                    progress_manager=progress_manager,
+                    chain_id=progress_chain_id,
                 )
-            return run_chain(
-                y=y,
-                X=X,
-                W_sparse=W_sparse,
-                priors=priors,
-                cache=cache,
-                init=init,
+
+            # Run chains.  Non-JAX paths parallelise across chains when
+            # the user requests multiple workers.
+            parallel = n_jobs != 1
+            chain_results = run_chains(
+                chain_fn=_run_one_chain,
+                n_chains=chains,
+                seeds=seeds,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                parallel=parallel,
                 draws=draws,
                 tune=tune,
-                thin=thin,
-                return_eta=return_eta,
-                rng=rng,
+                model_type="sar_logit",
             )
-
-        # Run chains
-        chain_results = run_chains(
-            chain_fn=_run_one_chain,
-            n_chains=chains,
-            seeds=seeds,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-        )
 
         # Assemble InferenceData
         param_keys = ["rho"]
@@ -523,14 +551,14 @@ class SARSpatialLogit(SpatialModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior impacts on the log-odds scale for each draw."""
-        from ..diagnostics.lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
+        from ...diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs_real
+        eigs = self._W_eigs
         mean_diag = _chunked_eig_means(rho_draws, eigs)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 

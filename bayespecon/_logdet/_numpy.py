@@ -97,7 +97,7 @@ def make_logdet_numpy_fn(
     W_sparse : scipy.sparse matrix
         Row-standardised n×n spatial weights matrix.
     eigs : np.ndarray, optional
-        Optional pre-computed real eigenvalues of W.
+        Optional pre-computed eigenvalues of W (complex or real).
     method : str or None
         Same as :func:`make_logdet_fn`.  ``None`` auto-selects via
         :func:`_auto_logdet_method`.
@@ -129,10 +129,11 @@ def make_logdet_numpy_fn(
 
     if method == "eigenvalue":
         if eigs is None:
-            eigs = np.linalg.eigvals(
-                np.asarray(W_sparse.toarray(), dtype=np.float64)
-            ).real
-        _eigs = eigs.real.astype(np.float64)
+            eigs = np.linalg.eigvals(np.asarray(W_sparse.toarray(), dtype=np.float64))
+        # Keep complex eigenvalues — np.abs computes the complex modulus
+        # correctly for non-symmetric W.  For symmetric W the eigenvalues
+        # are real and this is equivalent to the old .real path.
+        _eigs = np.asarray(eigs, dtype=np.complex128)
         if T == 1:
             return lambda r: float(np.sum(np.log(np.abs(1.0 - r * _eigs))))
         return lambda r: T * float(np.sum(np.log(np.abs(1.0 - r * _eigs))))
@@ -216,7 +217,7 @@ def make_logdet_numpy_vec_fn(
     W_sparse : scipy.sparse matrix
         Row-standardised n×n spatial weights matrix.
     eigs : np.ndarray, optional
-        Optional pre-computed real eigenvalues of W.
+        Optional pre-computed eigenvalues of W (complex or real).
     method : str or None
         Same as :func:`make_logdet_numpy_fn`.
     rho_min : float, default -1.0
@@ -245,10 +246,10 @@ def make_logdet_numpy_vec_fn(
 
     if method == "eigenvalue":
         if eigs is None:
-            eigs = np.linalg.eigvals(
-                np.asarray(W_sparse.toarray(), dtype=np.float64)
-            ).real
-        _eigs = eigs.real.astype(np.float64)
+            eigs = np.linalg.eigvals(np.asarray(W_sparse.toarray(), dtype=np.float64))
+        # Keep complex eigenvalues — np.abs computes the complex modulus
+        # correctly for non-symmetric W.
+        _eigs = np.asarray(eigs, dtype=np.complex128)
 
         def _vec_eigenvalue(rho_arr: np.ndarray) -> np.ndarray:
             rho_arr = np.asarray(rho_arr, dtype=np.float64)
@@ -467,7 +468,7 @@ def make_logdet_fn(
             "use rho_min >= 0 or choose 'eigenvalue'/'exact'/'grid_dense'/'grid_sparse'/'grid_ilu'/'chebyshev'."
         )
     if method == "eigenvalue":
-        eigs = np.linalg.eigvals(W_dense).real
+        eigs = np.linalg.eigvals(W_dense)
         if T == 1:
             return lambda rho: logdet_eigenvalue(rho, eigs)
         return lambda rho: T * logdet_eigenvalue(rho, eigs)

@@ -13,7 +13,7 @@ import pytest
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from bayespecon.models.base import _parse_W
+from bayespecon.models._base._shared import _parse_W
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -113,13 +113,13 @@ class TestSpatialModelInit:
         return _W_to_graph(_rook_W(4))
 
     def test_formula_mode_requires_data(self, W_graph):
-        from bayespecon.models.ols import OLS
+        from bayespecon.models.cross_section.ols import OLS
 
         with pytest.raises(ValueError, match="data must be provided"):
             OLS(formula="y ~ x1", data=None, W=W_graph)
 
     def test_formula_mode_creates_model(self, W_graph):
-        from bayespecon.models.ols import OLS
+        from bayespecon.models.cross_section.ols import OLS
 
         rng = np.random.default_rng(42)
         df = pd.DataFrame(
@@ -133,20 +133,20 @@ class TestSpatialModelInit:
         assert "Intercept" in model._feature_names or "x1" in model._feature_names
 
     def test_matrix_mode_creates_model(self, W_graph):
-        from bayespecon.models.ols import OLS
+        from bayespecon.models.cross_section.ols import OLS
 
         rng = np.random.default_rng(0)
         model = OLS(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
         assert model._y.shape == (4,)
 
     def test_no_formula_no_matrices_raises(self, W_graph):
-        from bayespecon.models.ols import OLS
+        from bayespecon.models.cross_section.ols import OLS
 
         with pytest.raises(ValueError, match="Provide either"):
             OLS(W=W_graph)
 
     def test_w_vars_unknown_raises(self, W_graph):
-        from bayespecon.models.slx import SLX
+        from bayespecon.models.cross_section.slx import SLX
 
         rng = np.random.default_rng(0)
         with pytest.raises(ValueError, match="w_vars contains names not found"):
@@ -172,7 +172,7 @@ class TestCrossSectionalDiagnosticsDecision:
 
     @pytest.fixture
     def ols_model(self, W_graph):
-        from bayespecon.models.ols import OLS
+        from bayespecon.models.cross_section.ols import OLS
 
         rng = np.random.default_rng(0)
         return OLS(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -245,7 +245,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert result == "SAR"
 
     def test_sar_error_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         rng = np.random.default_rng(0)
         model = SAR(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -261,7 +261,7 @@ class TestCrossSectionalDiagnosticsDecision:
     def test_sar_error_naive_only_falls_through(self, W_graph, monkeypatch):
         # If only naive ``LM-Error`` fires but the robust refinement
         # clears it, the SAR fit already absorbs the dependence; keep SAR.
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         rng = np.random.default_rng(0)
         model = SAR(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -273,7 +273,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SAR"
 
     def test_sar_wx_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         rng = np.random.default_rng(0)
         model = SAR(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -289,7 +289,7 @@ class TestCrossSectionalDiagnosticsDecision:
     def test_sar_wx_naive_only_falls_through(self, W_graph, monkeypatch):
         # If naive ``LM-WX`` fires but the robust refinement clears it, the
         # tree must fall through to the LM-Error branch — not commit to SDM.
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         rng = np.random.default_rng(0)
         model = SAR(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -303,7 +303,7 @@ class TestCrossSectionalDiagnosticsDecision:
     def test_sar_robust_only_does_not_route_sdm(self, W_graph, monkeypatch):
         # Robust-LM-WX firing without the naive precursor must NOT commit
         # the tree to SDM.
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         rng = np.random.default_rng(0)
         model = SAR(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -315,7 +315,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SAR"
 
     def test_sar_neither_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sar import SAR
+        from bayespecon.models.cross_section.sar import SAR
 
         rng = np.random.default_rng(0)
         model = SAR(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -327,7 +327,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SAR"
 
     def test_sem_lag_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         rng = np.random.default_rng(0)
         model = SEM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -341,7 +341,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SARAR"
 
     def test_sem_lag_naive_only_keeps_sem(self, W_graph, monkeypatch):
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         rng = np.random.default_rng(0)
         model = SEM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -353,7 +353,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SEM"
 
     def test_sem_wx_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         rng = np.random.default_rng(0)
         model = SEM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -366,7 +366,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
 
     def test_sem_all_robust_lag_wins(self, W_graph, monkeypatch):
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         rng = np.random.default_rng(0)
         model = SEM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -380,7 +380,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SARAR"
 
     def test_sem_all_robust_wx_wins(self, W_graph, monkeypatch):
-        from bayespecon.models.sem import SEM
+        from bayespecon.models.cross_section.sem import SEM
 
         rng = np.random.default_rng(0)
         model = SEM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -392,7 +392,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
 
     def test_sdm_robust_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sdm import SDM
+        from bayespecon.models.cross_section.sdm import SDM
 
         rng = np.random.default_rng(0)
         model = SDM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -406,7 +406,7 @@ class TestCrossSectionalDiagnosticsDecision:
         )
 
     def test_sdm_naive_only_keeps_sdm(self, W_graph, monkeypatch):
-        from bayespecon.models.sdm import SDM
+        from bayespecon.models.cross_section.sdm import SDM
 
         rng = np.random.default_rng(0)
         model = SDM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -418,7 +418,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
 
     def test_sdem_robust_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sdem import SDEM
+        from bayespecon.models.cross_section.sdem import SDEM
 
         rng = np.random.default_rng(0)
         model = SDEM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -432,7 +432,7 @@ class TestCrossSectionalDiagnosticsDecision:
         )
 
     def test_sdem_naive_only_keeps_sdem(self, W_graph, monkeypatch):
-        from bayespecon.models.sdem import SDEM
+        from bayespecon.models.cross_section.sdem import SDEM
 
         rng = np.random.default_rng(0)
         model = SDEM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -444,7 +444,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
 
     def test_slx_robust_lag_sdm(self, W_graph, monkeypatch):
-        from bayespecon.models.slx import SLX
+        from bayespecon.models.cross_section.slx import SLX
 
         rng = np.random.default_rng(0)
         model = SLX(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -462,7 +462,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
 
     def test_slx_robust_error_sdem(self, W_graph, monkeypatch):
-        from bayespecon.models.slx import SLX
+        from bayespecon.models.cross_section.slx import SLX
 
         rng = np.random.default_rng(0)
         model = SLX(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -483,7 +483,7 @@ class TestCrossSectionalDiagnosticsDecision:
         # When both robust tests fire (with both naive precursors firing),
         # the smaller-p (= larger statistic) side wins.  Lag-SDM has the
         # smaller p-value here, so SDM is preferred.
-        from bayespecon.models.slx import SLX
+        from bayespecon.models.cross_section.slx import SLX
 
         rng = np.random.default_rng(0)
         model = SLX(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -500,7 +500,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDM"
 
     def test_slx_robust_both_error_wins(self, W_graph, monkeypatch):
-        from bayespecon.models.slx import SLX
+        from bayespecon.models.cross_section.slx import SLX
 
         rng = np.random.default_rng(0)
         model = SLX(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -517,7 +517,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SDEM"
 
     def test_slx_neither_robust(self, W_graph, monkeypatch):
-        from bayespecon.models.slx import SLX
+        from bayespecon.models.cross_section.slx import SLX
 
         rng = np.random.default_rng(0)
         model = SLX(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -535,7 +535,7 @@ class TestCrossSectionalDiagnosticsDecision:
 
     def test_slx_robust_only_no_naive_routes_slx(self, W_graph, monkeypatch):
         # Robust tests firing without naive precursors must NOT escalate.
-        from bayespecon.models.slx import SLX
+        from bayespecon.models.cross_section.slx import SLX
 
         rng = np.random.default_rng(0)
         model = SLX(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -552,7 +552,7 @@ class TestCrossSectionalDiagnosticsDecision:
         assert model.spatial_diagnostics_decision(alpha=0.05, format="model") == "SLX"
 
     def test_sdm_error_sdm_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sdm import SDM
+        from bayespecon.models.cross_section.sdm import SDM
 
         rng = np.random.default_rng(0)
         model = SDM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -566,7 +566,7 @@ class TestCrossSectionalDiagnosticsDecision:
         )
 
     def test_sdem_lag_sdem_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.sdem import SDEM
+        from bayespecon.models.cross_section.sdem import SDEM
 
         rng = np.random.default_rng(0)
         model = SDEM(y=rng.standard_normal(4), X=rng.standard_normal((4, 2)), W=W_graph)
@@ -580,7 +580,7 @@ class TestCrossSectionalDiagnosticsDecision:
         )
 
     def test_sartobit_error_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.tobit import SARTobit
+        from bayespecon.models.cross_section.tobit import SARTobit
 
         rng = np.random.default_rng(0)
         model = SARTobit(
@@ -600,7 +600,7 @@ class TestCrossSectionalDiagnosticsDecision:
         )
 
     def test_semtobit_lag_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.tobit import SEMTobit
+        from bayespecon.models.cross_section.tobit import SEMTobit
 
         rng = np.random.default_rng(0)
         model = SEMTobit(
@@ -620,7 +620,7 @@ class TestCrossSectionalDiagnosticsDecision:
         )
 
     def test_sdmtobit_error_significant(self, W_graph, monkeypatch):
-        from bayespecon.models.tobit import SDMTobit
+        from bayespecon.models.cross_section.tobit import SDMTobit
 
         rng = np.random.default_rng(0)
         model = SDMTobit(
@@ -650,7 +650,7 @@ class TestDecisionOutputFormats:
 
     @pytest.fixture
     def fitted_ols(self):
-        from bayespecon.models.ols import OLS
+        from bayespecon.models.cross_section.ols import OLS
 
         rng = np.random.default_rng(0)
         return OLS(
