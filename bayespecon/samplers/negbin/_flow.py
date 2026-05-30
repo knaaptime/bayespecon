@@ -244,7 +244,9 @@ def _sample_omega_flow(
         :math:`\mathrm{PG}(y + \alpha, \eta)` draws.
     """
     h = y + alpha
-    h = np.maximum(h, 1e-6)
+    # polyagamma's ``alternate`` method (required for non-integer ``h``)
+    # rejects values below ~1e-3 with a misleading "devroye" error message.
+    h = np.maximum(h, 1e-3)
     z = eta
     return sample_polyagamma(h, z, rng=rng)
 

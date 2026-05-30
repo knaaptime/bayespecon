@@ -203,7 +203,7 @@ class OLSPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -422,7 +422,7 @@ class SARPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -573,7 +573,7 @@ class SARPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -1009,7 +1009,7 @@ class SEMPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1153,7 +1153,7 @@ class SEMPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)

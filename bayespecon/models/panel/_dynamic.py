@@ -82,7 +82,7 @@ class _DynamicPanelMixin:
         if isinstance(self, SARPanelDynamic):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             mean_diag = _chunked_eig_means(rho_draws, eigs)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             ni = self._nonintercept_indices
@@ -103,7 +103,7 @@ class _DynamicPanelMixin:
             beta_draws = _get_posterior_draws(idata, "beta")
             beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
             beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             mean_diag_M = _chunked_eig_means(rho_draws, eigs)
             mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)

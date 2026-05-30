@@ -252,8 +252,10 @@ def _sample_omega(
     """
     h = y + alpha  # shape parameters — must be > 0 for PG
     # Guard against numerical zeros (alpha can be very small during
-    # early iterations when y_i = 0)
-    h = np.maximum(h, 1e-6)
+    # early iterations when y_i = 0). polyagamma's ``alternate`` method
+    # (required for non-integer ``h``) rejects values below ~1e-3 with a
+    # misleading "devroye" error message.
+    h = np.maximum(h, 1e-3)
     z = eta  # tilting parameters
     return sample_polyagamma(h, z, rng=rng)
 

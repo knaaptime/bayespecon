@@ -404,7 +404,7 @@ class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sar",
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -483,7 +483,7 @@ class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
         rho_draws.shape[0]
 
-        eigs = self._W_eigs_real
+        eigs = self._W_eigs
         mean_diag = _chunked_eig_means(rho_draws, eigs)  # (G,)
 
         mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
@@ -740,7 +740,7 @@ class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sem",
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1070,7 +1070,7 @@ class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdm",
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1178,7 +1178,7 @@ class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         beta1_draws = beta_draws[:, :k]  # (G, k)
         beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
-        eigs = self._W_eigs_real
+        eigs = self._W_eigs
         mean_diag_M = _chunked_eig_means(rho_draws, eigs)  # (G,)
         mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)  # (G,)
 
@@ -1455,7 +1455,7 @@ class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdem",
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
