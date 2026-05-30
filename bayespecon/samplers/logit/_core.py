@@ -369,14 +369,21 @@ def _sample_rho(
     sweep_idx: int = 0,
     tune: int = 1000,
 ) -> tuple[float, float]:
-    """Block 4: Draw ρ — collapsed 1-D slice sampler (η integrated out).
+    """Block 4: Draw ρ — doubly-collapsed 1-D slice sampler (η AND β integrated out).
 
-    The collapsed log-density is:
+    The doubly-collapsed log-density is:
 
-        log p(ρ | ·) = log|I - ρW| - ½ log|P_η| + ½ rhs^T P_η⁻¹ rhs
+        log p(ρ | σ², ω, y) = log|I - ρW| - ½ log|P_η|
+                              - ½ log|Σ_β*⁻¹|
+                              + ½ κᵀ P_η⁻¹ κ
+                              + ½ m_β*ᵀ Σ_β*⁻¹ m_β*
 
-    where P_η = A_ρ^T A_ρ + diag(ω) and rhs = A_ρ^T Xβ + κ
-    with κ = y - ½.  Note: σ² = 1, so no 1/σ² scaling appears.
+    where P_η = A_ρᵀA_ρ + diag(ω) (σ² = 1), u = A_ρᵀX = X - ρWᵀX,
+    Σ_β*⁻¹ = XᵀX + V₀⁻¹ - uᵀP_η⁻¹u, and
+    m_β* = Σ_β*(uᵀP_η⁻¹κ + V₀⁻¹b₀)  with κ = y - ½.
+
+    Integrating β out (in addition to η) breaks the β–ρ posterior
+    coupling that bottlenecks ρ mixing in the β-conditional variant.
 
     Parameters
     ----------
@@ -410,6 +417,7 @@ def _sample_rho(
         within the same iteration, but NOT across iterations).
     """
     n = len(y)
+    k = X.shape[1]
     W = cache.W_sparse
     logdet_fn = cache.logdet_fn
     rho_lower = priors.rho_lower
@@ -431,7 +439,18 @@ def _sample_rho(
     base = sp.eye(n, format="csr") + sp.diags(omega, format="csr")
 
     # Precompute W^T @ Xbeta (constant across ρ candidates)
+    # — used only by the JAX-dense β-conditional path below.
     WtXbeta = W.T @ Xbeta
+
+    # --- β-marginalisation precomputes (scipy-sparse path, σ² = 1) ---
+    beta_mu_arr = np.broadcast_to(np.asarray(priors.beta_mu, dtype=np.float64), (k,))
+    beta_sigma_arr = np.broadcast_to(
+        np.asarray(priors.beta_sigma, dtype=np.float64), (k,)
+    )
+    V0_inv_diag = 1.0 / beta_sigma_arr**2
+    V0_inv_b0 = beta_mu_arr * V0_inv_diag
+    XtX_mat = cache.XtX  # (k, k), σ² = 1 so no division
+    WtX = W.T @ X  # (n, k), constant in ρ
 
     # Lanczos RNG
     _lanczos_rng = np.random.default_rng(rng.integers(2**31))
@@ -474,17 +493,16 @@ def _sample_rho(
         _ = float(_jax_logdens_fn(jnp.float64(state.rho), _warmup_key))
 
     def log_density(rho: float) -> float:
-        """Collapsed log-density of ρ (η integrated out)."""
+        """Doubly-collapsed log-density of ρ (η and β integrated out)."""
         if use_jax:
+            # NOTE: JAX path still uses β-conditional density;
+            # marginalising β here is deferred to a follow-up.
             _jax_key_step = jax.random.fold_in(_jax_key, hash(rho) % (2**31))
             result = _jax_logdens_fn(jnp.float64(rho), _jax_key_step)
             return float(result)
 
-        # --- scipy sparse path ---
-        logdet = logdet_fn(rho)
-
-        # RHS: Xbeta - ρ W'Xbeta + κ  (σ² = 1, no division)
-        rhs = Xbeta - rho * WtXbeta + kappa
+        # --- scipy sparse path (β-marginalised, σ² = 1) ---
+        log_det_A = logdet_fn(rho)
 
         # Precision: P = base - ρ * W_sym + ρ² * WtW  (σ² = 1)
         if W_sym is not None and WtW is not None:
@@ -493,6 +511,10 @@ def _sample_rho(
             A_rho = sp.eye(n, format="csr") - rho * W
             AtA = A_rho.T @ A_rho  # σ² = 1
             P = AtA + sp.diags(omega, format="csr")
+
+        # u = A_ρᵀ X = X − ρ Wᵀ X   — (n, k) dense
+        u = X - rho * WtX
+        rhs_stack = np.column_stack([kappa, u])  # (n, k+1)
 
         # --- log|P_η| ---
         if logdet_P_method == "lanczos":
@@ -508,27 +530,46 @@ def _sample_rho(
         else:
             P_csc = sp.csc_matrix(P)
             lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            log_det_P = np.sum(np.log(np.abs(lu.U.diagonal())))
+            log_det_P = float(np.sum(np.log(np.abs(lu.U.diagonal()))))
 
-        # --- Solve P m = rhs ---
+        # --- Multi-RHS solve: P [z | M] = [κ | u] ---
         if solve_method == "cg":
-            m = cg_solve(P, rhs)
+            sol = np.column_stack([cg_solve(P, rhs_stack[:, j]) for j in range(k + 1)])
         elif cholmod_factor is not None and solve_method == "cholmod":
-            m = cholmod_factor.solve(rhs)
+            sol = cholmod_factor.solve(rhs_stack)
         elif solve_method == "splu":
             P_csc = sp.csc_matrix(P)
             lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            m = lu.solve(rhs)
+            sol = lu.solve(rhs_stack)
         else:
             if logdet_P_method != "lanczos" and cholmod_factor is not None:
-                m = cholmod_factor.solve(rhs)
+                sol = cholmod_factor.solve(rhs_stack)
             else:
                 P_csc = sp.csc_matrix(P)
                 lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-                m = lu.solve(rhs)
+                sol = lu.solve(rhs_stack)
+        z = sol[:, 0]
+        M = sol[:, 1:]
 
-        quad = float(rhs @ m)
-        return logdet - 0.5 * log_det_P + 0.5 * quad
+        # Σ_β*⁻¹ = XᵀX + V₀⁻¹ − uᵀM   (k × k, symmetric PD)
+        Sig_inv = XtX_mat - u.T @ M
+        Sig_inv[np.arange(k), np.arange(k)] += V0_inv_diag
+        Lb = np.linalg.cholesky(Sig_inv)
+        log_det_Sig_inv = 2.0 * float(np.sum(np.log(np.diag(Lb))))
+
+        rhs_b = u.T @ z + V0_inv_b0
+        m_b = np.linalg.solve(Lb.T, np.linalg.solve(Lb, rhs_b))
+
+        quad_kappa = float(kappa @ z)
+        quad_b = float(rhs_b @ m_b)
+
+        return (
+            log_det_A
+            - 0.5 * log_det_P
+            - 0.5 * log_det_Sig_inv
+            + 0.5 * quad_kappa
+            + 0.5 * quad_b
+        )
 
     # Cache log-density at current x0
     x0 = state.rho

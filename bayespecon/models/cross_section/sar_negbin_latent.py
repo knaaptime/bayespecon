@@ -473,6 +473,8 @@ class SARNegBinLatent(SpatialModel):
                     thin=thin,
                     return_eta=return_eta,
                     rng=rng,
+                    chain_id=chain_id_kw if chain_id_kw is not None else chain_id,
+                    progress_manager=progress_manager,
                 )
 
             # Run chains.  Non-JAX paths parallelise across chains when

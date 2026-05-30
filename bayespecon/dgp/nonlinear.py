@@ -10,7 +10,12 @@ from __future__ import annotations
 import numpy as np
 from scipy.special import erf
 
-from .cross_sectional import simulate_sar, simulate_sdm, simulate_sem
+from .cross_sectional import (
+    _attach_optional_gdf,
+    simulate_sar,
+    simulate_sdm,
+    simulate_sem,
+)
 from .utils import _hetero_scale, ensure_rng, make_design_matrix, resolve_weights
 
 
@@ -23,8 +28,75 @@ def _left_censor(
     return y_obs, mask
 
 
+def _shift_intercept_for_rate(
+    eta: np.ndarray,
+    beta: np.ndarray,
+    target_rate: float | None,
+    link: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Shift the intercept so E[link(η)] ≈ ``target_rate``.
+
+    Solves for the scalar ``c`` such that
+    ``mean(link(eta + c)) == target_rate`` via bisection, then returns
+    ``(eta + c, beta_shifted)`` where ``beta_shifted[0] = beta[0] + c``.
+    This assumes the design matrix's first column is the intercept
+    (which ``make_design_matrix(add_intercept=True)`` guarantees), so
+    the model is fit on the same DGP that produced ``y``.
+
+    Parameters
+    ----------
+    eta : ndarray of shape (n,)
+        Latent linear predictor before any shift.
+    beta : ndarray of shape (k,)
+        Coefficient vector; ``beta[0]`` is the intercept.
+    target_rate : float or None
+        Desired marginal ``P(y=1)``. If ``None``, ``eta`` and ``beta``
+        are returned unchanged.
+    link : {"logit", "probit"}
+        Inverse link to use when computing the marginal probability.
+
+    Returns
+    -------
+    eta_new, beta_new : ndarray
+        Shifted latent predictor and updated coefficient vector.
+    """
+    if target_rate is None:
+        return eta, beta
+    if not 0.0 < float(target_rate) < 1.0:
+        raise ValueError(f"target_rate must lie in (0, 1); got {target_rate!r}")
+
+    if link == "logit":
+
+        def _mean_prob(c: float) -> float:
+            return float(np.mean(1.0 / (1.0 + np.exp(-(eta + c)))))
+    elif link == "probit":
+
+        def _mean_prob(c: float) -> float:
+            return float(np.mean(0.5 * (1.0 + erf((eta + c) / np.sqrt(2.0)))))
+    else:
+        raise ValueError(f"link must be 'logit' or 'probit'; got {link!r}")
+
+    # Mean prob is monotonically increasing in c; bisect on a wide interval.
+    lo, hi = -50.0, 50.0
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        if _mean_prob(mid) < target_rate:
+            lo = mid
+        else:
+            hi = mid
+    c = 0.5 * (lo + hi)
+    beta_new = np.asarray(beta, dtype=float).copy()
+    beta_new[0] = beta_new[0] + c
+    return eta + c, beta_new
+
+
 def simulate_sar_tobit(
-    *, censoring: float = 0.0, err_hetero: bool = False, **kwargs
+    *,
+    censoring: float = 0.0,
+    err_hetero: bool = False,
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
+    **kwargs,
 ) -> dict:
     """Simulate left-censored SAR Tobit data.
 
@@ -35,6 +107,11 @@ def simulate_sar_tobit(
     err_hetero : bool, default=False
         If True, generate heteroskedastic innovations. Forwarded to
         :func:`simulate_sar`.
+    create_gdf : bool, default=False
+        If True, return a GeoDataFrame with the observed ``y`` and
+        ``X_*`` columns attached to geometry.
+    geometry_type : {"point", "polygon"}, default="polygon"
+        Geometry type when ``create_gdf=True`` and no ``gdf`` is supplied.
     **kwargs
         Forwarded to :func:`simulate_sar`.
 
@@ -43,17 +120,28 @@ def simulate_sar_tobit(
     dict
         Includes ``y`` (observed), ``y_latent``, and ``censored_mask``.
     """
+    source_gdf = kwargs.get("gdf")
     out = simulate_sar(err_hetero=err_hetero, **kwargs)
     y_obs, mask = _left_censor(out["y"], censoring)
     out["y_latent"] = out["y"]
     out["y"] = y_obs
     out["censored_mask"] = mask
     out["params_true"]["censoring"] = censoring
-    return out
+    return _attach_optional_gdf(
+        out,
+        source_gdf=source_gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )
 
 
 def simulate_sem_tobit(
-    *, censoring: float = 0.0, err_hetero: bool = False, **kwargs
+    *,
+    censoring: float = 0.0,
+    err_hetero: bool = False,
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
+    **kwargs,
 ) -> dict:
     """Simulate left-censored SEM Tobit data.
 
@@ -64,6 +152,11 @@ def simulate_sem_tobit(
     err_hetero : bool, default=False
         If True, generate heteroskedastic innovations. Forwarded to
         :func:`simulate_sem`.
+    create_gdf : bool, default=False
+        If True, return a GeoDataFrame with the observed ``y`` and
+        ``X_*`` columns attached to geometry.
+    geometry_type : {"point", "polygon"}, default="polygon"
+        Geometry type when ``create_gdf=True`` and no ``gdf`` is supplied.
     **kwargs
         Forwarded to :func:`simulate_sem`.
 
@@ -72,17 +165,28 @@ def simulate_sem_tobit(
     dict
         Includes ``y`` (observed), ``y_latent``, and ``censored_mask``.
     """
+    source_gdf = kwargs.get("gdf")
     out = simulate_sem(err_hetero=err_hetero, **kwargs)
     y_obs, mask = _left_censor(out["y"], censoring)
     out["y_latent"] = out["y"]
     out["y"] = y_obs
     out["censored_mask"] = mask
     out["params_true"]["censoring"] = censoring
-    return out
+    return _attach_optional_gdf(
+        out,
+        source_gdf=source_gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )
 
 
 def simulate_sdm_tobit(
-    *, censoring: float = 0.0, err_hetero: bool = False, **kwargs
+    *,
+    censoring: float = 0.0,
+    err_hetero: bool = False,
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
+    **kwargs,
 ) -> dict:
     """Simulate left-censored SDM Tobit data.
 
@@ -93,6 +197,11 @@ def simulate_sdm_tobit(
     err_hetero : bool, default=False
         If True, generate heteroskedastic innovations. Forwarded to
         :func:`simulate_sdm`.
+    create_gdf : bool, default=False
+        If True, return a GeoDataFrame with the observed ``y`` and
+        ``X_*`` columns attached to geometry.
+    geometry_type : {"point", "polygon"}, default="polygon"
+        Geometry type when ``create_gdf=True`` and no ``gdf`` is supplied.
     **kwargs
         Forwarded to :func:`simulate_sdm`.
 
@@ -101,13 +210,19 @@ def simulate_sdm_tobit(
     dict
         Includes ``y`` (observed), ``y_latent``, and ``censored_mask``.
     """
+    source_gdf = kwargs.get("gdf")
     out = simulate_sdm(err_hetero=err_hetero, **kwargs)
     y_obs, mask = _left_censor(out["y"], censoring)
     out["y_latent"] = out["y"]
     out["y"] = y_obs
     out["censored_mask"] = mask
     out["params_true"]["censoring"] = censoring
-    return out
+    return _attach_optional_gdf(
+        out,
+        source_gdf=source_gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )
 
 
 def simulate_spatial_probit(
@@ -122,6 +237,9 @@ def simulate_spatial_probit(
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
+    target_rate: float | None = None,
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
 ) -> dict:
     """Simulate SpatialProbit-style binary outcome data.
 
@@ -154,6 +272,16 @@ def simulate_spatial_probit(
         Random state controls.
     contiguity : str, default="queen"
         GeoDataFrame neighbor rule when ``W`` is omitted.
+    target_rate : float, optional
+        If given, an intercept shift ``c`` is solved so that
+        ``mean(Phi(eta)) == target_rate``.  ``c`` is added to ``eta``
+        and to ``beta[0]``, so ``params_true['beta']`` reflects the
+        actual coefficients used to generate ``y``.
+    create_gdf : bool, default=False
+        If True, return a GeoDataFrame with ``y`` and ``X_*`` columns
+        attached to geometry (one row per observation, not per region).
+    geometry_type : {"point", "polygon"}, default="polygon"
+        Geometry type when ``create_gdf=True`` and no ``gdf`` is supplied.
 
     Returns
     -------
@@ -189,10 +317,11 @@ def simulate_spatial_probit(
         X = make_design_matrix(rng, nobs, k=max(len(beta) - 1, 0), add_intercept=True)
 
     eta = X @ beta + a[region_ids]
+    eta, beta = _shift_intercept_for_rate(eta, beta, target_rate, link="probit")
     p = 0.5 * (1.0 + erf(eta / np.sqrt(2.0)))
     y = rng.binomial(1, p).astype(float)
 
-    return {
+    out = {
         "y": y,
         "X": X,
         "region_ids": region_ids,
@@ -205,6 +334,12 @@ def simulate_spatial_probit(
             "n_per_region": n_per_region,
         },
     }
+    return _attach_optional_gdf(
+        out,
+        source_gdf=gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )
 
 
 def simulate_sar_logit(
@@ -216,6 +351,9 @@ def simulate_sar_logit(
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
+    target_rate: float | None = None,
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
     **kwargs,
 ) -> dict:
     """Simulate SAR-logit binary outcome data.
@@ -238,6 +376,16 @@ def simulate_sar_logit(
         Random state controls.
     contiguity : str, default="queen"
         GeoDataFrame neighbor rule when ``W`` is omitted.
+    target_rate : float, optional
+        If given, an intercept shift ``c`` is solved so that
+        ``mean(logit^{-1}(eta)) == target_rate``.  ``c`` is added to
+        ``eta`` and to ``beta[0]``, so ``params_true['beta']`` reflects
+        the actual coefficients used to generate ``y``.
+    create_gdf : bool, default=False
+        If True, return a GeoDataFrame with ``y`` and ``X_*`` columns
+        attached to geometry.
+    geometry_type : {"point", "polygon"}, default="polygon"
+        Geometry type when ``create_gdf=True`` and no ``gdf`` is supplied.
 
     Returns
     -------
@@ -266,12 +414,13 @@ def simulate_sar_logit(
         sp.eye(n_obs, format="csr") - rho * W_sparse, Xbeta + nu
     )
     eta = A_rho_inv
+    eta, beta = _shift_intercept_for_rate(eta, beta, target_rate, link="logit")
 
     # Binary response: y ~ Bernoulli(logit^{-1}(eta))
     probs = 1.0 / (1.0 + np.exp(-eta))
     y = rng.binomial(1, probs).astype(float)
 
-    return {
+    out = {
         "y": y,
         "X": X,
         "W_sparse": W_sparse,
@@ -282,6 +431,12 @@ def simulate_sar_logit(
             "beta": beta,
         },
     }
+    return _attach_optional_gdf(
+        out,
+        source_gdf=gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )
 
 
 def simulate_sem_logit(
@@ -293,6 +448,9 @@ def simulate_sem_logit(
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
+    target_rate: float | None = None,
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
     **kwargs,
 ) -> dict:
     """Simulate SEM-logit binary outcome data.
@@ -315,6 +473,16 @@ def simulate_sem_logit(
         Random state controls.
     contiguity : str, default "queen"
         GeoDataFrame neighbor rule when ``W`` is omitted.
+    target_rate : float, optional
+        If given, an intercept shift ``c`` is solved so that
+        ``mean(logit^{-1}(eta)) == target_rate``.  ``c`` is added to
+        ``eta`` and to ``beta[0]``, so ``params_true['beta']`` reflects
+        the actual coefficients used to generate ``y``.
+    create_gdf : bool, default=False
+        If True, return a GeoDataFrame with ``y`` and ``X_*`` columns
+        attached to geometry.
+    geometry_type : {"point", "polygon"}, default="polygon"
+        Geometry type when ``create_gdf=True`` and no ``gdf`` is supplied.
 
     Returns
     -------
@@ -341,12 +509,13 @@ def simulate_sem_logit(
     Xbeta = X @ beta
     A_lam_inv = sp.linalg.spsolve(sp.eye(n_obs, format="csr") - lam * W_sparse, nu)
     eta = Xbeta + A_lam_inv
+    eta, beta = _shift_intercept_for_rate(eta, beta, target_rate, link="logit")
 
     # Binary response: y ~ Bernoulli(logit^{-1}(eta))
     probs = 1.0 / (1.0 + np.exp(-eta))
     y = rng.binomial(1, probs).astype(float)
 
-    return {
+    out = {
         "y": y,
         "X": X,
         "W_sparse": W_sparse,
@@ -357,3 +526,9 @@ def simulate_sem_logit(
             "beta": beta,
         },
     }
+    return _attach_optional_gdf(
+        out,
+        source_gdf=gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )

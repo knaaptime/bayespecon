@@ -553,12 +553,29 @@ class GibbsEstimation:
             [c["log_lik"] for c in chain_results], axis=0
         )  # (chains, n_keep, n)
 
+        # Sample stats: per-draw joint log-likelihood and acceptance rate.
+        # ``lp`` is the sum of the pointwise log-likelihood (which already
+        # includes the Jacobian correction for SAR/SEM); broadcasting the
+        # per-chain ``mh_accept_rate`` scalar across draws gives ArviZ a
+        # uniform ``(chain, draw)``-shaped stat without per-step tracking.
+        n_keep = log_lik.shape[1]
+        lp = log_lik.sum(axis=-1)  # (chains, n_keep)
+        accept_per_chain = np.array(
+            [c.get("mh_accept_rate", 1.0) for c in chain_results],
+            dtype=np.float64,
+        )
+        acceptance_rate = np.broadcast_to(
+            accept_per_chain[:, None], (len(chain_results), n_keep)
+        ).copy()
+        sample_stats = {"lp": lp, "acceptance_rate": acceptance_rate}
+
         idata = gibbs_to_inference_data(
             posterior_samples=posterior_samples,
             log_likelihood={"obs": log_lik},
             observed_data={"obs": self.y},
             coords=coords,
             dims=dims,
+            sample_stats=sample_stats,
         )
 
         return idata

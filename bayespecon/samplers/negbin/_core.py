@@ -590,28 +590,32 @@ def _sample_rho(
     sweep_idx: int = 0,
     tune: int = 0,
 ) -> tuple[float, float]:
-    """Block 5: Draw ρ | β, σ², ω, α, y — collapsed 1-D slice sampler.
+    """Block 5: Draw ρ | σ², ω, α, y — collapsed 1-D slice sampler.
 
-    Uses the **marginal** (collapsed) posterior for ρ that integrates
-    out η, avoiding the slow mixing that arises from conditioning on
-    the current η draw.  The collapsed log-density is:
+    Uses the **doubly-marginal** posterior for ρ that integrates out
+    both η and β, avoiding the slow mixing induced by conditioning on
+    the current β draw.  The collapsed log-density is:
 
     .. math::
 
         \\log p(\\rho \\mid \\cdot) = \\log|I - \\rho W|
             - \\tfrac{1}{2} \\log|P_\\eta|
-            + \\tfrac{1}{2} \\mathit{rhs}^T P_\\eta^{-1} \\mathit{rhs}
+            - \\tfrac{1}{2} \\log|\\Sigma_\\beta^{*-1}|
+            + \\tfrac{1}{2} \\kappa^T P_\\eta^{-1} \\kappa
+            + \\tfrac{1}{2} m_\\beta^{*T} \\Sigma_\\beta^{*-1} m_\\beta^*
 
-    where :math:`P_\\eta = A_\\rho^T A_\\rho / \\sigma^2 + \\mathrm{diag}(\\omega)`
-    and :math:`\\mathit{rhs} = A_\\rho^T X\\beta / \\sigma^2 + \\kappa`
-    with :math:`\\kappa = (y - \\alpha) / 2`.
+    where :math:`P_\\eta = A_\\rho^T A_\\rho / \\sigma^2 + \\mathrm{diag}(\\omega)`,
+    :math:`u = A_\\rho^T X / \\sigma^2`,
+    :math:`\\Sigma_\\beta^{*-1} = X^T X / \\sigma^2 + V_0^{-1} - u^T P_\\eta^{-1} u`,
+    :math:`m_\\beta^* = \\Sigma_\\beta^*(u^T P_\\eta^{-1} \\kappa + V_0^{-1} b_0)`,
+    and :math:`\\kappa = (y - \\alpha) / 2`.
 
-    Each ρ evaluation requires computing log|P_η| and solving
-    P_η m = rhs.  By default, both are done via CHOLMOD/splu
-    factorisation (O(nnz^{1.5})).  When ``cache.solve_method="cg"``
-    and/or ``cache.logdet_P_method="lanczos"``, the decoupled
-    (iterative) path is used instead, avoiding the factorisation
-    cost entirely for large n with high fill-in.
+    Each ρ evaluation requires log|P_η| and a multi-RHS solve
+    ``P [z | M] = [κ | u]`` (k+1 right-hand sides).  By default,
+    both are done via CHOLMOD/splu factorisation (O(nnz^{1.5})),
+    which provides cheap multi-RHS solves once factored.  When
+    ``cache.solve_method="cg"`` and/or ``cache.logdet_P_method="lanczos"``,
+    the decoupled (iterative) path is used instead.
 
     Parameters
     ----------
@@ -639,7 +643,7 @@ def _sample_rho(
         Log-density at the new ρ (for caching).
     """
     sigma2 = state.sigma2
-    n = len(y)
+    n, k = X.shape
     W = cache.W_sparse
     logdet_fn = cache.logdet_fn
     rho_lower = priors.rho_lower
@@ -665,8 +669,22 @@ def _sample_rho(
     WtW_s2 = WtW_over_s2 / sigma2 if WtW_over_s2 is not None else None
 
     # Precompute W^T @ Xbeta / sigma2 (constant across ρ candidates)
+    # — used only by the JAX-dense β-conditional path below.
     WtXbeta_over_s2 = W.T @ Xbeta / sigma2
     Xbeta_over_s2 = Xbeta / sigma2
+
+    # --- β-marginalisation precomputes (scipy-sparse path) ---
+    # The doubly-collapsed ρ posterior integrates out β as well as η,
+    # which dramatically improves ρ-mixing (no β–ρ coupling bias).
+    # β prior: N(b₀, V₀) with V₀ = diag(σ_β²).
+    beta_mu = np.broadcast_to(np.asarray(priors.beta_mu, dtype=np.float64), (k,))
+    beta_sigma2 = np.broadcast_to(
+        np.asarray(priors.beta_sigma, dtype=np.float64) ** 2, (k,)
+    )
+    V0_inv_diag = 1.0 / beta_sigma2  # diagonal of V₀⁻¹
+    V0_inv_b0 = beta_mu * V0_inv_diag  # V₀⁻¹ b₀
+    XtX_s2 = cache.XtX / sigma2  # XᵀX / σ²  (k × k, constant in ρ)
+    WtX = W.T @ X  # (n, k), constant in ρ
 
     # Lanczos RNG: use a child seed so the slice sampler's ρ path
     # is reproducible but doesn't interfere with the main Gibbs RNG.
@@ -716,28 +734,31 @@ def _sample_rho(
         _ = float(_jax_logdens_fn(jnp.float64(state.rho), _warmup_key))
 
     def log_density(rho: float) -> float:
-        """Collapsed log-density of ρ (η integrated out)."""
+        """Doubly-collapsed log-density of ρ (η and β integrated out)."""
         if use_jax:
             # --- JAX dense path (JIT-compiled) ---
-            # Split key for this evaluation (deterministic from rho)
+            # NOTE: JAX path still uses β-conditional density.  Marginalising
+            # β here requires extending `_jax_log_density_core` for a
+            # (k+1)-column solve + k×k Cholesky; deferred to a follow-up.
             _jax_key_step = jax.random.fold_in(_jax_key, hash(rho) % (2**31))
             result = _jax_logdens_fn(jnp.float64(rho), _jax_key_step)
             return float(result)
 
-        # --- scipy sparse path ---
+        # --- scipy sparse path (β-marginalised) ---
         # log|I - rho*W|
-        logdet = logdet_fn(rho)
+        log_det_A = logdet_fn(rho)
 
-        # Right-hand side (constant form regardless of solve method)
-        rhs = Xbeta_over_s2 - rho * WtXbeta_over_s2 + kappa
-
-        # Precision: P = base - rho * Wsym_s2 + rho^2 * WtW_s2
+        # Precision: P = base - rho * Wsym_s2 + rho**2 * WtW_s2
         if Wsym_s2 is not None and WtW_s2 is not None:
             P = base - rho * Wsym_s2 + rho**2 * WtW_s2
         else:
             A_rho = sp.eye(n, format="csr") - rho * W
             AtA = A_rho.T @ A_rho / sigma2
             P = AtA + sp.diags(omega, format="csr")
+
+        # u = A_ρᵀ X / σ² = (X − ρ Wᵀ X) / σ²   — (n, k) dense
+        u = (X - rho * WtX) / sigma2
+        rhs_stack = np.column_stack([kappa, u])  # (n, k+1)
 
         # --- log|P_η| ---
         if logdet_P_method == "lanczos":
@@ -753,30 +774,48 @@ def _sample_rho(
         else:
             P_csc = sp.csc_matrix(P)
             lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            log_det_P = np.sum(np.log(np.abs(lu.U.diagonal())))
+            log_det_P = float(np.sum(np.log(np.abs(lu.U.diagonal()))))
 
-        # --- Solve P m = rhs ---
+        # --- Multi-RHS solve: P [z | M] = [κ | u] ---
         if solve_method == "cg":
-            m = cg_solve(P, rhs)
+            # CG is single-RHS; solve k+1 times.
+            sol = np.column_stack([cg_solve(P, rhs_stack[:, j]) for j in range(k + 1)])
         elif cholmod_factor is not None and solve_method == "cholmod":
-            m = cholmod_factor.solve(rhs)
+            sol = cholmod_factor.solve(rhs_stack)
         elif solve_method == "splu":
             P_csc = sp.csc_matrix(P)
             lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            m = lu.solve(rhs)
+            sol = lu.solve(rhs_stack)
         else:
             if logdet_P_method != "lanczos" and cholmod_factor is not None:
-                m = cholmod_factor.solve(rhs)
+                sol = cholmod_factor.solve(rhs_stack)
             else:
                 P_csc = sp.csc_matrix(P)
                 lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-                m = lu.solve(rhs)
+                sol = lu.solve(rhs_stack)
+        z = sol[:, 0]
+        M = sol[:, 1:]
 
-        # Quadratic form: rhs^T P^{-1} rhs = rhs^T m
-        quad = float(rhs @ m)
+        # Σ_β*⁻¹ = XᵀX/σ² + V₀⁻¹ − uᵀ M   (k × k, symmetric PD)
+        Sig_inv = XtX_s2 - u.T @ M
+        Sig_inv[np.arange(k), np.arange(k)] += V0_inv_diag
+        Lb = np.linalg.cholesky(Sig_inv)
+        log_det_Sig_inv = 2.0 * float(np.sum(np.log(np.diag(Lb))))
+
+        rhs_b = u.T @ z + V0_inv_b0
+        m_b = np.linalg.solve(Lb.T, np.linalg.solve(Lb, rhs_b))
+
+        quad_kappa = float(kappa @ z)
+        quad_b = float(rhs_b @ m_b)
 
         # Uniform prior on [rho_lower, rho_upper] → log p(rho) = 0
-        return logdet - 0.5 * log_det_P + 0.5 * quad
+        return (
+            log_det_A
+            - 0.5 * log_det_P
+            - 0.5 * log_det_Sig_inv
+            + 0.5 * quad_kappa
+            + 0.5 * quad_b
+        )
 
     # Cache log-density at current x0 to avoid redundant evaluation
     # inside the slice sampler (which always evaluates log_density(x0))
@@ -1002,6 +1041,8 @@ def run_chain(
     thin: int = 1,
     return_eta: bool = False,
     rng: np.random.Generator | None = None,
+    chain_id: int = 0,
+    progress_manager: object | None = None,
 ) -> dict[str, np.ndarray]:
     """Run one chain of the PG-Gibbs sampler.
 
@@ -1117,6 +1158,9 @@ def run_chain(
                 eta_norm_samples[idx] = float(state.eta @ state.eta)
                 if return_eta:
                     eta_samples[idx] = state.eta
+
+        if progress_manager is not None:
+            progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
 
     result = {
         "rho": rho_samples,
