@@ -426,8 +426,10 @@ def _sample_alpha_flow(
         )
         total_log_lik = np.sum(log_lik)
 
-        log_prior = -0.5 * (alpha_nu + 1.0) * np.log1p(
-            (alpha * alpha) / (alpha_nu * alpha_sigma * alpha_sigma)
+        log_prior = (
+            -0.5
+            * (alpha_nu + 1.0)
+            * np.log1p((alpha * alpha) / (alpha_nu * alpha_sigma * alpha_sigma))
         )
         return log_a + total_log_lik + log_prior
 

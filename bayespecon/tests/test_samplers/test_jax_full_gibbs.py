@@ -280,7 +280,9 @@ class TestMakeGibbsStepWithData:
             key, step_key = jax.random.split(key)
             state, accept = gibbs_step(state, step_key)
             accept_count += int(accept)
-            alpha_new = _sample_alpha_python(state, y, priors.alpha_sigma, priors.alpha_nu, alpha_rng)
+            alpha_new = _sample_alpha_python(
+                state, y, priors.alpha_sigma, priors.alpha_nu, alpha_rng
+            )
             state = JAXGibbsState(
                 eta=state.eta,
                 beta=state.beta,

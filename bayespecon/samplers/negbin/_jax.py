@@ -437,8 +437,10 @@ def _jax_nb_log_density_alpha(log_a, y_jax, eta, alpha_sigma, alpha_nu):
     total_log_lik = jnp.sum(log_lik)
     # Half-Student-t prior on α (truncated to α > 0):
     #   p(α) ∝ (1 + α² / (ν σ²))^{-(ν+1)/2}
-    log_prior = -0.5 * (alpha_nu + 1.0) * jnp.log1p(
-        (a * a) / (alpha_nu * alpha_sigma * alpha_sigma)
+    log_prior = (
+        -0.5
+        * (alpha_nu + 1.0)
+        * jnp.log1p((a * a) / (alpha_nu * alpha_sigma * alpha_sigma))
     )
     return log_a + total_log_lik + log_prior
 
@@ -477,7 +479,9 @@ def _sample_alpha_jax(state, y_jax, alpha_sigma, alpha_nu, key):
     log_alpha = jnp.log(state.alpha)
 
     # Log-density at current point
-    log_y0 = _jax_nb_log_density_alpha(log_alpha, y_jax, state.eta, alpha_sigma, alpha_nu)
+    log_y0 = _jax_nb_log_density_alpha(
+        log_alpha, y_jax, state.eta, alpha_sigma, alpha_nu
+    )
 
     # Draw vertical level: log(u) where u ~ Uniform(0, f(x0))
     key, subkey = jax.random.split(key)
@@ -503,7 +507,8 @@ def _sample_alpha_jax(state, y_jax, alpha_sigma, alpha_nu, key):
     def should_step_left(carry):
         L_val, _ = carry
         return (L_val > lower_bound) & (
-            _jax_nb_log_density_alpha(L_val, y_jax, state.eta, alpha_sigma, alpha_nu) > log_u
+            _jax_nb_log_density_alpha(L_val, y_jax, state.eta, alpha_sigma, alpha_nu)
+            > log_u
         )
 
     L_final, _ = jax.lax.while_loop(
@@ -519,7 +524,8 @@ def _sample_alpha_jax(state, y_jax, alpha_sigma, alpha_nu, key):
     def should_step_right(carry):
         R_val, _ = carry
         return (R_val < upper_bound) & (
-            _jax_nb_log_density_alpha(R_val, y_jax, state.eta, alpha_sigma, alpha_nu) > log_u
+            _jax_nb_log_density_alpha(R_val, y_jax, state.eta, alpha_sigma, alpha_nu)
+            > log_u
         )
 
     R_final, _ = jax.lax.while_loop(
@@ -537,7 +543,9 @@ def _sample_alpha_jax(state, y_jax, alpha_sigma, alpha_nu, key):
         L_val, R_val, key_val, x_best, _ = carry
         key_val, subkey = jax.random.split(key_val)
         x_new = L_val + jax.random.uniform(subkey, dtype=jnp.float64) * (R_val - L_val)
-        log_dens_new = _jax_nb_log_density_alpha(x_new, y_jax, state.eta, alpha_sigma, alpha_nu)
+        log_dens_new = _jax_nb_log_density_alpha(
+            x_new, y_jax, state.eta, alpha_sigma, alpha_nu
+        )
         accepted = log_dens_new > log_u
         L_new = jnp.where(x_new < log_alpha, x_new, L_val)
         R_new = jnp.where(x_new >= log_alpha, x_new, R_val)
@@ -603,8 +611,10 @@ def _sample_alpha_python(state, y, alpha_sigma, alpha_nu, rng):
         log_lik = np.where(np.isfinite(log_lik), log_lik, -1e10)
         total_log_lik = np.sum(log_lik)
         # Half-Student-t prior on α
-        log_prior = -0.5 * (alpha_nu + 1.0) * np.log1p(
-            (a * a) / (alpha_nu * alpha_sigma * alpha_sigma)
+        log_prior = (
+            -0.5
+            * (alpha_nu + 1.0)
+            * np.log1p((a * a) / (alpha_nu * alpha_sigma * alpha_sigma))
         )
         return log_a + total_log_lik + log_prior
 

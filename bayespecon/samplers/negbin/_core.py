@@ -976,8 +976,10 @@ def _sample_alpha(
         #   p(α) ∝ (1 + α² / (ν σ²))^{-(ν+1)/2}
         # ⇒ log p(α) = -(ν+1)/2 · log(1 + α² / (ν σ²))   (+ const)
         # On the log(α) scale we add the Jacobian log|dα/d log α| = log α.
-        log_prior = -0.5 * (alpha_nu + 1.0) * np.log1p(
-            (alpha * alpha) / (alpha_nu * alpha_sigma * alpha_sigma)
+        log_prior = (
+            -0.5
+            * (alpha_nu + 1.0)
+            * np.log1p((alpha * alpha) / (alpha_nu * alpha_sigma * alpha_sigma))
         )
 
         # Jacobian: d(alpha)/d(log_alpha) = alpha, so log|J| = log(alpha) = log_a
