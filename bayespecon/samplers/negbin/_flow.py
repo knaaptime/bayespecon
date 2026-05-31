@@ -124,7 +124,8 @@ class FlowGibbsPriors:
     beta_sigma: np.ndarray | float = 1e6
     sigma2_alpha: float = 2.0  # InverseGamma shape for σ²
     sigma2_beta: float = 1.0  # InverseGamma scale for σ²
-    alpha_sigma: float = 10.0  # HalfNormal scale for α
+    alpha_sigma: float = 2.5  # Half-Student-t scale for α (NB dispersion)
+    alpha_nu: float = 3.0  # Half-Student-t degrees of freedom for α
     rho_lower: float = -0.999
     rho_upper: float = 0.999
 
@@ -382,7 +383,8 @@ def _sample_alpha_flow(
 
     where :math:`\log\alpha` is the Jacobian from the change of variables
     :math:`\alpha = \exp(\log\alpha)`, and :math:`p(\alpha)` is the
-    :math:`\mathrm{HalfNormal}(\sigma_\alpha)` prior.
+    :math:`\mathrm{Half\text{-}Student\text{-}t}(\nu_\alpha, \sigma_\alpha)`
+    prior.
 
     Identical to the single-ρ version but operates on :math:`N = n^2`
     observations.
@@ -394,7 +396,7 @@ def _sample_alpha_flow(
     y : ndarray of shape (N,)
         Integer response vector.
     priors : FlowGibbsPriors
-        Prior hyperparameters (alpha_sigma).
+        Prior hyperparameters (alpha_sigma, alpha_nu).
     rng : numpy.random.Generator
         Random state.
 
@@ -404,6 +406,7 @@ def _sample_alpha_flow(
         New draw of :math:`\alpha`.
     """
     alpha_sigma = priors.alpha_sigma
+    alpha_nu = priors.alpha_nu
     eta = state.eta
     log_alpha = np.log(state.alpha)
 
@@ -423,7 +426,9 @@ def _sample_alpha_flow(
         )
         total_log_lik = np.sum(log_lik)
 
-        log_prior = -(alpha**2) / (2.0 * alpha_sigma**2)
+        log_prior = -0.5 * (alpha_nu + 1.0) * np.log1p(
+            (alpha * alpha) / (alpha_nu * alpha_sigma * alpha_sigma)
+        )
         return log_a + total_log_lik + log_prior
 
     log_alpha_new, _ = slice_sample_1d(

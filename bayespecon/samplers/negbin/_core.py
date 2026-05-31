@@ -158,7 +158,8 @@ class GibbsPriors:
     beta_sigma: np.ndarray | float = 1e6
     sigma2_alpha: float = 2.0  # InverseGamma shape for σ²
     sigma2_beta: float = 1.0  # InverseGamma scale for σ²
-    alpha_sigma: float = 10.0  # HalfNormal scale for α
+    alpha_sigma: float = 2.5  # Half-Student-t scale for α (NB dispersion)
+    alpha_nu: float = 3.0  # Half-Student-t degrees of freedom for α
     rho_lower: float = -0.999
     rho_upper: float = 0.999
 
@@ -919,7 +920,11 @@ def _sample_alpha(
         log p(log α | y, η) = log α + Σ_i log NB(y_i | exp(η_i), α) + log p(α)
 
     where log α is the Jacobian from the change of variables α = exp(log α),
-    and p(α) is the HalfNormal(σ_α) prior.
+    and p(α) is the Half-Student-t(ν=``alpha_nu``, σ=``alpha_sigma``) prior.
+    The Half-Student-t (a.k.a. half-Cauchy when ν=1) has heavier tails than
+    a Half-Normal and so places less penalty on small α (strong
+    overdispersion), which is the regime that motivates choosing NB over
+    Poisson in the first place.
 
     Parameters
     ----------
@@ -928,7 +933,7 @@ def _sample_alpha(
     y : ndarray of shape (n,)
         Integer response vector.
     priors : GibbsPriors
-        Prior hyperparameters (alpha_sigma).
+        Prior hyperparameters (alpha_sigma, alpha_nu).
     rng : numpy.random.Generator
         Random state.
 
@@ -938,6 +943,7 @@ def _sample_alpha(
         New draw of α.
     """
     alpha_sigma = priors.alpha_sigma
+    alpha_nu = priors.alpha_nu
     eta = state.eta
     log_alpha = np.log(state.alpha)
 
@@ -966,10 +972,13 @@ def _sample_alpha(
         )
         total_log_lik = np.sum(log_lik)
 
-        # HalfNormal prior on alpha: p(alpha) = (2/(pi*sigma^2))^{1/2} exp(-alpha^2/(2*sigma^2))
-        # On log(alpha) scale: log p(alpha) + log(alpha) [Jacobian]
-        # = -alpha^2 / (2*sigma^2) + log(alpha) + const
-        log_prior = -(alpha**2) / (2.0 * alpha_sigma**2)
+        # Half-Student-t prior on α (truncated to α > 0):
+        #   p(α) ∝ (1 + α² / (ν σ²))^{-(ν+1)/2}
+        # ⇒ log p(α) = -(ν+1)/2 · log(1 + α² / (ν σ²))   (+ const)
+        # On the log(α) scale we add the Jacobian log|dα/d log α| = log α.
+        log_prior = -0.5 * (alpha_nu + 1.0) * np.log1p(
+            (alpha * alpha) / (alpha_nu * alpha_sigma * alpha_sigma)
+        )
 
         # Jacobian: d(alpha)/d(log_alpha) = alpha, so log|J| = log(alpha) = log_a
         return log_a + total_log_lik + log_prior

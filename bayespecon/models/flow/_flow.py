@@ -2245,7 +2245,8 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
-        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 2.5)
+        alpha_nu = self.priors.get("alpha_nu", 3.0)
 
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
@@ -2268,7 +2269,7 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
                 )
 
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
 
             Xb = pt.dot(X_t, beta)
             solve_op = SparseFlowSolveOp(self._Wd, self._Wo, self._Ww)
@@ -2343,7 +2344,8 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
-        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 2.5)
+        alpha_nu = self.priors.get("alpha_nu", 3.0)
         rho_lower = self.priors.get("rho_lower", -0.999)
         rho_upper = self.priors.get("rho_upper", 0.999)
 
@@ -2361,7 +2363,7 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
             pm.Deterministic("rho_w", -rho_d * rho_o)
 
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
 
             Xb = pt.dot(X_t, beta)
             solve_op = KroneckerFlowSolveOp(self._W_sparse, n)
@@ -2421,13 +2423,14 @@ class NegativeBinomialFlow(PoissonFlow):
     def _build_pymc_model(self) -> pm.Model:
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
-        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 2.5)
+        alpha_nu = self.priors.get("alpha_nu", 3.0)
 
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
             eta = pt.dot(X_t, beta)
             lam = pm.Deterministic("lambda", pt.exp(eta))
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
@@ -2920,7 +2923,8 @@ class SARNegBinFlowLatent(FlowModel):
         - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
         - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
         - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
-        - ``alpha_sigma`` : float, default 10.0 — HalfNormal prior std for ``alpha``.
+        - ``alpha_sigma`` : float, default 2.5 — Half-Student-t prior scale for ``alpha``.
+        - ``alpha_nu`` : float, default 3.0 — Half-Student-t degrees of freedom for ``alpha``.
         - ``rho_lower`` : float, default -0.999 — Lower bound for each :math:`\rho`.
         - ``rho_upper`` : float, default 0.999 — Upper bound for each :math:`\rho`.
 
@@ -3050,7 +3054,8 @@ class SARNegBinFlowLatent(FlowModel):
             beta_sigma=self.priors.get("beta_sigma", 1e6),
             sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
             sigma2_beta=self.priors.get("sigma2_beta", 1.0),
-            alpha_sigma=self.priors.get("alpha_sigma", 10.0),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
             rho_lower=self.priors.get("rho_lower", -0.999),
             rho_upper=self.priors.get("rho_upper", 0.999),
         )
@@ -3263,7 +3268,8 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
         - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
         - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
-        - ``alpha_sigma`` : float, default 10.0 — HalfNormal prior std for ``alpha``.
+        - ``alpha_sigma`` : float, default 2.5 — Half-Student-t prior scale for ``alpha``.
+        - ``alpha_nu`` : float, default 3.0 — Half-Student-t degrees of freedom for ``alpha``.
         - ``rho_lower`` : float, default -0.999 — Lower bound for each :math:`\rho`.
         - ``rho_upper`` : float, default 0.999 — Upper bound for each :math:`\rho`.
 
@@ -3385,7 +3391,8 @@ class SARNegBinFlowSeparableLatent(FlowModel):
             beta_sigma=self.priors.get("beta_sigma", 1e6),
             sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
             sigma2_beta=self.priors.get("sigma2_beta", 1.0),
-            alpha_sigma=self.priors.get("alpha_sigma", 10.0),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
             rho_lower=self.priors.get("rho_lower", -0.999),
             rho_upper=self.priors.get("rho_upper", 0.999),
         )

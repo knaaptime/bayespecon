@@ -279,7 +279,8 @@ class SARNegBinLatent(SpatialModel):
             beta_sigma=self.priors.get("beta_sigma", 1e6),
             sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
             sigma2_beta=self.priors.get("sigma2_beta", 1.0),
-            alpha_sigma=self.priors.get("alpha_sigma", 10.0),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
             rho_lower=self._logdet_bounds.rho_min,
             rho_upper=self._logdet_bounds.rho_max,
         )
