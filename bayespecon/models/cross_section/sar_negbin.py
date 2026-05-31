@@ -34,7 +34,7 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 
 from ..base import SpatialModel
-from ..priors import SARPriors
+from ..priors import SARNegBinPriors
 
 
 class SARNegativeBinomial(SpatialModel):
@@ -71,7 +71,7 @@ class SARNegativeBinomial(SpatialModel):
     spatial noise in the latent field by ``sigma``.
     """
 
-    _priors_cls = SARPriors
+    _priors_cls = SARNegBinPriors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -109,7 +109,8 @@ class SARNegativeBinomial(SpatialModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
         sigma2_beta = self.priors.get("sigma2_beta", 1.0)
-        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 2.5)
+        alpha_nu = self.priors.get("alpha_nu", 3.0)
         self._X.shape[0]
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -117,7 +118,7 @@ class SARNegativeBinomial(SpatialModel):
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
             sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
             sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
 
             # Structural form (non-centred parameterisation):
             #   eta = (I - rho*W)^{-1} (X @ beta + sigma * z),  z ~ N(0, I)

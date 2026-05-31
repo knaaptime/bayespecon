@@ -36,7 +36,7 @@ from ...samplers.gaussian._chain_runner import run_chains
 from ...samplers.negbin import GibbsCache, GibbsPriors, GibbsState, run_chain
 from ...samplers.negbin._jax import run_chains_jax_vectorized
 from ..base import SpatialModel
-from ..priors import SARPriors
+from ..priors import SARNegBinPriors
 
 
 class SARNegBinLatent(SpatialModel):
@@ -69,7 +69,7 @@ class SARNegBinLatent(SpatialModel):
     for α specifically and use longer runs if needed.
     """
 
-    _priors_cls = SARPriors
+    _priors_cls = SARNegBinPriors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

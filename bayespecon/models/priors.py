@@ -130,6 +130,31 @@ class SDEMPriors(SEMPriors):
     """Priors for :class:`bayespecon.models.SDEM` (SLX + spatial error)."""
 
 
+@dataclass(frozen=True)
+class SARNegBinPriors(SARPriors):
+    """Priors for the SAR Negative Binomial models.
+
+    Used by both :class:`bayespecon.models.SARNegativeBinomial` (NUTS,
+    reduced form) and :class:`bayespecon.models.SARNegBinLatent`
+    (Pólya–Gamma Gibbs, structural form).
+
+    Adds a Half-Student-t prior on the NB dispersion parameter ``alpha``:
+
+    .. math::
+
+        \\alpha \\sim \\mathrm{Half\\text{-}Student\\text{-}t}(\\nu_\\alpha, \\sigma_\\alpha)
+
+    The Half-Student-t (default ``nu=3``, ``sigma=2.5``) is the
+    Gelman/rstanarm recommendation for scale parameters: heavier tails
+    than the Half-Normal place less penalty on small ``alpha`` (the
+    strong-overdispersion regime that motivates choosing NB over
+    Poisson in the first place).
+    """
+
+    alpha_sigma: float = 2.5
+    alpha_nu: float = 3.0
+
+
 # ---------------------------------------------------------------------------
 # Tobit / probit dataclasses
 # ---------------------------------------------------------------------------
