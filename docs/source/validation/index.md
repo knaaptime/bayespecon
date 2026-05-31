@@ -2,7 +2,7 @@
 
 ```{toctree}
 :hidden:
-:caption: Performance
+:caption: Validation
 :maxdepth: 1
 
 
@@ -26,14 +26,4 @@ API reference <api>
 :maxdepth: 1
 
 References <references>
-```
-
-
-```{toctree}
-:hidden:
-:caption: For contributors
-:maxdepth: 1
-
-GitHub <https://github.com/pysal/bayespecon>
-Changelog <https://github.com/pysal/bayespecon/releases>
 ```

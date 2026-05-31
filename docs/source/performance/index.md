@@ -27,13 +27,3 @@ API reference <api>
 
 References <references>
 ```
-
-
-```{toctree}
-:hidden:
-:caption: For contributors
-:maxdepth: 1
-
-GitHub <https://github.com/pysal/bayespecon>
-Changelog <https://github.com/pysal/bayespecon/releases>
-```

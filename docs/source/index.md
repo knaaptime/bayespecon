@@ -69,7 +69,6 @@ API reference <api>
 References <references>
 ```
 
-
 ```{toctree}
 :hidden:
 :caption: For contributors
