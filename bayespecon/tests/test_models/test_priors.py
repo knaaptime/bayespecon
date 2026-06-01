@@ -8,6 +8,8 @@ from libpysal.graph import Graph
 from scipy import sparse as sp
 
 from bayespecon.models import OLS, SAR, SDEM, SDM, SEM, SLX
+from bayespecon.models.cross_section.spatial_probit import SpatialProbit
+from bayespecon.models.cross_section.tobit import SARTobit
 from bayespecon.models.priors import (
     BasePriors,
     OLSPriors,
@@ -20,8 +22,6 @@ from bayespecon.models.priors import (
     priors_as_dict,
     resolve_priors,
 )
-from bayespecon.models.spatial_probit import SpatialProbit
-from bayespecon.models.tobit import SARTobit
 
 
 def _make_w(n: int = 6) -> Graph:

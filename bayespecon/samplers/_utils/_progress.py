@@ -87,9 +87,8 @@ class GibbsProgressBarManager:
     Shows per-chain rich progress bars with iteration count,
     MALA accept rate, speed, and timing.
 
-    Like PyMC's progress bar, the bar only advances during the
-    draw phase.  The tune phase is indicated by a ``tune`` label
-    but does not advance the progress bar.
+    The bar advances across the full chain (tune + draw) so notebook
+    users see continuous progress rather than a long flat 0% period.
 
     Parameters
     ----------
@@ -130,12 +129,18 @@ class GibbsProgressBarManager:
         # slower than they really are.
         self._chain_start_times: dict[int, float] = {}
 
+        # Throttle rich updates so per-iteration overhead stays
+        # negligible even when samplers exceed thousands of iters/sec.
+        # We aim for ~200 redraws per chain plus a forced update on
+        # the final iteration of each phase.
+        self._update_every = max(1, self.total // 200)
+
         if self._show:
             self._progress = _GibbsProgress(
                 BarColumn(bar_width=None, table_column=Column("Progress", ratio=2)),
                 TextColumn(
-                    "{task.fields[draw_iter]:>4d}/{task.fields[total_draws]}",
-                    table_column=Column("Draws", ratio=2),
+                    "{task.fields[iter_count]:>5d}/{task.fields[total_iters]}",
+                    table_column=Column("Iter", ratio=2),
                 ),
                 TextColumn(
                     "{task.fields[accept_rate]}",
@@ -162,10 +167,10 @@ class GibbsProgressBarManager:
             for c in range(self.chains):
                 task_id = self._progress.add_task(
                     f"Chain {c + 1}",
-                    total=self.draws,
+                    total=self.total,
                     phase="tune",
-                    draw_iter=0,
-                    total_draws=self.draws,
+                    iter_count=0,
+                    total_iters=self.total,
                     accept_rate="--",
                     speed="--",
                 )
@@ -187,6 +192,9 @@ class GibbsProgressBarManager:
                 f"{self.chains} x {self.tune + self.draws:,} draws total "
                 f"took {elapsed:.0f}s ({speed:.0f} draws/s)"
             )
+            # Live.stop() skips a final refresh in Jupyter, so force one
+            # before exit to render fully completed bars.
+            self._progress.refresh()
             # In Jupyter, print inside the ipy_widget before exiting
             # so the summary appears in the same output block as the
             # progress bar (avoids creating a separate rich block).
@@ -233,60 +241,48 @@ class GibbsProgressBarManager:
         accept : bool or None
             Whether MALA/MH step was accepted (None for NumPy slice path).
         """
-        if not self._show:
-            return
-
-        task_id = self._tasks[chain_idx]
-        phase = "tune" if tuning else "draw"
-
-        # Compute running accept rate
+        # Track accept counts even when the bar is hidden so callers
+        # can rely on them being available after sampling.
         if accept is not None:
-            # Lazy-init accept tracking
             if self._accept_counts is None:
                 self._accept_counts = [0] * self.chains
                 self._accept_totals = [0] * self.chains
             self._accept_totals[chain_idx] += 1
             if accept:
                 self._accept_counts[chain_idx] += 1
+
+        if not self._show:
+            return
+
+        iter1 = iteration + 1
+        is_phase_end = iter1 == self.tune or iter1 == self.total
+        if iter1 % self._update_every != 0 and not is_phase_end:
+            return
+
+        task_id = self._tasks[chain_idx]
+        phase = "tune" if tuning else "draw"
+
+        if accept is not None and self._accept_totals[chain_idx] > 0:
             rate = self._accept_counts[chain_idx] / self._accept_totals[chain_idx]
             accept_str = f"{rate:.0%}"
         else:
             accept_str = "--"
 
-        # Compute speed using per-chain start time when available.
-        # Falls back to task.elapsed for backward compatibility.
-        # Using task.elapsed directly is inaccurate for sequential chains
-        # because all tasks are created at once — later chains inherit
-        # elapsed time from before they started.
         chain_start = self._chain_start_times.get(chain_idx)
         if chain_start is not None:
             elapsed = time.monotonic() - chain_start
         else:
             elapsed = self._progress.tasks[task_id].elapsed or 0.0
-        if elapsed > 0:
-            speed_str = f"{(iteration + 1) / elapsed:.1f} draws/s"
-        else:
-            speed_str = "--"
+        speed_str = f"{iter1 / elapsed:.1f} it/s" if elapsed > 0 else "--"
 
-        # Only advance the bar during the draw phase (like PyMC)
-        if tuning:
-            self._progress.update(
-                task_id,
-                phase=phase,
-                draw_iter=0,
-                accept_rate=accept_str,
-                speed=speed_str,
-            )
-        else:
-            draw_iter = iteration - self.tune + 1
-            self._progress.update(
-                task_id,
-                advance=1,
-                phase=phase,
-                draw_iter=draw_iter,
-                accept_rate=accept_str,
-                speed=speed_str,
-            )
+        self._progress.update(
+            task_id,
+            completed=iter1,
+            phase=phase,
+            iter_count=iter1,
+            accept_rate=accept_str,
+            speed=speed_str,
+        )
 
     def set_accept_rate(self, chain_idx: int, rate: float) -> None:
         """Set the aggregate accept rate for a chain.
@@ -462,8 +458,8 @@ class _ParallelProgressRenderer:
         self._progress = _GibbsProgress(
             BarColumn(bar_width=None, table_column=Column("Progress", ratio=2)),
             TextColumn(
-                "{task.fields[draw_iter]:>4d}/{task.fields[total_draws]}",
-                table_column=Column("Draws", ratio=2),
+                "{task.fields[iter_count]:>5d}/{task.fields[total_iters]}",
+                table_column=Column("Iter", ratio=2),
             ),
             TextColumn(
                 "{task.fields[accept_rate]}",
@@ -485,10 +481,10 @@ class _ParallelProgressRenderer:
         for c in range(self.n_chains):
             task_id = self._progress.add_task(
                 f"Chain {c + 1}",
-                total=self.draws,
+                total=self.draws + self.tune,
                 phase="tune",
-                draw_iter=0,
-                total_draws=self.draws,
+                iter_count=0,
+                total_iters=self.draws + self.tune,
                 accept_rate="--",
                 speed="--",
             )
@@ -509,6 +505,9 @@ class _ParallelProgressRenderer:
             f"{self.n_chains} x {self.tune + self.draws:,} draws total "
             f"took {elapsed:.0f}s ({speed:.0f} draws/s)"
         )
+        # Live.stop() skips a final refresh in Jupyter, so force one
+        # before exit to render fully completed bars.
+        self._progress.refresh()
         # In Jupyter, print inside the ipy_widget before exiting
         # so the summary appears in the same output block as the
         # progress bar (avoids creating a separate rich block).
@@ -554,34 +553,23 @@ class _ParallelProgressRenderer:
                 self._chain_start_times[c] = now
 
             task_id = self._tasks[c]
-            phase = "tune" if cur_tuning else "draw"
 
             chain_start = self._chain_start_times.get(c)
             if chain_start is not None and now > chain_start:
-                speed_str = f"{cur_iter / (now - chain_start):.1f} draws/s"
+                speed_str = f"{cur_iter / (now - chain_start):.1f} it/s"
             else:
                 speed_str = "--"
 
-            if cur_tuning:
-                self._progress.update(
-                    task_id,
-                    phase=phase,
-                    draw_iter=0,
-                    accept_rate="--",
-                    speed=speed_str,
-                    refresh=True,
-                )
-            else:
-                draw_iter = max(0, cur_iter - self.tune)
-                self._progress.update(
-                    task_id,
-                    completed=draw_iter,
-                    phase=phase,
-                    draw_iter=draw_iter,
-                    accept_rate="--",
-                    speed=speed_str,
-                    refresh=True,
-                )
+            phase = "tune" if cur_tuning else "draw"
+            self._progress.update(
+                task_id,
+                completed=cur_iter,
+                phase=phase,
+                iter_count=cur_iter,
+                accept_rate="--",
+                speed=speed_str,
+                refresh=True,
+            )
 
             last_iter[c] = cur_iter
 

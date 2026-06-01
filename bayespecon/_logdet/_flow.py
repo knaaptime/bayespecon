@@ -401,7 +401,7 @@ def make_flow_separable_logdet(
         method = _auto_logdet_method(n)
 
     if method == "eigenvalue":
-        eigs = np.linalg.eigvals(W_dense).real.astype(np.float64)
+        eigs = np.linalg.eigvals(W_dense)
         return lambda rho_d, rho_o: (
             n * logdet_eigenvalue(rho_d, eigs) + n * logdet_eigenvalue(rho_o, eigs)
         )
@@ -468,7 +468,7 @@ def make_flow_separable_logdet_numpy(
 
     eigs = None
     if method == "eigenvalue":
-        eigs = np.linalg.eigvals(np.asarray(W_sp.toarray(), dtype=np.float64)).real
+        eigs = np.linalg.eigvals(np.asarray(W_sp.toarray(), dtype=np.float64))
 
     logdet_vec = make_logdet_numpy_vec_fn(
         W_sp,

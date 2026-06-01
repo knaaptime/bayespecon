@@ -1303,7 +1303,7 @@ def _flow_ring_graph():
 @pytest.fixture(scope="module")
 def fitted_olsflow(_flow_ring_graph):
     from bayespecon.dgp.flows import generate_flow_data
-    from bayespecon.models.flow import OLSFlow
+    from bayespecon.models.flow._flow import OLSFlow
 
     n, G = _flow_ring_graph
     data = generate_flow_data(
@@ -1325,7 +1325,7 @@ def fitted_olsflow(_flow_ring_graph):
 @pytest.fixture(scope="module")
 def fitted_sarflow(_flow_ring_graph):
     from bayespecon.dgp.flows import generate_flow_data
-    from bayespecon.models.flow import SARFlow
+    from bayespecon.models.flow._flow import SARFlow
 
     n, G = _flow_ring_graph
     data = generate_flow_data(
@@ -1424,7 +1424,7 @@ class TestFlowLMTests:
 @pytest.fixture(scope="module")
 def fitted_olsflow_panel(_flow_ring_graph):
     from bayespecon.dgp.flows import generate_flow_data
-    from bayespecon.models.flow_panel import OLSFlowPanel
+    from bayespecon.models.flow_panel._panel import OLSFlowPanel
 
     n, G = _flow_ring_graph
     T_periods = 3

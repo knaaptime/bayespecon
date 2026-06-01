@@ -67,8 +67,8 @@ class BasePriors:
         scale-aware (~ Var(y)).
     sigma_sigma
         Half-normal scale on σ.  **Tobit/Probit models only.**  Ignored
-        by the Gaussian path, which uses ``sigma2_alpha`` /
-        ``sigma2_beta``.
+        by the Gaussian and NB paths, which use ``sigma2_alpha`` /
+        ``sigma2_beta`` (InverseGamma on σ²).
     nu_lam
         Rate of the Exponential prior on Student-t degrees of freedom when
         ``robust=True``.  Mean ``1/nu_lam`` (default mean ≈ 30).
@@ -130,6 +130,63 @@ class SDEMPriors(SEMPriors):
     """Priors for :class:`bayespecon.models.SDEM` (SLX + spatial error)."""
 
 
+@dataclass(frozen=True)
+class LogitPriors(BasePriors):
+    """Priors for :class:`bayespecon.models.Logit` (non-spatial NUTS).
+
+    Inherits ``beta_mu``/``beta_sigma`` from :class:`BasePriors`.  The
+    logit link absorbs the noise scale, so the ``sigma2_*`` / ``sigma_sigma``
+    fields are unused.
+    """
+
+
+@dataclass(frozen=True)
+class NegBinPriors(BasePriors):
+    """Priors for :class:`bayespecon.models.NegativeBinomial` (non-spatial NUTS).
+
+    Adds a Half-Student-t prior on the NB dispersion parameter
+    :math:`\\alpha` (NB2 parameterisation, ``Var(y) = mu + mu^2 / alpha``):
+
+    .. math::
+
+        \\alpha \\sim \\mathrm{Half\\text{-}Student\\text{-}t}(\\nu_\\alpha, \\sigma_\\alpha)
+
+    The Half-Student-t (default ``nu=3``, ``sigma=2.5``) follows the
+    Gelman/rstanarm recommendation for scale parameters: heavier tails
+    than a Half-Normal place less penalty on small ``alpha`` (the
+    strong-overdispersion regime that motivates choosing NB over
+    Poisson in the first place).  The ``sigma2_*`` fields are unused.
+    """
+
+    alpha_sigma: float = 2.5
+    alpha_nu: float = 3.0
+
+
+@dataclass(frozen=True)
+class SARNegBinPriors(SARPriors):
+    """Priors for the SAR Negative Binomial models.
+
+    Used by both :class:`bayespecon.models.SARNegativeBinomial` (NUTS,
+    reduced form) and :class:`bayespecon.models.SARNegBinLatent`
+    (Pólya–Gamma Gibbs, structural form).
+
+    Adds a Half-Student-t prior on the NB dispersion parameter ``alpha``:
+
+    .. math::
+
+        \\alpha \\sim \\mathrm{Half\\text{-}Student\\text{-}t}(\\nu_\\alpha, \\sigma_\\alpha)
+
+    The Half-Student-t (default ``nu=3``, ``sigma=2.5``) is the
+    Gelman/rstanarm recommendation for scale parameters: heavier tails
+    than the Half-Normal place less penalty on small ``alpha`` (the
+    strong-overdispersion regime that motivates choosing NB over
+    Poisson in the first place).
+    """
+
+    alpha_sigma: float = 2.5
+    alpha_nu: float = 3.0
+
+
 # ---------------------------------------------------------------------------
 # Tobit / probit dataclasses
 # ---------------------------------------------------------------------------
@@ -176,12 +233,48 @@ class SpatialProbitPriors:
     sigma_a_sigma: float = 2.0
 
 
+@dataclass(frozen=True)
+class SpatialLogitPriors:
+    """Priors for :class:`bayespecon.models.SARSpatialLogit`.
+
+    Like :class:`SpatialProbitPriors` but without ``sigma_a_sigma``
+    (the logit model has no regional random effect).  There is no
+    ``sigma`` parameter because the logit link absorbs the noise scale.
+    """
+
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+    beta_mu: float = 0.0
+    beta_sigma: float = 10.0
+
+
+@dataclass
+class SEMSpatialLogitPriors:
+    """Priors for :class:`bayespecon.models.SEMSpatialLogit`.
+
+    Like :class:`SpatialLogitPriors` but with ``lam_lower``/``lam_upper``
+    instead of ``rho_lower``/``rho_upper``.
+    """
+
+    lam_lower: float = -0.999
+    lam_upper: float = 0.999
+    beta_mu: float = 0.0
+    beta_sigma: float = 10.0
+
+
 # ---------------------------------------------------------------------------
 # Resolution helper
 # ---------------------------------------------------------------------------
 
 
-PriorsLike = Union[Mapping[str, Any], BasePriors, "SpatialProbitPriors", None]
+PriorsLike = Union[
+    Mapping[str, Any],
+    BasePriors,
+    "SpatialProbitPriors",
+    "SpatialLogitPriors",
+    "SEMSpatialLogitPriors",
+    None,
+]
 
 
 def resolve_priors(
@@ -435,6 +528,8 @@ __all__ = [
     "SEMTobitPriors",
     "SDMTobitPriors",
     "SpatialProbitPriors",
+    "SpatialLogitPriors",
+    "SEMSpatialLogitPriors",
     "PanelBasePriors",
     "PanelOLSPriors",
     "PanelSLXPriors",

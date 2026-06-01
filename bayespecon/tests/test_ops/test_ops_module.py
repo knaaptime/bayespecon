@@ -357,7 +357,7 @@ class TestSeparablePoissonLogpCompiles:
     def test_logp_compiles_n20(self):
         """Check that the Kronecker op compiles inside PyMC at n=20."""
         from bayespecon.graph import flow_weight_matrices
-        from bayespecon.models.flow import PoissonSARFlowSeparable
+        from bayespecon.models.flow._flow import PoissonSARFlowSeparable
 
         n = 20
         rng = np.random.default_rng(6)

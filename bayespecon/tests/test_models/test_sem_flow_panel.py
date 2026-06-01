@@ -73,7 +73,7 @@ class TestSemFlowPanelConstruction:
         )
 
     def test_sem_flow_panel_builds(self):
-        from bayespecon.models.flow_panel import SEMFlowPanel
+        from bayespecon.models.flow_panel._panel import SEMFlowPanel
 
         model = SEMFlowPanel(
             self.data["y"],
@@ -88,7 +88,7 @@ class TestSemFlowPanelConstruction:
         assert model._T == self.T
 
     def test_sem_flow_separable_panel_builds(self):
-        from bayespecon.models.flow_panel import SEMFlowSeparablePanel
+        from bayespecon.models.flow_panel._panel import SEMFlowSeparablePanel
 
         model = SEMFlowSeparablePanel(
             self.data["y"],
@@ -101,7 +101,7 @@ class TestSemFlowPanelConstruction:
         assert model._n == self.n
 
     def test_pymc_model_builds(self):
-        from bayespecon.models.flow_panel import SEMFlowPanel
+        from bayespecon.models.flow_panel._panel import SEMFlowPanel
 
         model = SEMFlowPanel(
             self.data["y"],
@@ -120,7 +120,7 @@ class TestSemFlowPanelRecovery:
     def test_rho_recovery(self):
         """Panel SEM should recover lam_d, lam_o reasonably (lam_w is noisier)."""
         from bayespecon.dgp.flows import generate_panel_sem_flow_data
-        from bayespecon.models.flow_panel import SEMFlowPanel
+        from bayespecon.models.flow_panel._panel import SEMFlowPanel
 
         rho_d_true, rho_o_true, rho_w_true = 0.25, 0.20, 0.10
         data = generate_panel_sem_flow_data(
@@ -164,7 +164,7 @@ class TestSemFlowPanelRecovery:
 
     def test_separable_constraint_panel(self):
         from bayespecon.dgp.flows import generate_panel_sem_flow_data_separable
-        from bayespecon.models.flow_panel import SEMFlowSeparablePanel
+        from bayespecon.models.flow_panel._panel import SEMFlowSeparablePanel
 
         data = generate_panel_sem_flow_data_separable(
             n=8,

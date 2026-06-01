@@ -21,7 +21,6 @@ from bayespecon.samplers._utils._progress import (
     _SharedCounterReporter,
 )
 
-
 # ---------------------------------------------------------------------------
 # Module-level helpers (need to be picklable for loky worker tests).
 # ---------------------------------------------------------------------------
@@ -165,8 +164,23 @@ class TestParallelProgressRenderer:
             # Renderer should have recorded the final draw iteration.
             task0 = renderer._progress.tasks[renderer._tasks[0]]
             task1 = renderer._progress.tasks[renderer._tasks[1]]
-            assert task0.completed == 3  # iter 8 - tune 5
-            assert task1.completed == 7  # iter 12 - tune 5
+            assert task0.completed == 8
+            assert task1.completed == 12
+
+    def test_exit_forces_final_refresh(self):
+        """__exit__ forces one final refresh for notebook rendering."""
+        renderer = _ParallelProgressRenderer(
+            n_chains=1, draws=10, tune=5, model_type="sar"
+        )
+        renderer._progress.live.auto_refresh = False
+        refresh_calls = {"count": 0}
+
+        with renderer:
+            renderer._progress.refresh = lambda: refresh_calls.__setitem__(
+                "count", refresh_calls["count"] + 1
+            )
+
+        assert refresh_calls["count"] == 1
 
 
 # ---------------------------------------------------------------------------

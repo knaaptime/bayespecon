@@ -43,9 +43,9 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from .base import _write_log_likelihood_to_idata
-from .panel_base import SpatialPanelModel
-from .priors import PanelSARTobitPriors, PanelSEMTobitPriors
+from .._base._shared import _write_log_likelihood_to_idata
+from ..panel_base import SpatialPanelModel
+from ..priors import PanelSARTobitPriors, PanelSEMTobitPriors
 
 
 class _PanelTobitBase(SpatialPanelModel):
@@ -229,7 +229,7 @@ class SARPanelTobit(_PanelTobitBase):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         ni = self._nonintercept_indices
@@ -237,7 +237,7 @@ class SARPanelTobit(_PanelTobitBase):
         if isinstance(self, SARPanelTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -599,7 +599,7 @@ class SEMPanelTobit(_PanelTobitBase):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         ni = self._nonintercept_indices
@@ -607,7 +607,7 @@ class SEMPanelTobit(_PanelTobitBase):
         if isinstance(self, SARPanelTobit):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)

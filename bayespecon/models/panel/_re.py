@@ -28,9 +28,9 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from .._backends.sampler_helpers import use_jax_likelihood
-from .panel_base import SpatialPanelModel
-from .priors import (
+from ..._backends.sampler_helpers import use_jax_likelihood
+from ..panel_base import SpatialPanelModel
+from ..priors import (
     PanelOLSREPriors,
     PanelSARREPriors,
     PanelSDEMREPriors,
@@ -82,7 +82,8 @@ class OLSPanelRE(SpatialPanelModel):
           :math:`\\beta`.
         - ``beta_sigma`` (float, default 1e6): Normal prior std for
           :math:`\\beta`.
-        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+        - ``sigma2_alpha`` (float, default 2.0): InverseGamma prior alpha for sigma2
+        - ``sigma2_beta`` (float, default var(y)): InverseGamma prior beta for sigma2
           for :math:`\\sigma`.
         - ``sigma_alpha_sigma`` (float, default 10.0): HalfNormal
           prior std for :math:`\\sigma_\\alpha`.
@@ -140,14 +141,16 @@ class OLSPanelRE(SpatialPanelModel):
         """
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
-        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
+        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
         sigma_alpha_sigma = self.priors.get("sigma_alpha_sigma", 10.0)
 
         unit_idx = self._unit_idx
 
         with pm.Model(coords=self._model_coords()) as model:
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
+            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
             sigma_alpha = pm.HalfNormal("sigma_alpha", sigma=sigma_alpha_sigma)
             alpha = pm.Normal("alpha", mu=0.0, sigma=sigma_alpha, dims="unit")
 
@@ -192,7 +195,7 @@ class OLSPanelRE(SpatialPanelModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         ni = self._nonintercept_indices
@@ -200,7 +203,7 @@ class OLSPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -266,7 +269,8 @@ class SARPanelRE(SpatialPanelModel):
           :math:`\\beta`.
         - ``beta_sigma`` (float, default 1e6): Normal prior std for
           :math:`\\beta`.
-        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+        - ``sigma2_alpha`` (float, default 2.0): InverseGamma prior alpha for sigma2
+        - ``sigma2_beta`` (float, default var(y)): InverseGamma prior beta for sigma2
           for :math:`\\sigma`.
         - ``sigma_alpha_sigma`` (float, default 10.0): HalfNormal
           prior std for :math:`\\sigma_\\alpha`.
@@ -325,7 +329,8 @@ class SARPanelRE(SpatialPanelModel):
         rho_upper = self.priors.get("rho_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
-        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
+        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
         sigma_alpha_sigma = self.priors.get("sigma_alpha_sigma", 10.0)
 
         logdet_fn = self._logdet_pytensor_fn
@@ -334,7 +339,8 @@ class SARPanelRE(SpatialPanelModel):
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
+            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
             sigma_alpha = pm.HalfNormal("sigma_alpha", sigma=sigma_alpha_sigma)
             alpha = pm.Normal("alpha", mu=0.0, sigma=sigma_alpha, dims="unit")
 
@@ -394,12 +400,11 @@ class SARPanelRE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from ..samplers.panel import GaussianSARREGibbs, REGibbsPriors
+        from ...samplers.panel import GaussianSARREGibbs, REGibbsPriors
 
         priors = REGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
             sigma_alpha_sigma=self.priors.get("sigma_alpha_sigma", 10.0),
             rho_lower=self._logdet_bounds.rho_min,
             rho_upper=self._logdet_bounds.rho_max,
@@ -417,7 +422,7 @@ class SARPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -560,7 +565,7 @@ class SARPanelRE(SpatialPanelModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         ni = self._nonintercept_indices
@@ -568,7 +573,7 @@ class SARPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -638,7 +643,8 @@ class SEMPanelRE(SpatialPanelModel):
           :math:`\\beta`.
         - ``beta_sigma`` (float, default 1e6): Normal prior std for
           :math:`\\beta`.
-        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+        - ``sigma2_alpha`` (float, default 2.0): InverseGamma prior alpha for sigma2
+        - ``sigma2_beta`` (float, default var(y)): InverseGamma prior beta for sigma2
           for :math:`\\sigma`.
         - ``sigma_alpha_sigma`` (float, default 10.0): HalfNormal
           prior std for :math:`\\sigma_\\alpha`.
@@ -849,7 +855,8 @@ class SEMPanelRE(SpatialPanelModel):
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
-        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
+        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
         sigma_alpha_sigma = self.priors.get("sigma_alpha_sigma", 10.0)
 
         logdet_fn = self._logdet_pytensor_fn
@@ -863,7 +870,8 @@ class SEMPanelRE(SpatialPanelModel):
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
+            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
             sigma_alpha = pm.HalfNormal("sigma_alpha", sigma=sigma_alpha_sigma)
             alpha = pm.Normal("alpha", mu=0.0, sigma=sigma_alpha, dims="unit")
 
@@ -980,12 +988,11 @@ class SEMPanelRE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from ..samplers.panel import GaussianSEMREGibbs, REGibbsPriors
+        from ...samplers.panel import GaussianSEMREGibbs, REGibbsPriors
 
         priors = REGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
             sigma_alpha_sigma=self.priors.get("sigma_alpha_sigma", 10.0),
             rho_lower=self._logdet_bounds.rho_min,
             rho_upper=self._logdet_bounds.rho_max,
@@ -1002,7 +1009,7 @@ class SEMPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1138,7 +1145,7 @@ class SEMPanelRE(SpatialPanelModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         ni = self._nonintercept_indices
@@ -1146,7 +1153,7 @@ class SEMPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs_real
+            eigs = self._W_eigs
             inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
             mean_diag = np.mean(inv_eigs, axis=1)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
@@ -1216,7 +1223,8 @@ class SDEMPanelRE(SpatialPanelModel):
           :math:`[\\beta, \\theta]`.
         - ``beta_sigma`` (float, default 1e6): Normal prior std for
           :math:`[\\beta, \\theta]`.
-        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std
+        - ``sigma2_alpha`` (float, default 2.0): InverseGamma prior alpha for sigma2
+        - ``sigma2_beta`` (float, default var(y)): InverseGamma prior beta for sigma2
           for :math:`\\sigma`.
         - ``sigma_alpha_sigma`` (float, default 10.0): HalfNormal
           prior std for :math:`\\sigma_\\alpha`.
@@ -1282,7 +1290,8 @@ class SDEMPanelRE(SpatialPanelModel):
         lam_upper = self.priors.get("lam_upper", 1.0)
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
-        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
+        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
         sigma_alpha_sigma = self.priors.get("sigma_alpha_sigma", 10.0)
 
         logdet_fn = self._logdet_pytensor_fn
@@ -1296,7 +1305,8 @@ class SDEMPanelRE(SpatialPanelModel):
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
+            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
             sigma_alpha = pm.HalfNormal("sigma_alpha", sigma=sigma_alpha_sigma)
             alpha = pm.Normal("alpha", mu=0.0, sigma=sigma_alpha, dims="unit")
 
@@ -1431,7 +1441,7 @@ class SDEMPanelRE(SpatialPanelModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Posterior samples of direct/indirect/total effects (SDEM form)."""
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")

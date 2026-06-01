@@ -33,8 +33,8 @@ import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
-from .base import SpatialModel
-from .priors import SARPriors
+from ..base import SpatialModel
+from ..priors import SARNegBinPriors
 
 
 class SARNegativeBinomial(SpatialModel):
@@ -71,7 +71,7 @@ class SARNegativeBinomial(SpatialModel):
     spatial noise in the latent field by ``sigma``.
     """
 
-    _priors_cls = SARPriors
+    _priors_cls = SARNegBinPriors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -107,15 +107,18 @@ class SARNegativeBinomial(SpatialModel):
         rho_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
-        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
-        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
+        sigma2_beta = self.priors.get("sigma2_beta", 1.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 2.5)
+        alpha_nu = self.priors.get("alpha_nu", 3.0)
         self._X.shape[0]
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
-            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
+            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
+            alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
 
             # Structural form (non-centred parameterisation):
             #   eta = (I - rho*W)^{-1} (X @ beta + sigma * z),  z ~ N(0, I)
@@ -133,7 +136,7 @@ class SARNegativeBinomial(SpatialModel):
             # an O(n³) decomposition at model construction time that is only
             # consumed by the JAX eigen dispatch path. The PyMC NUTS path
             # uses sparse LU exclusively and never touches eigenvalues.
-            from .._ops import SparseSARSolveOp
+            from ..._ops import SparseSARSolveOp
 
             _sar_solve_op = SparseSARSolveOp(self._W_sparse)
             z = pm.Normal("z", mu=0, sigma=1, dims="obs_id")
@@ -201,14 +204,14 @@ class SARNegativeBinomial(SpatialModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior impacts on the log-mean scale for each draw."""
-        from ..diagnostics.lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
+        from ...diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs_real
+        eigs = self._W_eigs
         mean_diag = _chunked_eig_means(rho_draws, eigs)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
@@ -264,7 +267,7 @@ class SARNegativeBinomial(SpatialModel):
         :math:`O(n^2)` to :math:`O(\text{nnz})` and avoiding the
         :math:`O(n^3)` eigendecomposition entirely.
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
@@ -444,7 +447,7 @@ class SARNegativeBinomial(SpatialModel):
         indirect_samples : np.ndarray, shape (G, n_effects)
         total_samples : np.ndarray, shape (G, n_effects)
         """
-        from .._ops import _make_cached_umfpack_solver
+        from ..._ops import _make_cached_umfpack_solver
 
         W = self._W_sparse
         I_n = sp.eye(n, format="csr", dtype=np.float64)
@@ -542,7 +545,7 @@ class SARNegativeBinomial(SpatialModel):
             when :math:`n` exceeds
             :attr:`_COUNT_EFFECTS_EIGEN_MAX_N` (default 2000).
         """
-        from ..diagnostics.spatial_effects import _build_effects_dataframe
+        from ...diagnostics.spatial_effects import _build_effects_dataframe
 
         if scale == "logmean":
             return super().spatial_effects(

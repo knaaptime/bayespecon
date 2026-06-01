@@ -383,7 +383,7 @@ class SDM(SpatialModel):
         beta1_draws = beta_draws[:, :k]  # (G, k)
         beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
-        eigs = self._W_eigs_real  # (n,)
+        eigs = self._W_eigs  # (n,)
 
         # Chunk over draws to avoid an O(G*n) intermediate.
         mean_diag_M = _chunked_eig_means(rho_draws, eigs)  # (G,)

@@ -283,15 +283,13 @@ def test_sar_panel_fe_fit_applies_jacobian_when_loglik_requested(monkeypatch):
     def _fake_sample(**kw):
         return fake_idata
 
-    def _fake_attach(idata, spatial_param, T):
+    def _fake_attach(spatial_param, nuts_sampler, T_eff):
         called["ok"] = True
         assert spatial_param == "rho"
-        assert T == model._T
+        assert T_eff == model._T
 
     monkeypatch.setattr(pm, "sample", _fake_sample)
-    monkeypatch.setattr(
-        model, "_attach_jacobian_corrected_log_likelihood", _fake_attach
-    )
+    monkeypatch.setattr(model, "_reconstruct_panel_log_likelihood", _fake_attach)
 
     out = model.fit(
         draws=2,

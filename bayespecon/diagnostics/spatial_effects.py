@@ -50,9 +50,9 @@ def _chunked_eig_means(
     rho_draws : np.ndarray, shape (G,)
         Posterior draws of the spatial autoregressive parameter.
     eigs : np.ndarray, shape (n,)
-        Real eigenvalues of the spatial weights matrix ``W``.
+        Eigenvalues of the spatial weights matrix ``W`` (complex or real).
     weights : np.ndarray, shape (n,), optional
-        Per-eigenvalue weights.  Pass ``eigs`` to compute
+        Per-eigenvalue weights (complex or real).  Pass ``eigs`` to compute
         ``mean(eigs / (1 - rho*eigs))`` (the diagonal of ``S @ W``); pass
         ``None`` for uniform weights (the diagonal of ``S``).
     chunk : int, default 1024
@@ -61,7 +61,9 @@ def _chunked_eig_means(
     Returns
     -------
     np.ndarray, shape (G,)
-        The per-draw scalar mean.
+        The per-draw scalar mean (float64).  For complex inputs the result
+        is the real part, which is exact since the underlying quantity is
+        the trace of a real matrix.
     """
     G = rho_draws.shape[0]
     n = eigs.shape[0]
@@ -69,13 +71,13 @@ def _chunked_eig_means(
     if weights is None:
         for i in range(0, G, chunk):
             block = 1.0 / (1.0 - rho_draws[i : i + chunk, None] * eigs[None, :])
-            out[i : i + chunk] = block.mean(axis=1)
+            out[i : i + chunk] = block.mean(axis=1).real
     else:
         for i in range(0, G, chunk):
             block = weights[None, :] / (
                 1.0 - rho_draws[i : i + chunk, None] * eigs[None, :]
             )
-            out[i : i + chunk] = block.sum(axis=1) / n
+            out[i : i + chunk] = (block.sum(axis=1) / n).real
     return out
 
 

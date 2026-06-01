@@ -9,14 +9,13 @@ converges without difficulty.
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
-import pytensor.tensor as pt
 
-from .base import SpatialModel
-from .priors import SLXPriors
+from .._mixins import GaussianLikelihoodMixin
+from ..base import SpatialModel
+from ..priors import SLXPriors
 
 
-class SLX(SpatialModel):
+class SLX(GaussianLikelihoodMixin, SpatialModel):
     """Bayesian SLX (Spatial Lag X) model.
 
     Adds spatial lags of the regressors :math:`X` to a standard linear
@@ -111,49 +110,6 @@ class SLX(SpatialModel):
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
-    def _build_pymc_model(self) -> pm.Model:
-        """Construct the PyMC model for SLX regression.
-
-        Returns
-        -------
-        pymc.Model
-            Compiled probabilistic model object.
-        """
-        if not self._wx_column_indices:
-            raise ValueError(
-                "SLX requires at least one regressor to spatially lag, but no "
-                "WX columns were selected. Pass `w_vars=[...]` to choose which "
-                "regressors receive a spatial lag, or fit an OLS model instead."
-            )
-        n, k = self._X.shape
-        # Combine X and WX into one design matrix; beta covers both
-        Z = np.hstack([self._X, self._WX])  # (n, 2k)
-
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            Z,
-            list(self._feature_names)
-            + [f"W*{name}" for name in self._wx_feature_names],
-        )
-        beta_mu = self.priors.get("beta_mu", default_beta_mu)
-        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
-
-        with pm.Model(coords=self._model_coords()) as model:
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-
-            mu = pt.dot(Z, beta)
-            if self.robust:
-                self._add_nu_prior(model)
-                nu = model["nu"]
-                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
-            else:
-                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
-
-        return model
-
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         """Compute SLX direct/indirect/total effects.
 
@@ -230,7 +186,7 @@ class SLX(SpatialModel):
             ``(direct_samples, indirect_samples, total_samples)``, each
             of shape ``(G, k_wx)``.
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)

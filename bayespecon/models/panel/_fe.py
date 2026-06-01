@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import arviz as az
 import numpy as np
-import pymc as pm
-import pytensor.tensor as pt
 
-from .._backends.sampler_helpers import use_jax_likelihood
-from .panel_base import SpatialPanelModel
-from .priors import (
+from .._mixins import PanelGaussianLikelihoodMixin
+from ..panel_base import SpatialPanelModel
+from ..priors import (
     PanelOLSPriors,
     PanelSARPriors,
     PanelSDEMPriors,
@@ -19,7 +17,7 @@ from .priors import (
 )
 
 
-class OLSPanelFE(SpatialPanelModel):
+class OLSPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian pooled and fixed-effects linear panel regression.
 
     Implements the Gaussian panel model
@@ -112,35 +110,7 @@ class OLSPanelFE(SpatialPanelModel):
     """
 
     _priors_cls = PanelOLSPriors
-
-    def _build_pymc_model(self) -> pm.Model:
-        """Construct the PyMC model for pooled/FE panel regression.
-
-        Returns
-        -------
-        pymc.Model
-            Compiled probabilistic model object.
-        """
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            self._X, list(self._feature_names)
-        )
-        beta_mu = self.priors.get("beta_mu", default_beta_mu)
-        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
-
-        with pm.Model(coords=self._model_coords()) as model:
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-            mu = pt.dot(self._X, beta)
-            if self.robust:
-                self._add_nu_prior(model)
-                nu = model["nu"]
-                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
-            else:
-                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
-        return model
+    _jacobian_param: str | None = None
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean coefficients.
@@ -180,7 +150,7 @@ class OLSPanelFE(SpatialPanelModel):
 
         OLS panel has no spatial structure: Direct = beta, Indirect = 0.
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
@@ -193,7 +163,7 @@ class OLSPanelFE(SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SARPanelFE(SpatialPanelModel):
+class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial-lag panel regression.
 
     Implements
@@ -284,41 +254,7 @@ class SARPanelFE(SpatialPanelModel):
     """
 
     _priors_cls = PanelSARPriors
-
-    def _build_pymc_model(self) -> pm.Model:
-        """Construct the PyMC model for SAR panel regression.
-
-        Returns
-        -------
-        pymc.Model
-            Compiled probabilistic model object.
-        """
-        rho_lower = self.priors.get("rho_lower", -1.0)
-        rho_upper = self.priors.get("rho_upper", 1.0)
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            self._X, list(self._feature_names)
-        )
-        beta_mu = self.priors.get("beta_mu", default_beta_mu)
-        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
-
-        logdet_fn = self._logdet_pytensor_fn
-
-        with pm.Model(coords=self._model_coords()) as model:
-            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-            mu = rho * self._Wy + pt.dot(self._X, beta)
-            if self.robust:
-                self._add_nu_prior(model)
-                nu = model["nu"]
-                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
-            else:
-                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
-            pm.Potential("jacobian", logdet_fn(rho))
-        return model
+    _jacobian_param: str | None = "rho"
 
     def fit(
         self,
@@ -444,7 +380,7 @@ class SARPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from ..samplers.gaussian import GaussianGibbsPriors, GaussianSARGibbs
+        from ...samplers.gaussian import GaussianGibbsPriors, GaussianSARGibbs
 
         default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
             self._X, list(self._feature_names)
@@ -468,7 +404,7 @@ class SARPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sar",
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -539,15 +475,15 @@ class SARPanelFE(SpatialPanelModel):
         SAR panel impacts use the same eigenvalue-based formulas as
         cross-sectional SAR, applied per draw.
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
+        from ...diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
         rho_draws.shape[0]
 
-        eigs = self._W_eigs_real
+        eigs = self._W_eigs
         mean_diag = _chunked_eig_means(rho_draws, eigs)  # (G,)
 
         mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
@@ -561,7 +497,7 @@ class SARPanelFE(SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SEMPanelFE(SpatialPanelModel):
+class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial-error panel regression.
 
     Implements
@@ -653,121 +589,7 @@ class SEMPanelFE(SpatialPanelModel):
     """
 
     _priors_cls = PanelSEMPriors
-
-    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
-        """Construct the PyMC model for SEM panel regression.
-
-        Parameters
-        ----------
-        nuts_sampler :
-            Resolved sampler name.  When JAX-backed (``"blackjax"`` /
-            ``"numpyro"``), the likelihood is registered via
-            :class:`pymc.CustomDist` so PyMC's JAX path captures
-            ``log_likelihood`` natively.  Otherwise the (benchmarked)
-            :func:`pymc.Potential` formulation is used.
-
-        Returns
-        -------
-        pymc.Model
-            Compiled probabilistic model object.
-        """
-        lam_lower = self.priors.get("lam_lower", -1.0)
-        lam_upper = self.priors.get("lam_upper", 1.0)
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            self._X, list(self._feature_names)
-        )
-        beta_mu = self.priors.get("beta_mu", default_beta_mu)
-        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
-
-        logdet_fn = self._logdet_pytensor_fn
-
-        # Precompute (I_T ⊗ W) @ X once so the spatial filter
-        #   eps = (y - lam*Wy) - (X - lam*WX_all)@beta
-        # avoids any sparse matvec inside the NUTS gradient loop. ``_Wy`` is
-        # already cached on the panel base; ``WX_all`` is materialised here
-        # for the full design matrix (vs. ``self._WX`` which only covers
-        # ``w_vars`` columns).
-        if not hasattr(self, "_WX_all_cache") or self._WX_all_cache is None:
-            self._WX_all_cache = self._sparse_panel_lag(self._X)
-        WX_all = self._WX_all_cache
-
-        n_obs = int(self._y.shape[0])  # = N * T
-        # Per-observation Jacobian split: ``_logdet_pytensor_fn`` is built via
-        # ``make_logdet_fn(..., T=self._T)`` and already returns the full
-        # panel log-determinant ``T * log|I_N - λW|``.  Distribute that
-        # scalar over the ``N*T`` observations so the sum reproduces the
-        # joint log-density (matches the manual NumPy fallback).
-        inv_n = 1.0 / n_obs
-        jax_logp = use_jax_likelihood(nuts_sampler)
-
-        with pm.Model(coords=self._model_coords()) as model:
-            lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-
-            if self.robust:
-                self._add_nu_prior(model)
-
-            if jax_logp:
-                Wy_const = pt.as_tensor_variable(self._Wy)
-                X_const = pt.as_tensor_variable(self._X)
-                WX_const = pt.as_tensor_variable(WX_all)
-
-                if self.robust:
-                    nu = model["nu"]
-
-                    def sempanel_logp(value, lam_, beta_, sigma_, nu_):
-                        y_star = value - lam_ * Wy_const
-                        X_star = X_const - lam_ * WX_const
-                        eps = y_star - pt.dot(X_star, beta_)
-                        log_dens = pm.logp(
-                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
-                        )
-                        return log_dens + logdet_fn(lam_) * inv_n
-
-                    pm.CustomDist(
-                        "obs",
-                        lam,
-                        beta,
-                        sigma,
-                        nu,
-                        logp=sempanel_logp,
-                        observed=self._y,
-                    )
-                else:
-
-                    def sempanel_logp(value, lam_, beta_, sigma_):
-                        y_star = value - lam_ * Wy_const
-                        X_star = X_const - lam_ * WX_const
-                        eps = y_star - pt.dot(X_star, beta_)
-                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
-                        return log_dens + logdet_fn(lam_) * inv_n
-
-                    pm.CustomDist(
-                        "obs",
-                        lam,
-                        beta,
-                        sigma,
-                        logp=sempanel_logp,
-                        observed=self._y,
-                    )
-            else:
-                y_star = self._y - lam * self._Wy
-                X_star = self._X - lam * WX_all
-                eps = y_star - pt.dot(X_star, beta)
-                if self.robust:
-                    nu = model["nu"]
-                    logp_eps = pm.logp(
-                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
-                    ).sum()
-                else:
-                    logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-                pm.Potential("eps_loglik", logp_eps)
-                pm.Potential("jacobian", logdet_fn(lam))
-        return model
+    _jacobian_param: str | None = "lam"
 
     def fit(
         self,
@@ -895,7 +717,7 @@ class SEMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from ..samplers.gaussian import GaussianGibbsPriors, GaussianSEMGibbs
+        from ...samplers.gaussian import GaussianGibbsPriors, GaussianSEMGibbs
 
         default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
             self._X, list(self._feature_names)
@@ -918,7 +740,7 @@ class SEMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=list(self._feature_names),
             model_type="sem",
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -980,7 +802,7 @@ class SEMPanelFE(SpatialPanelModel):
 
         SEM panel has no spatial multiplier on X: Direct = beta, Indirect = 0.
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
@@ -993,7 +815,7 @@ class SEMPanelFE(SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SDMPanelFE(SpatialPanelModel):
+class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial Durbin panel regression.
 
     Implements
@@ -1083,52 +905,13 @@ class SDMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _has_wx_in_beta = True
+    _has_wx_in_beta: bool = True
+    _jacobian_param: str | None = "rho"
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
     _priors_cls = PanelSDMPriors
-
-    def _build_pymc_model(self) -> pm.Model:
-        """Construct the PyMC model for SDM panel regression.
-
-        Returns
-        -------
-        pymc.Model
-            Compiled probabilistic model object.
-        """
-        Z = np.hstack([self._X, self._WX])
-        z_names = list(self._feature_names) + [
-            f"W*{name}" for name in self._wx_feature_names
-        ]
-
-        rho_lower = self.priors.get("rho_lower", -1.0)
-        rho_upper = self.priors.get("rho_upper", 1.0)
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            Z, z_names
-        )
-        beta_mu = self.priors.get("beta_mu", default_beta_mu)
-        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
-
-        logdet_fn = self._logdet_pytensor_fn
-
-        with pm.Model(coords=self._model_coords()) as model:
-            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-            mu = rho * self._Wy + pt.dot(Z, beta)
-            if self.robust:
-                self._add_nu_prior(model)
-                nu = model["nu"]
-                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
-            else:
-                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
-            pm.Potential("jacobian", logdet_fn(rho))
-        return model
 
     def fit(
         self,
@@ -1258,7 +1041,7 @@ class SDMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from ..samplers.gaussian import GaussianGibbsPriors, GaussianSARGibbs
+        from ...samplers.gaussian import GaussianGibbsPriors, GaussianSARGibbs
 
         Z = np.hstack([self._X, self._WX])
         feature_names = list(self._feature_names) + [
@@ -1287,7 +1070,7 @@ class SDMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdm",
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1379,8 +1162,8 @@ class SDMPanelFE(SpatialPanelModel):
         SDM panel impacts use the same eigenvalue-based formulas as
         cross-sectional SDM, applied per draw.
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
+        from ...diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
@@ -1395,7 +1178,7 @@ class SDMPanelFE(SpatialPanelModel):
         beta1_draws = beta_draws[:, :k]  # (G, k)
         beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
-        eigs = self._W_eigs_real
+        eigs = self._W_eigs
         mean_diag_M = _chunked_eig_means(rho_draws, eigs)  # (G,)
         mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)  # (G,)
 
@@ -1416,7 +1199,7 @@ class SDMPanelFE(SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SDEMPanelFE(SpatialPanelModel):
+class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial Durbin error panel regression.
 
     Implements
@@ -1506,123 +1289,13 @@ class SDEMPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _has_wx_in_beta = True
+    _has_wx_in_beta: bool = True
+    _jacobian_param: str | None = "lam"
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
     _priors_cls = PanelSDEMPriors
-
-    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
-        """Construct the PyMC model for SDEM panel regression.
-
-        Parameters
-        ----------
-        nuts_sampler :
-            Resolved sampler name.  When JAX-backed, the likelihood is
-            registered via :class:`pymc.CustomDist` so PyMC's JAX path
-            captures ``log_likelihood`` natively; otherwise the
-            :func:`pymc.Potential` formulation is used.
-
-        Returns
-        -------
-        pymc.Model
-            Compiled probabilistic model object.
-        """
-        Z = np.hstack([self._X, self._WX])
-        z_names = list(self._feature_names) + [
-            f"W*{name}" for name in self._wx_feature_names
-        ]
-
-        lam_lower = self.priors.get("lam_lower", -1.0)
-        lam_upper = self.priors.get("lam_upper", 1.0)
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            Z, z_names
-        )
-        beta_mu = self.priors.get("beta_mu", default_beta_mu)
-        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
-
-        logdet_fn = self._logdet_pytensor_fn
-
-        # Precompute (I_T ⊗ W) @ Z so the spatial filter can be expressed as
-        #   eps = (y - lam*Wy) - (Z - lam*WZ)@beta
-        # avoiding any sparse matvec inside the NUTS gradient loop.
-        if not hasattr(self, "_WZ_sdem_cache") or self._WZ_sdem_cache is None:
-            self._WZ_sdem_cache = self._sparse_panel_lag(Z)
-        WZ = self._WZ_sdem_cache
-
-        n_obs = int(self._y.shape[0])
-        inv_n = 1.0 / n_obs  # see SEMPanelFE for derivation
-        jax_logp = use_jax_likelihood(nuts_sampler)
-
-        with pm.Model(coords=self._model_coords()) as model:
-            lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-
-            if self.robust:
-                self._add_nu_prior(model)
-
-            if jax_logp:
-                Wy_const = pt.as_tensor_variable(self._Wy)
-                Z_const = pt.as_tensor_variable(Z)
-                WZ_const = pt.as_tensor_variable(WZ)
-
-                if self.robust:
-                    nu = model["nu"]
-
-                    def sdempanel_logp(value, lam_, beta_, sigma_, nu_):
-                        y_star = value - lam_ * Wy_const
-                        Z_star = Z_const - lam_ * WZ_const
-                        eps = y_star - pt.dot(Z_star, beta_)
-                        log_dens = pm.logp(
-                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
-                        )
-                        return log_dens + logdet_fn(lam_) * inv_n
-
-                    pm.CustomDist(
-                        "obs",
-                        lam,
-                        beta,
-                        sigma,
-                        nu,
-                        logp=sdempanel_logp,
-                        observed=self._y,
-                    )
-                else:
-
-                    def sdempanel_logp(value, lam_, beta_, sigma_):
-                        y_star = value - lam_ * Wy_const
-                        Z_star = Z_const - lam_ * WZ_const
-                        eps = y_star - pt.dot(Z_star, beta_)
-                        log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
-                        return log_dens + logdet_fn(lam_) * inv_n
-
-                    pm.CustomDist(
-                        "obs",
-                        lam,
-                        beta,
-                        sigma,
-                        logp=sdempanel_logp,
-                        observed=self._y,
-                    )
-            else:
-                y_star = self._y - lam * self._Wy
-                Z_star = Z - lam * WZ
-                eps = y_star - pt.dot(Z_star, beta)
-                if self.robust:
-                    nu = model["nu"]
-                    logp_eps = pm.logp(
-                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
-                    ).sum()
-                else:
-                    logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-                pm.Potential("eps_loglik", logp_eps)
-                pm.Potential("jacobian", logdet_fn(lam))
-        return model
 
     def fit(
         self,
@@ -1754,7 +1427,7 @@ class SDEMPanelFE(SpatialPanelModel):
                 "models. Use sampler='nuts' (the default)."
             )
 
-        from ..samplers.gaussian import GaussianGibbsPriors, GaussianSEMGibbs
+        from ...samplers.gaussian import GaussianGibbsPriors, GaussianSEMGibbs
 
         Z = np.hstack([self._X, self._WX])
         feature_names = list(self._feature_names) + [
@@ -1782,7 +1455,7 @@ class SDEMPanelFE(SpatialPanelModel):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type="sdem",
-            W_eigs=self._W_eigs_real
+            W_eigs=self._W_eigs
             if self._resolved_logdet_method == "eigenvalue"
             else None,
             logdet_method=self.logdet_method,
@@ -1856,7 +1529,7 @@ class SDEMPanelFE(SpatialPanelModel):
 
         SDEM panel impacts match SLX form (no rho multiplier).
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
@@ -1881,7 +1554,7 @@ class SDEMPanelFE(SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SLXPanelFE(SpatialPanelModel):
+class SLXPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian SLX panel regression.
 
     Implements
@@ -1966,48 +1639,13 @@ class SLXPanelFE(SpatialPanelModel):
     variance exists.
     """
 
-    _has_wx_in_beta = True
+    _has_wx_in_beta: bool = True
+    _jacobian_param: str | None = None
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
     _priors_cls = PanelSLXPriors
-
-    def _build_pymc_model(self) -> pm.Model:
-        """Construct the PyMC model for SLX panel regression.
-
-        Returns
-        -------
-        pymc.Model
-            Compiled probabilistic model object.
-        """
-        Z = np.hstack([self._X, self._WX])
-        z_names = list(self._feature_names) + [
-            f"W*{name}" for name in self._wx_feature_names
-        ]
-
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
-            Z, z_names
-        )
-        beta_mu = self.priors.get("beta_mu", default_beta_mu)
-        beta_sigma = self.priors.get("beta_sigma", default_beta_sigma)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", float(np.var(self._y)))
-
-        with pm.Model(coords=self._model_coords()) as model:
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
-
-            mu = pt.dot(Z, beta)
-            if self.robust:
-                self._add_nu_prior(model)
-                nu = model["nu"]
-                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y)
-            else:
-                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y)
-
-        return model
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean coefficients.
@@ -2063,7 +1701,7 @@ class SLXPanelFE(SpatialPanelModel):
 
         SLX panel impacts are linear in beta (no rho multiplier).
         """
-        from ..diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.lmtests import _get_posterior_draws
 
         idata = self.inference_data
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)

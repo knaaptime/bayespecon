@@ -280,7 +280,7 @@ class TestMakeFlowSeparableLogdet:
         self.W = W_dense
         self.W_sp = sp.csr_matrix(W_dense)
         self.n = n
-        eigs = np.linalg.eigvals(W_dense).real
+        eigs = np.linalg.eigvals(W_dense)
         self.rho_d, self.rho_o = 0.3, 0.25
 
         # Reference: exact eigenvalue-based answer

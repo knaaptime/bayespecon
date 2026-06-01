@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from bayespecon.models.flow import (
+from bayespecon.models.flow._flow import (
     NegativeBinomialFlow,
     NegativeBinomialSARFlow,
     NegativeBinomialSARFlowSeparable,
 )
-from bayespecon.models.flow_panel import (
+from bayespecon.models.flow_panel._panel import (
     NegativeBinomialFlowPanel,
     NegativeBinomialSARFlowPanel,
     NegativeBinomialSARFlowSeparablePanel,

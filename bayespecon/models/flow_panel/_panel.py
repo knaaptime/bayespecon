@@ -21,27 +21,27 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from .._backends.sampler_helpers import (
+from ..._backends.sampler_helpers import (
     enforce_c_backend,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
 )
-from .._logdet import (
+from ..._logdet import (
     compute_flow_traces,
     flow_logdet_numpy,
     flow_logdet_pytensor,
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from .._logdet._flow import _flow_logdet_poly_coeffs
-from .._ops import kron_solve_matrix
-from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
-from .base import SpatialModel
-from .flow import (
+from ..._logdet._flow import _flow_logdet_poly_coeffs
+from ..._ops import kron_solve_matrix
+from ...graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
+from ..base import SpatialModel
+from ..flow import (
     _build_flow_effect_masks,
     _compute_flow_effects_lesage,
 )
-from .panel_base import _demean_panel
+from ..panel_base import _demean_panel
 
 
 class FlowPanelModel(ABC):
@@ -335,10 +335,31 @@ class FlowPanelModel(ABC):
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
+        sampler: str = "nuts",
         progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
-        """Draw samples from the posterior."""
+        """Draw samples from the posterior.
+
+        Parameters
+        ----------
+        sampler : str, default "nuts"
+            Sampling backend: ``"nuts"`` for PyMC NUTS (default) or
+            ``"gibbs"`` for the custom Gaussian panel flow Gibbs sampler
+            (only available for separable SAR models).
+        """
+        if sampler == "gibbs":
+            return self.fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                **sample_kwargs,
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
@@ -439,6 +460,161 @@ class FlowPanelModel(ABC):
         """Return the most recent PyMC variational approximation, if any."""
         return self._approximation
 
+    def fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        store_eta: bool = False,
+        eta_thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gamma_init: float = 0.5,
+        rho_init: float = 0.0,
+    ) -> az.InferenceData:
+        """Fit the model using the Kronecker eigenbasis FFBS Gibbs sampler.
+
+        Available for separable SAR panel flow models. Runs independent
+        Gibbs chains and combines the results into an
+        :class:`arviz.InferenceData` object.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of post-warmup draws per chain.
+        tune : int, default 1000
+            Number of warmup draws per chain (discarded).
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int, optional
+            Random seed for reproducibility.
+        store_eta : bool, default False
+            Whether to store the latent field draws. Disabled by default
+            because the η trace is large: ``(draws, n², T)``.
+        eta_thin : int, default 1
+            Store every ``eta_thin``-th draw of η.
+        n_jobs : int, default -1
+            Number of parallel workers. ``-1`` uses all CPUs.
+        progressbar : bool, default True
+            Show progress bars.
+        gamma_init : float, default 0.5
+            Initial value for the temporal AR(1) parameter γ.
+        rho_init : float, default 0.0
+            Initial value for ρ_d and ρ_o.
+
+        Returns
+        -------
+        az.InferenceData
+            Posterior samples with groups ``posterior`` and
+            ``log_likelihood``.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model is not a separable SAR flow panel model.
+        """
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.panel_flow import (
+            PanelGaussianPriors,
+            run_gaussian_panel_flow_chain,
+        )
+
+        # Only separable SAR is supported currently
+        if not isinstance(self, SARFlowSeparablePanel):
+            raise NotImplementedError(
+                "fit_gibbs is currently only implemented for "
+                "SARFlowSeparablePanel. Use fit() for other model types."
+            )
+
+        n2 = self._N_flow
+        T = self._T
+
+        # Reshape y from (n²*T,) to (n², T) column-major
+        y_panel = self._y.reshape(T, n2).T  # (n², T)
+
+        # Reshape X from (n²*T, p) to (n², k) — time-invariant
+        X_panel = self._X  # (n²*T, p) → we assume time-invariant for now
+        # For pooled model (model=0), X repeats across T periods
+        X_period = X_panel[:n2, :]  # (n², k) — first period as template
+
+        # Get W as dense
+        W_dense = self._W_sparse.toarray().astype(np.float64)
+
+        # Build priors from model's prior dict
+        priors = PanelGaussianPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            sigma2_alpha=2.0,
+            sigma2_beta=1.0,
+            sigma2_y_alpha=2.0,
+            sigma2_y_beta=1.0,
+            gamma_prior_var=1.0,
+        )
+
+        # Generate per-chain seeds
+        if random_seed is not None:
+            parent_ss = np.random.SeedSequence(random_seed)
+        else:
+            parent_ss = np.random.SeedSequence()
+        child_seeds = parent_ss.spawn(chains)
+        seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
+
+        # Run chains
+        chain_traces = []
+        for chain_id in range(chains):
+            trace = run_gaussian_panel_flow_chain(
+                y=y_panel,
+                W=W_dense,
+                X=X_period,
+                n_draws=draws,
+                n_warmup=tune,
+                priors=priors,
+                rho_init=rho_init,
+                gamma_init=gamma_init,
+                store_eta=store_eta,
+                eta_thin=eta_thin,
+                seed=seeds[chain_id],
+            )
+            chain_traces.append(trace)
+
+        # Convert to InferenceData
+        # Stack chain traces: each param becomes (chains, draws, ...)
+        posterior_samples = {
+            "beta": np.stack([t.beta for t in chain_traces]),
+            "sigma2_u": np.stack([t.sigma2_u for t in chain_traces]),
+            "sigma2_y": np.stack([t.sigma2_y for t in chain_traces]),
+            "rho_d": np.stack([t.rho_d for t in chain_traces]),
+            "rho_o": np.stack([t.rho_o for t in chain_traces]),
+            "gamma": np.stack([t.gamma for t in chain_traces]),
+        }
+        if store_eta and chain_traces[0].eta is not None:
+            posterior_samples["eta"] = np.stack([t.eta for t in chain_traces])
+
+        log_likelihood = {
+            "y": np.stack([t.loglik for t in chain_traces]),
+        }
+
+        # Build coords
+        k = X_period.shape[-1]
+        coords = {
+            "chain": np.arange(chains),
+            "draw": np.arange(draws),
+            "coefficient": np.arange(k),
+        }
+        dims = {
+            "beta": ["coefficient"],
+        }
+
+        self._idata = gibbs_to_inference_data(
+            posterior_samples=posterior_samples,
+            log_likelihood=log_likelihood,
+            observed_data={"y": y_panel},
+            coords=coords,
+            dims=dims,
+        )
+        return self._idata
+
     def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
         """Return posterior summary table via ArviZ."""
         if self._idata is None:
@@ -461,7 +637,7 @@ class FlowPanelModel(ABC):
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet. Call fit() first.")
-        from ..diagnostics.lmtests.registry import get_diagnostic_suite
+        from ...diagnostics.lmtests.registry import get_diagnostic_suite
 
         suite = get_diagnostic_suite(self)
         if suite is None:
@@ -495,7 +671,7 @@ class FlowPanelModel(ABC):
         -------
         str or graphviz.Digraph
         """
-        from ..diagnostics import _decision_trees as _dt
+        from ...diagnostics import _decision_trees as _dt
 
         diag = self.spatial_diagnostics()
         model_type = self.__class__.__name__
@@ -638,8 +814,8 @@ class FlowPanelModel(ABC):
         ``mode`` semantics (auto / combined / separate destination-origin
         sides per Thomas-Agnan & LeSage 2014, §83.5.2).
         """
-        from ..diagnostics.spatial_effects import _compute_bayesian_pvalue
-        from .flow import _EFFECT_KEYS
+        from ...diagnostics.spatial_effects import _compute_bayesian_pvalue
+        from ..flow import _EFFECT_KEYS
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
@@ -848,7 +1024,7 @@ class FlowPanelModel(ABC):
             rho_w_draws = rho_w_draws[:n_draws_total]
             beta_draws = beta_draws[:n_draws_total]
 
-        from .flow import _EFFECT_KEYS
+        from ..flow import _EFFECT_KEYS
 
         out: dict[str, np.ndarray] = {}
         for side in ("dest", "orig"):
@@ -928,7 +1104,7 @@ class FlowPanelModel(ABC):
             rho_o_draws = rho_o_draws[:n_draws_total]
             beta_draws = beta_draws[:n_draws_total]
 
-        from .flow import _EFFECT_KEYS
+        from ..flow import _EFFECT_KEYS
 
         out: dict[str, np.ndarray] = {}
         for side in ("dest", "orig"):
@@ -1402,7 +1578,7 @@ class PoissonSARFlowPanel(FlowPanelModel):
         self._y_int_vec: np.ndarray = y_arr.reshape(-1).astype(np.int64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import SparseFlowSolveMatrixOp
+        from ..._ops import SparseFlowSolveMatrixOp
 
         if self.logdet_method != "traces":
             raise ValueError(
@@ -1614,7 +1790,7 @@ class PoissonSARFlowSeparablePanel(FlowPanelModel):
         self._y_int_vec: np.ndarray = y_arr.reshape(-1).astype(np.int64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import KroneckerFlowSolveMatrixOp
+        from ..._ops import KroneckerFlowSolveMatrixOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -1859,7 +2035,7 @@ class OLSFlowPanel(FlowPanelModel):
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
 
         # Local import avoids a circular import at module load time.
-        from .flow import _EFFECT_KEYS
+        from ..flow import _EFFECT_KEYS
 
         idata = self._idata
         n = self._n
@@ -2045,7 +2221,7 @@ class NegativeBinomialSARFlowPanel(PoissonSARFlowPanel):
     """Panel NB2 SAR flow model with unrestricted dependence parameters."""
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import SparseFlowSolveMatrixOp
+        from ..._ops import SparseFlowSolveMatrixOp
 
         if self.logdet_method != "traces":
             raise ValueError(
@@ -2114,7 +2290,7 @@ class NegativeBinomialSARFlowSeparablePanel(PoissonSARFlowSeparablePanel):
     """Panel separable NB2 SAR flow model."""
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import KroneckerFlowSolveMatrixOp
+        from ..._ops import KroneckerFlowSolveMatrixOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -2633,7 +2809,7 @@ def _ols_panel_effects(
     :class:`SEMFlowSeparablePanel` — all of which have :math:`\\mathbb{E}[y]
     = X\\beta` (no :math:`X`-mediated spillovers).
     """
-    from .flow import _EFFECT_KEYS
+    from ..flow import _EFFECT_KEYS
 
     beta_draws = idata.posterior["beta"].values.reshape(-1, len(feature_names))
 

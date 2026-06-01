@@ -401,7 +401,9 @@ def chebyshev(
 
     # Allow caller to skip dense materialisation when only eigs are needed.
     if eigs is not None:
-        eigs_arr = np.asarray(eigs, dtype=np.float64).real
+        # Keep complex eigenvalues — np.abs computes the complex modulus
+        # correctly for non-symmetric W.
+        eigs_arr = np.asarray(eigs, dtype=np.complex128)
         n = int(eigs_arr.shape[0])
         W_sp = None
     else:
@@ -428,7 +430,7 @@ def chebyshev(
     if not use_mc:
         # Eigenvalue-based: exact log-determinant at each Chebyshev node
         if eigs_arr is None:
-            eigs_arr = np.linalg.eigvals(W_sp.toarray()).real
+            eigs_arr = np.linalg.eigvals(W_sp.toarray())
         logdet_at_nodes = np.sum(
             np.log(np.abs(1.0 - rho_nodes[:, None] * eigs_arr[None, :])), axis=1
         )

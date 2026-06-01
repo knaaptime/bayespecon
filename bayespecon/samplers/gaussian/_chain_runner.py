@@ -142,9 +142,17 @@ def run_chains(
 
     if parallel:
         # Process-based parallelism via joblib (handles closures)
+        import os
+
         from joblib import Parallel, delayed
 
-        n_workers = n_jobs if n_jobs > 0 else -1  # joblib uses -1 for all CPUs
+        # Cap workers at n_chains: launching more processes than chains
+        # wastes spawn/import cost (the extra workers sit idle) and risks
+        # BLAS oversubscription.
+        if n_jobs is None or n_jobs < 0:
+            n_workers = min(n_chains, os.cpu_count() or 1)
+        else:
+            n_workers = min(n_jobs, n_chains)
 
         if progressbar:
             # Per-chain progress bars via shared-memory counters + rich.

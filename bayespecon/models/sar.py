@@ -351,7 +351,7 @@ class SAR(SpatialModel):
         rho_draws.shape[0]
         beta_draws.shape[1]
 
-        eigs = self._W_eigs_real  # (n,)
+        eigs = self._W_eigs  # (n,)
 
         # For each draw g, compute mean_diag and mean_rowsum of S = (I - rho*W)^{-1}
         # Using eigenvalues: diag(S) has entries 1/(1 - rho*omega_i)

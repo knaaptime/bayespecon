@@ -40,22 +40,22 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from .._backends.sampler_helpers import (
+from ..._backends.sampler_helpers import (
     enforce_c_backend,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
 )
-from .._logdet import (
+from ..._logdet import (
     compute_flow_traces,
     flow_logdet_numpy,
     flow_logdet_pytensor,
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from .._logdet._flow import _flow_logdet_poly_coeffs
-from .._ops import kron_solve_matrix, kron_solve_vec
-from ..graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
-from .base import SpatialModel
+from ..._logdet._flow import _flow_logdet_poly_coeffs
+from ..._ops import kron_solve_matrix, kron_solve_vec
+from ...graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
+from ..base import SpatialModel
 
 
 def _build_flow_effect_masks(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -301,9 +301,13 @@ class FlowModel(ABC):
         trace_riter: int = 50,
         trace_seed: Optional[int] = None,
         symmetric_xo_xd: Optional[bool] = None,
+        trace_estimator: str = "hutchpp",
+        trace_k: int | None = None,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
+        self.trace_estimator = trace_estimator
+        self.trace_k = trace_k
         self.restrict_positive = restrict_positive
         self.miter = miter
         self.titer = titer
@@ -415,7 +419,7 @@ class FlowModel(ABC):
 
         # Pre-compute logdet data for separable constraint: log|Lo⊗Ld| = n*f(ρ_d) + n*f(ρ_o).
         # Also keep _W_eigs for backward compatibility.  ``_W_eigs`` is
-        # populated only by the eigenvalue logdet path; ``_W_eigs_real`` is
+        # populated only by the eigenvalue logdet path.
         # exposed as a property below that returns ``None`` when eigenvalues
         # were not pre-computed (mirroring :class:`SpatialModel`).
         self._W_eigs: Optional[np.ndarray] = None
@@ -668,14 +672,13 @@ class FlowModel(ABC):
         return self._idata
 
     @property
-    def _W_eigs_real(self) -> Optional[np.ndarray]:
-        """Real part of W eigenvalues as float64, or None when not pre-computed.
+    def _W_eigs_complex(self) -> Optional[np.ndarray]:
+        """Complex eigenvalues of W, or None when not pre-computed.
 
-        Mirrors :attr:`SpatialModel._W_eigs_real` so that downstream samplers
+        Mirrors :attr:`SpatialModel._W_eigs` so that downstream samplers
         (e.g. the latent NB flow Gibbs) can request eigenvalues uniformly.
         """
-        eigs = self._W_eigs
-        return None if eigs is None else np.asarray(eigs.real, dtype=np.float64)
+        return self._W_eigs
 
     @property
     def pymc_model(self) -> Optional[pm.Model]:
@@ -725,7 +728,7 @@ class FlowModel(ABC):
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
-        from ..diagnostics.lmtests.registry import get_diagnostic_suite
+        from ...diagnostics.lmtests.registry import get_diagnostic_suite
 
         suite = get_diagnostic_suite(self)
         if suite is None:
@@ -759,7 +762,7 @@ class FlowModel(ABC):
         -------
         str or graphviz.Digraph
         """
-        from ..diagnostics import _decision_trees as _dt
+        from ...diagnostics import _decision_trees as _dt
 
         diag = self.spatial_diagnostics()
         model_type = self.__class__.__name__
@@ -931,7 +934,7 @@ class FlowModel(ABC):
             Long-format summary indexed by ``(predictor, side, effect)`` where
             ``side`` is one of ``"combined"``, ``"dest"``, ``"orig"``.
         """
-        from ..diagnostics.spatial_effects import _compute_bayesian_pvalue
+        from ...diagnostics.spatial_effects import _compute_bayesian_pvalue
 
         if self._idata is None:
             raise RuntimeError("Model has not been fit yet.  Call fit() first.")
@@ -1698,7 +1701,7 @@ class PoissonSARFlow(SARFlow):
         return rng.poisson(lam).astype(np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import SparseFlowSolveOp
+        from ..._ops import SparseFlowSolveOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -1854,7 +1857,7 @@ class PoissonSARFlowSeparable(SARFlowSeparable):
         return rng.poisson(lam).astype(np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import KroneckerFlowSolveOp
+        from ..._ops import KroneckerFlowSolveOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -2238,11 +2241,12 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
     """
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import SparseFlowSolveOp
+        from ..._ops import SparseFlowSolveOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
-        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 2.5)
+        alpha_nu = self.priors.get("alpha_nu", 3.0)
 
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
@@ -2265,7 +2269,7 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
                 )
 
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
 
             Xb = pt.dot(X_t, beta)
             solve_op = SparseFlowSolveOp(self._Wd, self._Wo, self._Ww)
@@ -2336,11 +2340,12 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
     """Separable SAR flow model with NB2 observation noise."""
 
     def _build_pymc_model(self) -> pm.Model:
-        from .._ops import KroneckerFlowSolveOp
+        from ..._ops import KroneckerFlowSolveOp
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
-        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 2.5)
+        alpha_nu = self.priors.get("alpha_nu", 3.0)
         rho_lower = self.priors.get("rho_lower", -0.999)
         rho_upper = self.priors.get("rho_upper", 0.999)
 
@@ -2358,7 +2363,7 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
             pm.Deterministic("rho_w", -rho_d * rho_o)
 
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
 
             Xb = pt.dot(X_t, beta)
             solve_op = KroneckerFlowSolveOp(self._W_sparse, n)
@@ -2418,13 +2423,14 @@ class NegativeBinomialFlow(PoissonFlow):
     def _build_pymc_model(self) -> pm.Model:
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
-        alpha_sigma = self.priors.get("alpha_sigma", 10.0)
+        alpha_sigma = self.priors.get("alpha_sigma", 2.5)
+        alpha_nu = self.priors.get("alpha_nu", 3.0)
 
         X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            alpha = pm.HalfNormal("alpha", sigma=alpha_sigma)
+            alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
             eta = pt.dot(X_t, beta)
             lam = pm.Deterministic("lambda", pt.exp(eta))
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
@@ -2917,7 +2923,8 @@ class SARNegBinFlowLatent(FlowModel):
         - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
         - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
         - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
-        - ``alpha_sigma`` : float, default 10.0 — HalfNormal prior std for ``alpha``.
+        - ``alpha_sigma`` : float, default 2.5 — Half-Student-t prior scale for ``alpha``.
+        - ``alpha_nu`` : float, default 3.0 — Half-Student-t degrees of freedom for ``alpha``.
         - ``rho_lower`` : float, default -0.999 — Lower bound for each :math:`\rho`.
         - ``rho_upper`` : float, default 0.999 — Upper bound for each :math:`\rho`.
 
@@ -3028,10 +3035,10 @@ class SARNegBinFlowLatent(FlowModel):
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
-        from .._logdet import flow_logdet_numpy
-        from ..samplers._utils._idata import gibbs_to_inference_data
-        from ..samplers.gaussian._chain_runner import run_chains
-        from ..samplers.negbin._flow import (
+        from ..._logdet import flow_logdet_numpy
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.gaussian._chain_runner import run_chains
+        from ...samplers.negbin._flow import (
             FlowGibbsCacheNS,
             FlowGibbsPriors,
             run_flow_chain_nonseparable,
@@ -3045,8 +3052,10 @@ class SARNegBinFlowLatent(FlowModel):
         priors = FlowGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
-            alpha_sigma=self.priors.get("alpha_sigma", 10.0),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", 1.0),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
             rho_lower=self.priors.get("rho_lower", -0.999),
             rho_upper=self.priors.get("rho_upper", 0.999),
         )
@@ -3200,8 +3209,8 @@ class SARNegBinFlowLatent(FlowModel):
         else:
             alpha_init = 1.0
 
-        from ..samplers._utils._polyagamma import sample_polyagamma
-        from ..samplers.negbin._flow import FlowGibbsState
+        from ...samplers._utils._polyagamma import sample_polyagamma
+        from ...samplers.negbin._flow import FlowGibbsState
 
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 
@@ -3259,7 +3268,8 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
         - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
         - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
-        - ``alpha_sigma`` : float, default 10.0 — HalfNormal prior std for ``alpha``.
+        - ``alpha_sigma`` : float, default 2.5 — Half-Student-t prior scale for ``alpha``.
+        - ``alpha_nu`` : float, default 3.0 — Half-Student-t degrees of freedom for ``alpha``.
         - ``rho_lower`` : float, default -0.999 — Lower bound for each :math:`\rho`.
         - ``rho_upper`` : float, default 0.999 — Upper bound for each :math:`\rho`.
 
@@ -3361,10 +3371,10 @@ class SARNegBinFlowSeparableLatent(FlowModel):
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
-        from .._logdet import make_logdet_numpy_fn
-        from ..samplers._utils._idata import gibbs_to_inference_data
-        from ..samplers.gaussian._chain_runner import run_chains
-        from ..samplers.negbin._flow import (
+        from ..._logdet import make_logdet_numpy_fn
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.gaussian._chain_runner import run_chains
+        from ...samplers.negbin._flow import (
             FlowGibbsCache,
             FlowGibbsPriors,
             run_flow_chain_separable,
@@ -3379,8 +3389,10 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         priors = FlowGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_sigma=self.priors.get("sigma_sigma", 10.0),
-            alpha_sigma=self.priors.get("alpha_sigma", 10.0),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", 1.0),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
             rho_lower=self.priors.get("rho_lower", -0.999),
             rho_upper=self.priors.get("rho_upper", 0.999),
         )
@@ -3392,14 +3404,16 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         # Build logdet callable for the n×n weight matrix
         logdet_fn = make_logdet_numpy_fn(
             W_sparse,
-            eigs=self._W_eigs_real,
+            eigs=self._W_eigs,
             method=self.logdet_method,
+            trace_estimator=self.trace_estimator,
+            trace_k=self.trace_k,
         )
 
         cache = FlowGibbsCache(
             W_sparse=W_sparse,
             W_dense=W_sparse.toarray(),
-            W_eigs=self._W_eigs_real,
+            W_eigs=self._W_eigs,
             n=n,
             XtX=XtX,
             logdet_fn=logdet_fn,
@@ -3504,8 +3518,8 @@ class SARNegBinFlowSeparableLatent(FlowModel):
         else:
             alpha_init = 1.0
 
-        from ..samplers._utils._polyagamma import sample_polyagamma
-        from ..samplers.negbin._flow import FlowGibbsState
+        from ...samplers._utils._polyagamma import sample_polyagamma
+        from ...samplers.negbin._flow import FlowGibbsState
 
         omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
 

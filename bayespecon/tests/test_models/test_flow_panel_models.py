@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon.models.flow_panel import (
+from bayespecon.models.flow_panel._panel import (
     OLSFlowPanel,
     PoissonFlowPanel,
     PoissonSARFlowPanel,
@@ -1196,3 +1196,110 @@ class TestFlowPanelLogLikelihood:
         comp = az.compare({"sar": idata_sar, "sep": idata_sep, "ols": idata_ols})
         assert "rank" in comp.columns
         assert len(comp) == 3
+
+
+class TestFlowPanelGibbsDispatch:
+    """Flow panel models should dispatch sampler='gibbs' to fit_gibbs."""
+
+    def test_sar_flow_separable_panel_sampler_gibbs(self):
+        n, T = 4, 3
+        G = _flow_test_graph(n)
+        y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=50)
+        m = SARFlowSeparablePanel(
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
+            trace_seed=0,
+        )
+        idata = m.fit(
+            draws=20,
+            tune=20,
+            chains=1,
+            progressbar=False,
+            random_seed=0,
+            sampler="gibbs",
+        )
+        assert "beta" in idata.posterior.data_vars
+        assert "rho_d" in idata.posterior.data_vars
+        assert "rho_o" in idata.posterior.data_vars
+        assert "sigma2_y" in idata.posterior.data_vars
+        assert "sigma2_u" in idata.posterior.data_vars
+        assert "gamma" in idata.posterior.data_vars
+
+    def test_sar_flow_panel_sampler_gibbs_raises(self):
+        """Unrestricted SARFlowPanel should raise NotImplementedError."""
+        n, T = 4, 3
+        G = _flow_test_graph(n)
+        y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=51)
+        m = SARFlowPanel(
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
+            miter=5,
+            titer=50,
+            trace_seed=0,
+        )
+        with pytest.raises(NotImplementedError, match="fit_gibbs"):
+            m.fit(
+                draws=10,
+                tune=10,
+                chains=1,
+                progressbar=False,
+                random_seed=0,
+                sampler="gibbs",
+            )
+
+    def test_sampler_nuts_backward_compatible(self):
+        """Default sampler='nuts' still works for all flow panel models."""
+        n, T = 4, 2
+        G = _flow_test_graph(n)
+        y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=52)
+        m = SARFlowSeparablePanel(
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
+            trace_seed=0,
+        )
+        idata = m.fit(
+            draws=10,
+            tune=10,
+            chains=1,
+            progressbar=False,
+            random_seed=0,
+            sampler="nuts",
+        )
+        assert "beta" in idata.posterior.data_vars
+        assert "rho_d" in idata.posterior.data_vars
+        assert "sigma" in idata.posterior.data_vars
+
+    def test_invalid_sampler_raises(self):
+        n, T = 4, 2
+        G = _flow_test_graph(n)
+        y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=53)
+        m = SARFlowSeparablePanel(
+            y=y,
+            G=G,
+            X=X,
+            T=T,
+            col_names=col_names,
+            model=0,
+            trace_seed=0,
+        )
+        with pytest.raises(ValueError, match="sampler must be"):
+            m.fit(
+                draws=10,
+                tune=10,
+                chains=1,
+                progressbar=False,
+                random_seed=0,
+                sampler="mcmc",
+            )

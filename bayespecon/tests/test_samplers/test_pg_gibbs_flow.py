@@ -202,7 +202,8 @@ class TestFlowGibbsPriors:
         priors = FlowGibbsPriors()
         assert priors.rho_lower == -0.999
         assert priors.rho_upper == 0.999
-        assert priors.alpha_sigma == 10.0
+        assert priors.alpha_sigma == 2.5
+        assert priors.alpha_nu == 3.0
 
 
 # ---------------------------------------------------------------------------

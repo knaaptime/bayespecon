@@ -115,6 +115,15 @@ from .cross_sectional import (
 from .cross_sectional import (
     bayesian_robust_lm_wx_test as bayesian_robust_lm_wx_test,
 )
+from .cross_sectional_glm import (
+    bayesian_glm_lm_error_test as bayesian_glm_lm_error_test,
+)
+from .cross_sectional_glm import (
+    bayesian_glm_lm_lag_test as bayesian_glm_lm_lag_test,
+)
+from .cross_sectional_glm import (
+    bayesian_glm_lm_wx_test as bayesian_glm_lm_wx_test,
+)
 from .flow import (
     _flow_marginal_lm as _flow_marginal_lm,
 )
