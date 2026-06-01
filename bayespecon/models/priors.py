@@ -131,6 +131,38 @@ class SDEMPriors(SEMPriors):
 
 
 @dataclass(frozen=True)
+class LogitPriors(BasePriors):
+    """Priors for :class:`bayespecon.models.Logit` (non-spatial NUTS).
+
+    Inherits ``beta_mu``/``beta_sigma`` from :class:`BasePriors`.  The
+    logit link absorbs the noise scale, so the ``sigma2_*`` / ``sigma_sigma``
+    fields are unused.
+    """
+
+
+@dataclass(frozen=True)
+class NegBinPriors(BasePriors):
+    """Priors for :class:`bayespecon.models.NegativeBinomial` (non-spatial NUTS).
+
+    Adds a Half-Student-t prior on the NB dispersion parameter
+    :math:`\\alpha` (NB2 parameterisation, ``Var(y) = mu + mu^2 / alpha``):
+
+    .. math::
+
+        \\alpha \\sim \\mathrm{Half\\text{-}Student\\text{-}t}(\\nu_\\alpha, \\sigma_\\alpha)
+
+    The Half-Student-t (default ``nu=3``, ``sigma=2.5``) follows the
+    Gelman/rstanarm recommendation for scale parameters: heavier tails
+    than a Half-Normal place less penalty on small ``alpha`` (the
+    strong-overdispersion regime that motivates choosing NB over
+    Poisson in the first place).  The ``sigma2_*`` fields are unused.
+    """
+
+    alpha_sigma: float = 2.5
+    alpha_nu: float = 3.0
+
+
+@dataclass(frozen=True)
 class SARNegBinPriors(SARPriors):
     """Priors for the SAR Negative Binomial models.
 

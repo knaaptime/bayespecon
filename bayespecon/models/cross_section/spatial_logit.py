@@ -568,3 +568,273 @@ class SARSpatialLogit(SpatialModel):
         indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
+
+    #: Threshold above which probability-scale spatial effects use the
+    #: sparse Hutchinson path instead of the eigendecomposition path.
+    #: See :attr:`SARNegativeBinomial._COUNT_EFFECTS_EIGEN_MAX_N` for the
+    #: cost model — the logit case is identical structurally.
+    _PROBABILITY_EFFECTS_EIGEN_MAX_N: int = 2000
+
+    def _compute_probability_scale_spatial_effects_posterior(
+        self,
+        method: str = "auto",
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        r"""Compute posterior impacts on the probability scale for each draw.
+
+        Notes
+        -----
+        For the SAR-logit model with
+
+        .. math::
+
+            \eta = (I - \rho W)^{-1} X\beta, \qquad p = \sigma(\eta),
+
+        the average partial-effect matrix for covariate :math:`x_r` on the
+        response (probability) scale is
+
+        .. math::
+
+            \frac{\partial p}{\partial x_r'} =
+            \operatorname{diag}\bigl(p \odot (1 - p)\bigr)
+            (I - \rho W)^{-1} \beta_r,
+
+        which matches LeSage & Pace (2009) and §3.6 of the spatial PG paper.
+        Direct, indirect, and total effects are the average diagonal, the
+        average row sum minus diagonal, and the average row sum of this
+        matrix respectively.
+
+        For ``n ≤ _PROBABILITY_EFFECTS_EIGEN_MAX_N`` (default 2000) this
+        uses the shared eigendecomposition cache; otherwise it falls back
+        to per-draw sparse LU + Hutchinson diagonal estimation.
+        """
+        from ...diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        rho_draws = _get_posterior_draws(idata, "rho")
+        beta_draws = _get_posterior_draws(idata, "beta")
+
+        n = self._X.shape[0]
+        ni = self._nonintercept_indices
+        n_draws = rho_draws.shape[0]
+        n_effects = len(ni)
+
+        if method not in {"auto", "eigen", "sparse"}:
+            raise ValueError(
+                f"method must be one of {{'auto', 'eigen', 'sparse'}}, got {method!r}."
+            )
+
+        use_sparse = method == "sparse" or (
+            method == "auto" and n > self._PROBABILITY_EFFECTS_EIGEN_MAX_N
+        )
+        if use_sparse:
+            return self._compute_probability_scale_spatial_effects_posterior_sparse(
+                rho_draws=rho_draws,
+                beta_draws=beta_draws,
+                n=n,
+                ni=ni,
+                n_draws=n_draws,
+                n_effects=n_effects,
+            )
+
+        direct_samples = np.empty((n_draws, n_effects), dtype=np.float64)
+        total_samples = np.empty((n_draws, n_effects), dtype=np.float64)
+
+        decomp = self._W_eigendecomposition
+        if decomp is None:
+            raise ValueError("No spatial weights matrix available.")
+        eigs_c = decomp[0]
+        V_c = decomp[1]
+        Vinv_c = decomp[2]
+
+        VinvX = Vinv_c @ self._X.astype(np.complex128)
+        ones_c = np.ones(n, dtype=np.complex128)
+        Vinv_ones = Vinv_c @ ones_c
+
+        for draw_idx, (rho, beta) in enumerate(
+            zip(rho_draws, beta_draws, strict=False)
+        ):
+            inv_eigs_c = 1.0 / (1.0 - float(rho) * eigs_c)
+
+            coeff = inv_eigs_c * (VinvX @ beta.astype(np.complex128))
+            eta = (V_c @ coeff).real.astype(np.float64)
+            # Stable sigmoid; clip to avoid overflow in the rare extreme draw.
+            p = 1.0 / (1.0 + np.exp(-np.clip(eta, -50.0, 50.0)))
+            w = p * (1.0 - p)
+
+            multiplier_diag = ((V_c * Vinv_c.T) @ inv_eigs_c).real.astype(np.float64)
+            if self._is_row_std:
+                multiplier_row_sums = np.full(
+                    n, 1.0 / (1.0 - float(rho)), dtype=np.float64
+                )
+            else:
+                multiplier_row_sums = (V_c @ (inv_eigs_c * Vinv_ones)).real.astype(
+                    np.float64
+                )
+
+            direct_base = float(np.mean(w * multiplier_diag))
+            total_base = float(np.mean(w * multiplier_row_sums))
+
+            direct_samples[draw_idx] = direct_base * beta[ni]
+            total_samples[draw_idx] = total_base * beta[ni]
+
+        indirect_samples = total_samples - direct_samples
+        return direct_samples, indirect_samples, total_samples
+
+    def _compute_probability_scale_spatial_effects_posterior_sparse(
+        self,
+        rho_draws: np.ndarray,
+        beta_draws: np.ndarray,
+        n: int,
+        ni: list[int],
+        n_draws: int,
+        n_effects: int,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        r"""Probability-scale spatial effects via sparse solves + Hutchinson.
+
+        Direct port of
+        :meth:`SARNegativeBinomial._compute_count_scale_spatial_effects_posterior_sparse`
+        with the count-mean weight :math:`\mu` replaced by the Bernoulli
+        variance :math:`p(1-p)`.
+        """
+        from ..._ops import _make_cached_umfpack_solver
+
+        W = self._W_sparse
+        I_n = sp.eye(n, format="csr", dtype=np.float64)
+        ones = np.ones(n, dtype=np.float64)
+        rng = np.random.default_rng(42)
+        n_probes = 20
+
+        Z = rng.choice(
+            np.array([-1.0, 1.0], dtype=np.float64),
+            size=(n, n_probes),
+        )
+
+        direct_samples = np.empty((n_draws, n_effects), dtype=np.float64)
+        total_samples = np.empty((n_draws, n_effects), dtype=np.float64)
+
+        for draw_idx, (rho, beta) in enumerate(
+            zip(rho_draws, beta_draws, strict=False)
+        ):
+            rho_f = float(rho)
+            A = (I_n - rho_f * W).tocsc()
+
+            solver = _make_cached_umfpack_solver(A)
+            if solver is None:
+                solver = sp.linalg.splu(A)
+
+            Xbeta = self._X @ beta
+            if self._is_row_std:
+                rhs = np.empty((n, 1 + n_probes), dtype=np.float64)
+                rhs[:, 0] = Xbeta
+                rhs[:, 1:] = Z
+                sol = np.asarray(solver.solve(rhs), dtype=np.float64)
+                eta = sol[:, 0]
+                AinvZ = sol[:, 1:]
+                multiplier_row_sums = np.full(n, 1.0 / (1.0 - rho_f), dtype=np.float64)
+            else:
+                rhs = np.empty((n, 2 + n_probes), dtype=np.float64)
+                rhs[:, 0] = Xbeta
+                rhs[:, 1] = ones
+                rhs[:, 2:] = Z
+                sol = np.asarray(solver.solve(rhs), dtype=np.float64)
+                eta = sol[:, 0]
+                multiplier_row_sums = sol[:, 1]
+                AinvZ = sol[:, 2:]
+
+            p = 1.0 / (1.0 + np.exp(-np.clip(eta, -50.0, 50.0)))
+            w = p * (1.0 - p)
+
+            multiplier_diag = np.mean(Z * AinvZ, axis=1)
+
+            direct_base = float(np.mean(w * multiplier_diag))
+            total_base = float(np.mean(w * multiplier_row_sums))
+
+            direct_samples[draw_idx] = direct_base * beta[ni]
+            total_samples[draw_idx] = total_base * beta[ni]
+
+        indirect_samples = total_samples - direct_samples
+        return direct_samples, indirect_samples, total_samples
+
+    def spatial_effects(
+        self,
+        return_posterior_samples: bool = False,
+        scale: str = "logodds",
+        method: str = "auto",
+    ):
+        r"""Compute Bayesian inference for direct, indirect, and total impacts.
+
+        Parameters
+        ----------
+        return_posterior_samples : bool, optional
+            If ``True``, also return the posterior draws for each effect type.
+        scale : {"logodds", "probability"}, default "logodds"
+            Scale on which impacts are reported.
+
+            ``"logodds"`` returns impacts on the linear-predictor (log-odds)
+            scale :math:`\eta = (I - \rho W)^{-1} X\beta`. This is the
+            cheap default; effects are linear in :math:`\beta` and do not
+            require evaluating the link.
+
+            ``"probability"`` returns response-scale impacts
+
+            .. math::
+
+                \partial p / \partial x_r =
+                \operatorname{diag}(p(1-p))\,(I - \rho W)^{-1}\beta_r,
+
+            which match the LeSage-Pace (2009) and PG-paper formulas. This
+            is more expensive because it requires the diagonal of the
+            spatial multiplier and the fitted probabilities for each draw.
+        method : {"auto", "eigen", "sparse"}, default "auto"
+            Only used when ``scale="probability"``. ``"eigen"`` uses the
+            shared eigendecomposition cache (O(n²) per draw); ``"sparse"``
+            uses one sparse LU per draw plus a Hutchinson diagonal
+            estimator (O(nnz) per draw); ``"auto"`` picks sparse when
+            :math:`n` exceeds :attr:`_PROBABILITY_EFFECTS_EIGEN_MAX_N`
+            (default 2000).
+        """
+        from ...diagnostics.spatial_effects import _build_effects_dataframe
+
+        if scale == "logodds":
+            return super().spatial_effects(
+                return_posterior_samples=return_posterior_samples
+            )
+        if scale != "probability":
+            raise ValueError("scale must be either 'logodds' or 'probability'.")
+
+        self._require_fit()
+        direct_samples, indirect_samples, total_samples = (
+            self._compute_probability_scale_spatial_effects_posterior(method=method)
+        )
+
+        k_effects = direct_samples.shape[1]
+        if (
+            hasattr(self, "_wx_feature_names")
+            and len(self._wx_feature_names) == k_effects
+        ):
+            feature_names = list(self._wx_feature_names)
+        elif (
+            hasattr(self, "_nonintercept_feature_names")
+            and len(self._nonintercept_feature_names) == k_effects
+        ):
+            feature_names = list(self._nonintercept_feature_names)
+        else:
+            feature_names = list(self._feature_names[:k_effects])
+
+        df = _build_effects_dataframe(
+            direct_samples=direct_samples,
+            indirect_samples=indirect_samples,
+            total_samples=total_samples,
+            feature_names=feature_names,
+            model_type=self.__class__.__name__,
+        )
+        df.attrs["scale"] = scale
+
+        if return_posterior_samples:
+            posterior_samples = {
+                "direct": direct_samples,
+                "indirect": indirect_samples,
+                "total": total_samples,
+            }
+            return df, posterior_samples
+        return df

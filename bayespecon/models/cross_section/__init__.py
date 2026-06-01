@@ -1,5 +1,7 @@
 """Cross-sectional spatial regression models."""
 
+from .logit import Logit
+from .negbin import NegativeBinomial
 from .ols import OLS
 from .sar import SAR
 from .sar_negbin import SARNegativeBinomial
@@ -14,6 +16,8 @@ from .spatial_probit import SpatialProbit
 from .tobit import SARTobit, SDMTobit, SEMTobit
 
 __all__ = [
+    "Logit",
+    "NegativeBinomial",
     "OLS",
     "SAR",
     "SDEM",

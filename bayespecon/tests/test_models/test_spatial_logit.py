@@ -160,6 +160,55 @@ class TestSpatialEffects:
         assert "total" in effects
         assert "feature_names" in effects
 
+    def test_probability_scale_eigen(self):
+        """``scale='probability'`` returns response-scale impacts via eigen path."""
+        y, X, W = _binary_data()
+        model = SARSpatialLogit(y=y, X=X, W=W)
+        model._idata = _idata(
+            {
+                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
+                "rho": np.array([0.15, 0.16]),
+            }
+        )
+        df_logodds = model.spatial_effects(scale="logodds")
+        df_prob = model.spatial_effects(scale="probability", method="eigen")
+        # Probability-scale effects are bounded above by log-odds effects in
+        # absolute value because the multiplier p*(1-p) ≤ 1/4 < 1.
+        means_lo = df_logodds["direct"].to_numpy()
+        means_pr = df_prob["direct"].to_numpy()
+        assert np.all(np.abs(means_pr) <= np.abs(means_lo) + 1e-9)
+        assert np.all(np.isfinite(means_pr))
+        assert df_prob.attrs.get("scale") == "probability"
+
+    def test_probability_scale_sparse_matches_eigen(self):
+        """Sparse Hutchinson path agrees with eigen path within MC tolerance."""
+        y, X, W = _binary_data()
+        model = SARSpatialLogit(y=y, X=X, W=W)
+        model._idata = _idata(
+            {
+                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
+                "rho": np.array([0.15, 0.16]),
+            }
+        )
+        df_eig = model.spatial_effects(scale="probability", method="eigen")
+        df_spr = model.spatial_effects(scale="probability", method="sparse")
+        # Hutchinson with 20 probes is noisy; check sign + order of magnitude.
+        e = df_eig["direct"].to_numpy()
+        s = df_spr["direct"].to_numpy()
+        np.testing.assert_allclose(s, e, rtol=0.3, atol=1e-3)
+
+    def test_probability_scale_invalid_scale(self):
+        y, X, W = _binary_data()
+        model = SARSpatialLogit(y=y, X=X, W=W)
+        model._idata = _idata(
+            {
+                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
+                "rho": np.array([0.15, 0.16]),
+            }
+        )
+        with pytest.raises(ValueError, match="logodds.*probability"):
+            model.spatial_effects(scale="bogus")
+
 
 # ---------------------------------------------------------------------------
 # DGP integration test

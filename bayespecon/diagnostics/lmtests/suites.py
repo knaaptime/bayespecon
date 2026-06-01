@@ -110,9 +110,30 @@ SAR_SUITE = DiagnosticSuite(
 SAR_NEGBIN_SUITE = DiagnosticSuite(
     name="SAR-NegBin",
     tests=_suite(
-        ("bayesian_lm_error_test", "LM-Error"),
-        ("bayesian_lm_wx_test", "LM-WX"),
-        ("bayesian_robust_lm_wx_test", "Robust-LM-WX"),
+        ("bayesian_glm_lm_error_test", "LM-Error"),
+        ("bayesian_glm_lm_wx_test", "LM-WX"),
+    ),
+)
+
+# GLM (non-spatial) baselines — Logit and NegativeBinomial fitted with NUTS.
+# Spatial diagnostics use the PG-augmented LM tests in
+# :mod:`bayespecon.diagnostics.lmtests.cross_sectional_glm`.
+
+LOGIT_SUITE = DiagnosticSuite(
+    name="Logit",
+    tests=_suite(
+        ("bayesian_glm_lm_lag_test", "LM-Lag"),
+        ("bayesian_glm_lm_error_test", "LM-Error"),
+        ("bayesian_glm_lm_wx_test", "LM-WX"),
+    ),
+)
+
+NEGBIN_SUITE = DiagnosticSuite(
+    name="NegBin",
+    tests=_suite(
+        ("bayesian_glm_lm_lag_test", "LM-Lag"),
+        ("bayesian_glm_lm_error_test", "LM-Error"),
+        ("bayesian_glm_lm_wx_test", "LM-WX"),
     ),
 )
 
@@ -292,6 +313,8 @@ __all__ = [
     "SLX_SUITE",
     "SAR_SUITE",
     "SAR_NEGBIN_SUITE",
+    "LOGIT_SUITE",
+    "NEGBIN_SUITE",
     "SEM_SUITE",
     "SDM_SUITE",
     "SDEM_SUITE",

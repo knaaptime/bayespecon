@@ -61,6 +61,8 @@ from .suites import (  # noqa: E402
     FLOW_INTRA_SUITE,
     FLOW_PANEL_SUITE,
     FLOW_SUITE,
+    LOGIT_SUITE,
+    NEGBIN_SUITE,
     OLS_SUITE,
     SAR_NEGBIN_SUITE,
     SAR_SUITE,
@@ -93,6 +95,10 @@ _register(
     "bayespecon.models.cross_section.sar_negbin_latent.SARNegBinLatent",
     SAR_NEGBIN_SUITE,
 )
+
+# Non-spatial GLM baselines
+_register("bayespecon.models.cross_section.logit.Logit", LOGIT_SUITE)
+_register("bayespecon.models.cross_section.negbin.NegativeBinomial", NEGBIN_SUITE)
 
 # Flow (cross-sectional)
 _register("bayespecon.models.flow._flow.SARFlow", FLOW_SUITE)

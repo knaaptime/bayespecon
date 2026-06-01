@@ -1,4 +1,6 @@
 from .base import SpatialModel as SpatialModel
+from .cross_section.logit import Logit as Logit
+from .cross_section.negbin import NegativeBinomial as NegativeBinomial
 from .cross_section.ols import OLS as OLS
 from .cross_section.sar import SAR as SAR
 from .cross_section.sar_negbin import SARNegativeBinomial as SARNegativeBinomial
