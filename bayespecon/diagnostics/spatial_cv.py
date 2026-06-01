@@ -28,6 +28,10 @@ mean (:math:`A^{-1}X\\beta` for SAR/SDM, :math:`X\\beta` for SEM/SDEM,
 
 from __future__ import annotations
 
+import contextlib
+import logging
+import os
+import warnings
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -37,6 +41,26 @@ from scipy.sparse.linalg import splu, spsolve
 from scipy.special import logsumexp
 
 __all__ = ["SpatialCVResult", "spatial_kfold"]
+
+
+@contextlib.contextmanager
+def _silence_fit():
+    """Suppress stdout/stderr and PyMC logger chatter from a model fit."""
+    pymc_logger = logging.getLogger("pymc")
+    prev_level = pymc_logger.level
+    pymc_logger.setLevel(logging.ERROR)
+    devnull = open(os.devnull, "w")
+    try:
+        with (
+            contextlib.redirect_stdout(devnull),
+            contextlib.redirect_stderr(devnull),
+            warnings.catch_warnings(),
+        ):
+            warnings.simplefilter("ignore")
+            yield
+    finally:
+        devnull.close()
+        pymc_logger.setLevel(prev_level)
 
 
 @dataclass
@@ -133,7 +157,16 @@ def _refit_on_train(
     """Construct a fresh model instance on the training subset and fit it."""
     W_train: Optional[sp.spmatrix]
     if model._W_sparse is not None:
-        W_train = model._W_sparse[train_idx, :][:, train_idx].tocsr()
+        W_sub = model._W_sparse[train_idx, :][:, train_idx].tocsr()
+        # Subsetting a globally row-standardised W breaks row-normalisation
+        # (some neighbours fall outside train_idx, so row sums < 1). Re-
+        # standardise rows so the training W matches the original convention.
+        row_sums = np.asarray(W_sub.sum(axis=1)).ravel()
+        inv = np.zeros_like(row_sums)
+        nz = row_sums > 0
+        inv[nz] = 1.0 / row_sums[nz]
+        W_train = sp.diags(inv) @ W_sub
+        W_train = W_train.tocsr()
     else:
         W_train = None
     new = model.__class__(
@@ -229,6 +262,7 @@ def _fold_elpd(
 def spatial_kfold(
     model: Any,
     *,
+    splitter: Optional[Any] = None,
     fold_ids: Optional[np.ndarray] = None,
     n_blocks: int = 10,
     geometry: Optional[Any] = None,
@@ -236,7 +270,8 @@ def spatial_kfold(
     tune: int = 400,
     chains: int = 2,
     random_seed: int = 0,
-    progressbar: bool = False,
+    progressbar: bool = True,
+    verbose: bool = False,
     **fit_kwargs: Any,
 ) -> SpatialCVResult:
     """Spatial block cross-validation for a fitted Bayesian spatial model.
@@ -252,24 +287,54 @@ def spatial_kfold(
         constructed (its ``_X``, ``_y`` and ``_W_sparse`` will be used for
         prediction); it does **not** need to be fit, since fold-specific
         refits are performed internally.
+    splitter : sklearn-compatible splitter, optional
+        Any object exposing ``split(X)`` that yields ``(train_idx,
+        test_idx)`` pairs (sklearn ``BaseCrossValidator`` protocol).  This
+        is the recommended entry point for using
+        `geovalidate <https://github.com/ljwolf/geovalidate/>`_ splitters
+        such as ``HilbertKFold``, ``CellStratifiedKFold``,
+        ``LeaveClusterOut``, or ``BallKFold``.  ``geometry`` (when
+        provided) is forwarded as the ``X`` argument to ``split``; this
+        suffices for geometry-aware geovalidate splitters.  Mutually
+        exclusive with ``fold_ids``.
     fold_ids : np.ndarray, optional
         Integer fold assignment per observation, shape ``(n,)``.  When
         supplied, ``n_blocks`` and ``geometry`` are ignored.
     n_blocks : int, default 10
-        Number of spatial blocks for the KMeans fallback when
-        ``fold_ids`` is not provided.
+        Number of spatial blocks for the KMeans fallback when neither
+        ``splitter`` nor ``fold_ids`` is provided.
     geometry : geopandas.GeoSeries, optional
-        Geometry used by the KMeans fallback to cluster centroids.
-        Required when ``fold_ids`` is ``None``.
-    draws, tune, chains, random_seed, progressbar
+        Geometry used by the KMeans fallback to cluster centroids, and
+        forwarded to ``splitter.split`` when ``splitter`` is supplied.
+        Required for the KMeans fallback.
+    draws, tune, chains, random_seed
         Forwarded to :meth:`SpatialModel.fit` for each per-fold refit.
         Defaults are deliberately modest to keep CV affordable.
+    progressbar : bool, default True
+        If True, display a fold-level progress bar (via ``tqdm``)
+        showing CV progress.  Independent of any per-chain progress bar
+        inside :meth:`SpatialModel.fit`, which is always disabled.
+    verbose : bool, default False
+        If True, allow per-fold ``fit`` calls to print their usual
+        sampler / compile messages to stdout/stderr.  When False (the
+        default) those messages — along with PyMC's ``INFO`` logger
+        output and warnings — are suppressed so only the fold-level
+        progress bar is visible.
     **fit_kwargs
         Extra keyword arguments forwarded to :meth:`SpatialModel.fit`.
 
     Returns
     -------
     SpatialCVResult
+
+    Notes
+    -----
+    When ``splitter`` produces folds whose test sets do not form a
+    disjoint partition of the data (e.g. ``LeaveBallOut`` with an
+    exclusion buffer, or any splitter where some observations are tested
+    multiple times or not at all), the per-observation accounting used
+    to estimate ``se`` is undefined.  In that case ``se`` is set to
+    ``nan``; ``elpd_per_fold`` and ``elpd`` remain valid.
 
     Notes
     -----
@@ -280,23 +345,50 @@ def spatial_kfold(
     cost is :math:`O(G \\cdot n_{\\text{test}} \\cdot k)`.
     """
     n = int(model._y.shape[0])
-    if fold_ids is None:
+    if splitter is not None and fold_ids is not None:
+        raise ValueError("Pass either splitter or fold_ids, not both.")
+
+    if splitter is not None:
+        split_X = geometry if geometry is not None else np.zeros((n, 1))
+        folds = [
+            (np.asarray(tr, dtype=np.int64), np.asarray(te, dtype=np.int64))
+            for tr, te in splitter.split(split_X)
+        ]
+        method = type(splitter).__name__
+        fold_ids_out = np.full(n, -1, dtype=np.int64)
+        for f, (_, te) in enumerate(folds):
+            fold_ids_out[te] = f  # last-writer-wins for overlapping splitters
+    elif fold_ids is None:
         if geometry is None:
             raise ValueError(
-                "Either fold_ids or geometry (for KMeans blocking) must be supplied."
+                "Either splitter, fold_ids, or geometry (for KMeans blocking) "
+                "must be supplied."
             )
-        fold_ids = _kmeans_fold_ids(geometry, n_blocks=n_blocks, seed=random_seed)
+        fold_ids_out = _kmeans_fold_ids(geometry, n_blocks=n_blocks, seed=random_seed)
         method = "kmeans"
+        folds = [
+            (
+                np.flatnonzero(fold_ids_out != f).astype(np.int64),
+                np.flatnonzero(fold_ids_out == f).astype(np.int64),
+            )
+            for f in np.unique(fold_ids_out)
+        ]
     else:
-        fold_ids = np.asarray(fold_ids, dtype=np.int64).ravel()
-        if fold_ids.shape[0] != n:
+        fold_ids_out = np.asarray(fold_ids, dtype=np.int64).ravel()
+        if fold_ids_out.shape[0] != n:
             raise ValueError(
-                f"fold_ids has length {fold_ids.shape[0]}, expected n={n}."
+                f"fold_ids has length {fold_ids_out.shape[0]}, expected n={n}."
             )
         method = "explicit"
+        folds = [
+            (
+                np.flatnonzero(fold_ids_out != f).astype(np.int64),
+                np.flatnonzero(fold_ids_out == f).astype(np.int64),
+            )
+            for f in np.unique(fold_ids_out)
+        ]
 
-    unique_folds = np.unique(fold_ids)
-    n_folds = unique_folds.shape[0]
+    n_folds = len(folds)
     if n_folds < 2:
         raise ValueError(f"spatial_kfold requires at least 2 folds (got {n_folds}).")
 
@@ -312,44 +404,68 @@ def spatial_kfold(
         tune=tune,
         chains=chains,
         random_seed=random_seed,
-        progressbar=progressbar,
+        progressbar=False,  # per-chain bars are noisy across folds
     )
     base_fit_kwargs.update(fit_kwargs)
 
     elpd_per_fold = np.empty(n_folds, dtype=np.float64)
     n_per_fold = np.empty(n_folds, dtype=np.int64)
-    per_obs_elpd = np.empty(n, dtype=np.float64)
+    per_obs_elpd = np.full(n, np.nan, dtype=np.float64)
+    test_counts = np.zeros(n, dtype=np.int64)
 
-    for f, fold_label in enumerate(unique_folds):
-        test_mask = fold_ids == fold_label
-        test_idx = np.flatnonzero(test_mask).astype(np.int64)
-        train_idx = np.flatnonzero(~test_mask).astype(np.int64)
-        if test_idx.size == 0 or train_idx.size == 0:
-            raise ValueError(
-                f"Fold {fold_label} produces an empty test or training partition."
+    if progressbar:
+        try:
+            from tqdm.auto import tqdm
+
+            fold_iter = tqdm(
+                enumerate(folds),
+                total=n_folds,
+                desc="spatial CV",
+                unit="fold",
             )
-        refit = _refit_on_train(model, train_idx, base_fit_kwargs)
-        fold_elpd = _fold_elpd(
-            refit,
-            y_full=y_full,
-            design_full=design_full,
-            W_full=W_full,
-            test_idx=test_idx,
-            kind=kind,
-        )
-        elpd_per_fold[f] = fold_elpd
-        n_per_fold[f] = test_idx.size
-        per_obs_elpd[test_idx] = fold_elpd / test_idx.size
+        except ImportError:
+            fold_iter = enumerate(folds)
+    else:
+        fold_iter = enumerate(folds)
+
+    fit_ctx = contextlib.nullcontext() if verbose else _silence_fit()
+
+    with fit_ctx:
+        for f, (train_idx, test_idx) in fold_iter:
+            if test_idx.size == 0 or train_idx.size == 0:
+                raise ValueError(
+                    f"Fold {f} produces an empty test or training partition."
+                )
+            refit = _refit_on_train(model, train_idx, base_fit_kwargs)
+            fold_elpd = _fold_elpd(
+                refit,
+                y_full=y_full,
+                design_full=design_full,
+                W_full=W_full,
+                test_idx=test_idx,
+                kind=kind,
+            )
+            elpd_per_fold[f] = fold_elpd
+            n_per_fold[f] = test_idx.size
+            per_obs_elpd[test_idx] = fold_elpd / test_idx.size
+            test_counts[test_idx] += 1
 
     elpd_total = float(elpd_per_fold.sum())
-    se = float(np.sqrt(n * np.var(per_obs_elpd, ddof=1))) if n > 1 else 0.0
+    is_partition = bool(np.all(test_counts == 1))
+    if is_partition and n > 1:
+        se = float(np.sqrt(n * np.var(per_obs_elpd, ddof=1)))
+    elif n_folds > 1:
+        # Non-partition splitter: fall back to fold-level SE estimate.
+        se = float(np.std(elpd_per_fold, ddof=1) * np.sqrt(n_folds))
+    else:
+        se = 0.0
 
     return SpatialCVResult(
         elpd=elpd_total,
         se=se,
         elpd_per_fold=elpd_per_fold,
         n_per_fold=n_per_fold,
-        fold_ids=fold_ids,
+        fold_ids=fold_ids_out,
         n_folds=n_folds,
         method=method,
     )

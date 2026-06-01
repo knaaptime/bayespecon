@@ -59,7 +59,7 @@ def test_spatial_kfold_spatial_lag_with_geometry(sar_grid):
 def test_spatial_kfold_requires_fold_ids_or_geometry(sar_grid):
     gdf, W = sar_grid
     model = OLS(formula="y ~ X_1", data=gdf, W=W)
-    with pytest.raises(ValueError, match="fold_ids or geometry"):
+    with pytest.raises(ValueError, match="fold_ids, or geometry"):
         spatial_kfold(model, **FIT_KW)
 
 
@@ -75,3 +75,47 @@ def test_spatial_kfold_requires_at_least_two_folds(sar_grid):
     model = OLS(formula="y ~ X_1", data=gdf, W=W)
     with pytest.raises(ValueError, match="at least 2 folds"):
         spatial_kfold(model, fold_ids=np.zeros(len(gdf), dtype=int), **FIT_KW)
+
+
+class _ModuloSplitter:
+    """Minimal sklearn-style splitter for testing the splitter= path.
+
+    Stands in for any geovalidate splitter (HilbertKFold, LeaveClusterOut,
+    etc.) which all expose the same ``split(X) -> (train, test)`` protocol.
+    """
+
+    def __init__(self, n_splits: int):
+        self.n_splits = n_splits
+
+    def split(self, X):
+        n = len(X)
+        idx = np.arange(n)
+        for f in range(self.n_splits):
+            test = idx[idx % self.n_splits == f]
+            train = idx[idx % self.n_splits != f]
+            yield train, test
+
+
+def test_spatial_kfold_accepts_sklearn_splitter(sar_grid):
+    """splitter= path: any sklearn-compatible splitter (incl. geovalidate)."""
+    gdf, W = sar_grid
+    model = OLS(formula="y ~ X_1", data=gdf, W=W)
+    splitter = _ModuloSplitter(n_splits=3)
+    res = spatial_kfold(model, splitter=splitter, geometry=gdf.geometry, **FIT_KW)
+    assert res.method == "_ModuloSplitter"
+    assert res.n_folds == 3
+    assert int(res.n_per_fold.sum()) == len(gdf)
+    assert np.isfinite(res.elpd)
+    assert np.isfinite(res.se) and res.se >= 0.0
+
+
+def test_spatial_kfold_rejects_splitter_and_fold_ids(sar_grid):
+    gdf, W = sar_grid
+    model = OLS(formula="y ~ X_1", data=gdf, W=W)
+    with pytest.raises(ValueError, match="splitter or fold_ids"):
+        spatial_kfold(
+            model,
+            splitter=_ModuloSplitter(n_splits=2),
+            fold_ids=np.arange(len(gdf)) % 2,
+            **FIT_KW,
+        )

@@ -26,6 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 viz = ["graphviz"]
 backend = ['dm-tree', 'scikit-sparse', 'klujax', 'scikit-umfpack', 'blackjax', 'numpyro', 'nutpie', 'traceax', 'lineax', 'equinox', 'optimistix']
+cv = ["geovalidate"]
 
 [tool.setuptools.packages.find]
 include = ["bayespecon", "bayespecon.*"]
