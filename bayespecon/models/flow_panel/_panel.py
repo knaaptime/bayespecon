@@ -64,7 +64,7 @@ class FlowPanelModel(ABC):
         Feature names for X.
     k : int, optional
         Number of destination/origin covariate pairs used by flow effects.
-        If omitted, inferred from column names with "dest_" prefix.
+        If omitted, inferred from column names with ``dest_`` prefix.
     model : int, default 0
         Fixed-effects transform mode:
         0 pooled, 1 pair FE, 2 time FE, 3 two-way FE.

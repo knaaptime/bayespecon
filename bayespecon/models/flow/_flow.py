@@ -2890,15 +2890,14 @@ class SARNegBinFlowLatent(FlowModel):
     :math:`\eta` draw uses the general sparse :math:`N \times N` precision
     matrix with Chebyshev polynomial approximation.
 
-    Use this model when:
-    - The separability constraint :math:`\rho_w = -\rho_d \rho_o` is too
-      restrictive for the data.
-    - You need to test whether :math:`\rho_w` is significantly different
-      from :math:`-\rho_d \rho_o`.
+    Use this model when the separability constraint
+    :math:`\rho_w = -\rho_d \rho_o` is too restrictive for the data, or when
+    you need to test whether :math:`\rho_w` is significantly different from
+    :math:`-\rho_d \rho_o`.
 
-    Use :class:`SARNegBinFlowSeparableLatent` when:
-    - The separability constraint is plausible (most flow applications).
-    - You want the faster :math:`O(n^3)` Kronecker-structured sampler.
+    Use :class:`SARNegBinFlowSeparableLatent` when the separability
+    constraint is plausible (most flow applications) or when you want the
+    faster :math:`O(n^3)` Kronecker-structured sampler.
 
     Parameters
     ----------

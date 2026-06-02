@@ -1,11 +1,11 @@
-"""JAX dispatch registrations for the custom Ops in :mod:`bayespecon._ops`.
+"""JAX dispatch registrations for the custom Ops in :mod:`bayespecon.ops`.
 
 This module enables JAX-backed NUTS samplers (``"blackjax"``, ``"numpyro"``)
-for models that depend on :class:`~bayespecon._ops.SparseFlowSolveOp`,
-:class:`~bayespecon._ops.SparseFlowSolveMatrixOp`,
-:class:`~bayespecon._ops.SparseSARSolveOp`,
-:class:`~bayespecon._ops.KroneckerFlowSolveOp`, and
-:class:`~bayespecon._ops.KroneckerFlowSolveMatrixOp`.
+for models that depend on :class:`~bayespecon.ops.SparseFlowSolveOp`,
+:class:`~bayespecon.ops.SparseFlowSolveMatrixOp`,
+:class:`~bayespecon.ops.SparseSARSolveOp`,
+:class:`~bayespecon.ops.KroneckerFlowSolveOp`, and
+:class:`~bayespecon.ops.KroneckerFlowSolveMatrixOp`.
 
 The Kronecker Ops are translated into pure-JAX dense LU solves
 (:math:`n\\times n`, jittable, vmappable).  The general sparse Ops are wrapped
@@ -58,12 +58,6 @@ def _umfpack_available() -> bool:
         return importlib.util.find_spec("scikits.umfpack") is not None
     except (ImportError, ValueError):
         return False
-
-
-@lru_cache(maxsize=1)
-def _eqx_available() -> bool:
-    """Return ``True`` when optional ``equinox`` is importable."""
-    return importlib.util.find_spec("equinox") is not None
 
 
 @lru_cache(maxsize=1)
@@ -362,7 +356,7 @@ def _select_jax_sar_lineax_neumann_k() -> int:
 
 @lru_cache(maxsize=1)
 def register_jax_dispatch() -> bool:
-    """Register JAX dispatches for all Ops in :mod:`bayespecon._ops`.
+    """Register JAX dispatches for all Ops in :mod:`bayespecon.ops`.
 
     Idempotent (cached). Returns ``True`` if registration ran, ``False`` if
     JAX is not available.
@@ -388,7 +382,7 @@ def register_jax_dispatch() -> bool:
     lineax_precond_kind = _select_jax_sar_lineax_precond()
     lineax_neumann_k = _select_jax_sar_lineax_neumann_k()
 
-    from ._ops import (
+    from .ops import (
         KroneckerFlowSolveMatrixOp,
         KroneckerFlowSolveOp,
         SparseFlowSolveMatrixOp,

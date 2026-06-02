@@ -3,6 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - libpysal
+  - esda
   - formulaic
   - pymc
   - arviz
