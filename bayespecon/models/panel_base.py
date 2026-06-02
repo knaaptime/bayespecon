@@ -30,7 +30,7 @@ from .._logdet import (
     make_logdet_numpy_vec_fn,
 )
 from .._logdet._config import _auto_logdet_method
-from .base import (
+from ._base import (
     _is_row_standardized_csr,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,

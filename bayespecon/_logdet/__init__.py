@@ -15,6 +15,7 @@ from ._config import (
     LogDetMethod,
     LogDetMethodName,
     TraceEstimatorName,
+    _auto_logdet_method,
     resolve_logdet_bounds,
     resolve_logdet_method,
 )

@@ -29,6 +29,12 @@ from functools import lru_cache
 
 
 @lru_cache(maxsize=1)
+def _eqx_available() -> bool:
+    """Return ``True`` when optional ``equinox`` is importable."""
+    return importlib.util.find_spec("equinox") is not None
+
+
+@lru_cache(maxsize=1)
 def _jax_available() -> bool:
     """Return ``True`` if JAX and PyTensor's JAX dispatch are importable."""
     return (
