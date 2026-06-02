@@ -19,7 +19,7 @@ from libpysal.graph import Graph
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
 
-from ..logdet import (
+from .._logdet import (
     _auto_logdet_method,
     make_logdet_fn,
     make_logdet_numpy_fn,

@@ -382,7 +382,7 @@ def register_jax_dispatch() -> bool:
     lineax_precond_kind = _select_jax_sar_lineax_precond()
     lineax_neumann_k = _select_jax_sar_lineax_neumann_k()
 
-    from .ops import (
+    from ._ops import (
         KroneckerFlowSolveMatrixOp,
         KroneckerFlowSolveOp,
         SparseFlowSolveMatrixOp,
