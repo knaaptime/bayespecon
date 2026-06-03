@@ -29,7 +29,6 @@ dependencies:
   - lineax
   - pip
   - pip:
-    - --no-deps 
     - klujax
     - traceax 
     - git+https://github.com/ljwolf/geovalidate/
