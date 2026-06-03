@@ -7,7 +7,8 @@ import numpy as np
 import pymc as pm
 import pytest
 
-from bayespecon import SARNegativeBinomial, dgp
+from bayespecon import SARNegativeBinomialNUTS as SARNegativeBinomial
+from bayespecon import dgp
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

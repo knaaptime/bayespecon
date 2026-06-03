@@ -100,6 +100,7 @@ Non-Linear Spatial Models
    SEMTobit
    SDMTobit
    SARNegativeBinomial
+   SARNegativeBinomialNUTS
    SARNegBinLatent
 
 

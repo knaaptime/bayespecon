@@ -138,6 +138,9 @@ from .models import (
     SARNegativeBinomialLatent as SARNegativeBinomialLatent,
 )
 from .models import (
+    SARNegativeBinomialNUTS as SARNegativeBinomialNUTS,
+)
+from .models import (
     SARNegBinLatent as SARNegBinLatent,
 )
 from .models import (

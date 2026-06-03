@@ -92,6 +92,10 @@ _register(
     "bayespecon.models.cross_section.sar_negbin.SARNegativeBinomial", SAR_NEGBIN_SUITE
 )
 _register(
+    "bayespecon.models.cross_section.sar_negbin_nuts.SARNegativeBinomialNUTS",
+    SAR_NEGBIN_SUITE,
+)
+_register(
     "bayespecon.models.cross_section.sar_negbin_latent.SARNegBinLatent",
     SAR_NEGBIN_SUITE,
 )
