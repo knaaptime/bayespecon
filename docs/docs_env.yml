@@ -29,7 +29,8 @@ dependencies:
   - pip:
     - klujax
     - traceax 
-    - --no-deps git+https://github.com/ljwolf/geovalidate/
+    - --no-deps 
+    - git+https://github.com/ljwolf/geovalidate/
   
   # docs
   - numpydoc
