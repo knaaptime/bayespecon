@@ -543,18 +543,3 @@ Flow log-determinants
    compute_flow_traces
    make_flow_separable_logdet
    make_flow_separable_logdet_numpy
-
-Stochastic trace estimation
-"""""""""""""""""""""""""""
-
-The XTrace (Epperly–Tropp–Webber 2024) and Hutch++ (Meyer et al. 2021)
-estimators are implemented natively in NumPy + SciPy sparse and used
-inside the Chebyshev log-determinant path.  Selection is via the
-``trace_estimator=`` keyword on each model.
-
-.. autosummary::
-   :toctree: generated/
-
-   traceax_available
-   traceax_traces
-   traceax_traces_for_chebyshev

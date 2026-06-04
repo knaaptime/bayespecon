@@ -394,21 +394,16 @@ def lanczos_logdet(
     Lanczos depth.  With n_probes=10 and lanczos_deg=30, the
     relative error is typically < 1e-3 for well-conditioned matrices.
 
-    **Why not traceax?**  The ``traceax`` library provides
-    variance-reduced estimators for :math:`\\text{tr}(A)` where
-    :math:`A` is an *explicit* linear operator (you provide matvecs).
-    However, :math:`\\log|P| = \\text{tr}(\\log(P))` requires
+    **Why not a generic trace estimator?**  Variance-reduced trace
+    estimators (Hutch++, XTrace) are designed for :math:`\\text{tr}(A)`
+    where :math:`A` is an *explicit* linear operator (you provide
+    matvecs).  However, :math:`\\log|P| = \\text{tr}(\\log(P))` requires
     computing :math:`\\log(P)` as an operator, which itself needs
-    Lanczos tridiagonalization per matvec.  Using traceax here would
-    nest Lanczos *inside* traceax's probes, making it strictly more
-    expensive.  Our implementation combines Lanczos and trace
-    estimation in a single pass — this *is* the standard algorithm
-    for :math:`\\text{tr}(f(A))` (Ubaru & Saad 2016).
-
-    ``traceax`` *is* used elsewhere in the package for
-    :math:`\\log|I - \\rho W|` via the power-series identity
-    :math:`\\log|I - \\rho W| = -\\sum_j (\\rho^j / j) \\text{tr}(W^j)`,
-    where :math:`W` is fixed and the traces can be precomputed.
+    Lanczos tridiagonalization per matvec.  Using a generic estimator
+    here would nest Lanczos *inside* the estimator's probes, making it
+    strictly more expensive.  Our implementation combines Lanczos and
+    trace estimation in a single pass — this *is* the standard
+    algorithm for :math:`\\text{tr}(f(A))` (Ubaru & Saad 2016).
 
     References
     ----------

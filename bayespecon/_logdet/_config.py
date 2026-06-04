@@ -10,7 +10,6 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal, Mapping
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -46,14 +45,6 @@ class LogDetMethod(str, Enum):
 
 
 VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
-
-#: Valid values for the ``trace_estimator`` kwarg of the ``make_logdet_*``
-#: builders.  Selects which stochastic estimator constructs the Chebyshev
-#: coefficients when an eigendecomposition is unavailable (n above the auto
-#: cutoff).  ``"hutchpp"`` is the default; see ``docs/source/user-guide/
-#: logdet_profiling.ipynb`` for the cost/accuracy frontier.
-VALID_TRACE_ESTIMATORS: frozenset[str] = frozenset({"hutchinson", "hutchpp", "xtrace"})
-TraceEstimatorName = Literal["hutchinson", "hutchpp", "xtrace"]
 
 #: Public type alias for user-facing ``logdet_method`` parameters.  Use in
 #: constructor signatures to enable IDE autocomplete and static checking:
@@ -129,21 +120,6 @@ def resolve_logdet_method(method: str | None, *, n: int) -> str:
     return method
 
 
-def _resolve_trace_estimator(trace_estimator: str) -> str:
-    """Validate the ``trace_estimator`` kwarg."""
-    if trace_estimator not in VALID_TRACE_ESTIMATORS:
-        valid = ", ".join(sorted(VALID_TRACE_ESTIMATORS))
-        raise ValueError(
-            f"Unknown trace_estimator: {trace_estimator!r}. Valid options: {valid}."
-        )
-    return trace_estimator
-
-
-def _default_trace_k(trace_estimator: str) -> int:
-    """Default probe count per trace estimator (see logdet_profiling notebook)."""
-    return {"hutchinson": 30, "hutchpp": 50, "xtrace": 25}[trace_estimator]
-
-
 def _auto_logdet_method(n: int) -> str:
     """Choose the recommended logdet method based on matrix size.
 
@@ -167,10 +143,9 @@ def _auto_logdet_method(n: int) -> str:
 
     For ``n`` above the cutoff this returns ``"chebyshev"``; whether the
     Chebyshev coefficients are built from the exact eigenvalues or from a
-    stochastic trace estimator is decided downstream by :func:`chebyshev`
-    (based on the ``BAYESPECON_LOGDET_TRACEAX_MIN_N`` threshold) and
-    parameterised via the ``trace_estimator`` kwarg of the ``make_logdet_*``
-    builders.
+    Barry-Pace Hutchinson trace estimator is decided downstream by
+    :func:`chebyshev` based on the matrix size (eigvals for ``n <= 2000``,
+    Monte Carlo trace estimation otherwise).
     """
     cutoff_raw = os.getenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "500")
     try:

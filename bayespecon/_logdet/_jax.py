@@ -9,9 +9,6 @@ import numpy as np
 import scipy.sparse as sp
 
 from ._config import (
-    TraceEstimatorName,
-    _default_trace_k,
-    _resolve_trace_estimator,
     resolve_logdet_method,
 )
 from ._grids import chebyshev
@@ -123,9 +120,9 @@ def jax_logdet_trace_poly(
 
         \log|I_n - \rho W| \approx -\sum_{k=1}^{m} \frac{\rho^k}{k}\,\hat{\tau}_k
 
-    where :math:`\hat{\tau}_k \approx \text{tr}(W^k)` are stochastic
-    trace estimates from :func:`~bayespecon._logdet._trace.traceax_traces`
-    or :func:`~bayespecon._logdet._grids.compute_flow_traces`.
+    where :math:`\hat{\tau}_k \approx \text{tr}(W^k)` are Barry-Pace
+    Hutchinson trace estimates from
+    :func:`~bayespecon._logdet._grids.compute_flow_traces`.
 
     Parameters
     ----------
@@ -158,7 +155,6 @@ def jax_logdet_trace_poly(
     See Also
     --------
     logdet_mc_poly_pytensor : PyTensor symbolic version (for NUTS).
-    traceax_traces : Compute trace estimates via variance-reduced estimators.
     compute_flow_traces : Compute trace estimates via Barry-Pace Hutchinson.
     """
     import jax.numpy as jnp
@@ -184,8 +180,6 @@ def make_logdet_jax_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
-    trace_estimator: TraceEstimatorName = "hutchpp",
-    trace_k: int | None = None,
 ):
     """Return a JAX-native function (rho) -> log|I - rho*W|.
 
@@ -206,8 +200,8 @@ def make_logdet_jax_fn(
         ``"eigenvalue"`` — exact evaluation from eigenvalues, O(n) per call.
         ``"chebyshev"`` — Chebyshev polynomial via Clenshaw's algorithm,
         O(m) per call.  Coefficients are built from exact eigenvalues when
-        ``n`` is small (or ``eigs`` is supplied); otherwise from a stochastic
-        trace estimator selected by ``trace_estimator``.
+        ``n`` is small (or ``eigs`` is supplied); otherwise from Barry-Pace
+        Hutchinson trace estimates.
     rho_min : float, default=-1.0
         Lower bound for the rho interval.
     rho_max : float, default=1.0
@@ -215,13 +209,6 @@ def make_logdet_jax_fn(
     T : int, default 1
         Panel time-period count.  The returned log-determinant is
         multiplied by *T*.
-    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
-        Stochastic trace estimator used to build the Chebyshev
-        coefficients when an eigendecomposition is unavailable.  Ignored
-        when ``method="eigenvalue"`` or when eigenvalues are passed in.
-    trace_k : int, optional
-        Number of probe vectors for the trace estimator.  Defaults:
-        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
 
     Returns
     -------
@@ -252,9 +239,6 @@ def make_logdet_jax_fn(
     """
     T = int(T)
     _JAX_METHODS = frozenset({"eigenvalue", "chebyshev"})
-
-    trace_estimator = _resolve_trace_estimator(trace_estimator)
-    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
 
     # Resolve W to eigenvalues or sparse matrix
     eigs = None
@@ -303,8 +287,6 @@ def make_logdet_jax_fn(
         rmin=rho_min,
         rmax=rho_max,
         eigs=eigs,
-        estimator=trace_estimator,
-        n_mc_iter=_k,
     )
     coeffs = out["coeffs"].astype(np.float64)
     rmin_cb = float(out["rmin"])

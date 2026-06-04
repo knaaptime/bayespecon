@@ -241,7 +241,7 @@ def test_make_logdet_fn_mc_poly() -> None:
     import pytensor.tensor as pt
 
     W = _toy_w()
-    fn = make_logdet_fn(W, method="chebyshev", trace_estimator="hutchinson")
+    fn = make_logdet_fn(W, method="chebyshev")
     assert callable(fn)
 
     rho_sym = pt.dscalar("rho")
@@ -325,7 +325,6 @@ class TestMakeFlowSeparableLogdet:
             self.n,
             method="chebyshev",
             cheb_order=25,
-            trace_estimator="hutchinson",
         )
         compiled = self._compile(fn)
         val = float(compiled(self.rho_d, self.rho_o))

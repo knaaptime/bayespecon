@@ -301,13 +301,9 @@ class FlowModel(ABC):
         trace_riter: int = 50,
         trace_seed: Optional[int] = None,
         symmetric_xo_xd: Optional[bool] = None,
-        trace_estimator: str = "hutchpp",
-        trace_k: int | None = None,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
-        self.trace_estimator = trace_estimator
-        self.trace_k = trace_k
         self.restrict_positive = restrict_positive
         self.miter = miter
         self.titer = titer
@@ -1397,9 +1393,8 @@ class SARFlowSeparable(FlowModel):
 
         * ``"chebyshev"`` (default) — Chebyshev polynomial approximation
           via Clenshaw recurrence. For large *n* the Chebyshev coefficients
-          are built from stochastic trace estimates (controlled by
-          ``trace_estimator`` and ``trace_k``). Best performance/accuracy
-          trade-off for repeated evaluation.
+          are built from Barry-Pace Hutchinson stochastic trace estimates.
+          Best performance/accuracy trade-off for repeated evaluation.
         * ``"eigenvalue"`` — exact eigendecomposition. :math:`O(n^3)`
           setup, then :math:`O(n)` per call. Good for moderate *n*.
         * ``"traces"`` — precompute :math:`N \\times N` flow traces
@@ -3406,8 +3401,6 @@ class SARNegBinFlowSeparableLatent(FlowModel):
             W_sparse,
             eigs=self._W_eigs,
             method=self.logdet_method,
-            trace_estimator=self.trace_estimator,
-            trace_k=self.trace_k,
         )
 
         cache = FlowGibbsCache(

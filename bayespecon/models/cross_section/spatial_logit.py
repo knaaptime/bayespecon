@@ -136,8 +136,6 @@ class SARSpatialLogit(SpatialModel):
             method=bounds.method,
             rho_min=bounds.rho_min,
             rho_max=bounds.rho_max,
-            trace_estimator=self.trace_estimator,
-            trace_k=self.trace_k,
         )
 
     # ------------------------------------------------------------------
@@ -351,8 +349,6 @@ class SARSpatialLogit(SpatialModel):
                 method=bounds.method,
                 rho_min=bounds.rho_min,
                 rho_max=bounds.rho_max,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
 
         cache = LogitGibbsCache(

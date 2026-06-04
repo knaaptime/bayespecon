@@ -30,4 +30,3 @@ dependencies:
   - pip
   - pip:
     - klujax
-    - traceax 

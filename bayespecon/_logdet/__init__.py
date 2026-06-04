@@ -10,11 +10,9 @@ model classes and should not be imported directly by users.
 # Configuration, enums, type aliases, resolution
 from ._config import (
     VALID_LOGDET_METHODS,
-    VALID_TRACE_ESTIMATORS,
     LogdetBounds,
     LogDetMethod,
     LogDetMethodName,
-    TraceEstimatorName,
     _auto_logdet_method,
     resolve_logdet_bounds,
     resolve_logdet_method,
@@ -62,21 +60,12 @@ from ._pytensor import (
     logdet_mc_poly_pytensor,
 )
 
-# Trace estimation (moved from _trace_estimation.py)
-from ._trace import (
-    traceax_available,
-    traceax_traces,
-    traceax_traces_for_chebyshev,
-)
-
 __all__ = [
     # Config
     "LogDetMethod",
     "LogdetBounds",
     "LogDetMethodName",
-    "TraceEstimatorName",
     "VALID_LOGDET_METHODS",
-    "VALID_TRACE_ESTIMATORS",
     "resolve_logdet_method",
     "resolve_logdet_bounds",
     # PyTensor
@@ -106,8 +95,4 @@ __all__ = [
     "chebyshev",
     "mc",
     "spline",
-    # Trace estimation
-    "traceax_available",
-    "traceax_traces",
-    "traceax_traces_for_chebyshev",
 ]

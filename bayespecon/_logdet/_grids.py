@@ -301,8 +301,7 @@ def chebyshev(
     rmax: float = 1.0,
     random_state: int | None = None,
     eigs: np.ndarray | None = None,
-    n_mc_iter: int = 30,
-    estimator: str = "hutchpp",
+    n_mc_iter: int = 100,
 ) -> dict:
     """Compute Chebyshev approximation of log|I - rho*W| (:cite:p:`pace2004ChebyshevApproximation`).
 
@@ -339,7 +338,7 @@ def chebyshev(
         Pre-computed real eigenvalues of *W*.  When supplied, the
         eigenvalue decomposition step is skipped, avoiding redundant
         O(n³) work when the caller already has them cached.
-    n_mc_iter : int, default=30
+    n_mc_iter : int, default=100
         Number of Hutchinson probes used by the Monte-Carlo trace
         estimator (only consulted when *n* > 2000 and ``eigs`` is
         ``None``).  Larger values reduce stochastic variance at
@@ -436,39 +435,22 @@ def chebyshev(
         )
         method_used = "eigenvalue"
     else:
-        # Monte Carlo trace-based: prefer traceax when available, else Barry-Pace
+        # Monte Carlo trace-based via Barry-Pace Hutchinson probes
+        # (:cite:t:`barry1999MonteCarlo`).
         # ln|I - ρW| = -Σ_{k=1}^{∞} (ρ^k / k) tr(W^k)
-        # Approximate tr(W^k) via MC, then evaluate at nodes
-        try:
-            from ._trace import (
-                traceax_available,
-                traceax_traces_for_chebyshev,
-            )
-
-            if traceax_available():
-                td = traceax_traces_for_chebyshev(
-                    W_sp,
-                    order=order,
-                    n_mc_iter=n_mc_iter,
-                    estimator=estimator,
-                    seed=random_state,
-                )
-                method_used = f"chebyshev_{estimator}"
-            else:
-                raise ImportError("traceax not available")
-        except ImportError:
-            rng = np.random.default_rng(random_state)
-            # Compute MC trace estimates for k=1..order via batched Hutchinson
-            # probes: one CSR×dense product per order covers all probes.
-            U = rng.standard_normal((n, n_mc_iter))
-            utu = np.einsum("ij,ij->j", U, U)  # (n_mc_iter,)
-            V = U.copy()
-            td = np.zeros(order, dtype=np.float64)
-            for i in range(order):
-                V = W_sp @ V
-                tr_k = n * np.einsum("ij,ij->j", U, V) / utu  # (n_mc_iter,)
-                td[i] = tr_k.mean() / (i + 1)
-            method_used = "grid_mc"
+        # Approximate tr(W^k) via MC, then evaluate at nodes.
+        rng = np.random.default_rng(random_state)
+        # Compute MC trace estimates for k=1..order via batched Hutchinson
+        # probes: one CSR×dense product per order covers all probes.
+        U = rng.standard_normal((n, n_mc_iter))
+        utu = np.einsum("ij,ij->j", U, U)  # (n_mc_iter,)
+        V = U.copy()
+        td = np.zeros(order, dtype=np.float64)
+        for i in range(order):
+            V = W_sp @ V
+            tr_k = n * np.einsum("ij,ij->j", U, V) / utu  # (n_mc_iter,)
+            td[i] = tr_k.mean() / (i + 1)
+        method_used = "grid_mc"
 
         # Evaluate power series at each node
         logdet_at_nodes = np.zeros(order, dtype=np.float64)

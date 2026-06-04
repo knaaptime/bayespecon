@@ -294,17 +294,8 @@ class SpatialModel(ABC):
         uses ILU-based approximation (``lndetichol`` analog);
         ``"chebyshev"`` (default for ``n > 500``) uses a Chebyshev
         polynomial approximation evaluated via Clenshaw's algorithm.
-        For large ``n`` the Chebyshev coefficients are built from a
-        stochastic trace estimator selected by ``trace_estimator``.
-    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
-        Stochastic trace estimator used to build the Chebyshev
-        coefficients when an eigendecomposition is unavailable.  Ignored
-        for non-Chebyshev methods.  See
-        ``docs/source/user-guide/logdet_profiling.ipynb`` for the
-        cost/accuracy frontier.
-    trace_k : int, optional
-        Number of probe vectors for the trace estimator.  Defaults:
-        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
+        For large ``n`` the Chebyshev coefficients are built from
+        Barry-Pace Hutchinson stochastic trace estimates.
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal,
         yielding a model that is robust to heavy-tailed outliers. When
@@ -367,8 +358,6 @@ class SpatialModel(ABC):
         robust: bool = False,
         w_vars: Optional[list] = None,
         backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
-        trace_estimator: str = "hutchpp",
-        trace_k: int | None = None,
     ):
         # Resolve typed priors (dataclass) and dict view.
         from .priors import BasePriors, priors_as_dict, resolve_priors
@@ -377,8 +366,6 @@ class SpatialModel(ABC):
         self.priors_obj = resolve_priors(priors, _priors_cls)
         self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
-        self.trace_estimator = trace_estimator
-        self.trace_k = trace_k
         self.robust = robust
 
         # Resolve probabilistic backend (PyMC, NumPyro, BlackJAX, nutpie).
@@ -540,8 +527,6 @@ class SpatialModel(ABC):
                 self._W_sparse,
                 eigs,
                 method=self.logdet_method,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_numpy_fn_cache
 
@@ -556,8 +541,6 @@ class SpatialModel(ABC):
                 self._W_sparse,
                 eigs,
                 method=self.logdet_method,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_numpy_vec_fn_cache
 
@@ -570,8 +553,6 @@ class SpatialModel(ABC):
                 method=self.logdet_method,
                 rho_min=self._logdet_bounds.rho_min,
                 rho_max=self._logdet_bounds.rho_max,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_pytensor_fn_cache
 

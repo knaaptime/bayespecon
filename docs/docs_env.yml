@@ -30,7 +30,6 @@ dependencies:
   - pip
   - pip:
     - klujax
-    - traceax 
     - git+https://github.com/ljwolf/geovalidate/
   
   # docs
