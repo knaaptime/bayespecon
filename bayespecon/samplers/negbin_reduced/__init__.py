@@ -25,6 +25,7 @@ from ._core import (
     ReducedGibbsCache,
     ReducedGibbsPriors,
     ReducedGibbsState,
+    ReducedKrylovBasis,
     run_chain,
 )
 

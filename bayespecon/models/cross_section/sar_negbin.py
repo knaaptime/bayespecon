@@ -108,7 +108,7 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
         n_jobs: int = 1,
         **_unused,
     ) -> "az.InferenceData":
-        r"""Sample the posterior via P\u00f3lya-Gamma Gibbs.
+        r"""Sample the posterior via Pólya-Gamma Gibbs.
 
         Parameters
         ----------
@@ -132,6 +132,15 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
             sequentially in this process (recommended for small problems
             where the per-chain runtime is < a few seconds).  ``-1``
             uses all available CPUs.
+        krylov_degree : int, default 8
+            Krylov basis degree for the shift-invert polynomial
+            approximation of :math:`(I - \rho W)^{-1} X` inside the
+            ρ-slice density.  Higher degree → more accurate approximation
+            but more ``lu.solve`` calls per basis build.  Set to 0 to
+            disable Krylov acceleration (exact LU per candidate).
+        krylov_dmax : float, default 0.15
+            Maximum :math:`|\Delta\rho|` for which the Krylov basis is
+            used.  Candidates outside this radius get a fresh LU.
         **_unused
             Other arguments accepted for API parity with the PyMC-based
             siblings (e.g. ``target_accept``, ``idata_kwargs``); silently
@@ -143,6 +152,9 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
             Posterior draws of ``rho``, ``beta``, ``alpha`` and pointwise
             ``log_likelihood`` for the observed counts.
         """
+        # Pop Krylov kwargs from _unused before they're silently swallowed.
+        krylov_degree = _unused.pop("krylov_degree", 8)
+        krylov_dmax = _unused.pop("krylov_dmax", 0.15)
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin_reduced import (
@@ -168,6 +180,7 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
 
         W_csr = self._W_sparse.tocsr()
         W_csc = self._W_sparse.tocsc()
+        X = np.ascontiguousarray(self._X, dtype=np.float64)
 
         rng = np.random.default_rng(random_seed)
         chain_seeds = [int(s) for s in rng.integers(0, 2**31, size=chains)]
@@ -193,10 +206,12 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
                 rho_upper=rho_upper,
                 rho_adaptive_width=True,
                 rho_slice_width_state=SliceWidthState(w=0.2),
+                krylov_degree=krylov_degree,
+                krylov_dmax=krylov_dmax,
             )
             return run_chain(
                 y=self._y,
-                X=self._X,
+                X=X,
                 W_sparse=W_csr,
                 priors=priors,
                 cache=cache,

@@ -216,9 +216,10 @@ def run_chains(
                 except FileNotFoundError:
                     pass
         else:
-            # No progress bar — silent parallel execution
+            # No progress bar — silent parallel execution.
             results = Parallel(n_jobs=n_workers)(
-                delayed(chain_fn)(chain_id, seed) for chain_id, seed in enumerate(seeds)
+                delayed(chain_fn)(chain_id, seed)
+                for chain_id, seed in enumerate(seeds)
             )
             return list(results)
 

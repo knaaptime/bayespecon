@@ -72,12 +72,10 @@ candidates per draw).
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import NamedTuple, Optional
 
 import numpy as np
-import scipy.linalg as la
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
@@ -92,57 +90,108 @@ from ..negbin._core import _sample_alpha, _nb_loglik_pointwise
 
 
 # ---------------------------------------------------------------------------
-# Dense / sparse LU dispatch
+# Sparse LU factorisation
 # ---------------------------------------------------------------------------
 
-# Switch to dense LAPACK ``lu_factor``/``lu_solve`` only for very small ``n``.
-# Empirically (rook-grid W, k=3) sparse SuperLU is already faster than dense
-# LAPACK from n ≳ 400 because the SAR weights matrix is highly sparse and the
-# fill-in is small.  We keep a low dense threshold as a guard for tiny
-# problems where Python/SuperLU overhead dominates.  Override at import time
-# via the environment variable ``BAYESPECON_NEGBIN_DENSE_MAX``.
-_DEFAULT_DENSE_MAX = 300
-try:
-    DENSE_LU_MAX = int(os.environ.get("BAYESPECON_NEGBIN_DENSE_MAX", _DEFAULT_DENSE_MAX))
-except ValueError:  # pragma: no cover
-    DENSE_LU_MAX = _DEFAULT_DENSE_MAX
+
+def _factor_A(rho: float, W_csc: sp.csc_matrix, n: int) -> spla.SuperLU:
+    """Factorise :math:`A_\\rho = I - \\rho W` via sparse LU (``splu``).
+
+    Returns a :class:`scipy.sparse.linalg.SuperLU` object whose
+    :meth:`solve` method handles single and multiple right-hand sides.
+    """
+    A = (sp.eye(n, format="csc") - rho * W_csc).tocsc()
+    return spla.splu(A)
 
 
-class _AFactor:
-    """Opaque LU factorisation of :math:`A_\\rho = I - \\rho W`.
+# ---------------------------------------------------------------------------
+# Shift-invert Krylov basis for fast ρ-slice evaluation
+# ---------------------------------------------------------------------------
 
-    Dispatches to dense LAPACK (:func:`scipy.linalg.lu_factor` /
-    :func:`scipy.linalg.lu_solve`) for ``n <= DENSE_LU_MAX`` and to sparse
-    ``splu`` otherwise.  Callers see a uniform :meth:`solve` interface.
+# Default Krylov degree and maximum |Δρ| for polynomial approximation.
+_KRYLOV_DEGREE_DEFAULT = 8
+_KRYLOV_DMAX_DEFAULT = 0.15
+
+
+class ReducedKrylovBasis(NamedTuple):
+    """Precomputed shift-invert Krylov basis for fast ρ-slice evaluation.
+
+    At a centre point :math:`\\rho_c`, we factorise
+    :math:`A_c = I - \\rho_c W` once and build the basis
+
+    .. math::
+
+        V_0 = A_c^{-1} X, \\quad
+        V_{j+1} = A_c^{-1} (W V_j), \\quad j = 0, \\dots, m-1.
+
+    For any nearby :math:`\\rho = \\rho_c + \\Delta\\rho` the
+    β-marginalised slice density only needs
+
+    .. math::
+
+        U(\\rho) \\approx \\sum_{j=0}^{m} (\\Delta\\rho)^j V_j,
+
+    which is a cheap ``einsum`` instead of a fresh LU factorisation.
+    The approximation error decays geometrically in :math:`m` as
+    :math:`O((\\Delta\\rho \\|A_c^{-1} W\\|)^{m+1})`.
+
+    Attributes
+    ----------
+    rho_basis : float
+        Centre point :math:`\\rho_c` at which the LU was factored.
+    lu : scipy.sparse.linalg.SuperLU
+        The factored :math:`A_c = I - \\rho_c W`.
+    V_stack : ndarray, shape (m+1, n, k)
+        Krylov basis vectors stacked along axis 0.
+    degree : int
+        Krylov degree :math:`m` (number of correction terms beyond
+        :math:`V_0`).
     """
 
-    __slots__ = ("_dense", "_lu", "_piv", "_splu")
-
-    def __init__(self, rho: float, W_csc: sp.csc_matrix, n: int) -> None:
-        if n <= DENSE_LU_MAX:
-            # Build A densely and factor with LAPACK ``dgetrf``.
-            A_dense = -rho * W_csc.toarray()
-            # Add the identity in-place.
-            A_dense.flat[:: n + 1] += 1.0
-            self._lu, self._piv = la.lu_factor(A_dense, overwrite_a=True)
-            self._dense = True
-            self._splu = None
-        else:
-            A = (sp.eye(n, format="csc") - rho * W_csc).tocsc()
-            self._splu = spla.splu(A)
-            self._dense = False
-            self._lu = None
-            self._piv = None
-
-    def solve(self, rhs: np.ndarray) -> np.ndarray:
-        if self._dense:
-            return la.lu_solve((self._lu, self._piv), rhs, overwrite_b=False)
-        return self._splu.solve(rhs)
+    rho_basis: float
+    lu: spla.SuperLU
+    V_stack: np.ndarray
+    degree: int
 
 
-def _factor_A(rho: float, W_csc: sp.csc_matrix, n: int) -> _AFactor:
-    """Factorise :math:`A_\\rho = I - \\rho W` using dense or sparse LU."""
-    return _AFactor(rho, W_csc, n)
+def _build_krylov_basis(
+    rho_c: float,
+    X: np.ndarray,
+    W_csc: sp.csc_matrix,
+    n: int,
+    degree: int = _KRYLOV_DEGREE_DEFAULT,
+) -> ReducedKrylovBasis:
+    """Build a shift-invert Krylov basis at :math:`\\rho_c`.
+
+    Cost: 1 ``splu`` factorisation + ``(degree + 1)`` ``lu.solve(X)``
+    calls + ``degree`` sparse matmuls ``W @ V_j``.
+    """
+    lu = _factor_A(rho_c, W_csc, n)
+    V0 = lu.solve(X)  # (n, k)
+    m = degree
+    V_stack = np.empty((m + 1, n, X.shape[1]), dtype=np.float64)
+    V_stack[0] = V0
+    for j in range(m):
+        Wv = W_csc @ V_stack[j]  # (n, k)
+        V_stack[j + 1] = lu.solve(Wv)
+    return ReducedKrylovBasis(
+        rho_basis=rho_c, lu=lu, V_stack=V_stack, degree=m
+    )
+
+
+def _eval_U_from_basis(
+    basis: ReducedKrylovBasis,
+    drho: float,
+) -> np.ndarray:
+    """Evaluate :math:`U(\\rho_c + \\Delta\\rho) \\approx \\sum (\\Delta\\rho)^j V_j`.
+
+    Uses Horner's method for numerical stability.
+    """
+    # Horner: V_0 + drho*(V_1 + drho*(V_2 + ... + drho*V_m))
+    result = basis.V_stack[basis.degree].copy()
+    for j in range(basis.degree - 1, -1, -1):
+        result = basis.V_stack[j] + drho * result
+    return result
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -205,6 +254,16 @@ class ReducedGibbsCache(NamedTuple):
         Whether to tune the ρ slice-sampler width during warmup.
     rho_slice_width_state : SliceWidthState
         Mutable width state for the adaptive ρ slice sampler.
+    krylov_degree : int
+        Krylov basis degree :math:`m` for the shift-invert polynomial
+        approximation of :math:`(I - \\rho W)^{-1} X`.  Default 8.
+        Set to 0 to disable Krylov acceleration (use exact LU per
+        candidate, as in the legacy path).
+    krylov_dmax : float
+        Maximum :math:`|\\Delta\\rho|` for which the Krylov basis is
+        used.  When a slice candidate falls outside this radius around
+        the basis centre, a fresh LU factorisation is performed for
+        that single candidate.  Default 0.15.
     """
 
     W_sparse: sp.csr_matrix
@@ -213,6 +272,8 @@ class ReducedGibbsCache(NamedTuple):
     rho_upper: float
     rho_adaptive_width: bool = True
     rho_slice_width_state: Optional[SliceWidthState] = None
+    krylov_degree: int = _KRYLOV_DEGREE_DEFAULT
+    krylov_dmax: float = _KRYLOV_DMAX_DEFAULT
 
 
 # ---------------------------------------------------------------------------
@@ -397,29 +458,38 @@ def _rho_log_density_marginal(
     mu0: np.ndarray,
     rho_lower: float,
     rho_upper: float,
-    factor_cache: Optional[dict] = None,
+    *,
+    basis: Optional[ReducedKrylovBasis] = None,
+    krylov_dmax: float = _KRYLOV_DMAX_DEFAULT,
 ) -> float:
     r"""β-marginalised conditional log-density for the ρ slice.
 
-    See the original derivation in the module docstring.  When
-    ``factor_cache`` is given, the most recently computed ``(rho, lu, U)``
-    triple is stashed there so that the runner can reuse it for the
-    subsequent β draw at the accepted ρ.
+    When a :class:`ReducedKrylovBasis` is provided and
+    :math:`|\rho - \rho_c| \leq \texttt{krylov_dmax}`, the expensive
+    LU factorisation is replaced by a cheap Horner evaluation of the
+    shift-invert Krylov polynomial.  Otherwise a fresh ``splu`` is
+    used for that single candidate.
     """
     if rho <= rho_lower or rho >= rho_upper:
         return -np.inf
-    try:
-        lu = _factor_A(rho, W_csc, n)
-        U = lu.solve(X)  # (n, k)
-    except RuntimeError:
-        return -np.inf
 
-    if factor_cache is not None:
-        factor_cache["rho"] = rho
-        factor_cache["lu"] = lu
-        factor_cache["U"] = U
+    # --- Compute U = (I - ρW)^{-1} X ---
+    use_basis = (
+        basis is not None
+        and basis.degree > 0
+        and abs(rho - basis.rho_basis) <= krylov_dmax
+    )
+    if use_basis:
+        drho = rho - basis.rho_basis
+        U = _eval_U_from_basis(basis, drho)
+    else:
+        try:
+            lu = _factor_A(rho, W_csc, n)
+            U = lu.solve(X)  # (n, k)
+        except RuntimeError:
+            return -np.inf
 
-    # Working response and residual
+    # --- Working response and residual ---
     log_alpha = np.log(alpha)
     kappa = 0.5 * (y - alpha)
     s = kappa / omega + log_alpha
@@ -462,13 +532,14 @@ def _sample_rho(
     rng: np.random.Generator,
     sweep_idx: int,
     tune: int,
-    factor_cache: Optional[dict] = None,
+    basis: Optional[ReducedKrylovBasis] = None,
 ) -> tuple[float, float]:
     """Block 3: 1-D adaptive slice on :math:`\\rho` with β marginalised.
 
-    If ``factor_cache`` is supplied, the LU factor and ``U = A_ρ⁻¹X``
-    from the most recent density evaluation are stashed there for the
-    subsequent β draw to reuse, saving one LU factorisation per sweep.
+    When ``basis`` is provided (``krylov_degree > 0``), the slice density
+    is evaluated via the shift-invert Krylov polynomial instead of a
+    fresh LU per candidate.  The basis is built once per sweep at the
+    current ρ and reused for all candidates within ``krylov_dmax``.
     """
     n, k = X.shape
     rho_lower = cache.rho_lower
@@ -488,7 +559,8 @@ def _sample_rho(
             mu0=mu0,
             rho_lower=rho_lower,
             rho_upper=rho_upper,
-            factor_cache=factor_cache,
+            basis=basis,
+            krylov_dmax=cache.krylov_dmax,
         )
 
     if cache.rho_adaptive_width and cache.rho_slice_width_state is not None:
@@ -594,23 +666,35 @@ def run_chain(
 
     from ..negbin._core import GibbsState as _StructuralState
 
+    # Whether to use Krylov acceleration (degree > 0) or exact LU per
+    # candidate (degree == 0, legacy path).
+    use_krylov = cache.krylov_degree > 0
+    krylov_degree = cache.krylov_degree
+    krylov_dmax = cache.krylov_dmax
+
     for i in range(total_iters):
-        # --- Compute η at current ρ for the ω block ---
-        try:
-            lu = _factor_A(state.rho, cache.W_csc, n)
-        except RuntimeError:
-            # Singular A_ρ — should be impossible inside stability
-            # bounds, but degrade gracefully by perturbing ρ.
-            state.rho = 0.0
-            lu = _factor_A(0.0, cache.W_csc, n)
-        eta = lu.solve(X @ state.beta)
+        # --- Build Krylov basis at current ρ (or factorise for legacy) ---
+        if use_krylov:
+            basis = _build_krylov_basis(
+                state.rho, X, cache.W_csc, n, degree=krylov_degree
+            )
+            # η for the ω block: η = U(ρ_c) @ β via the basis
+            eta = basis.V_stack[0] @ state.beta
+        else:
+            try:
+                lu = _factor_A(state.rho, cache.W_csc, n)
+            except RuntimeError:
+                state.rho = 0.0
+                lu = _factor_A(0.0, cache.W_csc, n)
+            eta = lu.solve(X @ state.beta)
+            basis = None
+
         psi = eta - np.log(state.alpha)
 
         # --- Block 1: ω | β, ρ, α, y ---
         state.omega = _sample_omega(y, state.alpha, psi, rng=rng)
 
         # --- Block 2: ρ | ω, α, y (β marginalised) ---
-        factor_cache: dict = {}
         state.rho, _ = _sample_rho(
             state=state,
             cache=cache,
@@ -620,19 +704,13 @@ def run_chain(
             rng=rng,
             sweep_idx=i,
             tune=tune,
-            factor_cache=factor_cache,
+            basis=basis,
         )
 
         # --- Block 3: β | ρ_new, ω, α, y ---
-        # Reuse the LU + U=A_ρ⁻¹X from the slice's last density evaluation
-        # if it was at the accepted ρ.  Slice sampling typically ends at
-        # the accepted point, so this hit-rate is near 1.
-        if factor_cache.get("rho") == state.rho and factor_cache.get("U") is not None:
-            lu = factor_cache["lu"]
-            Xtilde = factor_cache["U"]
-        else:
-            lu = _factor_A(state.rho, cache.W_csc, n)
-            Xtilde = lu.solve(X)
+        # Exact LU at the accepted ρ_new for an unbiased β draw.
+        lu_new = _factor_A(state.rho, cache.W_csc, n)
+        Xtilde = lu_new.solve(X)
         state.beta = _sample_beta(
             beta_current=state.beta,
             Xtilde=Xtilde,
