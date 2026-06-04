@@ -517,7 +517,13 @@ def _rho_log_density_marginal(
     rOr = float(np.dot(r, omega * r))
     log_det_M = 2.0 * float(np.sum(np.log(np.diag(L))))
 
-    return -0.5 * log_det_M - 0.5 * (rOr - quad_pen)
+    result = -0.5 * log_det_M - 0.5 * (rOr - quad_pen)
+    # Guard against nan from numerical overflow in the Krylov path
+    # or near-singular matrices.  Returning -inf causes the slice
+    # sampler to reject the candidate and shrink the interval.
+    if not np.isfinite(result):
+        return -np.inf
+    return result
 
 
 def _sample_rho(

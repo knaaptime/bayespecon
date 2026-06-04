@@ -983,7 +983,13 @@ def _sample_alpha(
         )
 
         # Jacobian: d(alpha)/d(log_alpha) = alpha, so log|J| = log(alpha) = log_a
-        return log_a + total_log_lik + log_prior
+        result = log_a + total_log_lik + log_prior
+        # Guard against nan (e.g. from overflow in exp(eta) or
+        # underflow in gammaln).  Returning -inf causes the slice
+        # sampler to reject the candidate and shrink the interval.
+        if not np.isfinite(result):
+            return -np.inf
+        return result
 
     # Slice sample on log(alpha) with bounds
     log_alpha_new, _ = slice_sample_1d(

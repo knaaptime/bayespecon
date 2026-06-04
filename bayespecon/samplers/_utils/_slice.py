@@ -72,6 +72,7 @@ def slice_sample_1d(
     *,
     w: float = 1.0,
     max_steps_out: int = 50,
+    max_shrink_iters: int = 500,
     rng: np.random.Generator | None = None,
 ) -> tuple[float, float]:
     """Draw one sample from a univariate distribution via slice sampling.
@@ -94,8 +95,10 @@ def slice_sample_1d(
         Initial step-out width for interval expansion.
     max_steps_out : int, default=50
         Maximum number of stepping-out iterations to prevent infinite
-        loops on very flat densities.
-    rng : numpy.random.Generator, optional
+        loops on very flat densities.    max_shrink_iters : int, default 500
+        Maximum number of shrinkage iterations.  Prevents infinite
+        loops if the log-density returns nan (treated as -inf) at
+        every point in the interval.    rng : numpy.random.Generator, optional
         Random state. If None, a fresh generator is created.
 
     Returns
@@ -122,6 +125,11 @@ def slice_sample_1d(
 
     # Evaluate log-density at current point
     log_y0 = log_density(x0)
+    # Guard against nan at the current point — treat as very negative
+    # so the slice level is drawn at -inf and any finite candidate is
+    # accepted, allowing the sampler to escape a nan region.
+    if not np.isfinite(log_y0):
+        log_y0 = -1e300
 
     # Draw vertical level: log(u) where u ~ Uniform(0, f(x0))
     log_u = log_y0 + np.log(rng.uniform())
@@ -152,10 +160,15 @@ def slice_sample_1d(
 
     # --- Shrinkage ---
     # Sample from [L, R] and shrink until we find a point above log_u
-    while True:
+    for _shrink_iter in range(max_shrink_iters):
         x_new = L + rng.uniform() * (R - L)
         log_density_new = log_density(x_new)
-
+        # Treat nan as -inf: reject and shrink the interval.
+        # Without this guard, nan comparisons (nan > log_u → False,
+        # nan < x0 → False) cause an infinite loop because neither
+        # L nor R is updated.
+        if np.isnan(log_density_new):
+            log_density_new = -np.inf
         if log_density_new > log_u:
             # Accept: point is above the slice
             return x_new, log_density_new
@@ -170,6 +183,9 @@ def slice_sample_1d(
         if R - L < 1e-15:
             return x0, log_y0
 
+    # Exhausted shrinkage budget — return x0 as a fallback
+    return x0, log_y0
+
 
 def slice_sample_1d_adaptive(
     log_density: Callable[[float], float],
@@ -179,6 +195,7 @@ def slice_sample_1d_adaptive(
     *,
     width_state: SliceWidthState,
     max_steps_out: int = 50,
+    max_shrink_iters: int = 500,
     rng: np.random.Generator | None = None,
     log_density_x0: float | None = None,
 ) -> tuple[float, float, int, int]:
@@ -212,8 +229,10 @@ def slice_sample_1d_adaptive(
     width_state : SliceWidthState
         Mutable state holding ``w`` and the persistent ``[L, R]``.
     max_steps_out : int, default=50
-        Maximum number of stepping-out iterations.
-    rng : numpy.random.Generator, optional
+        Maximum number of stepping-out iterations.    max_shrink_iters : int, default 500
+        Maximum number of shrinkage iterations.  Prevents infinite
+        loops if the log-density returns nan (treated as -inf) at
+        every point in the interval.    rng : numpy.random.Generator, optional
         Random state.
     log_density_x0 : float, optional
         Pre-computed log-density at ``x0``. If provided, avoids one
@@ -242,6 +261,11 @@ def slice_sample_1d_adaptive(
 
     # Evaluate log-density at current point (or use cached value)
     log_y0 = log_density_x0 if log_density_x0 is not None else log_density(x0)
+    # Guard against nan at the current point — treat as very negative
+    # so the slice level is drawn at -inf and any finite candidate is
+    # accepted, allowing the sampler to escape a nan region.
+    if not np.isfinite(log_y0):
+        log_y0 = -1e300
 
     # Draw vertical level: log(u) where u ~ Uniform(0, f(x0))
     log_u = log_y0 + np.log(rng.uniform())
@@ -317,9 +341,16 @@ def slice_sample_1d_adaptive(
             steps_out_right += 1
 
     # --- Shrinkage ---
-    while True:
+    for _shrink_iter in range(max_shrink_iters):
         x_new = L + rng.uniform() * (R - L)
         log_density_new = log_density(x_new)
+
+        # Treat nan as -inf: reject and shrink the interval.
+        # Without this guard, nan comparisons (nan > log_u → False,
+        # nan < x0 → False) cause an infinite loop because neither
+        # L nor R is updated.
+        if np.isnan(log_density_new):
+            log_density_new = -np.inf
 
         if log_density_new > log_u:
             # Store the final interval for the next draw
@@ -336,6 +367,11 @@ def slice_sample_1d_adaptive(
             width_state.L = L
             width_state.R = R
             return x0, log_y0, steps_out_left, steps_out_right
+
+    # Exhausted shrinkage budget — return x0 as a fallback
+    width_state.L = L
+    width_state.R = R
+    return x0, log_y0, steps_out_left, steps_out_right
 
 
 def update_slice_width(
