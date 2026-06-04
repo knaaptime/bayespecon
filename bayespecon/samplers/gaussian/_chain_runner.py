@@ -218,8 +218,7 @@ def run_chains(
         else:
             # No progress bar — silent parallel execution.
             results = Parallel(n_jobs=n_workers)(
-                delayed(chain_fn)(chain_id, seed)
-                for chain_id, seed in enumerate(seeds)
+                delayed(chain_fn)(chain_id, seed) for chain_id, seed in enumerate(seeds)
             )
             return list(results)
 

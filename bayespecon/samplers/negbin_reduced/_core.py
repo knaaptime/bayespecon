@@ -86,8 +86,7 @@ from .._utils._slice import (
     slice_sample_1d_adaptive,
     update_slice_width,
 )
-from ..negbin._core import _sample_alpha, _nb_loglik_pointwise
-
+from ..negbin._core import _nb_loglik_pointwise, _sample_alpha
 
 # ---------------------------------------------------------------------------
 # Sparse LU factorisation
@@ -174,9 +173,7 @@ def _build_krylov_basis(
     for j in range(m):
         Wv = W_csc @ V_stack[j]  # (n, k)
         V_stack[j + 1] = lu.solve(Wv)
-    return ReducedKrylovBasis(
-        rho_basis=rho_c, lu=lu, V_stack=V_stack, degree=m
-    )
+    return ReducedKrylovBasis(rho_basis=rho_c, lu=lu, V_stack=V_stack, degree=m)
 
 
 def _eval_U_from_basis(
@@ -192,6 +189,7 @@ def _eval_U_from_basis(
     for j in range(basis.degree - 1, -1, -1):
         result = basis.V_stack[j] + drho * result
     return result
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -670,7 +668,6 @@ def run_chain(
     # candidate (degree == 0, legacy path).
     use_krylov = cache.krylov_degree > 0
     krylov_degree = cache.krylov_degree
-    krylov_dmax = cache.krylov_dmax
 
     for i in range(total_iters):
         # --- Build Krylov basis at current ρ (or factorise for legacy) ---

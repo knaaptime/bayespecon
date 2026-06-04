@@ -27,8 +27,8 @@ def small_nb_problem():
     rho_true = 0.4
     alpha_true = 2.0
 
-    from scipy.sparse.linalg import splu
     from scipy import sparse as sp
+    from scipy.sparse.linalg import splu
 
     A_sp = sp.eye(n) - rho_true * W_sparse
     eta = splu(A_sp.tocsc()).solve(X @ beta_true)
@@ -111,12 +111,13 @@ def test_krylov_vs_exact_same_posterior(small_nb_problem):
 
 def test_krylov_basis_accuracy():
     """Unit test: Krylov basis reconstruction error < 1e-6 at degree=8."""
+    from scipy.sparse.linalg import splu
+
     from bayespecon.samplers.negbin_reduced._core import (
         ReducedKrylovBasis,
         _build_krylov_basis,
         _eval_U_from_basis,
     )
-    from scipy.sparse.linalg import splu
 
     rng = np.random.default_rng(0)
     n, k = 200, 3
@@ -141,6 +142,4 @@ def test_krylov_basis_accuracy():
         A = (sparse.eye(n, format="csc") - rho * W_csc).tocsc()
         U_exact = splu(A).solve(X)
         max_err = np.max(np.abs(U_krylov - U_exact))
-        assert max_err < 1e-6, (
-            f"drho={drho}: max_err={max_err:.2e} > 1e-6"
-        )
+        assert max_err < 1e-6, f"drho={drho}: max_err={max_err:.2e} > 1e-6"

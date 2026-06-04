@@ -10,6 +10,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal, Mapping
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------

@@ -248,9 +248,7 @@ class TestMakeLogdetJaxFn:
         W_dense /= W_dense.sum(axis=1, keepdims=True)
         eigs = np.linalg.eigvals(W_dense).real
 
-        fn = make_logdet_jax_fn(
-            W_dense, method="chebyshev"
-        )
+        fn = make_logdet_jax_fn(W_dense, method="chebyshev")
 
         for rho in [0.05, 0.2, 0.4]:
             approx = float(fn(jnp.float64(rho)))
