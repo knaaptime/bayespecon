@@ -1,11 +1,12 @@
 """Vectorized Pólya–Gamma draw wrapper.
 
 Thin wrapper around the ``polyagamma`` package that centralises the call
-site and provides a consistent interface. If ``polyagamma`` is unavailable,
-a ``ImportError`` is raised with a helpful message.
+site and provides a consistent interface. Dispatches to the library's
+hybrid sampler (Devroye for integer h, alternate for non-integer h) when
+all h values are integer, and forces ``method="alternate"`` otherwise.
 
-The wrapper exists so that future fallback implementations (e.g., a numba
-Devroye sampler) can be swapped in without touching call sites.
+If ``polyagamma`` is unavailable, an ``ImportError`` is raised with a
+helpful message.
 """
 
 from __future__ import annotations
@@ -67,9 +68,12 @@ def sample_polyagamma(
     if np.any(h <= 0):
         raise ValueError("All h values must be positive.")
 
-    # random_polyagamma broadcasts h and z, and accepts a Generator via random_state.
-    # Use method="alternate" because the default hybrid may select the "devroye"
-    # method for small h, which requires integer-valued h.  In the NB-PG augmentation
-    # h_i = y_i + alpha is typically non-integer, so we must avoid devroye.
-    omega = _pg_draw(h=h, z=z, method="alternate", random_state=rng)
+    # Dispatch on h: the hybrid method (method=None, the default) selects the
+    # faster Devroye algorithm for integer h (e.g. logit with h=1), but Devroye
+    # requires integer-valued h.  For the NB-PG augmentation, h_i = y_i + alpha
+    # is typically non-integer, so we must use "alternate" in that case.
+    # When all h values are integer, we let the library pick the best method.
+    _all_integer = np.all(np.equal(np.mod(h, 1.0), 0.0))
+    method = None if _all_integer else "alternate"
+    omega = _pg_draw(h=h, z=z, method=method, random_state=rng)
     return np.asarray(omega, dtype=np.float64)

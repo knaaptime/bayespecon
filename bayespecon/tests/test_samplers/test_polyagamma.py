@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -47,3 +49,81 @@ class TestSamplePolyagamma:
     @pytest.fixture
     def rng(self):
         return np.random.default_rng(42)
+
+
+class TestPolyagammaMethodDispatch:
+    """Tests that sample_polyagamma dispatches on h integrality."""
+
+    @patch("polyagamma.random_polyagamma")
+    def test_integer_h_uses_hybrid(self, mock_pg, rng):
+        """When all h are integer, method=None (hybrid) is used."""
+        mock_pg.return_value = np.ones(10)
+
+        h = np.ones(10)  # all integer (logit case)
+        z = np.zeros(10)
+        sample_polyagamma(h, z, rng=rng)
+
+        mock_pg.assert_called_once()
+        call_kwargs = mock_pg.call_args
+        assert call_kwargs.kwargs["method"] is None
+
+    @patch("polyagamma.random_polyagamma")
+    def test_noninteger_h_uses_alternate(self, mock_pg, rng):
+        """When h has non-integer values, method='alternate' is forced."""
+        mock_pg.return_value = np.ones(10)
+
+        h = np.array([1.5, 2.3, 3.7, 4.1, 5.9, 6.2, 7.8, 8.0, 9.5, 10.1])
+        z = np.zeros(10)
+        sample_polyagamma(h, z, rng=rng)
+
+        mock_pg.assert_called_once()
+        call_kwargs = mock_pg.call_args
+        assert call_kwargs.kwargs["method"] == "alternate"
+
+    @patch("polyagamma.random_polyagamma")
+    def test_mixed_h_uses_alternate(self, mock_pg, rng):
+        """When h has mixed integer and non-integer values, method='alternate'."""
+        mock_pg.return_value = np.ones(5)
+
+        h = np.array([1.0, 2.5, 3.0, 4.7, 5.0])  # some integer, some not
+        z = np.zeros(5)
+        sample_polyagamma(h, z, rng=rng)
+
+        mock_pg.assert_called_once()
+        call_kwargs = mock_pg.call_args
+        assert call_kwargs.kwargs["method"] == "alternate"
+
+    @patch("polyagamma.random_polyagamma")
+    def test_large_integer_h_uses_hybrid(self, mock_pg, rng):
+        """Large integer h values (e.g. h=5) also use hybrid method."""
+        mock_pg.return_value = np.ones(10)
+
+        h = np.full(10, 5.0)  # all integer, h=5
+        z = np.zeros(10)
+        sample_polyagamma(h, z, rng=rng)
+
+        mock_pg.assert_called_once()
+        call_kwargs = mock_pg.call_args
+        assert call_kwargs.kwargs["method"] is None
+
+    def test_logit_h_produces_valid_draws(self, rng):
+        """End-to-end: logit-style h=1 draws are valid PG(1, z) samples."""
+        n = 5000
+        h = np.ones(n)  # logit case
+        z = rng.normal(size=n)
+        omega = sample_polyagamma(h, z, rng=rng)
+        assert omega.shape == (n,)
+        assert np.all(omega > 0)
+        # PG(1, 0) has mean 0.25; with z != 0 the mean shifts but stays positive
+        assert np.mean(omega) > 0
+
+    def test_negbin_h_produces_valid_draws(self, rng):
+        """End-to-end: negbin-style non-integer h draws are valid."""
+        n = 5000
+        y = rng.integers(0, 10, size=n)
+        alpha = 2.5
+        h = y + alpha  # non-integer
+        z = rng.normal(size=n)
+        omega = sample_polyagamma(h, z, rng=rng)
+        assert omega.shape == (n,)
+        assert np.all(omega > 0)
