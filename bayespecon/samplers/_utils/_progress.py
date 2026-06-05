@@ -379,12 +379,24 @@ class _SharedCounterReporter:
     def __del__(self):
         # Best-effort close of the worker-side handle.  The parent
         # owns the lifetime of the underlying segment (unlink).
+        self.close()
+
+    def close(self) -> None:
+        """Explicitly close the shared-memory handle.
+
+        Call this when the reporter is no longer needed (e.g. at the
+        end of a chain) to free the file descriptor promptly.  In loky
+        worker processes, ``__del__`` is not guaranteed to fire, so
+        relying on it alone leaks FDs across many parallel calls.
+        """
         shm = getattr(self, "_shm", None)
         if shm is not None:
             try:
                 shm.close()
             except Exception:
                 pass
+            self._shm = None
+            self._buf = None
 
     # -- same interface as GibbsProgressBarManager -----------------------
 

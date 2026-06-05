@@ -86,11 +86,83 @@ from .._utils._slice import (
     slice_sample_1d_adaptive,
     update_slice_width,
 )
+from .._utils._spatial_normal import CholmodFactor, has_cholmod
 from ..negbin._core import _nb_loglik_pointwise, _sample_alpha
 
 # ---------------------------------------------------------------------------
-# Sparse LU factorisation
+# Sparse solve for A_ρ = I − ρW
 # ---------------------------------------------------------------------------
+
+# When CHOLMOD is available we solve (I − ρW) x = b via the normal
+# equations  A^T A x = A^T b  where  A^T A = I − ρ(W+W^T) + ρ² W^T W
+# is SPD.  This avoids UMFPACK (``splu``), which can deadlock on macOS
+# when Apple Accelerate BLAS is called concurrently from multiple
+# processes.  CHOLMOD is also faster because it reuses the symbolic
+# analysis across all ρ values.
+
+
+class _CholmodNormalEqSolver:
+    """Solve ``(I − ρW) x = b`` via CHOLMOD on the normal equations.
+
+    The normal-equation matrix
+
+    .. math::
+
+        A_\\rho^T A_\\rho = I - \\rho (W + W^T) + \\rho^2 W^T W
+
+    is symmetric positive definite for any non-singular ``A_ρ``.
+    CHOLMOD factorises it and we recover ``x = A_ρ⁻¹ b`` from
+    ``A_ρ^T A_ρ x = A_ρ^T b``.
+
+    The ``cholmod_factor`` holds the symbolic analysis (computed once
+    from a pattern matrix) so that only the numeric factorisation is
+    needed for each new ρ.
+
+    Parameters
+    ----------
+    cholmod_factor : CholmodFactor
+        Pre-built CHOLMOD factor with the sparsity pattern of
+        ``A^T A`` (any valid ρ gives the same pattern).
+    W_csc : csc_matrix
+        Spatial weights in CSC format.
+    W_sym : csc_matrix
+        ``W + W^T`` in CSC format (precomputed).
+    WtW : csc_matrix
+        ``W^T @ W`` in CSC format (precomputed).
+    n : int
+        Dimension of the spatial weights matrix.
+    """
+
+    def __init__(
+        self,
+        cholmod_factor: CholmodFactor,
+        W_csc: sp.csc_matrix,
+        W_sym: sp.csc_matrix,
+        WtW: sp.csc_matrix,
+        n: int,
+    ) -> None:
+        self._cholmod = cholmod_factor
+        self._W_csc = W_csc
+        self._W_sym = W_sym
+        self._WtW = WtW
+        self._n = n
+        self._rho: float | None = None
+
+    def factorize(self, rho: float) -> None:
+        """Build and factorise ``A^T A`` at the given ρ."""
+        AtA = sp.eye(self._n, format="csc") - rho * self._W_sym + rho**2 * self._WtW
+        self._cholmod.factorize(AtA)
+        self._rho = rho
+
+    def solve(self, rhs: np.ndarray) -> np.ndarray:
+        """Solve ``(I − ρW) x = rhs`` via the normal equations.
+
+        Works for both vector and matrix right-hand sides.
+        """
+        # A^T b  where A = I − ρW
+        Atb = rhs - self._W_csc.T @ (self._rho * rhs)
+        # CHOLMOD solve: A^T A x = A^T b
+        return self._cholmod.solve(Atb)
 
 
 def _factor_A(rho: float, W_csc: sp.csc_matrix, n: int) -> spla.SuperLU:
@@ -98,9 +170,58 @@ def _factor_A(rho: float, W_csc: sp.csc_matrix, n: int) -> spla.SuperLU:
 
     Returns a :class:`scipy.sparse.linalg.SuperLU` object whose
     :meth:`solve` method handles single and multiple right-hand sides.
+
+    .. deprecated::
+        Used only as a fallback when CHOLMOD is not available.
+        The CHOLMOD normal-equations path (``_CholmodNormalEqSolver``)
+        is preferred to avoid UMFPACK deadlocks on macOS.
     """
     A = (sp.eye(n, format="csc") - rho * W_csc).tocsc()
     return spla.splu(A)
+
+
+def _make_cholmod_pattern(
+    W_csc: sp.csc_matrix,
+    n: int,
+) -> tuple[sp.csc_matrix, sp.csc_matrix, sp.csc_matrix]:
+    """Precompute the CHOLMOD pattern matrix and sparse building blocks.
+
+    Returns
+    -------
+    W_sym : csc_matrix
+        ``W + W^T`` in CSC format.
+    WtW : csc_matrix
+        ``W^T @ W`` in CSC format.
+    pattern : csc_matrix
+        Sparsity pattern for ``A^T A = I − ρ(W+W^T) + ρ² W^T W``
+        that covers all valid ρ.  Built as
+        ``I + 0.5*(W+W^T) + 0.25*W^T@W`` so that every possible
+        fill-in position is present.
+    """
+    W_sym = (W_csc + W_csc.T).tocsc()
+    WtW = (W_csc.T @ W_csc).tocsc()
+    pattern = (sp.eye(n, format="csc") + 0.5 * W_sym + 0.25 * WtW).tocsc()
+    return W_sym, WtW, pattern
+
+
+def _make_solver(
+    rho: float,
+    W_csc: sp.csc_matrix,
+    n: int,
+    cholmod_solver: _CholmodNormalEqSolver | None = None,
+) -> _CholmodNormalEqSolver | spla.SuperLU:
+    """Return a solver for ``(I − ρW) x = b``.
+
+    When ``cholmod_solver`` is provided (CHOLMOD available), factorises
+    the normal-equation matrix ``A^T A`` and returns the solver.
+    Otherwise falls back to ``splu`` (UMFPACK).
+
+    Both return types expose a ``.solve(rhs)`` method.
+    """
+    if cholmod_solver is not None:
+        cholmod_solver.factorize(rho)
+        return cholmod_solver
+    return _factor_A(rho, W_csc, n)
 
 
 # ---------------------------------------------------------------------------
@@ -130,16 +251,16 @@ class ReducedKrylovBasis(NamedTuple):
 
         U(\\rho) \\approx \\sum_{j=0}^{m} (\\Delta\\rho)^j V_j,
 
-    which is a cheap ``einsum`` instead of a fresh LU factorisation.
+    which is a cheap ``einsum`` instead of a fresh factorisation.
     The approximation error decays geometrically in :math:`m` as
     :math:`O((\\Delta\\rho \\|A_c^{-1} W\\|)^{m+1})`.
 
     Attributes
     ----------
     rho_basis : float
-        Centre point :math:`\\rho_c` at which the LU was factored.
-    lu : scipy.sparse.linalg.SuperLU
-        The factored :math:`A_c = I - \\rho_c W`.
+        Centre point :math:`\\rho_c` at which the system was factored.
+    solver : _CholmodNormalEqSolver or spla.SuperLU
+        The factored solver for :math:`A_c = I - \\rho_c W`.
     V_stack : ndarray, shape (m+1, n, k)
         Krylov basis vectors stacked along axis 0.
     degree : int
@@ -148,7 +269,7 @@ class ReducedKrylovBasis(NamedTuple):
     """
 
     rho_basis: float
-    lu: spla.SuperLU
+    solver: _CholmodNormalEqSolver | spla.SuperLU
     V_stack: np.ndarray
     degree: int
 
@@ -159,21 +280,23 @@ def _build_krylov_basis(
     W_csc: sp.csc_matrix,
     n: int,
     degree: int = _KRYLOV_DEGREE_DEFAULT,
+    cholmod_solver: _CholmodNormalEqSolver | None = None,
 ) -> ReducedKrylovBasis:
     """Build a shift-invert Krylov basis at :math:`\\rho_c`.
 
-    Cost: 1 ``splu`` factorisation + ``(degree + 1)`` ``lu.solve(X)``
-    calls + ``degree`` sparse matmuls ``W @ V_j``.
+    When ``cholmod_solver`` is provided, uses CHOLMOD normal equations
+    instead of ``splu`` (UMFPACK).  Cost: 1 factorisation +
+    ``(degree + 1)`` solve calls + ``degree`` sparse matmuls ``W @ V_j``.
     """
-    lu = _factor_A(rho_c, W_csc, n)
-    V0 = lu.solve(X)  # (n, k)
+    solver = _make_solver(rho_c, W_csc, n, cholmod_solver=cholmod_solver)
+    V0 = solver.solve(X)  # (n, k)
     m = degree
     V_stack = np.empty((m + 1, n, X.shape[1]), dtype=np.float64)
     V_stack[0] = V0
     for j in range(m):
         Wv = W_csc @ V_stack[j]  # (n, k)
-        V_stack[j + 1] = lu.solve(Wv)
-    return ReducedKrylovBasis(rho_basis=rho_c, lu=lu, V_stack=V_stack, degree=m)
+        V_stack[j + 1] = solver.solve(Wv)
+    return ReducedKrylovBasis(rho_basis=rho_c, solver=solver, V_stack=V_stack, degree=m)
 
 
 def _eval_U_from_basis(
@@ -245,7 +368,7 @@ class ReducedGibbsCache(NamedTuple):
     W_sparse : scipy.sparse.csr_matrix
         Row-standardised spatial weights (csr for fast matvec).
     W_csc : scipy.sparse.csc_matrix
-        Same matrix in csc format (preferred for ``splu``).
+        Same matrix in csc format (preferred for ``splu`` fallback).
     rho_lower, rho_upper : float
         Support bounds for the ρ slice sampler.
     rho_adaptive_width : bool
@@ -255,13 +378,22 @@ class ReducedGibbsCache(NamedTuple):
     krylov_degree : int
         Krylov basis degree :math:`m` for the shift-invert polynomial
         approximation of :math:`(I - \\rho W)^{-1} X`.  Default 8.
-        Set to 0 to disable Krylov acceleration (use exact LU per
+        Set to 0 to disable Krylov acceleration (use exact solve per
         candidate, as in the legacy path).
     krylov_dmax : float
         Maximum :math:`|\\Delta\\rho|` for which the Krylov basis is
         used.  When a slice candidate falls outside this radius around
-        the basis centre, a fresh LU factorisation is performed for
+        the basis centre, a fresh factorisation is performed for
         that single candidate.  Default 0.15.
+    cholmod_factor : CholmodFactor or None
+        When CHOLMOD is available, a pre-built factor with the
+        sparsity pattern for ``A^T A = I − ρ(W+W^T) + ρ² W^T W``.
+        ``None`` when CHOLMOD is not installed (falls back to ``splu``).
+        Picklable — the C handle is dropped and reconstructed.
+    W_sym : csc_matrix or None
+        ``W + W^T`` in CSC format (precomputed for CHOLMOD path).
+    WtW : csc_matrix or None
+        ``W^T @ W`` in CSC format (precomputed for CHOLMOD path).
     """
 
     W_sparse: sp.csr_matrix
@@ -272,6 +404,9 @@ class ReducedGibbsCache(NamedTuple):
     rho_slice_width_state: Optional[SliceWidthState] = None
     krylov_degree: int = _KRYLOV_DEGREE_DEFAULT
     krylov_dmax: float = _KRYLOV_DMAX_DEFAULT
+    cholmod_factor: Optional[CholmodFactor] = None
+    W_sym: Optional[sp.csc_matrix] = None
+    WtW: Optional[sp.csc_matrix] = None
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +414,7 @@ class ReducedGibbsCache(NamedTuple):
 # ---------------------------------------------------------------------------
 
 
-# ``_factor_A`` is defined above (alongside the dense/sparse dispatch).
+# ``_factor_A`` is defined above (alongside the CHOLMOD solver).
 
 
 def _compute_eta(
@@ -287,14 +422,15 @@ def _compute_eta(
     Xbeta: np.ndarray,
     W_csc: sp.csc_matrix,
     n: int,
-) -> tuple[np.ndarray, spla.SuperLU]:
-    """Return :math:`\\eta = (I - \\rho W)^{-1} X\\beta` and the LU factor.
+    cholmod_solver: _CholmodNormalEqSolver | None = None,
+) -> tuple[np.ndarray, _CholmodNormalEqSolver | spla.SuperLU]:
+    """Return :math:`\\eta = (I - \\rho W)^{-1} X\\beta` and the solver.
 
-    The factor is returned so callers can reuse it (e.g. to compute
+    The solver is returned so callers can reuse it (e.g. to compute
     :math:`\\tilde X = A^{-1} X` without re-factorising).
     """
-    lu = _factor_A(rho, W_csc, n)
-    eta = lu.solve(Xbeta)
+    solver = _make_solver(rho, W_csc, n, cholmod_solver=cholmod_solver)
+    eta = solver.solve(Xbeta)
     return eta, lu
 
 
@@ -459,14 +595,16 @@ def _rho_log_density_marginal(
     *,
     basis: Optional[ReducedKrylovBasis] = None,
     krylov_dmax: float = _KRYLOV_DMAX_DEFAULT,
+    cholmod_solver: Optional[_CholmodNormalEqSolver] = None,
 ) -> float:
     r"""β-marginalised conditional log-density for the ρ slice.
 
     When a :class:`ReducedKrylovBasis` is provided and
     :math:`|\rho - \rho_c| \leq \texttt{krylov_dmax}`, the expensive
-    LU factorisation is replaced by a cheap Horner evaluation of the
-    shift-invert Krylov polynomial.  Otherwise a fresh ``splu`` is
-    used for that single candidate.
+    factorisation is replaced by a cheap Horner evaluation of the
+    shift-invert Krylov polynomial.  Otherwise a fresh solve is
+    performed — via CHOLMOD normal equations when
+    ``cholmod_solver`` is provided, or ``splu`` as fallback.
     """
     if rho <= rho_lower or rho >= rho_upper:
         return -np.inf
@@ -482,8 +620,8 @@ def _rho_log_density_marginal(
         U = _eval_U_from_basis(basis, drho)
     else:
         try:
-            lu = _factor_A(rho, W_csc, n)
-            U = lu.solve(X)  # (n, k)
+            solver = _make_solver(rho, W_csc, n, cholmod_solver=cholmod_solver)
+            U = solver.solve(X)  # (n, k)
         except RuntimeError:
             return -np.inf
 
@@ -537,13 +675,14 @@ def _sample_rho(
     sweep_idx: int,
     tune: int,
     basis: Optional[ReducedKrylovBasis] = None,
+    cholmod_solver: Optional[_CholmodNormalEqSolver] = None,
 ) -> tuple[float, float]:
     """Block 3: 1-D adaptive slice on :math:`\\rho` with β marginalised.
 
     When ``basis`` is provided (``krylov_degree > 0``), the slice density
     is evaluated via the shift-invert Krylov polynomial instead of a
-    fresh LU per candidate.  The basis is built once per sweep at the
-    current ρ and reused for all candidates within ``krylov_dmax``.
+    fresh factorisation per candidate.  The basis is built once per sweep
+    at the current ρ and reused for all candidates within ``krylov_dmax``.
     """
     n, k = X.shape
     rho_lower = cache.rho_lower
@@ -565,6 +704,7 @@ def _sample_rho(
             rho_upper=rho_upper,
             basis=basis,
             krylov_dmax=cache.krylov_dmax,
+            cholmod_solver=cholmod_solver,
         )
 
     if cache.rho_adaptive_width and cache.rho_slice_width_state is not None:
@@ -670,26 +810,41 @@ def run_chain(
 
     from ..negbin._core import GibbsState as _StructuralState
 
-    # Whether to use Krylov acceleration (degree > 0) or exact LU per
+    # Whether to use Krylov acceleration (degree > 0) or exact solve per
     # candidate (degree == 0, legacy path).
     use_krylov = cache.krylov_degree > 0
     krylov_degree = cache.krylov_degree
+
+    # Build the CHOLMOD normal-equations solver once per chain.
+    # When CHOLMOD is available, this replaces all ``splu`` (UMFPACK)
+    # calls with CHOLMOD on the SPD matrix A^T A, avoiding Apple
+    # Accelerate BLAS deadlocks on macOS under concurrent access.
+    cholmod_solver: _CholmodNormalEqSolver | None = None
+    if cache.cholmod_factor is not None and cache.W_sym is not None and cache.WtW is not None:
+        cholmod_solver = _CholmodNormalEqSolver(
+            cholmod_factor=cache.cholmod_factor,
+            W_csc=cache.W_csc,
+            W_sym=cache.W_sym,
+            WtW=cache.WtW,
+            n=n,
+        )
 
     for i in range(total_iters):
         # --- Build Krylov basis at current ρ (or factorise for legacy) ---
         if use_krylov:
             basis = _build_krylov_basis(
-                state.rho, X, cache.W_csc, n, degree=krylov_degree
+                state.rho, X, cache.W_csc, n, degree=krylov_degree,
+                cholmod_solver=cholmod_solver,
             )
             # η for the ω block: η = U(ρ_c) @ β via the basis
             eta = basis.V_stack[0] @ state.beta
         else:
             try:
-                lu = _factor_A(state.rho, cache.W_csc, n)
+                solver = _make_solver(state.rho, cache.W_csc, n, cholmod_solver=cholmod_solver)
             except RuntimeError:
                 state.rho = 0.0
-                lu = _factor_A(0.0, cache.W_csc, n)
-            eta = lu.solve(X @ state.beta)
+                solver = _make_solver(0.0, cache.W_csc, n, cholmod_solver=cholmod_solver)
+            eta = solver.solve(X @ state.beta)
             basis = None
 
         psi = eta - np.log(state.alpha)
@@ -708,12 +863,13 @@ def run_chain(
             sweep_idx=i,
             tune=tune,
             basis=basis,
+            cholmod_solver=cholmod_solver,
         )
 
         # --- Block 3: β | ρ_new, ω, α, y ---
-        # Exact LU at the accepted ρ_new for an unbiased β draw.
-        lu_new = _factor_A(state.rho, cache.W_csc, n)
-        Xtilde = lu_new.solve(X)
+        # Exact solve at the accepted ρ_new for an unbiased β draw.
+        solver_new = _make_solver(state.rho, cache.W_csc, n, cholmod_solver=cholmod_solver)
+        Xtilde = solver_new.solve(X)
         state.beta = _sample_beta(
             beta_current=state.beta,
             Xtilde=Xtilde,

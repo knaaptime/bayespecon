@@ -48,6 +48,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from ...samplers._utils._slice import SliceWidthState
+from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
 from .sar_negbin_nuts import SARNegativeBinomialNUTS
 
 
@@ -182,6 +183,19 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
         W_csc = self._W_sparse.tocsc()
         X = np.ascontiguousarray(self._X, dtype=np.float64)
 
+        # Precompute CHOLMOD pattern for the normal-equations matrix
+        # A^T A = I − ρ(W+W^T) + ρ² W^T W  (SPD for any valid ρ).
+        # When CHOLMOD is available, the sampler uses this instead of
+        # ``splu`` (UMFPACK) to avoid Apple Accelerate BLAS deadlocks
+        # on macOS under concurrent process access.
+        from ...samplers.negbin_reduced._core import _make_cholmod_pattern
+
+        if has_cholmod():
+            W_sym, WtW, pattern = _make_cholmod_pattern(W_csc, n)
+            cholmod_factor = CholmodFactor(pattern)
+        else:
+            W_sym, WtW, cholmod_factor = None, None, None
+
         rng = np.random.default_rng(random_seed)
         chain_seeds = [int(s) for s in rng.integers(0, 2**31, size=chains)]
 
@@ -208,6 +222,9 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
                 rho_slice_width_state=SliceWidthState(w=0.2),
                 krylov_degree=krylov_degree,
                 krylov_dmax=krylov_dmax,
+                cholmod_factor=cholmod_factor,
+                W_sym=W_sym,
+                WtW=WtW,
             )
             return run_chain(
                 y=self._y,
