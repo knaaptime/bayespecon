@@ -8,6 +8,7 @@ via ``jax.vmap``.
 
 from __future__ import annotations
 
+import gc
 import logging
 import threading
 from multiprocessing import shared_memory
@@ -28,7 +29,7 @@ def run_chains(
     draws: int = 2000,
     tune: int = 1000,
     model_type: str = "sar",
-    timeout: float | None = None,
+    timeout: float | None = 600,
 ) -> list[dict]:
     """Run n_chains independent Gibbs chains.
 
@@ -113,9 +114,16 @@ def run_chains(
         try:
             from joblib.externals.loky import get_reusable_executor
 
-            get_reusable_executor(reuse=True).shutdown(wait=False)
+            get_reusable_executor(reuse=True).shutdown(wait=True)
         except Exception:
             pass  # executor may not exist yet
+
+        # Force garbage collection before spawning workers.  Each fit()
+        # call creates CholmodFactor objects that hold C-level resources
+        # (CHOLMOD common structs, SuiteSparse memory).  Python's GC may
+        # not collect these promptly, and accumulated C resources can
+        # cause issues after many calls.
+        gc.collect()
 
         if progressbar:
             # Per-chain progress bars via shared-memory counters + rich.
@@ -159,13 +167,24 @@ def run_chains(
                 with renderer:
                     poll_thread.start()
                     try:
-                        with parallel_config(backend='loky', inner_max_num_threads=inner_threads):
+                        with parallel_config(
+                            backend="loky", inner_max_num_threads=inner_threads
+                        ):
+                            # Wrap each chain call to ensure the shared-memory
+                            # reporter is closed in the worker process, even if
+                            # the chain raises an exception.
+                            def _run_with_cleanup(cid, seed, pm):
+                                try:
+                                    return chain_fn(
+                                        cid, seed, progress_manager=pm, chain_id_kw=cid
+                                    )
+                                finally:
+                                    if pm is not None and hasattr(pm, "close"):
+                                        pm.close()
+
                             results = Parallel(n_jobs=n_workers, timeout=timeout)(
-                                delayed(chain_fn)(
-                                    chain_id,
-                                    seed,
-                                    progress_manager=reporters[chain_id],
-                                    chain_id_kw=chain_id,
+                                delayed(_run_with_cleanup)(
+                                    chain_id, seed, reporters[chain_id]
                                 )
                                 for chain_id, seed in enumerate(seeds)
                             )
@@ -181,9 +200,10 @@ def run_chains(
                     pass
         else:
             # No progress bar — silent parallel execution.
-            with parallel_config(backend='loky', inner_max_num_threads=inner_threads):
+            with parallel_config(backend="loky", inner_max_num_threads=inner_threads):
                 results = Parallel(n_jobs=n_workers, timeout=timeout)(
-                    delayed(chain_fn)(chain_id, seed) for chain_id, seed in enumerate(seeds)
+                    delayed(chain_fn)(chain_id, seed)
+                    for chain_id, seed in enumerate(seeds)
                 )
             return list(results)
 

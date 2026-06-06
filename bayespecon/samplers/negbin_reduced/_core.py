@@ -86,7 +86,7 @@ from .._utils._slice import (
     slice_sample_1d_adaptive,
     update_slice_width,
 )
-from .._utils._spatial_normal import CholmodFactor, has_cholmod
+from .._utils._spatial_normal import CholmodFactor
 from ..negbin._core import _nb_loglik_pointwise, _sample_alpha
 
 # ---------------------------------------------------------------------------
@@ -385,11 +385,13 @@ class ReducedGibbsCache(NamedTuple):
         used.  When a slice candidate falls outside this radius around
         the basis centre, a fresh factorisation is performed for
         that single candidate.  Default 0.15.
-    cholmod_factor : CholmodFactor or None
-        When CHOLMOD is available, a pre-built factor with the
-        sparsity pattern for ``A^T A = I − ρ(W+W^T) + ρ² W^T W``.
+    cholmod_pattern : csc_matrix or None
+        When CHOLMOD is available, a sparse matrix with the sparsity
+        pattern for ``A^T A = I − ρ(W+W^T) + ρ² W^T W``.  The
+        ``CholmodFactor`` is created from this pattern **in the worker
+        process**, avoiding CHOLMOD/BLAS calls in the parent that
+        accumulate state and cause deadlocks after many ``fit()`` calls.
         ``None`` when CHOLMOD is not installed (falls back to ``splu``).
-        Picklable — the C handle is dropped and reconstructed.
     W_sym : csc_matrix or None
         ``W + W^T`` in CSC format (precomputed for CHOLMOD path).
     WtW : csc_matrix or None
@@ -404,7 +406,7 @@ class ReducedGibbsCache(NamedTuple):
     rho_slice_width_state: Optional[SliceWidthState] = None
     krylov_degree: int = _KRYLOV_DEGREE_DEFAULT
     krylov_dmax: float = _KRYLOV_DMAX_DEFAULT
-    cholmod_factor: Optional[CholmodFactor] = None
+    cholmod_pattern: Optional[sp.csc_matrix] = None
     W_sym: Optional[sp.csc_matrix] = None
     WtW: Optional[sp.csc_matrix] = None
 
@@ -431,7 +433,7 @@ def _compute_eta(
     """
     solver = _make_solver(rho, W_csc, n, cholmod_solver=cholmod_solver)
     eta = solver.solve(Xbeta)
-    return eta, lu
+    return eta
 
 
 # ---------------------------------------------------------------------------
@@ -546,8 +548,15 @@ def _sample_beta(
     try:
         L = np.linalg.cholesky(Sigma_beta_inv)
     except np.linalg.LinAlgError:
+        # First attempt failed — add a small ridge and retry.
         Sigma_beta_inv.flat[:: k + 1] += 1e-10
-        L = np.linalg.cholesky(Sigma_beta_inv)
+        try:
+            L = np.linalg.cholesky(Sigma_beta_inv)
+        except np.linalg.LinAlgError:
+            # Posterior precision is numerically singular (can happen when
+            # omega collapses to near-zero for extreme alpha).  Reuse the
+            # previous beta draw rather than crashing the chain.
+            return beta_current
 
     w = solve_triangular(L, rhs, lower=True)
     m_beta = solve_triangular(L.T, w, lower=False)
@@ -622,7 +631,7 @@ def _rho_log_density_marginal(
         try:
             solver = _make_solver(rho, W_csc, n, cholmod_solver=cholmod_solver)
             U = solver.solve(X)  # (n, k)
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             return -np.inf
 
     # --- Working response and residual ---
@@ -819,10 +828,18 @@ def run_chain(
     # When CHOLMOD is available, this replaces all ``splu`` (UMFPACK)
     # calls with CHOLMOD on the SPD matrix A^T A, avoiding Apple
     # Accelerate BLAS deadlocks on macOS under concurrent access.
+    # The CholmodFactor is created from the pattern matrix **here in
+    # the worker**, not in the parent process, to avoid accumulating
+    # CHOLMOD/BLAS state across many fit() calls.
     cholmod_solver: _CholmodNormalEqSolver | None = None
-    if cache.cholmod_factor is not None and cache.W_sym is not None and cache.WtW is not None:
+    if (
+        cache.cholmod_pattern is not None
+        and cache.W_sym is not None
+        and cache.WtW is not None
+    ):
+        cholmod_factor = CholmodFactor(cache.cholmod_pattern)
         cholmod_solver = _CholmodNormalEqSolver(
-            cholmod_factor=cache.cholmod_factor,
+            cholmod_factor=cholmod_factor,
             W_csc=cache.W_csc,
             W_sym=cache.W_sym,
             WtW=cache.WtW,
@@ -832,18 +849,39 @@ def run_chain(
     for i in range(total_iters):
         # --- Build Krylov basis at current ρ (or factorise for legacy) ---
         if use_krylov:
-            basis = _build_krylov_basis(
-                state.rho, X, cache.W_csc, n, degree=krylov_degree,
-                cholmod_solver=cholmod_solver,
-            )
+            try:
+                basis = _build_krylov_basis(
+                    state.rho,
+                    X,
+                    cache.W_csc,
+                    n,
+                    degree=krylov_degree,
+                    cholmod_solver=cholmod_solver,
+                )
+            except (RuntimeError, ValueError):
+                # CHOLMOD factorisation failed (e.g. A^T A not SPD for
+                # extreme ρ).  Fall back to ρ = 0 (identity transform).
+                state.rho = 0.0
+                basis = _build_krylov_basis(
+                    0.0,
+                    X,
+                    cache.W_csc,
+                    n,
+                    degree=krylov_degree,
+                    cholmod_solver=cholmod_solver,
+                )
             # η for the ω block: η = U(ρ_c) @ β via the basis
             eta = basis.V_stack[0] @ state.beta
         else:
             try:
-                solver = _make_solver(state.rho, cache.W_csc, n, cholmod_solver=cholmod_solver)
-            except RuntimeError:
+                solver = _make_solver(
+                    state.rho, cache.W_csc, n, cholmod_solver=cholmod_solver
+                )
+            except (RuntimeError, ValueError):
                 state.rho = 0.0
-                solver = _make_solver(0.0, cache.W_csc, n, cholmod_solver=cholmod_solver)
+                solver = _make_solver(
+                    0.0, cache.W_csc, n, cholmod_solver=cholmod_solver
+                )
             eta = solver.solve(X @ state.beta)
             basis = None
 
@@ -868,7 +906,16 @@ def run_chain(
 
         # --- Block 3: β | ρ_new, ω, α, y ---
         # Exact solve at the accepted ρ_new for an unbiased β draw.
-        solver_new = _make_solver(state.rho, cache.W_csc, n, cholmod_solver=cholmod_solver)
+        # If the solver fails (extreme ρ), fall back to ρ = 0.
+        try:
+            solver_new = _make_solver(
+                state.rho, cache.W_csc, n, cholmod_solver=cholmod_solver
+            )
+        except (RuntimeError, ValueError):
+            state.rho = 0.0
+            solver_new = _make_solver(
+                0.0, cache.W_csc, n, cholmod_solver=cholmod_solver
+            )
         Xtilde = solver_new.solve(X)
         state.beta = _sample_beta(
             beta_current=state.beta,

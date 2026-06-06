@@ -427,7 +427,11 @@ def _sample_beta(
 
     # Sample: beta = m_beta + L^{-T} z where L L^T = Sigma_beta_inv
     # Cov(beta) = L^{-T} L^{-1} = (L L^T)^{-1} = Sigma_beta_inv^{-1} ✓
-    L = np.linalg.cholesky(Sigma_beta_inv)
+    try:
+        L = np.linalg.cholesky(Sigma_beta_inv)
+    except np.linalg.LinAlgError:
+        # Posterior precision is numerically singular — reuse previous beta.
+        return state.beta
     z = rng.standard_normal(k)
     beta_new = m_beta + np.linalg.solve(L.T, z)
 
@@ -800,7 +804,11 @@ def _sample_rho(
         # Σ_β*⁻¹ = XᵀX/σ² + V₀⁻¹ − uᵀ M   (k × k, symmetric PD)
         Sig_inv = XtX_s2 - u.T @ M
         Sig_inv[np.arange(k), np.arange(k)] += V0_inv_diag
-        Lb = np.linalg.cholesky(Sig_inv)
+        try:
+            Lb = np.linalg.cholesky(Sig_inv)
+        except np.linalg.LinAlgError:
+            # Posterior precision not PD — reject this ρ candidate.
+            return -np.inf
         log_det_Sig_inv = 2.0 * float(np.sum(np.log(np.diag(Lb))))
 
         rhs_b = u.T @ z + V0_inv_b0
@@ -991,12 +999,18 @@ def _sample_alpha(
             return -np.inf
         return result
 
-    # Slice sample on log(alpha) with bounds
+    # Slice sample on log(alpha) with bounds.
+    # Bounds match PyMC's effective prior range (HalfStudentT(3, 0, 2.5)
+    # puts 99.9% of mass below ~35) and standard econometric practice:
+    #   alpha ∈ [exp(-4), exp(4)] ≈ [0.018, 55]
+    # Tighter than the previous [-10, 10] range, which allowed
+    # alpha ≈ 4.5e-5 (near-Poisson, PG augmentation unstable) and
+    # alpha ≈ 22026 (extreme overdispersion, slow PG draws).
     log_alpha_new, _ = slice_sample_1d(
         log_density=log_density,
         x0=log_alpha,
-        lower=-10.0,  # alpha > exp(-10) ≈ 4.5e-5
-        upper=10.0,  # alpha < exp(10) ≈ 22026
+        lower=-4.0,  # alpha > exp(-4) ≈ 0.018
+        upper=4.0,  # alpha < exp(4) ≈ 55
         w=0.5,
         rng=rng,
     )

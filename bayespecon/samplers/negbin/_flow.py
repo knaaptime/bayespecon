@@ -436,8 +436,8 @@ def _sample_alpha_flow(
     log_alpha_new, _ = slice_sample_1d(
         log_density=log_density,
         x0=log_alpha,
-        lower=-10.0,
-        upper=10.0,
+        lower=-4.0,  # alpha > exp(-4) ≈ 0.018
+        upper=4.0,  # alpha < exp(4) ≈ 55
         w=0.5,
         rng=rng,
     )

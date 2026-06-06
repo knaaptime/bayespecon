@@ -48,7 +48,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers._utils._spatial_normal import has_cholmod
 from .sar_negbin_nuts import SARNegativeBinomialNUTS
 
 
@@ -107,6 +107,7 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
         init_jitter: float = 0.1,
         progressbar: bool = True,
         n_jobs: int = 1,
+        timeout: float | None = 600,
         **_unused,
     ) -> "az.InferenceData":
         r"""Sample the posterior via Pólya-Gamma Gibbs.
@@ -133,6 +134,11 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
             sequentially in this process (recommended for small problems
             where the per-chain runtime is < a few seconds).  ``-1``
             uses all available CPUs.
+        timeout : float or None, default 600
+            Maximum wall-clock seconds to wait for all chains to finish
+            when ``n_jobs != 1``.  If any worker has not returned by this
+            deadline, a :class:`TimeoutError` is raised.  Set to ``None``
+            to wait indefinitely.  Ignored when ``n_jobs == 1``.
         krylov_degree : int, default 8
             Krylov basis degree for the shift-invert polynomial
             approximation of :math:`(I - \rho W)^{-1} X` inside the
@@ -188,13 +194,20 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
         # When CHOLMOD is available, the sampler uses this instead of
         # ``splu`` (UMFPACK) to avoid Apple Accelerate BLAS deadlocks
         # on macOS under concurrent process access.
+        #
+        # IMPORTANT: We pass the *pattern matrix* (a sparse CSC matrix)
+        # to the worker, NOT a CholmodFactor object.  Creating a
+        # CholmodFactor in the parent process calls CHOLMOD/BLAS, which
+        # accumulates state across many fit() calls and eventually
+        # causes deadlocks on macOS.  The worker creates the
+        # CholmodFactor from the pattern matrix on its side.
         from ...samplers.negbin_reduced._core import _make_cholmod_pattern
 
         if has_cholmod():
             W_sym, WtW, pattern = _make_cholmod_pattern(W_csc, n)
-            cholmod_factor = CholmodFactor(pattern)
+            cholmod_pattern = pattern
         else:
-            W_sym, WtW, cholmod_factor = None, None, None
+            W_sym, WtW, cholmod_pattern = None, None, None
 
         rng = np.random.default_rng(random_seed)
         chain_seeds = [int(s) for s in rng.integers(0, 2**31, size=chains)]
@@ -222,7 +235,7 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
                 rho_slice_width_state=SliceWidthState(w=0.2),
                 krylov_degree=krylov_degree,
                 krylov_dmax=krylov_dmax,
-                cholmod_factor=cholmod_factor,
+                cholmod_pattern=cholmod_pattern,
                 W_sym=W_sym,
                 WtW=WtW,
             )
@@ -251,6 +264,7 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
             draws=draws,
             tune=tune,
             model_type="sar_negbin",
+            timeout=timeout,
         )
 
         # Stack chains: each entry → (chains, draws, ...)
