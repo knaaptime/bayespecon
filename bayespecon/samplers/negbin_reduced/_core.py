@@ -467,7 +467,11 @@ def _sample_omega(
     sampler).
     """
     h = np.maximum(y + alpha, 1e-3)
-    return sample_polyagamma(h, psi, rng=rng)
+    # Clamp psi to prevent the PG "alternate" rejection sampler from
+    # hanging on extreme |z| values.  For |z| > 20 the tilting is
+    # saturated (tanh(z/2) ≈ 1), so clipping has negligible effect.
+    psi_clamped = np.clip(psi, -20.0, 20.0)
+    return sample_polyagamma(h, psi_clamped, rng=rng)
 
 
 def _sample_beta(

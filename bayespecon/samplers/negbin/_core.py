@@ -258,7 +258,11 @@ def _sample_omega(
     # misleading "devroye" error message.
     h = np.maximum(h, 1e-3)
     z = eta  # tilting parameters
-    return sample_polyagamma(h, z, rng=rng)
+    # Clamp z to prevent the PG "alternate" rejection sampler from
+    # hanging on extreme |z| values.  For |z| > 20 the tilting is
+    # saturated (tanh(z/2) ≈ 1), so clipping has negligible effect.
+    z_clamped = np.clip(z, -20.0, 20.0)
+    return sample_polyagamma(h, z_clamped, rng=rng)
 
 
 def _sample_eta(
