@@ -68,8 +68,8 @@ class TestPolyagammaMethodDispatch:
         assert call_kwargs.kwargs["method"] is None
 
     @patch("polyagamma.random_polyagamma")
-    def test_noninteger_h_uses_alternate(self, mock_pg, rng):
-        """When h has non-integer values, method='alternate' is forced."""
+    def test_noninteger_h_uses_hybrid(self, mock_pg, rng):
+        """Non-integer h uses hybrid method (saddle for large h)."""
         mock_pg.return_value = np.ones(10)
 
         h = np.array([1.5, 2.3, 3.7, 4.1, 5.9, 6.2, 7.8, 8.0, 9.5, 10.1])
@@ -78,11 +78,11 @@ class TestPolyagammaMethodDispatch:
 
         mock_pg.assert_called_once()
         call_kwargs = mock_pg.call_args
-        assert call_kwargs.kwargs["method"] == "alternate"
+        assert call_kwargs.kwargs["method"] is None
 
     @patch("polyagamma.random_polyagamma")
-    def test_mixed_h_uses_alternate(self, mock_pg, rng):
-        """When h has mixed integer and non-integer values, method='alternate'."""
+    def test_mixed_h_uses_hybrid(self, mock_pg, rng):
+        """Mixed integer/non-integer h uses hybrid method."""
         mock_pg.return_value = np.ones(5)
 
         h = np.array([1.0, 2.5, 3.0, 4.7, 5.0])  # some integer, some not
@@ -91,7 +91,7 @@ class TestPolyagammaMethodDispatch:
 
         mock_pg.assert_called_once()
         call_kwargs = mock_pg.call_args
-        assert call_kwargs.kwargs["method"] == "alternate"
+        assert call_kwargs.kwargs["method"] is None
 
     @patch("polyagamma.random_polyagamma")
     def test_large_integer_h_uses_hybrid(self, mock_pg, rng):

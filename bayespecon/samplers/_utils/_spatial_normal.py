@@ -578,6 +578,155 @@ def cg_solve(
 
 
 # ---------------------------------------------------------------------------
+# Chebyshev-accelerated iterative solve
+# ---------------------------------------------------------------------------
+
+
+def iterative_solve(
+    A: sp.spmatrix | spla.LinearOperator,
+    rhs: np.ndarray,
+    *,
+    lambda_min: float,
+    lambda_max: float,
+    tol: float = 1e-6,
+    maxiter: int | None = None,
+) -> np.ndarray:
+    r"""Solve A x = rhs for SPD A via CG (column-by-column for multi-RHS).
+
+    For single-RHS ``(n,)``, calls :func:`scipy.sparse.linalg.cg`
+    directly.  For multi-RHS ``(n, k)``, loops over columns — each
+    column is an independent CG solve.  This avoids the O(nnz^{1.5})
+    factorisation cost entirely.
+
+    Convergence rate (per column):
+
+    .. math::
+
+        \|e^{(k)}\| \leq 2 \left(\frac{\sqrt{\kappa} - 1}
+        {\sqrt{\kappa} + 1}\right)^k \|e^{(0)}\|
+
+    where :math:`\kappa = \lambda_{\max} / \lambda_{\min}`.
+
+    Parameters
+    ----------
+    A : sparse matrix or LinearOperator of shape (n, n)
+        Symmetric positive definite matrix, or a ``LinearOperator``
+        with a ``matvec`` method.
+    rhs : ndarray of shape (n,) or (n, k)
+        Right-hand side vector or matrix.
+    lambda_min : float
+        Lower bound on the smallest eigenvalue of A (must be > 0).
+        Used to compute the adaptive ``maxiter``.  Not used as a
+        preconditioner (CG discovers eigenvalues adaptively).
+    lambda_max : float
+        Upper bound on the largest eigenvalue of A.
+    tol : float, default 1e-6
+        Convergence tolerance (relative residual norm).  1e-6 is
+        sufficient for MCMC applications where the Krylov polynomial
+        already introduces :math:`O(\Delta\rho^{m+1})` error.
+    maxiter : int, optional
+        Maximum iterations per column.  Defaults to ``2 * n``
+        (generous enough for CG to converge on typical spatial
+        systems).  The eigenvalue-based estimate is used as a
+        lower bound.
+
+    Returns
+    -------
+    x : ndarray of shape (n,) or (n, k)
+        Approximate solution to A x = rhs.
+
+    Notes
+    -----
+    Uses :func:`scipy.sparse.linalg.cg` (preconditioned conjugate
+    gradient) for each column.  CG is optimal among Krylov subspace
+    methods for SPD systems and converges faster than Chebyshev
+    semi-iteration because it discovers eigenvalue information
+    adaptively.
+
+    For :math:`A_\rho = I - \rho W` with row-standardised :math:`W`:
+
+    .. math::
+
+        \lambda_{\min}(A_\rho) = \min(1 - \rho \lambda_{\max}(W),\;
+        1 - \rho \lambda_{\min}(W)), \\
+        \lambda_{\max}(A_\rho) = \max(1 - \rho \lambda_{\max}(W),\;
+        1 - \rho \lambda_{\min}(W)).
+
+    At :math:`\rho = 0.9`, :math:`\kappa \approx 19` and CG converges
+    in ~25 iterations.  At :math:`\rho = 0.99`, :math:`\kappa \approx 199`
+    and CG converges in ~100 iterations.  Each iteration is one sparse
+    matvec O(nnz).
+
+    The ``lambda_min`` and ``lambda_max`` parameters are used only to
+    compute the adaptive ``maxiter``.  CG does not need eigenvalue
+    bounds for convergence (unlike Chebyshev semi-iteration), but
+    they are useful for setting a tight iteration cap.
+
+    References
+    ----------
+    .. [1] Hestenes, M. R., & Stiefel, E. (1952). Methods of conjugate
+       gradients for solving linear systems. *Journal of Research of
+       the National Bureau of Standards*, 49(6), 409–436.
+    .. [2] Saad, Y. (2003). *Iterative Methods for Sparse Linear Systems*.
+       2nd ed. SIAM. §6.7.
+    """
+    if lambda_min <= 0:
+        raise ValueError(
+            f"lambda_min must be positive (A must be SPD), got {lambda_min}"
+        )
+    if lambda_max <= lambda_min:
+        raise ValueError(
+            f"lambda_max ({lambda_max}) must be > lambda_min ({lambda_min})"
+        )
+
+    # Accept both sparse matrices and LinearOperator
+    if isinstance(A, spla.LinearOperator):
+        A_op = A
+    else:
+        A_op = sp.csr_matrix(A)
+
+    rhs = np.asarray(rhs, dtype=np.float64)
+    single_rhs = rhs.ndim == 1
+    if single_rhs:
+        rhs = rhs[:, None]  # (n, 1)
+
+    n, k = rhs.shape
+
+    # Adaptive maxiter from condition number.
+    # CG converges in at most n iterations in exact arithmetic, but
+    # rounding errors can require more.  Use max(2*n, eigenvalue_cap)
+    # to handle both small-n/high-κ and large-n/low-κ cases.
+    kappa = lambda_max / lambda_min
+    if maxiter is None:
+        if kappa <= 1.001:
+            eigenvalue_cap = 10
+        else:
+            eigenvalue_cap = int(
+                np.ceil(
+                    np.log(tol) / np.log((np.sqrt(kappa) - 1) / (np.sqrt(kappa) + 1))
+                )
+            )
+        maxiter = max(2 * n, eigenvalue_cap)
+
+    # Solve each column via CG
+    x = np.empty_like(rhs)
+    for col in range(k):
+        x_col, info = spla.cg(A_op, rhs[:, col], rtol=tol, maxiter=maxiter)
+        if info != 0:
+            import warnings
+
+            warnings.warn(
+                f"CG did not converge for column {col} after {maxiter} "
+                f"iterations (info={info}). Returning best iterate.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        x[:, col] = x_col
+
+    return x.reshape(n) if single_rhs else x
+
+
+# ---------------------------------------------------------------------------
 # Chebyshev polynomial sampler for η draw
 # ---------------------------------------------------------------------------
 

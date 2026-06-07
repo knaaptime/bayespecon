@@ -107,7 +107,7 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
         init_jitter: float = 0.1,
         progressbar: bool = True,
         n_jobs: int = 1,
-        timeout: float | None = 600,
+        timeout: float | None = None,
         **_unused,
     ) -> "az.InferenceData":
         r"""Sample the posterior via Pólya-Gamma Gibbs.
@@ -134,7 +134,7 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
             sequentially in this process (recommended for small problems
             where the per-chain runtime is < a few seconds).  ``-1``
             uses all available CPUs.
-        timeout : float or None, default 600
+        timeout : float or None, default None
             Maximum wall-clock seconds to wait for all chains to finish
             when ``n_jobs != 1``.  If any worker has not returned by this
             deadline, a :class:`TimeoutError` is raised.  Set to ``None``
@@ -144,10 +144,25 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
             approximation of :math:`(I - \rho W)^{-1} X` inside the
             ρ-slice density.  Higher degree → more accurate approximation
             but more ``lu.solve`` calls per basis build.  Set to 0 to
-            disable Krylov acceleration (exact LU per candidate).
+            disable Krylov acceleration (CG iterative solve per
+            candidate).
         krylov_dmax : float, default 0.15
             Maximum :math:`|\Delta\rho|` for which the Krylov basis is
-            used.  Candidates outside this radius get a fresh LU.
+            used.  Candidates outside this radius get a CG iterative
+            solve (no factorisation needed).
+        n_rho_omega_cycles : int, default 1
+            Number of :math:`(\omega, \rho, \beta)` Gibbs cycles per
+            sweep.  At high :math:`\rho` with large :math:`\beta_0`,
+            the :math:`\rho` conditional mode shifts by ~2 posterior
+            stds when :math:`\omega` is redrawn.  A single
+            :math:`\omega \to \rho` update leaves the chain lagging
+            behind the mode, giving ESS ≈ 6.  Interleaving multiple
+            :math:`\omega \to \rho \to \beta` cycles allows
+            :math:`\rho` to track the conditional mode, dramatically
+            improving ESS.  Each cycle is a valid Gibbs update.
+            Default 1 (single cycle, original behaviour).  Set to
+            3–10 for data with high :math:`\rho` and large
+            :math:`\beta_0`.
         **_unused
             Other arguments accepted for API parity with the PyMC-based
             siblings (e.g. ``target_accept``, ``idata_kwargs``); silently
@@ -162,6 +177,7 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
         # Pop Krylov kwargs from _unused before they're silently swallowed.
         krylov_degree = _unused.pop("krylov_degree", 8)
         krylov_dmax = _unused.pop("krylov_dmax", 0.15)
+        n_rho_omega_cycles = _unused.pop("n_rho_omega_cycles", 1)
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin_reduced import (
@@ -189,6 +205,15 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
         W_csc = self._W_sparse.tocsc()
         X = np.ascontiguousarray(self._X, dtype=np.float64)
 
+        # Eigenvalue bounds for CG iterative solver.
+        # For A_ρ = I − ρW: λ_min(A_ρ) = 1 − ρ·λ_max(W), λ_max(A_ρ) = 1 − ρ·λ_min(W).
+        if self._W_eigs is not None:
+            W_eig_max = float(np.max(np.abs(self._W_eigs)))
+            W_eig_min = float(np.min(np.real(self._W_eigs)))
+        else:
+            W_eig_max = 1.0
+            W_eig_min = -1.0
+
         # Precompute CHOLMOD pattern for the normal-equations matrix
         # A^T A = I − ρ(W+W^T) + ρ² W^T W  (SPD for any valid ρ).
         # When CHOLMOD is available, the sampler uses this instead of
@@ -212,13 +237,75 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
         rng = np.random.default_rng(random_seed)
         chain_seeds = [int(s) for s in rng.integers(0, 2**31, size=chains)]
 
+        # --- Smart initialization ---
+        # At high ρ, β and ρ are strongly correlated: the intercept
+        # β₀ at ρ = 0.8 is much smaller than at ρ = 0 because the
+        # spatial multiplier (I − ρW)⁻¹ amplifies Xβ.  Starting the
+        # chain at (ρ ≈ 0, β ≈ 0) places it in a completely wrong
+        # mode that the Gibbs sampler cannot escape.
+        #
+        # We use a profile-log-likelihood initialisation on log(y+0.5):
+        #   1. For each ρ on a coarse grid, compute
+        #      X̃ = (I − ρW)⁻¹ X and OLS β̂ = (X̃ᵀX̃)⁻¹ X̃ᵀ log(y)
+        #   2. Pick the (ρ, β) that maximises the Gaussian log-lik
+        #   3. Estimate α from method-of-moments on Pearson residuals
+        _log_y = np.log(self._y + 0.5)
+        _rho_grid = np.arange(0.05, 0.96, 0.05)
+        _best_rho, _best_beta, _best_ll = 0.0, np.zeros(k), -np.inf
+        for _rho_g in _rho_grid:
+            try:
+                _A_g = sp.eye(n, format="csc") - _rho_g * W_csc
+                _Xtilde_g = sp.linalg.spsolve(_A_g, X)
+                _beta_g = np.linalg.lstsq(_Xtilde_g, _log_y, rcond=None)[0]
+                _eta_g = _Xtilde_g @ _beta_g
+                _sig2_g = float(np.mean((_log_y - _eta_g) ** 2))
+                _ll_g = -0.5 * n * np.log(_sig2_g) - 0.5 * n
+                if _ll_g > _best_ll:
+                    _best_ll = _ll_g
+                    _best_rho = _rho_g
+                    _best_beta = _beta_g.copy()
+            except Exception:
+                pass
+        _rho_init_mle = float(np.clip(_best_rho, rho_lower + 0.05, rho_upper - 0.05))
+        _beta_init_mle = _best_beta
+        # Estimate α from the Pearson dispersion of the Gaussian fit
+        # on log(y).  The residual variance σ² from the profile
+        # log-likelihood gives the dispersion on the log scale.
+        # For NB data: Var(log y) ≈ 1/α + 1/(2μ) (delta method), so
+        # α ≈ 1/σ² when μ is large.  Cap at a reasonable range.
+        try:
+            _A_init = sp.eye(n, format="csc") - _rho_init_mle * W_csc
+            _Xtilde_init = sp.linalg.spsolve(_A_init, X)
+            _eta_init = _Xtilde_init @ _beta_init_mle
+            _resid2 = float(np.mean((_log_y - _eta_init) ** 2))
+            _alpha_init_mle = float(np.clip(1.0 / max(_resid2, 0.01), 0.5, 50.0))
+        except Exception:
+            _alpha_init_mle = 1.0
+
         def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
             chain_rng = np.random.default_rng(seed)
-            beta_init = init_jitter * chain_rng.standard_normal(k)
+            # Jitter around the profile-loglik estimates.
+            # Use a smaller jitter for ρ than for β because the
+            # posterior is extremely peaked in ρ at high spatial
+            # autocorrelation, and a large ρ jitter can push the
+            # chain into a wrong mode that the Gibbs sampler
+            # cannot escape.
+            _rho_jitter = min(init_jitter, 0.02)
+            beta_init = _beta_init_mle + init_jitter * chain_rng.standard_normal(k)
             rho_init = float(
-                np.clip(init_jitter * chain_rng.standard_normal(), -0.5, 0.5)
+                np.clip(
+                    _rho_init_mle + _rho_jitter * chain_rng.standard_normal(),
+                    rho_lower + 0.01,
+                    rho_upper - 0.01,
+                )
             )
-            alpha_init = float(np.exp(init_jitter * chain_rng.standard_normal()))
+            alpha_init = float(
+                np.clip(
+                    _alpha_init_mle * np.exp(init_jitter * chain_rng.standard_normal()),
+                    0.05,
+                    50.0,
+                )
+            )
             omega_init = 0.25 * np.ones(n, dtype=np.float64)
             init = ReducedGibbsState(
                 beta=beta_init,
@@ -238,6 +325,9 @@ class SARNegativeBinomial(SARNegativeBinomialNUTS):
                 cholmod_pattern=cholmod_pattern,
                 W_sym=W_sym,
                 WtW=WtW,
+                W_eig_max=W_eig_max,
+                W_eig_min=W_eig_min,
+                n_rho_omega_cycles=n_rho_omega_cycles,
             )
             return run_chain(
                 y=self._y,

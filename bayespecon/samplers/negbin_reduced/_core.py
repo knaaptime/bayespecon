@@ -63,11 +63,14 @@ Four blocks per iteration:
    log-likelihood + Half-Student-t prior.  Reuses
    :func:`bayespecon.samplers.negbin._core._sample_alpha`.
 
-Per-sweep cost is dominated by the :math:`\rho` slice: each candidate
-evaluation requires one sparse LU of :math:`A_\rho` plus one solve for
-the n-vector :math:`X\beta`.  For row-standardised sparse :math:`W` this
-is :math:`O(\mathrm{nnz}^{1.5})` per candidate (typically 5–15
-candidates per draw).
+Per-sweep cost is dominated by the :math:`\rho` slice: candidates
+within the Krylov radius are evaluated via a cheap Horner polynomial,
+while candidates outside the radius use CG iterative solves
+(:math:`O(K \cdot \mathrm{nnz})` per candidate, where :math:`K \approx
+\sqrt{\kappa}`).  For :math:`n < 2500`, the Krylov basis build uses
+CHOLMOD factorisation (fast at small n); for :math:`n \geq 2500`,
+it uses CG iterative solves (avoids the :math:`O(\mathrm{nnz}^{1.5})`
+factorisation cost).
 """
 
 from __future__ import annotations
@@ -86,7 +89,7 @@ from .._utils._slice import (
     slice_sample_1d_adaptive,
     update_slice_width,
 )
-from .._utils._spatial_normal import CholmodFactor
+from .._utils._spatial_normal import CholmodFactor, iterative_solve
 from ..negbin._core import _nb_loglik_pointwise, _sample_alpha
 
 # ---------------------------------------------------------------------------
@@ -204,6 +207,18 @@ def _make_cholmod_pattern(
     return W_sym, WtW, pattern
 
 
+def _build_A_rho(rho: float, W_csc: sp.csc_matrix, n: int) -> sp.csr_matrix:
+    """Build the sparse matrix A_ρ = I − ρW in CSR format.
+
+    CSR format is preferred for the matvec operations inside
+    :func:`scipy.sparse.linalg.cg` — the C-level sparse matvec
+    avoids the Python callback overhead of :class:`LinearOperator`,
+    making CG competitive with CHOLMOD for n ≤ 2500 and strictly
+    faster for n ≥ 2500.
+    """
+    return (sp.eye(n, format="csc") - rho * W_csc).tocsr()
+
+
 def _make_solver(
     rho: float,
     W_csc: sp.csc_matrix,
@@ -232,6 +247,13 @@ def _make_solver(
 _KRYLOV_DEGREE_DEFAULT = 8
 _KRYLOV_DMAX_DEFAULT = 0.15
 
+# Problem-size threshold for switching from CHOLMOD factorisation to
+# CG iterative solves.  Below this threshold, CHOLMOD's O(nnz^{1.5})
+# factorisation is fast enough that the overhead of CG's Python-level
+# iteration loop makes it slower.  Above the threshold, the
+# factorisation cost dominates and CG's O(K · nnz) per solve wins.
+_CG_THRESHOLD = 2500
+
 
 class ReducedKrylovBasis(NamedTuple):
     """Precomputed shift-invert Krylov basis for fast ρ-slice evaluation.
@@ -259,8 +281,9 @@ class ReducedKrylovBasis(NamedTuple):
     ----------
     rho_basis : float
         Centre point :math:`\\rho_c` at which the system was factored.
-    solver : _CholmodNormalEqSolver or spla.SuperLU
+    solver : _CholmodNormalEqSolver or spla.SuperLU or None
         The factored solver for :math:`A_c = I - \\rho_c W`.
+        ``None`` when the CG path was used (no factorisation).
     V_stack : ndarray, shape (m+1, n, k)
         Krylov basis vectors stacked along axis 0.
     degree : int
@@ -269,7 +292,7 @@ class ReducedKrylovBasis(NamedTuple):
     """
 
     rho_basis: float
-    solver: _CholmodNormalEqSolver | spla.SuperLU
+    solver: _CholmodNormalEqSolver | spla.SuperLU | None
     V_stack: np.ndarray
     degree: int
 
@@ -281,21 +304,54 @@ def _build_krylov_basis(
     n: int,
     degree: int = _KRYLOV_DEGREE_DEFAULT,
     cholmod_solver: _CholmodNormalEqSolver | None = None,
+    W_eig_max: float = 1.0,
+    W_eig_min: float = -1.0,
 ) -> ReducedKrylovBasis:
     """Build a shift-invert Krylov basis at :math:`\\rho_c`.
 
-    When ``cholmod_solver`` is provided, uses CHOLMOD normal equations
-    instead of ``splu`` (UMFPACK).  Cost: 1 factorisation +
-    ``(degree + 1)`` solve calls + ``degree`` sparse matmuls ``W @ V_j``.
+    When ``cholmod_solver`` is provided **and** ``n < _CG_THRESHOLD``,
+    uses CHOLMOD normal equations (1 factorisation + ``(degree + 1)``
+    solve calls).  Otherwise uses CG iterative solves (no factorisation;
+    ``(degree + 1)`` CG calls, each O(K · nnz) where K ≈ √κ).
+
+    The CG path avoids the O(nnz^{1.5}) factorisation cost that
+    dominates for large n (n ≥ 2500).
     """
-    solver = _make_solver(rho_c, W_csc, n, cholmod_solver=cholmod_solver)
-    V0 = solver.solve(X)  # (n, k)
+    use_cg = cholmod_solver is None or n >= _CG_THRESHOLD
     m = degree
     V_stack = np.empty((m + 1, n, X.shape[1]), dtype=np.float64)
-    V_stack[0] = V0
-    for j in range(m):
-        Wv = W_csc @ V_stack[j]  # (n, k)
-        V_stack[j + 1] = solver.solve(Wv)
+
+    if use_cg:
+        # CG path: no factorisation needed
+        A_rho = _build_A_rho(rho_c, W_csc, n)
+        lam_at_max = 1.0 - rho_c * W_eig_max
+        lam_at_min = 1.0 - rho_c * W_eig_min
+        lam_min = min(lam_at_max, lam_at_min)
+        lam_max = max(lam_at_max, lam_at_min)
+        if lam_min <= 0:
+            raise ValueError(f"A_ρ not SPD at ρ_c={rho_c} (λ_min={lam_min:.4f})")
+        import warnings as _w
+
+        with _w.catch_warnings():
+            _w.simplefilter("ignore", RuntimeWarning)
+            V_stack[0] = iterative_solve(
+                A_rho, X, lambda_min=lam_min, lambda_max=lam_max
+            )
+            for j in range(m):
+                Wv = W_csc @ V_stack[j]  # (n, k)
+                V_stack[j + 1] = iterative_solve(
+                    A_rho, Wv, lambda_min=lam_min, lambda_max=lam_max
+                )
+        # No solver to store — CG is stateless
+        solver: _CholmodNormalEqSolver | spla.SuperLU | None = None
+    else:
+        # Factorisation path: CHOLMOD or splu
+        solver = _make_solver(rho_c, W_csc, n, cholmod_solver=cholmod_solver)
+        V_stack[0] = solver.solve(X)  # (n, k)
+        for j in range(m):
+            Wv = W_csc @ V_stack[j]  # (n, k)
+            V_stack[j + 1] = solver.solve(Wv)
+
     return ReducedKrylovBasis(rho_basis=rho_c, solver=solver, V_stack=V_stack, degree=m)
 
 
@@ -396,6 +452,25 @@ class ReducedGibbsCache(NamedTuple):
         ``W + W^T`` in CSC format (precomputed for CHOLMOD path).
     WtW : csc_matrix or None
         ``W^T @ W`` in CSC format (precomputed for CHOLMOD path).
+    W_eig_max : float
+        Maximum absolute eigenvalue of W.  Used to compute eigenvalue
+        bounds for the CG iterative solver:
+        ``lam_min(A_rho) = 1 - rho * W_eig_max``.
+        Default 1.0 (correct for row-standardised W).
+    W_eig_min : float
+        Minimum (real) eigenvalue of W.  Used to compute eigenvalue
+        bounds for the CG iterative solver:
+        ``lam_max(A_rho) = 1 - rho * W_eig_min``.
+        Default -1.0 (correct for row-standardised W).
+    n_rho_omega_cycles : int
+        Number of (ω, ρ, β) Gibbs cycles per sweep.  At high ρ with
+        large β₀, the ρ conditional mode shifts by ~2 posterior
+        stds when ω is redrawn.  A single ω→ρ update leaves the
+        chain lagging behind the mode, giving ESS ≈ 6.  Interleaving
+        multiple ω→ρ→β cycles allows ρ to track the conditional
+        mode, dramatically improving ESS.  Each cycle is a valid
+        Gibbs update.  Default 1 (single cycle, original behaviour).
+        Set to 3–10 for data with high ρ and large β₀.
     """
 
     W_sparse: sp.csr_matrix
@@ -409,6 +484,9 @@ class ReducedGibbsCache(NamedTuple):
     cholmod_pattern: Optional[sp.csc_matrix] = None
     W_sym: Optional[sp.csc_matrix] = None
     WtW: Optional[sp.csc_matrix] = None
+    W_eig_max: float = 1.0
+    W_eig_min: float = -1.0
+    n_rho_omega_cycles: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -463,11 +541,12 @@ def _sample_omega(
     -----
     The shape parameter ``h = y + alpha`` is clamped to ``1e-3`` to avoid
     the ``polyagamma`` ``"alternate"`` method's rejection of values
-    below :math:`\\sim 10^{-3}` (see notes in the structural-form
-    sampler).
+    below :math:`\\sim 10^{-3}`.  The hybrid sampler (``method=None``)
+    automatically selects the saddle approximation for large ``h``,
+    which is O(1) per draw regardless of ``h`` magnitude.
     """
     h = np.maximum(y + alpha, 1e-3)
-    # Clamp psi to prevent the PG "alternate" rejection sampler from
+    # Clamp psi to prevent the PG rejection sampler from
     # hanging on extreme |z| values.  For |z| > 20 the tilting is
     # saturated (tanh(z/2) ≈ 1), so clipping has negligible effect.
     psi_clamped = np.clip(psi, -20.0, 20.0)
@@ -483,6 +562,8 @@ def _sample_beta(
     priors: ReducedGibbsPriors,
     *,
     rng: np.random.Generator,
+    rho: float = 0.0,
+    intercept_col: int = 0,
 ) -> np.ndarray:
     r"""Block 2: conjugate Gaussian draw for :math:`\beta`.
 
@@ -498,6 +579,15 @@ def _sample_beta(
 
     where :math:`\kappa = (y - \alpha)/2`.
 
+    **Intercept reparameterisation.**  For row-standardised :math:`W`,
+    the intercept column of :math:`\tilde X` equals :math:`\mathbf{1}/(1-\rho)`,
+    creating strong :math:`\rho`–:math:`\beta_0` posterior correlation at
+    high :math:`\rho`.  We reparameterise :math:`\delta_0 = \beta_0/(1-\rho)`
+    so that the intercept enters :math:`\eta` directly as
+    :math:`\delta_0 \cdot \mathbf{1}`, breaking the correlation.  The draw
+    is in :math:`\delta`-space; we transform back via
+    :math:`\beta_0 = \delta_0 (1-\rho)` before returning.
+
     Parameters
     ----------
     beta_current : ndarray, shape (k,)
@@ -512,6 +602,12 @@ def _sample_beta(
         NB dispersion.
     priors : ReducedGibbsPriors
     rng : numpy.random.Generator
+    rho : float, default 0.0
+        Current spatial autoregressive parameter (used for intercept
+        reparameterisation).
+    intercept_col : int, default 0
+        Column index of the intercept in :math:`X`.  Set to ``-1`` to
+        disable the reparameterisation.
 
     Returns
     -------
@@ -532,16 +628,38 @@ def _sample_beta(
         mu0 = np.full(k, float(beta_mu))
     else:
         mu0 = np.asarray(beta_mu, dtype=np.float64)
-    V0_inv_mu0 = V0_inv_diag * mu0
+
+    # --- Intercept reparameterisation: δ₀ = β₀/(1−ρ) ---
+    # Replace the intercept column of Xtilde (which is 1/(1−ρ) · 1)
+    # with 1 · 1, so we sample δ₀ instead of β₀.
+    # Prior on δ₀: N(μ₀/(1−ρ), σ₀²/(1−ρ)²) — precision scales by (1−ρ)².
+    # For diffuse priors (σ₀ ≫ 1) this is negligible, but we apply it
+    # correctly for correctness.
+    reparam = intercept_col >= 0 and abs(rho) > 1e-8
+    if reparam:
+        scale = 1.0 - rho
+        Xtilde_rp = Xtilde.copy()
+        Xtilde_rp[:, intercept_col] = 1.0  # replace 1/(1−ρ)·1 with 1·1
+        # Adjust prior for δ₀ = β₀/(1−ρ)
+        V0_inv_diag_rp = V0_inv_diag.copy()
+        V0_inv_diag_rp[intercept_col] = V0_inv_diag[intercept_col] * scale * scale
+        mu0_rp = mu0.copy()
+        mu0_rp[intercept_col] = mu0[intercept_col] / scale
+    else:
+        Xtilde_rp = Xtilde
+        V0_inv_diag_rp = V0_inv_diag
+        mu0_rp = mu0
+
+    V0_inv_mu0 = V0_inv_diag_rp * mu0_rp
 
     # Σ_β^{-1} = X̃ᵀ Ω X̃ + V₀⁻¹
     # rhs = X̃ᵀ (κ + ω log α) + V₀⁻¹ μ₀
-    Xt_omega = Xtilde * omega[:, None]  # (n, k)
-    Sigma_beta_inv = Xt_omega.T @ Xtilde
+    Xt_omega = Xtilde_rp * omega[:, None]  # (n, k)
+    Sigma_beta_inv = Xt_omega.T @ Xtilde_rp
     # Add prior precision on the diagonal
-    Sigma_beta_inv.flat[:: k + 1] += V0_inv_diag
+    Sigma_beta_inv.flat[:: k + 1] += V0_inv_diag_rp
 
-    rhs = Xtilde.T @ (kappa + omega * log_alpha) + V0_inv_mu0
+    rhs = Xtilde_rp.T @ (kappa + omega * log_alpha) + V0_inv_mu0
 
     # Posterior draw via Cholesky:
     #   Σ_β⁻¹ = L Lᵀ
@@ -566,7 +684,13 @@ def _sample_beta(
     m_beta = solve_triangular(L.T, w, lower=False)
     z = rng.standard_normal(k)
     delta = solve_triangular(L.T, z, lower=False)
-    return m_beta + delta
+    result = m_beta + delta
+
+    # Transform δ₀ back to β₀ = δ₀ · (1−ρ)
+    if reparam:
+        result[intercept_col] *= scale
+
+    return result
 
 
 def _prior_precision_and_mean(
@@ -609,15 +733,25 @@ def _rho_log_density_marginal(
     basis: Optional[ReducedKrylovBasis] = None,
     krylov_dmax: float = _KRYLOV_DMAX_DEFAULT,
     cholmod_solver: Optional[_CholmodNormalEqSolver] = None,
+    W_eig_max: float = 1.0,
+    W_eig_min: float = -1.0,
+    intercept_col: int = 0,
 ) -> float:
     r"""β-marginalised conditional log-density for the ρ slice.
 
     When a :class:`ReducedKrylovBasis` is provided and
     :math:`|\rho - \rho_c| \leq \texttt{krylov_dmax}`, the expensive
-    factorisation is replaced by a cheap Horner evaluation of the
-    shift-invert Krylov polynomial.  Otherwise a fresh solve is
-    performed — via CHOLMOD normal equations when
-    ``cholmod_solver`` is provided, or ``splu`` as fallback.
+    solve is replaced by a cheap Horner evaluation of the
+    shift-invert Krylov polynomial.  Otherwise a CG iterative
+    solve is used (no factorisation needed), with eigenvalue bounds
+    derived from ``W_eig_max`` and ``W_eig_min``.
+
+    **Intercept reparameterisation.**  The intercept column of
+    :math:`U = (I - \rho W)^{-1} X` is replaced with :math:`\mathbf{1}`,
+    and the prior is adjusted for :math:`\delta_0 = \beta_0/(1-\rho)`.
+    This breaks the :math:`\rho`–:math:`\beta_0` posterior correlation
+    that causes ESS collapse at high :math:`\rho`.  Set
+    ``intercept_col=-1`` to disable.
     """
     if rho <= rho_lower or rho >= rho_upper:
         return -np.inf
@@ -633,22 +767,57 @@ def _rho_log_density_marginal(
         U = _eval_U_from_basis(basis, drho)
     else:
         try:
-            solver = _make_solver(rho, W_csc, n, cholmod_solver=cholmod_solver)
-            U = solver.solve(X)  # (n, k)
+            # Chebyshev iterative solve — no factorisation needed.
+            # Eigenvalue bounds for A_ρ = I − ρW:
+            #   eigenvalues of A_ρ are {1 − ρ·λ_i(W)}
+            #   λ_min(A_ρ) = min(1 − ρ·λ_max(W), 1 − ρ·λ_min(W))
+            #   λ_max(A_ρ) = max(1 − ρ·λ_max(W), 1 − ρ·λ_min(W))
+            lam_at_max = 1.0 - rho * W_eig_max
+            lam_at_min = 1.0 - rho * W_eig_min
+            lam_min = min(lam_at_max, lam_at_min)
+            lam_max = max(lam_at_max, lam_at_min)
+            if lam_min <= 0:
+                # ρ is too extreme for A_ρ to be SPD — reject
+                return -np.inf
+            # Build A_ρ = I − ρW as a sparse CSR matrix.
+            # CSR is preferred over LinearOperator because scipy's
+            # CG implementation calls the C-level sparse matvec
+            # directly, avoiding Python callback overhead (~2×
+            # faster per iteration for n ≤ 10 000).
+            A_rho = _build_A_rho(rho, W_csc, n)
+            import warnings as _w
+
+            with _w.catch_warnings():
+                _w.simplefilter("ignore", RuntimeWarning)
+                U = iterative_solve(A_rho, X, lambda_min=lam_min, lambda_max=lam_max)
         except (RuntimeError, ValueError):
             return -np.inf
+
+    # --- Intercept reparameterisation: δ₀ = β₀/(1−ρ) ---
+    reparam = intercept_col >= 0 and abs(rho) > 1e-8
+    if reparam:
+        scale = 1.0 - rho
+        U = U.copy()
+        U[:, intercept_col] = 1.0  # replace 1/(1−ρ)·1 with 1·1
+        V0_inv_diag_rp = V0_inv_diag.copy()
+        V0_inv_diag_rp[intercept_col] = V0_inv_diag[intercept_col] * scale * scale
+        mu0_rp = mu0.copy()
+        mu0_rp[intercept_col] = mu0[intercept_col] / scale
+    else:
+        V0_inv_diag_rp = V0_inv_diag
+        mu0_rp = mu0
 
     # --- Working response and residual ---
     log_alpha = np.log(alpha)
     kappa = 0.5 * (y - alpha)
     s = kappa / omega + log_alpha
-    r = s - U @ mu0
+    r = s - U @ mu0_rp
 
     # M = V0^{-1} + U^T Ω U  (k x k)
     Uw = U * omega[:, None]
     M = U.T @ Uw
     k = M.shape[0]
-    M.flat[:: k + 1] += V0_inv_diag
+    M.flat[:: k + 1] += V0_inv_diag_rp
 
     v = Uw.T @ r  # = U^T Ω r
 
@@ -669,6 +838,10 @@ def _rho_log_density_marginal(
     log_det_M = 2.0 * float(np.sum(np.log(np.diag(L))))
 
     result = -0.5 * log_det_M - 0.5 * (rOr - quad_pen)
+    # Jacobian correction for the intercept reparameterisation:
+    # β₀ = δ₀·(1−ρ), so |∂β/∂δ| = (1−ρ) and log|det J| = log(1−ρ).
+    if reparam:
+        result += np.log(scale)
     # Guard against nan from numerical overflow in the Krylov path
     # or near-singular matrices.  Returning -inf causes the slice
     # sampler to reject the candidate and shrink the interval.
@@ -689,6 +862,7 @@ def _sample_rho(
     tune: int,
     basis: Optional[ReducedKrylovBasis] = None,
     cholmod_solver: Optional[_CholmodNormalEqSolver] = None,
+    intercept_col: int = 0,
 ) -> tuple[float, float]:
     """Block 3: 1-D adaptive slice on :math:`\\rho` with β marginalised.
 
@@ -718,6 +892,9 @@ def _sample_rho(
             basis=basis,
             krylov_dmax=cache.krylov_dmax,
             cholmod_solver=cholmod_solver,
+            W_eig_max=cache.W_eig_max,
+            W_eig_min=cache.W_eig_min,
+            intercept_col=intercept_col,
         )
 
     if cache.rho_adaptive_width and cache.rho_slice_width_state is not None:
@@ -828,6 +1005,15 @@ def run_chain(
     use_krylov = cache.krylov_degree > 0
     krylov_degree = cache.krylov_degree
 
+    # Detect intercept column for reparameterisation: find the first
+    # column of X that is all ones.  This breaks the ρ–β₀ correlation
+    # that causes ESS collapse at high ρ.  Set to -1 if none found.
+    intercept_col = -1
+    for _j in range(k):
+        if np.all(X[:, _j] == 1.0):
+            intercept_col = _j
+            break
+
     # Build the CHOLMOD normal-equations solver once per chain.
     # When CHOLMOD is available, this replaces all ``splu`` (UMFPACK)
     # calls with CHOLMOD on the SPD matrix A^T A, avoiding Apple
@@ -861,6 +1047,8 @@ def run_chain(
                     n,
                     degree=krylov_degree,
                     cholmod_solver=cholmod_solver,
+                    W_eig_max=cache.W_eig_max,
+                    W_eig_min=cache.W_eig_min,
                 )
             except (RuntimeError, ValueError):
                 # CHOLMOD factorisation failed (e.g. A^T A not SPD for
@@ -873,6 +1061,8 @@ def run_chain(
                     n,
                     degree=krylov_degree,
                     cholmod_solver=cholmod_solver,
+                    W_eig_max=cache.W_eig_max,
+                    W_eig_min=cache.W_eig_min,
                 )
             # η for the ω block: η = U(ρ_c) @ β via the basis
             eta = basis.V_stack[0] @ state.beta
@@ -891,48 +1081,109 @@ def run_chain(
 
         psi = eta - np.log(state.alpha)
 
-        # --- Block 1: ω | β, ρ, α, y ---
+        # --- Block 1+2: (ω, ρ, β) cycles ---
+        # At high ρ with large β₀, the ρ conditional is extremely
+        # peaked (std ≈ 0.001) and its mode shifts by ~2 stds when ω
+        # is redrawn.  A single ω→ρ update leaves the chain lagging
+        # behind the conditional mode, giving ESS ≈ 6.  Interleaving
+        # multiple ω→ρ→β cycles per sweep breaks the ω–ρ dependence
+        # and allows ρ to move further.  Each cycle is a valid
+        # Gibbs update.
+        #
+        # Structure: draw ω before the loop (using the η computed
+        # above), then for each cycle do (ρ, β, ω).  After the β
+        # draw, η = X̃@β is a cheap matvec — no iterative solve
+        # needed.  The last cycle's X̃ and η are reused for the
+        # α draw and log-likelihood, avoiding a redundant solve.
+        _n_cycles = cache.n_rho_omega_cycles
         state.omega = _sample_omega(y, state.alpha, psi, rng=rng)
+        Xtilde = None  # will be set by the last cycle
 
-        # --- Block 2: ρ | ω, α, y (β marginalised) ---
-        state.rho, _ = _sample_rho(
-            state=state,
-            cache=cache,
-            y=y,
-            X=X,
-            priors=priors,
-            rng=rng,
-            sweep_idx=i,
-            tune=tune,
-            basis=basis,
-            cholmod_solver=cholmod_solver,
-        )
+        for _cycle in range(_n_cycles):
+            # --- ρ | ω, α, y (β marginalised) ---
+            state.rho, _ = _sample_rho(
+                state=state,
+                cache=cache,
+                y=y,
+                X=X,
+                priors=priors,
+                rng=rng,
+                sweep_idx=i,
+                tune=tune,
+                basis=basis,
+                cholmod_solver=cholmod_solver,
+                intercept_col=intercept_col,
+            )
 
-        # --- Block 3: β | ρ_new, ω, α, y ---
-        # Exact solve at the accepted ρ_new for an unbiased β draw.
-        # If the solver fails (extreme ρ), fall back to ρ = 0.
-        try:
-            solver_new = _make_solver(
-                state.rho, cache.W_csc, n, cholmod_solver=cholmod_solver
+            # --- β | ρ, ω, α, y ---
+            # Compute X̃ = (I − ρW)⁻¹X at the new ρ.
+            # Use Krylov eval when the basis is available and ρ is
+            # within dmax — much cheaper than an iterative solve.
+            _lam_at_max = 1.0 - state.rho * cache.W_eig_max
+            _lam_at_min = 1.0 - state.rho * cache.W_eig_min
+            _lam_min = min(_lam_at_max, _lam_at_min)
+            _lam_max = max(_lam_at_max, _lam_at_min)
+            if _lam_min <= 0:
+                # ρ is too extreme — fall back to ρ = 0
+                state.rho = 0.0
+                _lam_min = 1.0
+                _lam_max = 1.0
+                Xtilde = X.copy()
+            elif basis is not None:
+                drho = state.rho - basis.rho_basis
+                if abs(drho) <= cache.krylov_dmax:
+                    Xtilde = _eval_U_from_basis(basis, drho)
+                else:
+                    _A_rho = _build_A_rho(state.rho, cache.W_csc, n)
+                    import warnings as _w2
+
+                    with _w2.catch_warnings():
+                        _w2.simplefilter("ignore", RuntimeWarning)
+                        Xtilde = iterative_solve(
+                            _A_rho,
+                            X,
+                            lambda_min=_lam_min,
+                            lambda_max=_lam_max,
+                        )
+            else:
+                _A_rho = _build_A_rho(state.rho, cache.W_csc, n)
+                import warnings as _w2
+
+                with _w2.catch_warnings():
+                    _w2.simplefilter("ignore", RuntimeWarning)
+                    Xtilde = iterative_solve(
+                        _A_rho,
+                        X,
+                        lambda_min=_lam_min,
+                        lambda_max=_lam_max,
+                    )
+
+            state.beta = _sample_beta(
+                beta_current=state.beta,
+                Xtilde=Xtilde,
+                omega=state.omega,
+                y=y,
+                alpha=state.alpha,
+                priors=priors,
+                rng=rng,
+                rho=state.rho,
+                intercept_col=intercept_col,
             )
-        except (RuntimeError, ValueError):
-            state.rho = 0.0
-            solver_new = _make_solver(
-                0.0, cache.W_csc, n, cholmod_solver=cholmod_solver
-            )
-        Xtilde = solver_new.solve(X)
-        state.beta = _sample_beta(
-            beta_current=state.beta,
-            Xtilde=Xtilde,
-            omega=state.omega,
-            y=y,
-            alpha=state.alpha,
-            priors=priors,
-            rng=rng,
-        )
+
+            # η = X̃@β — cheap matvec, no solve needed.
+            eta = Xtilde @ state.beta
+
+            # Draw ω for the next cycle (or for the α draw if
+            # this is the last cycle).  Placed after β so that
+            # the next ω uses the correct η.
+            if _cycle < _n_cycles - 1:
+                psi = eta - np.log(state.alpha)
+                state.omega = _sample_omega(y, state.alpha, psi, rng=rng)
+
+        # --- Block 3 is done: β was drawn in the last cycle ---
+        # Xtilde and eta are from the last cycle's β draw.
 
         # --- Block 4: α | y, η_new ---
-        eta = Xtilde @ state.beta
         alpha_state = _StructuralState(
             eta=eta,
             beta=state.beta,

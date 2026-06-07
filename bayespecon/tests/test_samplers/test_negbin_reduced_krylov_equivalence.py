@@ -113,10 +113,13 @@ def test_krylov_basis_accuracy():
     """Unit test: Krylov basis reconstruction error < 1e-6 at degree=8."""
     from scipy.sparse.linalg import splu
 
+    from bayespecon.samplers._utils._spatial_normal import CholmodFactor
     from bayespecon.samplers.negbin_reduced._core import (
         ReducedKrylovBasis,
         _build_krylov_basis,
+        _CholmodNormalEqSolver,
         _eval_U_from_basis,
+        _make_cholmod_pattern,
     )
 
     rng = np.random.default_rng(0)
@@ -132,8 +135,17 @@ def test_krylov_basis_accuracy():
     W_csc = sparse.csc_matrix(W_dense)
     X = rng.standard_normal((n, k))
 
+    # Use CHOLMOD for exact factorisation (CG has ~1e-4 absolute error
+    # which swamps the Krylov polynomial approximation error we want
+    # to test).
+    W_sym, WtW, pattern = _make_cholmod_pattern(W_csc, n)
+    cholmod_factor = CholmodFactor(pattern)
+    cholmod_solver = _CholmodNormalEqSolver(cholmod_factor, W_csc, W_sym, WtW, n)
+
     rho_c = 0.3
-    basis = _build_krylov_basis(rho_c, X, W_csc, n, degree=8)
+    basis = _build_krylov_basis(
+        rho_c, X, W_csc, n, degree=8, cholmod_solver=cholmod_solver
+    )
 
     # Test at several Δρ values within krylov_dmax
     for drho in [0.0, 0.05, 0.1, -0.1, 0.15]:

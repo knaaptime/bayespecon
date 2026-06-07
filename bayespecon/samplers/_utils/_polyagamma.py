@@ -1,9 +1,10 @@
 """Vectorized Pólya–Gamma draw wrapper.
 
 Thin wrapper around the ``polyagamma`` package that centralises the call
-site and provides a consistent interface. Dispatches to the library's
-hybrid sampler (Devroye for integer h, alternate for non-integer h) when
-all h values are integer, and forces ``method="alternate"`` otherwise.
+site and provides a consistent interface. Uses the library's hybrid
+sampler (``method=None``) which automatically selects the fastest
+algorithm based on ``h`` values: Devroye for small integer h, saddle
+approximation for large h, and alternate for small non-integer h.
 
 If ``polyagamma`` is unavailable, an ``ImportError`` is raised with a
 helpful message.
@@ -68,12 +69,16 @@ def sample_polyagamma(
     if np.any(h <= 0):
         raise ValueError("All h values must be positive.")
 
-    # Dispatch on h: the hybrid method (method=None, the default) selects the
-    # faster Devroye algorithm for integer h (e.g. logit with h=1), but Devroye
-    # requires integer-valued h.  For the NB-PG augmentation, h_i = y_i + alpha
-    # is typically non-integer, so we must use "alternate" in that case.
-    # When all h values are integer, we let the library pick the best method.
-    _all_integer = np.all(np.equal(np.mod(h, 1.0), 0.0))
-    method = None if _all_integer else "alternate"
-    omega = _pg_draw(h=h, z=z, method=method, random_state=rng)
+    # Use the library's hybrid method (method=None) which automatically
+    # selects the fastest algorithm based on h values:
+    #   - Devroye for small integer h (e.g. logit with h=1)
+    #   - Saddle approximation for large h (h > ~20)
+    #   - Alternate for small non-integer h
+    # The saddle method is O(1) per draw regardless of h magnitude,
+    # making it essential for NB-PG augmentation where h_i = y_i + alpha
+    # can be very large (e.g. 10^6 for high-mu NB observations).
+    # Previously, we forced method="alternate" for non-integer h, but
+    # the alternate method's cost scales with h, making it catastrophically
+    # slow for large h values.
+    omega = _pg_draw(h=h, z=z, method=None, random_state=rng)
     return np.asarray(omega, dtype=np.float64)
