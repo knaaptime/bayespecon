@@ -504,6 +504,9 @@ def _sample_rho(
         # --- scipy sparse path (β-marginalised, σ² = 1) ---
         log_det_A = logdet_fn(rho)
 
+        # u = A_ρᵀ X = X − ρ Wᵀ X   — (n, k) dense
+        u = X - rho * WtX
+
         # Precision: P = base - ρ * W_sym + ρ² * WtW  (σ² = 1)
         if W_sym is not None and WtW is not None:
             P = base - rho * W_sym + rho**2 * WtW
@@ -512,8 +515,6 @@ def _sample_rho(
             AtA = A_rho.T @ A_rho  # σ² = 1
             P = AtA + sp.diags(omega, format="csr")
 
-        # u = A_ρᵀ X = X − ρ Wᵀ X   — (n, k) dense
-        u = X - rho * WtX
         rhs_stack = np.column_stack([kappa, u])  # (n, k+1)
 
         # --- log|P_η| ---
@@ -534,7 +535,9 @@ def _sample_rho(
 
         # --- Multi-RHS solve: P [z | M] = [κ | u] ---
         if solve_method == "cg":
-            sol = np.column_stack([cg_solve(P, rhs_stack[:, j]) for j in range(k + 1)])
+            sol = np.column_stack(
+                [cg_solve(P, rhs_stack[:, j]) for j in range(k + 1)]
+            )
         elif cholmod_factor is not None and solve_method == "cholmod":
             sol = cholmod_factor.solve(rhs_stack)
         elif solve_method == "splu":
@@ -563,13 +566,16 @@ def _sample_rho(
         quad_kappa = float(kappa @ z)
         quad_b = float(rhs_b @ m_b)
 
-        return (
+        result = (
             log_det_A
             - 0.5 * log_det_P
             - 0.5 * log_det_Sig_inv
             + 0.5 * quad_kappa
             + 0.5 * quad_b
         )
+        if not np.isfinite(result):
+            return -np.inf
+        return result
 
     # Cache log-density at current x0
     x0 = state.rho
