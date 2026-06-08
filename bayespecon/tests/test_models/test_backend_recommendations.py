@@ -28,7 +28,7 @@ class TestRecommendBackend:
         # Benchmark evidence: nutpie wins ESS/sec on cross-sectional SAR.
         assert recommend_backend("SAR") == "nutpie"
 
-    @pytest.mark.parametrize("family", ["SEM", "SDM", "PoissonSARFlow"])
+    @pytest.mark.parametrize("family", ["SEM", "SDM"])
     def test_conservative_families_stay_on_pymc(self, family):
         assert recommend_backend(family) == "pymc"
 
@@ -37,9 +37,6 @@ class TestRecommendBackend:
 
     def test_case_insensitive_lookup(self):
         assert recommend_backend("sar") == recommend_backend("SAR")
-        assert recommend_backend("PoissonSarFlow") == recommend_backend(
-            "PoissonSARFlow"
-        )
 
     def test_with_rationale_returns_tuple(self):
         backend, rationale = recommend_backend("SAR", with_rationale=True)

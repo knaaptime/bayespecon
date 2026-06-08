@@ -674,10 +674,14 @@ def iterative_solve(
         raise ValueError(
             f"lambda_min must be positive (A must be SPD), got {lambda_min}"
         )
-    if lambda_max <= lambda_min:
+    if lambda_max < lambda_min:
         raise ValueError(
-            f"lambda_max ({lambda_max}) must be > lambda_min ({lambda_min})"
+            f"lambda_max ({lambda_max}) must be >= lambda_min ({lambda_min})"
         )
+    # Degenerate case: A is a scalar multiple of identity (e.g. rho=0).
+    # Solution is trivially x = rhs / lambda_min.
+    if lambda_max == lambda_min:
+        return np.asarray(rhs, dtype=np.float64) / lambda_min
 
     # Accept both sparse matrices and LinearOperator
     if isinstance(A, spla.LinearOperator):

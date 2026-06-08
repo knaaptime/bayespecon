@@ -100,8 +100,8 @@ Non-Linear Spatial Models
    SEMTobit
    SDMTobit
    SARNegativeBinomial
-   SARNegativeBinomialNUTS
    SARNegBinLatent
+   ZINBSAR
 
 
 Panel Spatial Models (Tobit)
@@ -124,16 +124,11 @@ Flow Models
 
    FlowModel
    OLSFlow
-   PoissonFlow
    SARFlow
    SARFlowSeparable
-   PoissonSARFlow
-   PoissonSARFlowSeparable
    NegativeBinomialFlow
    NegativeBinomialSARFlow
    NegativeBinomialSARFlowSeparable
-   SARNegBinFlowLatent
-   SARNegBinFlowSeparableLatent
    SEMFlow
    SEMFlowSeparable
 
@@ -148,11 +143,8 @@ Panel Flow Models
 
    FlowPanelModel
    OLSFlowPanel
-   PoissonFlowPanel
    SARFlowPanel
    SARFlowSeparablePanel
-   PoissonSARFlowPanel
-   PoissonSARFlowSeparablePanel
    NegativeBinomialFlowPanel
    NegativeBinomialSARFlowPanel
    NegativeBinomialSARFlowSeparablePanel
@@ -329,6 +321,7 @@ Data Generating Processes
    simulate_sdm
    simulate_sdem
    simulate_sar_negbin
+   simulate_sar_zinb
    simulate_spatial_probit
    simulate_sar_tobit
    simulate_sem_tobit
@@ -368,7 +361,7 @@ predictor (also exposed in the result dict as ``"eta_vec"`` /
 ``"eta"``).  Pass ``distribution="normal"`` to recover the legacy
 Gaussian-on-y behaviour.  The Gaussian-likelihood flow models in
 ``bayespecon.models.flow`` operate on the latent scale, so fit on
-``np.log(y)`` to recover the SAR parameters.  The Poisson and Negative
+``np.log(y)`` to recover the SAR parameters.  The Negative
 Binomial DGPs are unchanged.
 
 .. autosummary::
@@ -376,16 +369,12 @@ Binomial DGPs are unchanged.
 
    generate_flow_data
    generate_flow_data_separable
-   generate_poisson_flow_data
-   generate_poisson_flow_data_separable
    generate_negbin_flow_data
    generate_negbin_flow_data_separable
    generate_sem_flow_data
    generate_sem_flow_data_separable
    generate_panel_flow_data
    generate_panel_flow_data_separable
-   generate_panel_poisson_flow_data
-   generate_panel_poisson_flow_data_separable
    generate_panel_negbin_flow_data
    generate_panel_negbin_flow_data_separable
    generate_panel_sem_flow_data

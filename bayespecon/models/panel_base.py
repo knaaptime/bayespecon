@@ -1074,12 +1074,20 @@ class SpatialPanelModel(ABC):
         thin: int,
         n_jobs: int,
         progressbar: bool,
+        gibbs_method: str = "jax",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
-        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs.
+        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs`.
 
         Centralizes how Gibbs-specific kwargs are popped from ``sample_kwargs``.
         """
+        # Resolve "jax" → "numpy" fallback when JAX is not installed.
+        if gibbs_method == "jax":
+            import importlib.util
+
+            if importlib.util.find_spec("jax") is None:
+                gibbs_method = "numpy"
+
         sample_kwargs = dict(sample_kwargs or {})
         return self._fit_gibbs(
             draws=draws,
@@ -1089,7 +1097,7 @@ class SpatialPanelModel(ABC):
             thin=thin,
             n_jobs=n_jobs,
             progressbar=progressbar,
-            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+            gibbs_method=gibbs_method,
             mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
             use_mala=sample_kwargs.pop("use_mala", True),
             use_slice=sample_kwargs.pop("use_slice", True),

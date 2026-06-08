@@ -13,8 +13,8 @@ fully conjugate Gibbs updates for η and β.
 
 Because the logit link absorbs the error scale, σ² is fixed at 1
 and does not appear as a free parameter.  The PG shape parameter is
-always h = 1 (one trial per observation), so the Devroye sampler is
-valid and typically the fastest method.
+always h = 1 (one trial per observation), so the exact sum-of-
+exponentials method is used (no truncation bias).
 
 The ρ update uses a **collapsed** (marginal) posterior that integrates
 out η, avoiding the slow mixing that arises from conditioning on the
@@ -535,9 +535,7 @@ def _sample_rho(
 
         # --- Multi-RHS solve: P [z | M] = [κ | u] ---
         if solve_method == "cg":
-            sol = np.column_stack(
-                [cg_solve(P, rhs_stack[:, j]) for j in range(k + 1)]
-            )
+            sol = np.column_stack([cg_solve(P, rhs_stack[:, j]) for j in range(k + 1)])
         elif cholmod_factor is not None and solve_method == "cholmod":
             sol = cholmod_factor.solve(rhs_stack)
         elif solve_method == "splu":

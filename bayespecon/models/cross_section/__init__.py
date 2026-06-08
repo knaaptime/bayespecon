@@ -6,7 +6,6 @@ from .ols import OLS
 from .sar import SAR
 from .sar_negbin import SARNegativeBinomial
 from .sar_negbin_latent import SARNegativeBinomialLatent, SARNegBinLatent
-from .sar_negbin_nuts import SARNegativeBinomialNUTS
 from .sdem import SDEM
 from .sdm import SDM
 from .sem import SEM
@@ -15,6 +14,7 @@ from .slx import SLX
 from .spatial_logit import SARSpatialLogit
 from .spatial_probit import SpatialProbit
 from .tobit import SARTobit, SDMTobit, SEMTobit
+from .zinb import ZINBSAR
 
 __all__ = [
     "Logit",
@@ -26,7 +26,6 @@ __all__ = [
     "SEM",
     "SLX",
     "SARNegativeBinomial",
-    "SARNegativeBinomialNUTS",
     "SARNegativeBinomialLatent",
     "SARNegBinLatent",
     "SEMSpatialLogit",
@@ -35,4 +34,5 @@ __all__ = [
     "SARTobit",
     "SDMTobit",
     "SEMTobit",
+    "ZINBSAR",
 ]

@@ -327,8 +327,19 @@ class TestIterativeSolve:
         b = np.ones(5)
         with pytest.raises(ValueError, match="lambda_min must be positive"):
             iterative_solve(A, b, lambda_min=-1.0, lambda_max=2.0)
-        with pytest.raises(ValueError, match="lambda_max.*must be > lambda_min"):
+        with pytest.raises(ValueError, match="lambda_max.*must be >= lambda_min"):
             iterative_solve(A, b, lambda_min=2.0, lambda_max=1.0)
+
+    def test_degenerate_identity(self):
+        """lambda_min == lambda_max (A = scalar * I) returns trivial solution."""
+        A = sp.eye(5, format="csr")
+        b = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        x = iterative_solve(A, b, lambda_min=1.0, lambda_max=1.0)
+        np.testing.assert_allclose(x, b)
+        # Multi-RHS
+        X = np.ones((5, 3))
+        U = iterative_solve(A, X, lambda_min=1.0, lambda_max=1.0)
+        np.testing.assert_allclose(U, X)
 
 
 def rng_vals(n):

@@ -348,20 +348,19 @@ class TestKroneckerFlowSolveMatrixOpVJP:
 
 
 # ---------------------------------------------------------------------------
-# Smoke test: logp compiles for PoissonSARFlowSeparable at moderate n
+# Smoke test: logp compiles for NegativeBinomialSARFlowSeparable at moderate n
 # ---------------------------------------------------------------------------
 
 
-class TestSeparablePoissonLogpCompiles:
+class TestSeparableNegBinLogpCompiles:
     @pytest.mark.slow
     def test_logp_compiles_n20(self):
         """Check that the Kronecker op compiles inside PyMC at n=20."""
         from bayespecon.graph import flow_weight_matrices
-        from bayespecon.models.flow._flow import PoissonSARFlowSeparable
+        from bayespecon.models.flow._flow import NegativeBinomialSARFlowSeparable
 
         n = 20
         rng = np.random.default_rng(6)
-        G = _ring_W(n)  # use W directly as a proxy; need proper Graph
         pytest.importorskip("libpysal")
         from libpysal.graph import Graph
 
@@ -370,10 +369,10 @@ class TestSeparablePoissonLogpCompiles:
         weights = np.ones(2 * n, dtype=float)
         graph = Graph.from_arrays(focal, neighbor, weights).transform("r")
 
-        y = rng.poisson(5.0, size=(n, n)).astype(np.float64)
+        y = rng.poisson(5.0, size=(n, n)).astype(np.int64)
         X = rng.normal(size=(n * n, 2))
 
-        model_obj = PoissonSARFlowSeparable(y, graph, X)
+        model_obj = NegativeBinomialSARFlowSeparable(y, graph, X)
         pm_model = model_obj._build_pymc_model()
 
         # Just test that logp can be evaluated at the initial point

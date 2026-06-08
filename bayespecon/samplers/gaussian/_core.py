@@ -126,9 +126,33 @@ class GaussianGibbsCache:
     model_type : str
         One of "sar", "sem", "sdm", "sdem".
     Wy : ndarray of shape (n,) or None
-        W @ y (precomputed for SAR/SDM).
+        W @ y (precomputed for all model types).
     W_sparse : csr_matrix or None
         Sparse W matrix (for SEM/SDEM residual filtering).
+    WX : ndarray of shape (n, k) or None
+        W @ X (precomputed for SEM/SDEM).  Avoids repeated sparse
+        matrix-vector products in the hot loop.
+    XtWX : ndarray of shape (k, k) or None
+        X^T (W @ X) matrix (precomputed for SEM/SDEM).  Used in the
+        collapsed λ density to compute X*^T X* without O(nk²) work.
+    WXtWX : ndarray of shape (k, k) or None
+        (W @ X)^T (W @ X) matrix (precomputed for SEM/SDEM).  Used in
+        the collapsed λ density to compute X*^T X* without O(nk²) work.
+    yty : float or None
+        y^T y (precomputed for SEM/SDEM).  Used in the collapsed λ
+        density to compute y*^T y* without O(n) work.
+    yTWy : float or None
+        y^T W y (precomputed for SEM/SDEM).
+    WyTWy : float or None
+        (Wy)^T (Wy) (precomputed for SEM/SDEM).
+    XTy : ndarray of shape (k,) or None
+        X^T y (precomputed for SEM/SDEM).
+    XTWy : ndarray of shape (k,) or None
+        X^T W y (precomputed for SEM/SDEM).
+    WXTy : ndarray of shape (k,) or None
+        (WX)^T y (precomputed for SEM/SDEM).
+    WXTWy : ndarray of shape (k,) or None
+        (WX)^T (Wy) (precomputed for SEM/SDEM).
     """
 
     XtX: np.ndarray
@@ -140,6 +164,17 @@ class GaussianGibbsCache:
     model_type: str = "sar"
     Wy: np.ndarray | None = None
     W_sparse: sp.csr_matrix | None = None
+    WX: np.ndarray | None = None
+    XtWX: np.ndarray | None = None
+    WXtWX: np.ndarray | None = None
+    # SEM/SDEM inner products for O(k) collapsed density
+    yty: float | None = None
+    yTWy: float | None = None
+    WyTWy: float | None = None
+    XTy: np.ndarray | None = None
+    XTWy: np.ndarray | None = None
+    WXTy: np.ndarray | None = None
+    WXTWy: np.ndarray | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +230,8 @@ def _sample_beta_sem(
     sigma2: float,
     y: np.ndarray,
     X: np.ndarray,
-    W_sparse: sp.csr_matrix,
+    Wy: np.ndarray,
+    WX: np.ndarray,
     priors: GaussianGibbsPriors,
     rng: np.random.Generator,
 ) -> np.ndarray:
@@ -220,8 +256,10 @@ def _sample_beta_sem(
         Response vector.
     X : ndarray of shape (n, k)
         Design matrix.
-    W_sparse : csr_matrix
-        Sparse spatial weights matrix.
+    Wy : ndarray of shape (n,)
+        W @ y (precomputed).
+    WX : ndarray of shape (n, k)
+        W @ X (precomputed).
     priors : GaussianGibbsPriors
         Prior hyperparameters.
     rng : numpy.random.Generator
@@ -232,9 +270,9 @@ def _sample_beta_sem(
     beta : ndarray of shape (k,)
         New draw from the conditional posterior.
     """
-    # Transform y and X by (I - λW)
-    y_star = y - lam * (W_sparse @ y)
-    X_star = X - lam * (W_sparse @ X)
+    # Transform y and X by (I - λW) using precomputed Wy, WX
+    y_star = y - lam * Wy
+    X_star = X - lam * WX
     XtX_star = X_star.T @ X_star
     return _sample_beta_conjugate(y_star, X_star, XtX_star, sigma2, priors, rng)
 
@@ -305,7 +343,7 @@ def _sample_sigma2(
     beta: np.ndarray,
     y: np.ndarray,
     Wy: np.ndarray | None,
-    W_sparse: sp.csr_matrix | None,
+    WX: np.ndarray | None,
     X: np.ndarray,
     priors: GaussianGibbsPriors,
     model_type: str,
@@ -341,9 +379,9 @@ def _sample_sigma2(
     y : ndarray of shape (n,)
         Response vector.
     Wy : ndarray of shape (n,) or None
-        W @ y (for SAR/SDM).
-    W_sparse : csr_matrix or None
-        Sparse W (for SEM/SDEM).
+        W @ y (precomputed for all model types).
+    WX : ndarray of shape (n, k) or None
+        W @ X (precomputed for SEM/SDEM).
     X : ndarray of shape (n, k)
         Design matrix.
     priors : GaussianGibbsPriors
@@ -366,7 +404,8 @@ def _sample_sigma2(
         ss = np.dot(resid, resid)
     else:  # sem, sdem
         resid_raw = y - X @ beta
-        eps = resid_raw - rho * (W_sparse @ resid_raw)
+        # W(y - Xβ) = Wy - WX @ β  (avoids sparse matvec)
+        eps = resid_raw - rho * (Wy - WX @ beta)
         ss = np.dot(eps, eps)
 
     a_post = priors.sigma2_alpha + n / 2.0
@@ -442,9 +481,16 @@ def _sar_collapsed_log_density(
 
 def _sem_collapsed_log_density(
     lam: float,
-    y: np.ndarray,
-    X: np.ndarray,
-    W_sparse: sp.csr_matrix,
+    XtX: np.ndarray,
+    XtWX: np.ndarray,
+    WXtWX: np.ndarray,
+    yty: float,
+    yTWy: float,
+    WyTWy: float,
+    XTy: np.ndarray,
+    XTWy: np.ndarray,
+    WXTy: np.ndarray,
+    WXTWy: np.ndarray,
     logdet_fn: Callable[[float], float],
     n: int,
     k: int,
@@ -463,16 +509,38 @@ def _sem_collapsed_log_density(
     The extra term -(1/2) log|X*^T X*| appears because X* depends on λ
     (unlike SAR where X is fixed).
 
+    All n-dependent inner products are precomputed, so each density
+    evaluation is O(k³) — no O(n) or O(nk) work.  The quadratic forms
+    are computed analytically:
+
+        y*^T y* = y^T y - 2λ y^T W y + λ² (Wy)^T (Wy)
+        X*^T y* = X^T y - λ(X^T W y + (WX)^T y) + λ² (WX)^T (Wy)
+        X*^T X* = X^T X - λ(X^T W X + (WX)^T X) + λ² (WX)^T (WX)
+
     Parameters
     ----------
     lam : float
         Spatial error parameter.
-    y : ndarray of shape (n,)
-        Response vector.
-    X : ndarray of shape (n, k)
-        Design matrix.
-    W_sparse : csr_matrix
-        Sparse spatial weights matrix.
+    XtX : ndarray of shape (k, k)
+        X^T X (precomputed).
+    XtWX : ndarray of shape (k, k)
+        X^T (W @ X) (precomputed).
+    WXtWX : ndarray of shape (k, k)
+        (W @ X)^T (W @ X) (precomputed).
+    yty : float
+        y^T y (precomputed).
+    yTWy : float
+        y^T W y (precomputed).
+    WyTWy : float
+        (Wy)^T (Wy) (precomputed).
+    XTy : ndarray of shape (k,)
+        X^T y (precomputed).
+    XTWy : ndarray of shape (k,)
+        X^T W y (precomputed).
+    WXTy : ndarray of shape (k,)
+        (WX)^T y (precomputed).
+    WXTWy : ndarray of shape (k,)
+        (WX)^T (Wy) (precomputed).
     logdet_fn : callable
         log|I - lam*W| callable.
     n : int
@@ -485,14 +553,16 @@ def _sem_collapsed_log_density(
     log_density : float
         Collapsed log-density of λ (up to a constant).
     """
-    # Transform y and X by (I - λW)
-    y_star = y - lam * (W_sparse @ y)
-    X_star = X - lam * (W_sparse @ X)
+    lam2 = lam * lam
 
-    # Compute RSS(λ) using Woodbury form
-    XtX_star = X_star.T @ X_star
-    Xty_star = X_star.T @ y_star
-    yty_star = np.dot(y_star, y_star)
+    # y*^T y* in O(1) using precomputed quadratic forms
+    yty_star = yty - 2.0 * lam * yTWy + lam2 * WyTWy
+
+    # X*^T y* in O(k) using precomputed inner products
+    Xty_star = XTy - lam * (XTWy + WXTy) + lam2 * WXTWy
+
+    # X*^T X* in O(k²) using precomputed quadratic forms
+    XtX_star = XtX - lam * (XtWX + XtWX.T) + lam2 * WXtWX
 
     # RSS = y*^T y* - y*^T X* (X*^T X*)^{-1} X*^T y*
     # Use Cholesky for the SPD happy path; fall back to pinv for
@@ -516,52 +586,6 @@ def _sem_collapsed_log_density(
 # ---------------------------------------------------------------------------
 # Un-collapsed λ log-density (SEM/SDEM) — kept for backward compatibility
 # ---------------------------------------------------------------------------
-
-
-def _sem_conditional_log_density(
-    lam: float,
-    beta: np.ndarray,
-    sigma2: float,
-    y: np.ndarray,
-    X: np.ndarray,
-    W_sparse: sp.csr_matrix,
-    logdet_fn: Callable[[float], float],
-) -> float:
-    """Conditional log p(λ | β, σ², y) for SEM/SDEM Gaussian model.
-
-    Uses the un-collapsed approach: condition on current β and σ².
-
-        log p(λ | β, σ², y) = log|I - λW| - 1/(2σ²) ||ε||² + const
-
-    where ε = (I - λW)(y - Xβ).
-
-    Parameters
-    ----------
-    lam : float
-        Spatial error parameter.
-    beta : ndarray of shape (k,)
-        Current regression coefficients.
-    sigma2 : float
-        Current residual variance.
-    y : ndarray of shape (n,)
-        Response vector.
-    X : ndarray of shape (n, k)
-        Design matrix.
-    W_sparse : csr_matrix
-        Sparse spatial weights matrix.
-    logdet_fn : callable
-        log|I - lam*W| callable.
-
-    Returns
-    -------
-    log_density : float
-        Conditional log-density of λ (up to a constant).
-    """
-    resid = y - X @ beta
-    eps = resid - lam * (W_sparse @ resid)
-    ss = np.dot(eps, eps)
-    logdet = logdet_fn(lam)
-    return logdet - 0.5 * ss / sigma2
 
 
 # ---------------------------------------------------------------------------
@@ -692,9 +716,16 @@ def _sample_lam_sem_collapsed(
     def log_density(lam_val):
         return _sem_collapsed_log_density(
             lam_val,
-            y,
-            X,
-            cache.W_sparse,
+            cache.XtX,
+            cache.XtWX,
+            cache.WXtWX,
+            cache.yty,
+            cache.yTWy,
+            cache.WyTWy,
+            cache.XTy,
+            cache.XTWy,
+            cache.WXTy,
+            cache.WXTWy,
             cache.logdet_fn,
             n,
             k,
@@ -860,7 +891,8 @@ def run_gaussian_chain(
                 state.sigma2,
                 y,
                 X,
-                cache.W_sparse,
+                cache.Wy,
+                cache.WX,
                 priors,
                 rng,
             )
@@ -870,8 +902,8 @@ def run_gaussian_chain(
             state.rho,
             state.beta,
             y,
-            Wy,
-            cache.W_sparse,
+            cache.Wy,
+            cache.WX,
             X,
             priors,
             model_type,
@@ -931,7 +963,8 @@ def run_gaussian_chain(
                 ll += jacobian / n
             else:  # sem, sdem
                 resid_raw = y - X @ state.beta
-                eps = resid_raw - state.rho * (cache.W_sparse @ resid_raw)
+                # W(y - Xβ) = Wy - WX @ β  (avoids sparse matvec)
+                eps = resid_raw - state.rho * (cache.Wy - cache.WX @ state.beta)
                 ll = (
                     -0.5 * (eps / sigma) ** 2
                     - np.log(sigma)

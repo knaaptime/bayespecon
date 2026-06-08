@@ -1,0 +1,926 @@
+r"""Zero-inflated SAR Negative Binomial (ZINB-SAR) model.
+
+Composes a structural-form SAR-logit selection equation with a
+reduced-form SAR-NB count equation via a zero-allocation block:
+
+.. math::
+
+    d_i \mid \eta_i^{\mathrm{sel}} &\sim \mathrm{Bernoulli}(\mathrm{logit}^{-1}(\eta_i^{\mathrm{sel}})) \\
+    \eta^{\mathrm{sel}} &= \lambda W_{\mathrm{sel}} \eta^{\mathrm{sel}} + Z\gamma + \nu, \quad \nu \sim N(0, I) \\
+    y_i \mid d_i, \eta_i^{\mathrm{cnt}}, \alpha &\sim \begin{cases}
+        0 & \text{if } d_i = 0 \\
+        \mathrm{NegBin}(\exp(\eta_i^{\mathrm{cnt}}), \alpha) & \text{if } d_i = 1
+    \end{cases} \\
+    \eta^{\mathrm{cnt}} &= (I - \rho W_{\mathrm{cnt}})^{-1} X\beta
+
+The logit link absorbs the error scale in the selection equation
+(σ² = 1), and the reduced-form NB has no latent noise term.
+The Pólya–Gamma augmentation yields fully conjugate Gibbs updates
+for all blocks except ρ, λ, and α, which use 1-D adaptive slice
+sampling.
+
+Use this model when:
+- The response is a non-negative integer count with excess zeros.
+- You need spatial autocorrelation in both the selection (binary)
+  and count (intensity) processes.
+- The two processes may operate on different spatial scales
+  (different W matrices).
+
+References
+----------
+Lambert, D. (1992). Zero-inflated Poisson regression, with an
+application to defects in manufacturing. *Technometrics* 34(1), 1–14.
+
+Polson, N. G., Scott, J. G., & Windle, J. (2013). Bayesian inference
+for logistic models using Pólya–Gamma latent variables.
+*JASA* 108(504), 1339–1349.
+"""
+
+from __future__ import annotations
+
+import warnings
+from functools import cached_property
+from typing import Optional
+
+import arviz as az
+import numpy as np
+import pandas as pd
+import scipy.sparse as sp
+
+from ...samplers._utils._idata import gibbs_to_inference_data
+from ...samplers._utils._slice import SliceWidthState
+from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers.gaussian._chain_runner import run_chains
+from ...samplers.logit import (
+    LogitGibbsCache,
+    LogitGibbsPriors,
+)
+from ...samplers.negbin_reduced import (
+    ReducedGibbsCache,
+    ReducedGibbsPriors,
+)
+from ...samplers.negbin_reduced._core import _make_cholmod_pattern
+from ...samplers.zinb import (
+    ZINBGibbsCache,
+    ZINBGibbsPriors,
+    ZINBGibbsState,
+    run_zinb_chain,
+)
+from ..base import SpatialModel, _parse_W
+
+
+class ZINBSAR(SpatialModel):
+    """Bayesian zero-inflated SAR Negative Binomial with PG-Gibbs sampler.
+
+    Parameters
+    ----------
+    formula : str, optional
+        Wilkinson-style formula for the **count** equation, e.g.
+        ``"y ~ x1 + x2"``. Requires ``data``.
+    data : pandas.DataFrame or geopandas.GeoDataFrame, optional
+        Data source for formula mode.
+    y : array-like, optional
+        Non-negative integer counts of shape ``(n,)``. Required in
+        matrix mode.
+    X : array-like, optional
+        Count covariate matrix of shape ``(n, k)``. Required in matrix
+        mode.
+    Z : array-like, optional
+        Selection covariate matrix of shape ``(n, p)``. If ``None``,
+        defaults to ``X`` (same covariates for both equations).
+    W : libpysal.graph.Graph or scipy.sparse matrix
+        Spatial weights for the **count** equation, shape ``(n, n)``.
+    W_sel : libpysal.graph.Graph or scipy.sparse matrix, optional
+        Spatial weights for the **selection** equation. If ``None``,
+        uses ``W`` (same weights for both equations).
+    priors : dict, optional
+        Override default priors. Supported keys:
+
+        - ``gamma_mu`` (float, default 0.0): Normal prior mean for γ.
+        - ``gamma_sigma`` (float, default 1e6): Normal prior std for γ.
+        - ``lam_lower`` (float, default -0.999): Lower bound for λ.
+        - ``lam_upper`` (float, default 0.999): Upper bound for λ.
+        - ``beta_mu`` (float, default 0.0): Normal prior mean for β.
+        - ``beta_sigma`` (float, default 10.0): Normal prior std for β.
+        - ``rho_lower`` (float, default -0.999): Lower bound for ρ.
+        - ``rho_upper`` (float, default 0.999): Upper bound for ρ.
+        - ``alpha_sigma`` (float, default 2.5): Half-Normal scale for α.
+        - ``alpha_nu`` (float, default 3.0): Half-Normal ν for α.
+
+    logdet_method : str, optional
+        How to compute log|I − ρW|. ``None`` (default) auto-selects.
+    robust : bool, default False
+        Not supported. Raises ``NotImplementedError`` if True.
+
+    Notes
+    -----
+    The model is fit with a custom 9-block Gibbs sampler that composes
+    the SAR-logit blocks (ω^sel, η^sel, γ, λ), the zero-allocation
+    block (z), and the reduced-form SAR-NB blocks (ω^cnt, β, ρ, α).
+    No PyMC model is constructed; calling ``_build_pymc_model``
+    raises ``NotImplementedError``.
+    """
+
+    _spatial_params: tuple[str, ...] = ("rho", "lam")
+    _lag_terms: tuple[str, ...] = ()
+    _jacobian_param: str | None = "rho"  # count equation Jacobian
+    _gibbs_class: str | None = None
+    _model_type: str = "zinb_sar"
+
+    def __init__(
+        self,
+        formula=None,
+        data=None,
+        y=None,
+        X=None,
+        Z=None,
+        W=None,
+        W_sel=None,
+        priors=None,
+        logdet_method=None,
+        robust=False,
+        **kwargs,
+    ):
+        if robust:
+            raise NotImplementedError("robust=True is not supported for ZINBSAR.")
+
+        # Initialize base class with count equation data
+        super().__init__(
+            formula=formula,
+            data=data,
+            y=y,
+            X=X,
+            W=W,
+            priors=priors,
+            logdet_method=logdet_method,
+            robust=False,
+            **kwargs,
+        )
+
+        # Validate y is non-negative integer
+        if np.any(self._y < 0):
+            raise ValueError("y must be non-negative for ZINB models.")
+        if not np.allclose(self._y, np.round(self._y)):
+            raise ValueError("y must be integer-valued for ZINB models.")
+
+        # Store integer y
+        self._y_int = np.round(self._y).astype(np.int64)
+
+        # Binary activity indicator: d = 1(y > 0)
+        self._d = (self._y > 0).astype(np.float64)
+
+        # Selection covariates Z
+        if Z is not None:
+            Z_arr = np.asarray(Z, dtype=np.float64)
+            if Z_arr.ndim == 1:
+                Z_arr = Z_arr.reshape(-1, 1)
+            if Z_arr.shape[0] != len(self._y):
+                raise ValueError(
+                    f"Z has {Z_arr.shape[0]} rows but y has {len(self._y)} observations."
+                )
+            self._Z = Z_arr
+            self._sel_feature_names = [f"z{j}" for j in range(Z_arr.shape[1])]
+        else:
+            self._Z = self._X.copy()
+            self._sel_feature_names = list(self._feature_names)
+
+        # Selection weights W_sel
+        if W_sel is not None:
+            self._W_sel_sparse, self._is_sel_row_std = _parse_W(W_sel, len(self._y))
+            self._same_W = False
+        else:
+            self._W_sel_sparse = self._W_sparse
+            self._is_sel_row_std = self._is_row_std
+            self._same_W = True
+
+        # Precompute logdet callable for the count equation ρ slice sampler
+        self._logdet_fn = self._make_logdet_fn()
+
+    # ------------------------------------------------------------------
+    # Selection-equation helpers
+    # ------------------------------------------------------------------
+
+    @cached_property
+    def _W_sel_eigs(self) -> np.ndarray | None:
+        """Eigenvalues of W_sel (complex), computed lazily.
+
+        Used by the selection-equation spatial effects decomposition.
+        """
+        if self._W_sel_sparse is None:
+            return None
+        return np.linalg.eigvals(self._W_sel_sparse.toarray().astype(np.float64))
+
+    @cached_property
+    def _sel_nonintercept_indices(self) -> list[int]:
+        """Indices of non-constant columns in Z (selection covariates)."""
+        indices: list[int] = []
+        for j, name in enumerate(self._sel_feature_names):
+            column = self._Z[:, j]
+            is_named_intercept = name.lower() == "intercept"
+            is_constant = np.allclose(column, column[0])
+            if not (is_named_intercept or is_constant):
+                indices.append(j)
+        return indices
+
+    @cached_property
+    def _sel_nonintercept_feature_names(self) -> list[str]:
+        """Feature names for non-intercept selection covariates."""
+        return [self._sel_feature_names[i] for i in self._sel_nonintercept_indices]
+
+    def _make_logdet_fn(self):
+        """Build a callable logdet(rho) -> float for the ρ slice sampler."""
+        from ..._logdet import make_logdet_numpy_fn
+
+        bounds = self._logdet_bounds
+        return make_logdet_numpy_fn(
+            self._W_sparse,
+            eigs=self._W_eigs,
+            method=bounds.method,
+            rho_min=bounds.rho_min,
+            rho_max=bounds.rho_max,
+        )
+
+    def _initialize_from_ols(self, rng):
+        """Warm-start the ZINB Gibbs sampler.
+
+        Uses profile-log-likelihood initialisation for both equations:
+        the selection equation is initialised from a spatial logit
+        profile, and the count equation from a spatial NB profile on
+        log(y+0.5).
+        """
+        n = len(self._y)
+        y = self._y
+        d = self._d
+        X = self._X
+        Z = self._Z
+        W_cnt_csc = self._W_sparse.tocsc()
+        W_sel_csc = self._W_sel_sparse.tocsc()
+        k = X.shape[1]
+        p = Z.shape[1]
+
+        # --- Selection equation initialisation ---
+        # Profile log-likelihood on d (binary) using linear probability model
+        _rho_grid = np.arange(0.05, 0.96, 0.05)
+        _best_lam, _best_gamma, _best_ll_sel = 0.0, np.zeros(p), -np.inf
+        for _rho_g in _rho_grid:
+            try:
+                _A_g = sp.eye(n, format="csc") - _rho_g * W_sel_csc
+                _Ztilde_g = sp.linalg.spsolve(_A_g, Z)
+                _gamma_g = np.linalg.lstsq(_Ztilde_g, d, rcond=None)[0]
+                _eta_g = _Ztilde_g @ _gamma_g
+                _sig2_g = float(np.mean((d - _eta_g) ** 2))
+                if _sig2_g > 1e-10:
+                    _ll_g = -0.5 * n * np.log(_sig2_g) - 0.5 * n
+                    if _ll_g > _best_ll_sel:
+                        _best_ll_sel = _ll_g
+                        _best_lam = _rho_g
+                        _best_gamma = _gamma_g.copy()
+            except Exception:
+                pass
+
+        lam_init = float(
+            np.clip(
+                _best_lam + 0.02 * rng.standard_normal(),
+                self._logdet_bounds.rho_min + 0.01,
+                self._logdet_bounds.rho_max - 0.01,
+            )
+        )
+        gamma_init = _best_gamma + 0.1 * rng.standard_normal(p)
+
+        # η^sel from the selection profile
+        try:
+            _A_sel = sp.eye(n, format="csc") - lam_init * W_sel_csc
+            eta_sel_init = sp.linalg.spsolve(_A_sel, Z @ gamma_init)
+        except Exception:
+            eta_sel_init = Z @ gamma_init
+
+        # ω^sel: PG(1, η^sel)
+        from ...samplers._utils._polyagamma import sample_polyagamma
+
+        omega_sel_init = sample_polyagamma(np.ones(n), eta_sel_init, rng=rng)
+
+        # --- Count equation initialisation ---
+        # Profile log-likelihood on log(y+0.5) using ONLY positive
+        # observations.  Structural zeros (d=0) should not influence
+        # the count equation initialisation.
+        pos_mask = y > 0
+        n_pos = int(np.sum(pos_mask))
+        if n_pos > k:
+            _log_y = np.log(y[pos_mask] + 0.5)
+            _X_pos = X[pos_mask]
+        else:
+            # Too few positive obs — use all with log(y+0.5)
+            _log_y = np.log(y + 0.5)
+            _X_pos = X
+            pos_mask = np.ones(n, dtype=bool)
+            n_pos = n
+        _best_rho, _best_beta, _best_ll_cnt = 0.0, np.zeros(k), -np.inf
+        for _rho_g in _rho_grid:
+            try:
+                _A_g = sp.eye(n, format="csc") - _rho_g * W_cnt_csc
+                _Xtilde_g = sp.linalg.spsolve(_A_g, _X_pos)
+                _beta_g = np.linalg.lstsq(_Xtilde_g, _log_y, rcond=None)[0]
+                _eta_g = _Xtilde_g @ _beta_g
+                _sig2_g = float(np.mean((_log_y - _eta_g) ** 2))
+                if _sig2_g > 1e-10:
+                    _ll_g = -0.5 * n_pos * np.log(_sig2_g) - 0.5 * n_pos
+                    if _ll_g > _best_ll_cnt:
+                        _best_ll_cnt = _ll_g
+                        _best_rho = _rho_g
+                        _best_beta = _beta_g.copy()
+            except Exception:
+                pass
+
+        rho_init = float(
+            np.clip(
+                _best_rho + 0.02 * rng.standard_normal(),
+                self._logdet_bounds.rho_min + 0.01,
+                self._logdet_bounds.rho_max - 0.01,
+            )
+        )
+        beta_init = _best_beta + 0.1 * rng.standard_normal(k)
+
+        # Estimate α from Pearson residuals on positive observations
+        try:
+            _A_cnt = sp.eye(n, format="csc") - rho_init * W_cnt_csc
+            _Xtilde_init = sp.linalg.spsolve(_A_cnt, X)
+            _eta_init = _Xtilde_init[pos_mask] @ beta_init
+            _resid2 = float(np.mean((_log_y - _eta_init) ** 2))
+            alpha_init = float(np.clip(1.0 / max(_resid2, 0.01), 0.5, 50.0))
+        except Exception:
+            alpha_init = 1.0
+
+        # Jitter α
+        alpha_init = float(
+            np.clip(
+                alpha_init * np.exp(0.1 * rng.standard_normal()),
+                0.05,
+                50.0,
+            )
+        )
+
+        # ω^cnt: start at 0.25 (uninformative)
+        omega_cnt_init = 0.25 * np.ones(n, dtype=np.float64)
+
+        # z: initialise from data (z=1 for y>0, draw for y=0)
+        z_init = np.ones(n, dtype=np.int8)
+        zero_mask = y == 0
+        if np.any(zero_mask):
+            # Rough estimate: 50% of zeros are from the count process
+            z_init[zero_mask] = rng.binomial(
+                1, 0.5, size=int(np.sum(zero_mask))
+            ).astype(np.int8)
+
+        return ZINBGibbsState(
+            eta_sel=eta_sel_init,
+            gamma=gamma_init,
+            lam=lam_init,
+            omega_sel=omega_sel_init,
+            beta=beta_init,
+            rho=rho_init,
+            alpha=alpha_init,
+            omega_cnt=omega_cnt_init,
+            z=z_init,
+        )
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        thin: int = 1,
+        progressbar: bool = True,
+        n_jobs: int = 1,
+        timeout: float | None = None,
+        **_unused,
+    ) -> az.InferenceData:
+        """Sample posterior via 9-block Pólya–Gamma Gibbs.
+
+        Parameters
+        ----------
+        draws : int
+            Number of post-warmup draws per chain.
+        tune : int
+            Number of warmup (burn-in) draws per chain.
+        chains : int
+            Number of independent chains.
+        random_seed : int, optional
+            Seed for reproducibility.
+        thin : int
+            Keep every ``thin``-th draw. Default 1.
+        progressbar : bool
+            Show per-chain progress bars.
+        n_jobs : int
+            Number of parallel chains. 1 = sequential.
+        timeout : float or None
+            Maximum wall-clock seconds for parallel chains.
+
+        Returns
+        -------
+        arviz.InferenceData
+            Posterior draws of ``lam``, ``gamma``, ``rho``, ``beta``,
+            ``alpha`` and pointwise ``log_likelihood``.
+
+        Raises
+        ------
+        TypeError
+            If NUTS-specific kwargs are passed.
+        """
+        for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
+            if bad_kwarg in _unused:
+                raise TypeError(
+                    f"ZINBSAR.fit() does not accept '{bad_kwarg}'. "
+                    f"This model uses a Gibbs sampler, not NUTS."
+                )
+
+        n, k = self._X.shape
+        self._Z.shape[1]
+
+        if n < 900:
+            warnings.warn(
+                f"Zero-inflated NB models require large samples for "
+                f"reliable spatial parameter recovery. With n={n}, "
+                f"posterior estimates of ρ, λ, and α may be severely "
+                f"attenuated. n ≥ 900 is recommended.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        bounds = self._logdet_bounds
+        rho_lower = float(bounds.rho_min)
+        rho_upper = float(bounds.rho_max)
+
+        # Build priors
+        priors = ZINBGibbsPriors(
+            gamma_mu=self.priors.get("gamma_mu", 0.0),
+            gamma_sigma=self.priors.get("gamma_sigma", 1e6),
+            lam_lower=self.priors.get("lam_lower", rho_lower),
+            lam_upper=self.priors.get("lam_upper", rho_upper),
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 10.0),
+            rho_lower=self.priors.get("rho_lower", rho_lower),
+            rho_upper=self.priors.get("rho_upper", rho_upper),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
+        )
+
+        # Build sub-priors for cache construction
+        LogitGibbsPriors(
+            beta_mu=priors.gamma_mu,
+            beta_sigma=priors.gamma_sigma,
+            rho_lower=priors.lam_lower,
+            rho_upper=priors.lam_upper,
+        )
+        ReducedGibbsPriors(
+            beta_mu=priors.beta_mu,
+            beta_sigma=priors.beta_sigma,
+            alpha_sigma=priors.alpha_sigma,
+            alpha_nu=priors.alpha_nu,
+            rho_lower=priors.rho_lower,
+            rho_upper=priors.rho_upper,
+        )
+
+        # --- Selection equation cache ---
+        W_sel_csr = self._W_sel_sparse.tocsr()
+        self._W_sel_sparse.tocsc()
+        ZtZ = self._Z.T @ self._Z
+        W_sel_sym = W_sel_csr + W_sel_csr.T
+        W_sel_tW = W_sel_csr.T @ W_sel_csr
+
+        if has_cholmod():
+            _P0_sel = sp.eye(n, format="csr") + 0.5 * W_sel_sym + 0.25 * W_sel_tW
+            sel_cholmod_factor = CholmodFactor(_P0_sel)
+        else:
+            sel_cholmod_factor = None
+
+        sel_cache = LogitGibbsCache(
+            W_sparse=W_sel_csr,
+            XtX=ZtZ,
+            logdet_fn=self._logdet_fn,  # approximate for selection
+            rho_lower=priors.lam_lower,
+            rho_upper=priors.lam_upper,
+            cholmod_factor=sel_cholmod_factor,
+            W_sym=W_sel_sym,
+            WtW=W_sel_tW,
+            solve_method="cholmod" if sel_cholmod_factor is not None else "splu",
+            logdet_P_method="cholmod",
+            sample_method="cholmod" if sel_cholmod_factor is not None else "splu",
+            rho_adaptive_width=True,
+            rho_slice_width_state=SliceWidthState(w=0.2),
+        )
+
+        # --- Count equation cache ---
+        W_cnt_csr = self._W_sparse.tocsr()
+        W_cnt_csc = self._W_sparse.tocsc()
+
+        if self._W_eigs is not None:
+            W_eig_max = float(np.max(np.abs(self._W_eigs)))
+            W_eig_min = float(np.min(np.real(self._W_eigs)))
+        else:
+            W_eig_max = 1.0
+            W_eig_min = -1.0
+
+        if has_cholmod():
+            W_cnt_sym, W_cnt_tW, cnt_pattern = _make_cholmod_pattern(W_cnt_csc, n)
+            cnt_cholmod_pattern = cnt_pattern
+        else:
+            W_cnt_sym, W_cnt_tW, cnt_cholmod_pattern = None, None, None
+
+        cnt_cache = ReducedGibbsCache(
+            W_sparse=W_cnt_csr,
+            W_csc=W_cnt_csc,
+            rho_lower=priors.rho_lower,
+            rho_upper=priors.rho_upper,
+            rho_adaptive_width=True,
+            rho_slice_width_state=SliceWidthState(w=0.2),
+            krylov_degree=8,
+            krylov_dmax=0.15,
+            cholmod_pattern=cnt_cholmod_pattern,
+            W_sym=W_cnt_sym,
+            WtW=W_cnt_tW,
+            W_eig_max=W_eig_max,
+            W_eig_min=W_eig_min,
+            n_rho_omega_cycles=1,
+        )
+
+        # --- ZINB cache ---
+        zinb_cache = ZINBGibbsCache(
+            sel_cache=sel_cache,
+            cnt_cache=cnt_cache,
+            y=self._y,
+            d=self._d,
+            Z=self._Z,
+            X=self._X,
+            W_sel_sparse=W_sel_csr,
+            W_cnt_sparse=W_cnt_csr,
+            same_W=self._same_W,
+        )
+
+        # Derive per-chain seeds
+        if random_seed is not None:
+            parent_ss = np.random.SeedSequence(random_seed)
+        else:
+            parent_ss = np.random.SeedSequence()
+        child_seeds = parent_ss.spawn(chains)
+        seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
+
+        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
+            chain_rng = np.random.default_rng(seed)
+            init = self._initialize_from_ols(chain_rng)
+            progress_chain_id = chain_id if chain_id_kw is None else chain_id_kw
+            return run_zinb_chain(
+                y=self._y,
+                d=self._d,
+                Z=self._Z,
+                X=self._X,
+                W_sel_sparse=W_sel_csr,
+                W_cnt_sparse=W_cnt_csr,
+                priors=priors,
+                cache=zinb_cache,
+                init=init,
+                draws=draws,
+                tune=tune,
+                thin=thin,
+                rng=chain_rng,
+                chain_id=progress_chain_id,
+                progress_manager=progress_manager,
+            )
+
+        chain_results = run_chains(
+            chain_fn=_run_one_chain,
+            n_chains=chains,
+            seeds=seeds,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            parallel=(n_jobs != 1),
+            draws=draws,
+            tune=tune,
+            model_type="zinb_sar",
+            timeout=timeout,
+        )
+
+        # Stack chains
+        stacked = {
+            "lam": np.stack([c["lam"] for c in chain_results], axis=0),
+            "gamma": np.stack([c["gamma"] for c in chain_results], axis=0),
+            "rho": np.stack([c["rho"] for c in chain_results], axis=0),
+            "beta": np.stack([c["beta"] for c in chain_results], axis=0),
+            "alpha": np.stack([c["alpha"] for c in chain_results], axis=0),
+        }
+        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
+
+        idata = gibbs_to_inference_data(
+            posterior_samples=stacked,
+            log_likelihood={"obs": log_lik},
+            observed_data={"obs": self._y_int},
+            coords={
+                "sel_coefficient": list(self._sel_feature_names),
+                "coefficient": list(self._feature_names),
+                "obs_id": list(range(n)),
+            },
+            dims={
+                "gamma": ["sel_coefficient"],
+                "beta": ["coefficient"],
+                "obs": ["obs_id"],
+            },
+        )
+
+        self._idata = idata
+        return idata
+
+    def _build_pymc_model(self):
+        """Not supported — ZINBSAR uses a Gibbs sampler, not NUTS."""
+        raise NotImplementedError(
+            "ZINBSAR does not build a PyMC model. "
+            "Use the fit() method for Gibbs sampling."
+        )
+
+    def _compute_spatial_effects(
+        self, equation: str = "count"
+    ) -> dict[str, np.ndarray]:
+        """Compute average direct/indirect/total impacts at posterior means.
+
+        Parameters
+        ----------
+        equation : {"count", "selection"}, default "count"
+            Which equation to compute impacts for.
+
+            - ``"count"``: LeSage–Pace decomposition for the SAR-NB
+              count equation using ρ and β.
+            - ``"selection"``: LeSage–Pace decomposition for the
+              SAR-logit selection equation using λ and γ.
+        """
+        if equation == "count":
+            rho = float(self._posterior_mean("rho"))
+            beta = self._posterior_mean("beta")
+            eigs = self._W_eigs
+            mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
+            mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
+            ni = self._nonintercept_indices
+            direct = mean_diag * beta[ni]
+            total = mean_row_sum * beta[ni]
+            indirect = total - direct
+            feature_names = self._nonintercept_feature_names
+        elif equation == "selection":
+            lam = float(self._posterior_mean("lam"))
+            gamma = self._posterior_mean("gamma")
+            sel_eigs = self._W_sel_eigs
+            mean_diag = float(np.mean((1.0 / (1.0 - lam * sel_eigs)).real))
+            # Mean row sum of (I - lam * W_sel)^{-1}
+            if self._is_sel_row_std:
+                mean_row_sum = 1.0 / (1.0 - lam)
+            else:
+                # Eigenvalue-based computation for non-row-standardised W_sel
+                n = self._Z.shape[0]
+                W_sel_dense = self._W_sel_sparse.toarray().astype(np.float64)
+                V_sel = np.linalg.eig(W_sel_dense)[1]
+                c_sel = np.linalg.solve(V_sel, np.ones(n))
+                V_col_sums_sel = V_sel.sum(axis=0)
+                mean_row_sum = float(
+                    np.real(np.mean((V_col_sums_sel * c_sel) / (1.0 - lam * sel_eigs)))
+                )
+            ni = self._sel_nonintercept_indices
+            direct = mean_diag * gamma[ni]
+            total = mean_row_sum * gamma[ni]
+            indirect = total - direct
+            feature_names = self._sel_nonintercept_feature_names
+        else:
+            raise ValueError(
+                f"equation must be 'count' or 'selection', got '{equation}'"
+            )
+
+        return {
+            "direct": direct,
+            "indirect": indirect,
+            "total": total,
+            "feature_names": feature_names,
+        }
+
+    def _compute_spatial_effects_posterior(
+        self, equation: str = "count"
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute posterior impacts for each draw.
+
+        Parameters
+        ----------
+        equation : {"count", "selection"}, default "count"
+            Which equation to compute impacts for.
+        """
+        from ...diagnostics.lmtests import _get_posterior_draws
+        from ...diagnostics.spatial_effects import _chunked_eig_means
+
+        idata = self.inference_data
+
+        if equation == "count":
+            rho_draws = _get_posterior_draws(idata, "rho")
+            beta_draws = _get_posterior_draws(idata, "beta")
+
+            eigs = self._W_eigs
+            mean_diag = _chunked_eig_means(rho_draws, eigs)
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
+
+            ni = self._nonintercept_indices
+            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
+            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
+            indirect_samples = total_samples - direct_samples
+        elif equation == "selection":
+            lam_draws = _get_posterior_draws(idata, "lam")
+            gamma_draws = _get_posterior_draws(idata, "gamma")
+
+            sel_eigs = self._W_sel_eigs
+            mean_diag = _chunked_eig_means(lam_draws, sel_eigs)
+
+            # Mean row sum of (I - lam * W_sel)^{-1}
+            if self._is_sel_row_std:
+                mean_row_sum = 1.0 / (1.0 - lam_draws)
+            else:
+                n = self._Z.shape[0]
+                W_sel_dense = self._W_sel_sparse.toarray().astype(np.float64)
+                eigvals_sel, V_sel = np.linalg.eig(W_sel_dense)
+                c_sel = np.linalg.solve(V_sel, np.ones(n))
+                V_col_sums_sel = V_sel.sum(axis=0)
+                mean_row_sum = _chunked_eig_means(
+                    lam_draws, eigvals_sel, weights=V_col_sums_sel * c_sel
+                )
+
+            ni = self._sel_nonintercept_indices
+            direct_samples = mean_diag[:, None] * gamma_draws[:, ni]
+            total_samples = mean_row_sum[:, None] * gamma_draws[:, ni]
+            indirect_samples = total_samples - direct_samples
+        else:
+            raise ValueError(
+                f"equation must be 'count' or 'selection', got '{equation}'"
+            )
+
+        return direct_samples, indirect_samples, total_samples
+
+    def spatial_effects(
+        self,
+        equation: str = "count",
+        return_posterior_samples: bool = False,
+    ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
+        """Compute Bayesian inference for direct, indirect, and total impacts.
+
+        The ZINB-SAR model has two spatial lag equations — a count
+        equation with parameter ρ and a selection (logit) equation
+        with parameter λ — each with its own LeSage–Pace impact
+        decomposition.  Use the ``equation`` parameter to select which
+        equation's impacts to report.
+
+        Parameters
+        ----------
+        equation : {"count", "selection"}, default "count"
+            Which equation to compute impacts for.
+
+            - ``"count"``: impacts of X on E[y | d=1] through
+              (I − ρW)⁻¹ Xβ.
+            - ``"selection"``: impacts of Z on P(d=1) on the log-odds
+              scale through (I − λW_sel)⁻¹ Zγ.
+        return_posterior_samples : bool, default False
+            If ``True``, return a ``(DataFrame, dict)`` tuple where the
+            dict contains the full posterior draws.
+
+        Returns
+        -------
+        pd.DataFrame or tuple of (pd.DataFrame, dict)
+            Impact summary table, optionally with posterior draws.
+        """
+        from ...diagnostics.spatial_effects import _build_effects_dataframe
+
+        self._require_fit()
+        direct_samples, indirect_samples, total_samples = (
+            self._compute_spatial_effects_posterior(equation=equation)
+        )
+
+        # Determine feature names for the selected equation.
+        if equation == "selection":
+            k_effects = direct_samples.shape[1]
+            sel_names = self._sel_nonintercept_feature_names
+            if len(sel_names) == k_effects:
+                feature_names = list(sel_names)
+            else:
+                feature_names = list(self._sel_feature_names[:k_effects])
+        else:
+            k_effects = direct_samples.shape[1]
+            if (
+                hasattr(self, "_wx_feature_names")
+                and len(self._wx_feature_names) == k_effects
+            ):
+                feature_names = list(self._wx_feature_names)
+            elif len(self._nonintercept_feature_names) == k_effects:
+                feature_names = list(self._nonintercept_feature_names)
+            else:
+                feature_names = list(self._feature_names[:k_effects])
+
+        model_type = f"{self.__class__.__name__} ({equation})"
+
+        df = _build_effects_dataframe(
+            direct_samples=direct_samples,
+            indirect_samples=indirect_samples,
+            total_samples=total_samples,
+            feature_names=feature_names,
+            model_type=model_type,
+        )
+
+        if return_posterior_samples:
+            posterior_samples = {
+                "direct": direct_samples,
+                "indirect": indirect_samples,
+                "total": total_samples,
+            }
+            return df, posterior_samples
+        return df
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute posterior-mean fitted expected counts.
+
+        E[y_i] = π_i · exp(η_i^cnt) where π_i = logit⁻¹(η_i^sel)
+        and η_i^cnt = (I - ρW)^{-1} Xβ at posterior means.
+        """
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        lam = float(self._posterior_mean("lam"))
+        gamma = self._posterior_mean("gamma")
+        n = self._X.shape[0]
+
+        # Count equation: η^cnt = (I - ρW)^{-1} Xβ
+        A_cnt = sp.eye(n, format="csr", dtype=np.float64) - rho * self._W_sparse
+        eta_cnt = sp.linalg.spsolve(A_cnt, self._X @ beta)
+
+        # Selection equation: η^sel = (I - λW_sel)^{-1} Zγ
+        A_sel = sp.eye(n, format="csr", dtype=np.float64) - lam * self._W_sel_sparse
+        eta_sel = sp.linalg.spsolve(A_sel, self._Z @ gamma)
+
+        pi = 1.0 / (1.0 + np.exp(-eta_sel))
+        return pi * np.exp(eta_cnt)
+
+    def corridor_probabilities(self) -> np.ndarray:
+        """Posterior-mean corridor activation probabilities.
+
+        Returns π_i = logit⁻¹(η_i^sel) at posterior means of λ and γ.
+
+        Returns
+        -------
+        pi : ndarray of shape (n,)
+            Fitted activation probabilities.
+        """
+        lam = float(self._posterior_mean("lam"))
+        gamma = self._posterior_mean("gamma")
+        n = self._X.shape[0]
+
+        A_sel = sp.eye(n, format="csr", dtype=np.float64) - lam * self._W_sel_sparse
+        eta_sel = sp.linalg.spsolve(A_sel, self._Z @ gamma)
+        return 1.0 / (1.0 + np.exp(-eta_sel))
+
+    def zero_attribution(self) -> dict[str, np.ndarray]:
+        """Decompose observed zeros into structural vs sampling zeros.
+
+        For each observation with y_i = 0, computes the posterior
+        probability that the zero is structural (d_i = 0) versus
+        sampling (d_i = 1 but NB draw was zero).
+
+        Returns
+        -------
+        dict with keys:
+            ``structural_prob`` : ndarray of shape (n_zero,)
+                P(d_i = 0 | y_i = 0) for each zero observation.
+            ``sampling_prob`` : ndarray of shape (n_zero,)
+                P(d_i = 1, NB zero | y_i = 0) for each zero observation.
+            ``zero_indices`` : ndarray of shape (n_zero,)
+                Indices of zero observations.
+        """
+        self._require_fit()
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        lam = float(self._posterior_mean("lam"))
+        gamma = self._posterior_mean("gamma")
+        alpha = float(self._posterior_mean("alpha"))
+        n = self._X.shape[0]
+
+        # Count equation: η^cnt
+        A_cnt = sp.eye(n, format="csr", dtype=np.float64) - rho * self._W_sparse
+        eta_cnt = sp.linalg.spsolve(A_cnt, self._X @ beta)
+
+        # Selection equation: η^sel
+        A_sel = sp.eye(n, format="csr", dtype=np.float64) - lam * self._W_sel_sparse
+        eta_sel = sp.linalg.spsolve(A_sel, self._Z @ gamma)
+
+        zero_mask = self._y == 0
+        zero_idx = np.where(zero_mask)[0]
+
+        pi = 1.0 / (1.0 + np.exp(-eta_sel[zero_mask]))
+        log_p_nb_zero = alpha * np.log(alpha / (np.exp(eta_cnt[zero_mask]) + alpha))
+        p_nb_zero = np.exp(np.clip(log_p_nb_zero, -700, 0))
+
+        # P(structural | y=0) = (1-π) / ((1-π) + π·p_nb_zero)
+        structural = 1.0 - pi
+        sampling = pi * p_nb_zero
+        total = structural + sampling
+        total = np.where(total > 0, total, 1.0)
+
+        return {
+            "structural_prob": structural / total,
+            "sampling_prob": sampling / total,
+            "zero_indices": zero_idx,
+        }

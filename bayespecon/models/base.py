@@ -938,6 +938,7 @@ class SpatialModel(ABC):
         thin: int,
         n_jobs: int,
         progressbar: bool,
+        gibbs_method: str = "jax",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs`.
@@ -945,6 +946,13 @@ class SpatialModel(ABC):
         This keeps model ``fit`` methods thin by centralizing how Gibbs-specific
         kwargs are popped from ``sample_kwargs``.
         """
+        # Resolve "jax" → "numpy" fallback when JAX is not installed.
+        if gibbs_method == "jax":
+            import importlib.util
+
+            if importlib.util.find_spec("jax") is None:
+                gibbs_method = "numpy"
+
         sample_kwargs = dict(sample_kwargs or {})
         return self._fit_gibbs(
             draws=draws,
@@ -954,7 +962,7 @@ class SpatialModel(ABC):
             thin=thin,
             n_jobs=n_jobs,
             progressbar=progressbar,
-            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+            gibbs_method=gibbs_method,
             mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
             use_mala=sample_kwargs.pop("use_mala", True),
             use_slice=sample_kwargs.pop("use_slice", True),
@@ -1074,7 +1082,7 @@ class SpatialModel(ABC):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
+        gibbs_method: str = "jax",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
         use_slice: bool = True,
@@ -1105,10 +1113,11 @@ class SpatialModel(ABC):
             all CPUs.
         progressbar : bool, default True
             Show per-chain progress bars.
-        gibbs_method : str, default "numpy"
-            Execution backend: ``"numpy"`` for Python-loop Gibbs with
-            adaptive slice sampling, or ``"jax"`` for full-JIT Gibbs
-            with MALA for ρ/λ.
+        gibbs_method : str, default "jax"
+            Execution backend: ``"jax"`` for full-JIT Gibbs with
+            slice sampling for ρ/λ (default, falls back to ``"numpy"``
+            when JAX is not installed), or ``"numpy"`` for Python-loop
+            Gibbs with adaptive slice sampling.
         mala_step_size : float, default 0.05
             Initial MALA step size for the JAX path.
         use_mala : bool, default True

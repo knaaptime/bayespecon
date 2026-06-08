@@ -265,6 +265,7 @@ class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         sampler: str = "gibbs",
+        gibbs_method: str = "jax",
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
@@ -286,6 +287,7 @@ class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
+                gibbs_method=gibbs_method,
                 sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
@@ -327,7 +329,7 @@ class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
+        gibbs_method: str = "jax",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
         use_slice: bool = True,
@@ -352,8 +354,8 @@ class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
             Number of parallel workers for the NumPy path.
         progressbar : bool, default True
             Show per-chain progress bars.
-        gibbs_method : str, default "numpy"
-            Execution backend: ``"numpy"`` or ``"jax"``.
+        gibbs_method : str, default "jax"
+            Execution backend: ``"jax"`` for full-JIT Gibbs (default, falls back to ``"numpy"`` when JAX is not installed), or ``"numpy"`` for Python-loop Gibbs.
         mala_step_size : float, default 0.05
             Initial MALA step size for the JAX path.
         use_mala : bool, default True
@@ -600,6 +602,7 @@ class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         sampler: str = "gibbs",
+        gibbs_method: str = "jax",
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
@@ -623,6 +626,7 @@ class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
+                gibbs_method=gibbs_method,
                 sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
@@ -664,7 +668,7 @@ class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
+        gibbs_method: str = "jax",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
         use_slice: bool = True,
@@ -689,8 +693,8 @@ class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
             Number of parallel workers for the NumPy path.
         progressbar : bool, default True
             Show per-chain progress bars.
-        gibbs_method : str, default "numpy"
-            Execution backend: ``"numpy"`` or ``"jax"``.
+        gibbs_method : str, default "jax"
+            Execution backend: ``"jax"`` for full-JIT Gibbs (default, falls back to ``"numpy"`` when JAX is not installed), or ``"numpy"`` for Python-loop Gibbs.
         mala_step_size : float, default 0.05
             Initial MALA step size for the JAX path.
         use_mala : bool, default True
@@ -922,6 +926,7 @@ class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         sampler: str = "gibbs",
+        gibbs_method: str = "jax",
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
@@ -943,6 +948,7 @@ class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
+                gibbs_method=gibbs_method,
                 sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
@@ -984,7 +990,7 @@ class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
+        gibbs_method: str = "jax",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
         use_slice: bool = True,
@@ -1013,8 +1019,8 @@ class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
             Number of parallel workers for the NumPy path.
         progressbar : bool, default True
             Show per-chain progress bars.
-        gibbs_method : str, default "numpy"
-            Execution backend: ``"numpy"`` or ``"jax"``.
+        gibbs_method : str, default "jax"
+            Execution backend: ``"jax"`` for full-JIT Gibbs (default, falls back to ``"numpy"`` when JAX is not installed), or ``"numpy"`` for Python-loop Gibbs.
         mala_step_size : float, default 0.05
             Initial MALA step size for the JAX path.
         use_mala : bool, default True
@@ -1306,6 +1312,7 @@ class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         sampler: str = "gibbs",
+        gibbs_method: str = "jax",
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
@@ -1329,6 +1336,7 @@ class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
+                gibbs_method=gibbs_method,
                 sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":
@@ -1370,7 +1378,7 @@ class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
+        gibbs_method: str = "jax",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
         use_slice: bool = True,
@@ -1399,8 +1407,8 @@ class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
             Number of parallel workers for the NumPy path.
         progressbar : bool, default True
             Show per-chain progress bars.
-        gibbs_method : str, default "numpy"
-            Execution backend: ``"numpy"`` or ``"jax"``.
+        gibbs_method : str, default "jax"
+            Execution backend: ``"jax"`` for full-JIT Gibbs (default, falls back to ``"numpy"`` when JAX is not installed), or ``"numpy"`` for Python-loop Gibbs.
         mala_step_size : float, default 0.05
             Initial MALA step size for the JAX path.
         use_mala : bool, default True

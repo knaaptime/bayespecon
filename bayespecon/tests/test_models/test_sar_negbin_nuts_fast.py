@@ -1,4 +1,8 @@
-"""Fast build/method tests for SARNegativeBinomial."""
+"""Fast build/method tests for SARNegativeBinomial NUTS path.
+
+These exercise the reduced-form NUTS model (no σ, no z) that is now
+built into SARNegativeBinomial via _build_pymc_model().
+"""
 
 from __future__ import annotations
 
@@ -7,8 +11,7 @@ import numpy as np
 import pymc as pm
 import pytest
 
-from bayespecon import SARNegativeBinomialNUTS as SARNegativeBinomial
-from bayespecon import dgp
+from bayespecon import SARNegativeBinomial, dgp
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 
@@ -30,6 +33,7 @@ def _count_data(seed: int = 101):
 
 
 def test_sar_negbin_build_pymc_model():
+    """Reduced-form NUTS model has rho, beta, alpha, jacobian — no sigma/z."""
     y, X, W = _count_data()
     model = SARNegativeBinomial(y=y, X=X, W=W)
     pymc_model = model._build_pymc_model()
@@ -37,8 +41,12 @@ def test_sar_negbin_build_pymc_model():
     assert isinstance(pymc_model, pm.Model)
     assert "rho" in pymc_model.named_vars
     assert "alpha" in pymc_model.named_vars
-    assert "sigma" in pymc_model.named_vars
-    assert "z" in pymc_model.named_vars
+    assert "beta" in pymc_model.named_vars
+    assert "jacobian" in pymc_model.named_vars
+    # Reduced form must NOT have sigma, sigma2, or z
+    assert "sigma" not in pymc_model.named_vars
+    assert "sigma2" not in pymc_model.named_vars
+    assert "z" not in pymc_model.named_vars
 
 
 def test_sar_negbin_rejects_noninteger_or_negative_y():
@@ -59,13 +67,12 @@ def test_sar_negbin_fitted_values_and_effects_with_mock_posterior():
     n = X.shape[0]
     model = SARNegativeBinomial(y=y, X=X, W=W)
 
+    # Reduced form: only β, ρ, α — no σ, no z.
     model._idata = _idata(
         {
             "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
             "rho": np.array([0.15, 0.16]),
-            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([2.0, 2.1]),
-            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
 
@@ -102,9 +109,7 @@ def test_sar_negbin_count_effects_sparse_matches_eigen():
         {
             "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
             "rho": np.array([0.15, 0.16]),
-            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([2.0, 2.1]),
-            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
 
@@ -148,9 +153,7 @@ def test_sar_negbin_count_effects_sparse_batched_matches_columnwise():
         {
             "beta": np.stack([np.array([0.25, 0.55]), np.array([0.24, 0.57])]),
             "rho": np.array([0.18, 0.22]),
-            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([1.8, 2.2]),
-            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
 
@@ -201,9 +204,7 @@ def test_sar_negbin_spatial_effects_rejects_unknown_method():
         {
             "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
             "rho": np.array([0.15, 0.16]),
-            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([2.0, 2.1]),
-            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
     with pytest.raises(ValueError, match="method must be one of"):
@@ -218,9 +219,7 @@ def test_sar_negbin_spatial_effects_rejects_unknown_scale():
         {
             "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
             "rho": np.array([0.15, 0.16]),
-            "sigma": np.array([1.0, 1.1]),
             "alpha": np.array([2.0, 2.1]),
-            "z": np.stack([np.zeros(n), np.zeros(n)]),
         }
     )
 
@@ -247,7 +246,7 @@ def test_sar_negbin_jax_logp_grad_with_lineax(monkeypatch):
     pytest.importorskip("lineax")
 
     monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "lineax")
-    monkeypatch.setenv("BAYESPECON_JAX_SAR_LINEAX_SOLVER", "bicgstab")
+    monkeypatch.setenv("BAYESPECON_JAX_LINEAX_SOLVER", "bicgstab")
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
 
     from bayespecon._jax_dispatch import (
@@ -274,8 +273,7 @@ def test_sar_negbin_jax_logp_grad_with_lineax(monkeypatch):
             # X @ beta = 0, which BiCGStab cannot start from).
             ip["beta"] = np.array([0.3, 0.6])
             ip["rho_interval__"] = np.array(0.4)
-            ip["sigma2_log__"] = np.array(0.0)
-            ip["z"] = np.zeros(X.shape[0])
+            # Reduced form: no sigma2_log__ or z
             logp_fn = pm_model.compile_logp(mode="JAX")
             dlogp_fn = pm_model.compile_dlogp(mode="JAX")
             lp = logp_fn(ip)
@@ -288,3 +286,52 @@ def test_sar_negbin_jax_logp_grad_with_lineax(monkeypatch):
         _select_jax_sar_solver.cache_clear()
         _select_jax_sar_lineax_solver.cache_clear()
         register_jax_dispatch.cache_clear()
+
+
+def test_sar_negbin_fit_rejects_invalid_sampler():
+    """fit() raises ValueError for invalid sampler string."""
+    y, X, W = _count_data(seed=105)
+    model = SARNegativeBinomial(y=y, X=X, W=W)
+    with pytest.raises(ValueError, match="sampler must be 'gibbs' or 'nuts'"):
+        model.fit(draws=10, tune=10, sampler="hmc")
+
+
+def test_sar_negbin_fit_nuts_dispatches_to_super():
+    """fit(sampler='nuts') calls super().fit() which uses _build_pymc_model."""
+    y, X, W = _count_data(seed=106)
+    model = SARNegativeBinomial(y=y, X=X, W=W)
+
+    # Patch super().fit() to verify it gets called with the right args.
+    original_fit = type(model).__bases__[0].fit
+    called_with = {}
+
+    def _mock_super_fit(
+        self, *, draws, tune, chains, random_seed, progressbar, **kwargs
+    ):
+        called_with.update(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            kwargs=kwargs,
+        )
+        # Return a minimal InferenceData so the test doesn't fail.
+        import xarray as xr
+
+        prior = xr.Dataset(
+            {"rho": (("chain", "draw"), np.array([[0.1]]))},
+            coords={"chain": [0], "draw": [0]},
+        )
+        return az.from_dict(posterior={"rho": np.array([[0.1]])})
+
+    try:
+        type(model).__bases__[0].fit = _mock_super_fit
+        model.fit(draws=50, tune=25, chains=1, random_seed=42, sampler="nuts")
+    finally:
+        type(model).__bases__[0].fit = original_fit
+
+    assert called_with["draws"] == 50
+    assert called_with["tune"] == 25
+    assert called_with["chains"] == 1
+    assert called_with["random_seed"] == 42

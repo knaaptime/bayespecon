@@ -325,7 +325,7 @@ def generate_flow_data(
     }
 
 
-def generate_poisson_flow_data(
+def generate_negbin_flow_data(
     n: int | None = None,
     k: int = 2,
     k_d: int | None = None,
@@ -335,30 +335,30 @@ def generate_poisson_flow_data(
     rho_w: float = 0.1,
     beta_d: float | list[float] | None = None,
     beta_o: float | list[float] | None = None,
+    alpha: float = 2.0,
     gamma_dist: float = -0.5,
     seed: int = 42,
     G: Graph | None = None,
-    # Accepted for API parity with other DGP functions but unused:
     err_hetero: bool = False,
     gdf: object = None,
     knn_k: int = 4,
 ) -> dict:
-    """Generate synthetic origin-destination flow **count** data for a Poisson
-    spatial autoregressive flow model.
+    r"""Generate synthetic O-D flow counts from an NB2 SAR flow DGP.
 
     The data-generating process follows:
 
     .. math::
 
-        \\eta = A(\\rho_d, \\rho_o, \\rho_w)^{-1} X\\beta, \\qquad
-        y_{ij} \\sim \\operatorname{Poisson}(\\exp(\\eta_{ij}))
+        \eta = A(\rho_d, \rho_o, \rho_w)^{-1} X\beta, \qquad
+        y_{ij} \sim \operatorname{NegBin}(\mu=\exp(\eta_{ij}),\, \alpha)
 
-    where the system matrix is
+    where :math:`\operatorname{Var}(y)=\mu+\mu^2/\alpha` and the system
+    matrix is
 
     .. math::
 
-        A = I_N - \\rho_d (I_n \\otimes W) - \\rho_o (W \\otimes I_n)
-              - \\rho_w (W \\otimes W), \\quad N = n^2
+        A = I_N - \rho_d (I_n \otimes W) - \rho_o (W \otimes I_n)
+              - \rho_w (W \otimes W), \quad N = n^2
 
     and :math:`W` is the row-standardised spatial weight matrix.
 
@@ -380,8 +380,8 @@ def generate_poisson_flow_data(
         Number of destination-side attribute columns.  Overrides ``k`` for
         the destination side when provided.
     k_o : int or None, default None
-        Number of origin-side attribute columns.  Overrides ``k`` for the
-        origin side when provided.
+        Number of origin-side attribute columns.  Overrides ``k`` for
+        the origin side when provided.
     rho_d : float, default 0.3
         Destination autocorrelation parameter.
     rho_o : float, default 0.2
@@ -393,6 +393,11 @@ def generate_poisson_flow_data(
         broadcasts to all columns.  Defaults to ``1.0`` for all columns.
     beta_o : float or list of float or None, default None
         Origin-side coefficients.  Defaults to ``1.0`` for all columns.
+    alpha : float, default 2.0
+        NB2 dispersion parameter.  Must be strictly positive.
+        Larger values approach Poisson; smaller values increase overdispersion.
+    gamma_dist : float, default -0.5
+        Coefficient on the log-distance regressor.
     seed : int, default 42
         Seed for :class:`numpy.random.default_rng`.
     G : libpysal.graph.Graph or None, default None
@@ -401,7 +406,7 @@ def generate_poisson_flow_data(
         via :func:`~bayespecon.dgp.utils.resolve_weights`.
     err_hetero : bool, default False
         Accepted for API parity with other DGP functions; ignored for the
-        Poisson model (the variance is determined by the mean).
+        NB model (the variance is determined by the mean and alpha).
     gdf : GeoDataFrame or None, default None
         Accepted for API parity; ignored (use *G* instead).
 
@@ -415,12 +420,10 @@ def generate_poisson_flow_data(
         ``eta_vec`` : np.ndarray, shape (N,)
             Log-mean (spatially filtered linear predictor).
         ``lambda_vec`` : np.ndarray, shape (N,)
-            Poisson means (:math:`\\exp(\\eta_{ij})`).
-        ``Xd`` : np.ndarray, shape (n, k)
+            NB means (:math:`\exp(\eta_{ij})`).
+        ``Xd`` : np.ndarray, shape (n, k_d)
             Destination-side regional attribute matrix.
-        ``Xd`` : np.ndarray, shape (n, k)
-            Destination-side regional attribute matrix.
-        ``Xo`` : np.ndarray, shape (n, k)
+        ``Xo`` : np.ndarray, shape (n, k_o)
             Origin-side regional attribute matrix.
         ``X`` : np.ndarray, shape (N, p)
             Full O-D design matrix (for model fitting).
@@ -434,26 +437,17 @@ def generate_poisson_flow_data(
             True autocorrelation parameters.
         ``beta_d``, ``beta_o``
             True coefficient vectors.
+        ``alpha`` : float
+            True NB2 dispersion parameter.
 
     Raises
     ------
-    np.linalg.LinAlgError
-        If the system matrix :math:`A` is singular (usually because
-        ``rho_d + rho_o + rho_w >= 1``).
-
-    Examples
-    --------
-    >>> from bayespecon.dgp import generate_poisson_flow_data
-    >>> data = generate_poisson_flow_data(n=9, seed=0)
-    >>> data["y_mat"].dtype
-    dtype('int64')
-    >>> data["lambda_vec"].shape
-    (81,)
-    >>> data["Xd"].shape
-    (9, 2)
-    >>> data["Xo"].shape
-    (9, 2)
+    ValueError
+        If ``alpha <= 0`` or the system matrix :math:`A` is singular.
     """
+    if alpha <= 0:
+        raise ValueError("alpha must be strictly positive.")
+
     from .utils import _resolve_flow_geometry
 
     rng = np.random.default_rng(seed)
@@ -464,7 +458,6 @@ def generate_poisson_flow_data(
     N = n * n
 
     # --- Coefficient vectors ---
-    # Resolve k_d and k_o: explicit params take precedence, then infer from beta lengths, then fall back to k
     if beta_d is not None:
         beta_d_arr = np.asarray(beta_d, dtype=float).ravel()
         k_d_val = k_d if k_d is not None else len(beta_d_arr)
@@ -513,17 +506,18 @@ def generate_poisson_flow_data(
     I_N = sp.eye(N, format="csr", dtype=np.float64)
     A = I_N - rho_d * Wd - rho_o * Wo - rho_w * Ww
 
-    # --- Solve A eta = Xbeta  (Poisson: log-mean scale) ---
+    # --- Solve A eta = Xbeta  (reduced form: no sigma, no noise) ---
     try:
         eta_vec = sp.linalg.spsolve(A, Xbeta)
     except sp.linalg.MatrixRankWarning as exc:
-        raise np.linalg.LinAlgError(
+        raise ValueError(
             "A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww is singular. "
             "Check that rho_d + rho_o + rho_w < 1 for row-stochastic W."
         ) from exc
 
     lambda_vec = np.exp(eta_vec)
-    y_vec = rng.poisson(lambda_vec).astype(np.int64)
+    p_nb = alpha / (alpha + lambda_vec)
+    y_vec = rng.negative_binomial(alpha, p_nb).astype(np.int64)
     y_mat = y_vec.reshape(n, n)
 
     return {
@@ -546,68 +540,8 @@ def generate_poisson_flow_data(
         "beta_d": beta_d_arr,
         "beta_o": beta_o_arr,
         "gamma_dist": gamma_dist,
+        "alpha": float(alpha),
     }
-
-
-def generate_negbin_flow_data(
-    n: int | None = None,
-    k: int = 2,
-    k_d: int | None = None,
-    k_o: int | None = None,
-    rho_d: float = 0.3,
-    rho_o: float = 0.2,
-    rho_w: float = 0.1,
-    beta_d: float | list[float] | None = None,
-    beta_o: float | list[float] | None = None,
-    alpha: float = 2.0,
-    gamma_dist: float = -0.5,
-    seed: int = 42,
-    G: Graph | None = None,
-    err_hetero: bool = False,
-    gdf: object = None,
-    knn_k: int = 4,
-) -> dict:
-    r"""Generate synthetic O-D flow counts from an NB2 SAR flow DGP.
-
-    Mirrors :func:`generate_poisson_flow_data` but samples counts from
-    :math:`\mathrm{NegBin}(\mu, \alpha)` where
-    :math:`\mathrm{Var}(y)=\mu+\mu^2/\alpha`.
-    """
-    if alpha <= 0:
-        raise ValueError("alpha must be strictly positive.")
-
-    base = generate_poisson_flow_data(
-        n=n,
-        k=k,
-        k_d=k_d,
-        k_o=k_o,
-        rho_d=rho_d,
-        rho_o=rho_o,
-        rho_w=rho_w,
-        beta_d=beta_d,
-        beta_o=beta_o,
-        gamma_dist=gamma_dist,
-        seed=seed,
-        G=G,
-        err_hetero=err_hetero,
-        gdf=gdf,
-        knn_k=knn_k,
-    )
-    rng = np.random.default_rng(seed)
-    mu = np.asarray(base["lambda_vec"], dtype=np.float64)
-    p = alpha / (alpha + mu)
-    y_vec = rng.negative_binomial(alpha, p).astype(np.int64)
-    n_obs = int(base["W"].shape[0])
-    y_mat = y_vec.reshape(n_obs, n_obs)
-
-    base.update(
-        {
-            "y_vec": y_vec,
-            "y_mat": y_mat,
-            "alpha": float(alpha),
-        }
-    )
-    return base
 
 
 def generate_negbin_flow_data_separable(
@@ -855,7 +789,7 @@ def generate_panel_flow_data(
     }
 
 
-def generate_panel_poisson_flow_data(
+def generate_panel_negbin_flow_data(
     n: int | None = None,
     T: int = 5,
     G: Graph | None = None,
@@ -864,6 +798,7 @@ def generate_panel_poisson_flow_data(
     rho_w: float = 0.1,
     beta_d: float | list[float] | None = None,
     beta_o: float | list[float] | None = None,
+    alpha: float = 2.0,
     gamma_dist: float = -0.5,
     seed: int = 42,
     k: int = 2,
@@ -873,7 +808,7 @@ def generate_panel_poisson_flow_data(
     gdf: object = None,
     knn_k: int = 4,
 ) -> dict:
-    r"""Simulate panel Poisson flow data from a spatial autoregressive model.
+    r"""Generate panel NB2 flow counts from a spatial autoregressive DGP.
 
     For each period :math:`t = 1, \dots, T`, generates :math:`N = n^2`
     flow counts from:
@@ -881,7 +816,7 @@ def generate_panel_poisson_flow_data(
     .. math::
 
         \eta_t = A^{-1} X_t \beta, \quad
-        y_{ij,t} \sim \operatorname{Poisson}(\exp(\eta_{ij,t}))
+        y_{ij,t} \sim \operatorname{NegBin}(\mu=\exp(\eta_{ij,t}),\, \alpha)
 
     where the system matrix is
 
@@ -891,14 +826,14 @@ def generate_panel_poisson_flow_data(
               - \rho_w (W \otimes W), \quad N = n^2
 
     Observations are stacked in **time-first** order.  There is no
-    :math:`\sigma` or :math:`\alpha` parameter (the Poisson variance
-    equals the mean, and the panel is pooled-only).
+    :math:`\sigma` parameter (the NB variance is determined by the mean
+    and alpha).
 
     Parameters
     ----------
     n : int
         Number of spatial units.  Must match the size of *G*.
-    T : int
+    T : int, default 5
         Number of time periods.
     G : libpysal.graph.Graph
         Row-standardised spatial graph on *n* units.
@@ -913,13 +848,17 @@ def generate_panel_poisson_flow_data(
         broadcasts to all columns.  Defaults to ``1.0`` for all columns.
     beta_o : float or list of float or None, default None
         Origin-side coefficients.  Defaults to ``1.0`` for all columns.
+    alpha : float, default 2.0
+        NB2 dispersion parameter.  Must be strictly positive.
+    gamma_dist : float, default -0.5
+        Coefficient on the log-distance regressor.
     seed : int, default 42
         Seed for :class:`numpy.random.default_rng`.
     k : int, default 2
         Number of destination/origin attribute columns.
     err_hetero : bool, default False
         Accepted for API parity with other DGP functions; ignored for
-        the Poisson model (the variance is determined by the mean).
+        the NB model (the variance is determined by the mean and alpha).
     gdf : object, optional
         Accepted for API parity with other DGP functions; not used
         (pass *G* directly instead).
@@ -930,18 +869,25 @@ def generate_panel_poisson_flow_data(
         Dictionary with keys:
 
         - ``"y"`` (n²T,): time-first stacked count vector (int64).
+        - ``"lambda"`` (n²T,): time-first stacked NB means.
         - ``"X"`` (n²T, p): time-first stacked O-D design matrix.
         - ``"col_names"`` list[str]: feature names.
         - ``"G"`` libpysal.graph.Graph: spatial graph.
         - ``"rho_d"``, ``"rho_o"``, ``"rho_w"``: true parameters.
         - ``"beta_d"``, ``"beta_o"``: true coefficient vectors.
+        - ``"alpha"``: true NB2 dispersion parameter.
         - ``"params_true"`` dict: nested dict of all true parameters.
 
     Raises
     ------
     ValueError
-        If the A matrix is singular (invalid parameter combination).
+        If ``alpha <= 0`` or the A matrix is singular.
     """
+    if alpha <= 0:
+        raise ValueError("alpha must be strictly positive.")
+
+    from .utils import _resolve_flow_geometry
+
     rng = np.random.default_rng(seed)
 
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
@@ -1011,10 +957,11 @@ def generate_panel_poisson_flow_data(
 
         Xbeta = design.combined @ beta_full  # (N,)
 
-        # Solve A eta = Xbeta
+        # Solve A eta = Xbeta  (reduced form: no sigma, no noise)
         eta_t = solve_A(Xbeta)
         lambda_t = np.exp(eta_t)
-        y_t = rng.poisson(lambda_t).astype(np.int64)
+        p_nb = alpha / (alpha + lambda_t)
+        y_t = rng.negative_binomial(alpha, p_nb).astype(np.int64)
 
         y_list.append(y_t)
         lambda_list.append(lambda_t)
@@ -1038,6 +985,7 @@ def generate_panel_poisson_flow_data(
         "beta_d": beta_d_arr,
         "beta_o": beta_o_arr,
         "gamma_dist": gamma_dist,
+        "alpha": float(alpha),
         "params_true": {
             "rho_d": rho_d,
             "rho_o": rho_o,
@@ -1045,65 +993,9 @@ def generate_panel_poisson_flow_data(
             "beta_d": beta_d_arr,
             "beta_o": beta_o_arr,
             "gamma_dist": gamma_dist,
+            "alpha": float(alpha),
         },
     }
-
-
-def generate_panel_negbin_flow_data(
-    n: int | None = None,
-    T: int = 5,
-    G: Graph | None = None,
-    rho_d: float = 0.3,
-    rho_o: float = 0.2,
-    rho_w: float = 0.1,
-    beta_d: float | list[float] | None = None,
-    beta_o: float | list[float] | None = None,
-    alpha: float = 2.0,
-    gamma_dist: float = -0.5,
-    seed: int = 42,
-    k: int = 2,
-    k_d: int | None = None,
-    k_o: int | None = None,
-    err_hetero: bool = False,
-    gdf: object = None,
-    knn_k: int = 4,
-) -> dict:
-    r"""Generate panel NB2 flow counts from a spatial autoregressive DGP."""
-    if alpha <= 0:
-        raise ValueError("alpha must be strictly positive.")
-
-    base = generate_panel_poisson_flow_data(
-        n=n,
-        T=T,
-        G=G,
-        rho_d=rho_d,
-        rho_o=rho_o,
-        rho_w=rho_w,
-        beta_d=beta_d,
-        beta_o=beta_o,
-        gamma_dist=gamma_dist,
-        seed=seed,
-        k=k,
-        k_d=k_d,
-        k_o=k_o,
-        err_hetero=err_hetero,
-        gdf=gdf,
-        knn_k=knn_k,
-    )
-    rng = np.random.default_rng(seed)
-    mu = np.asarray(base["lambda"], dtype=np.float64)
-    p = alpha / (alpha + mu)
-    y = rng.negative_binomial(alpha, p).astype(np.int64)
-
-    base.update(
-        {
-            "y": y,
-            "alpha": float(alpha),
-        }
-    )
-    if "params_true" in base:
-        base["params_true"]["alpha"] = float(alpha)
-    return base
 
 
 def generate_flow_data_separable(
@@ -1157,46 +1049,6 @@ def generate_flow_data_separable(
         beta_d=beta_d,
         beta_o=beta_o,
         **kwargs,
-    )
-
-
-def generate_poisson_flow_data_separable(
-    n: int | None = None,
-    k: int = 2,
-    rho_d: float = 0.3,
-    rho_o: float = 0.2,
-    **kwargs,
-) -> dict:
-    """Simulate Poisson flow count data from a *separable* SAR flow model.
-
-    Identical to :func:`generate_poisson_flow_data` except the network
-    parameter is derived as :math:`\\rho_w = -\\rho_d \\rho_o`, so it is
-    **not** a free argument.  Use this function to generate training data for
-    :class:`~bayespecon.models.flow.PoissonSARFlowSeparable`.
-
-    Parameters
-    ----------
-    n : int, default 10
-        Number of spatial units.
-    k : int, default 2
-        Number of destination/origin attribute columns.
-    rho_d : float, default 0.3
-        Destination autocorrelation parameter.
-    rho_o : float, default 0.2
-        Origin autocorrelation parameter.
-    **kwargs
-        Forwarded to :func:`generate_poisson_flow_data` (e.g. ``beta_d``,
-        ``beta_o``, ``seed``, ``G``).
-
-    Returns
-    -------
-    dict
-        Same as :func:`generate_poisson_flow_data`.  The ``"rho_w"`` entry
-        will equal ``-rho_d * rho_o``.
-    """
-    rho_w = -rho_d * rho_o
-    return generate_poisson_flow_data(
-        n=n, k=k, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w, **kwargs
     )
 
 
@@ -1254,49 +1106,6 @@ def generate_panel_flow_data_separable(
         beta_d=beta_d,
         beta_o=beta_o,
         **kwargs,
-    )
-
-
-def generate_panel_poisson_flow_data_separable(
-    n: int | None = None,
-    T: int = 5,
-    G: Graph | None = None,
-    rho_d: float = 0.3,
-    rho_o: float = 0.2,
-    **kwargs,
-) -> dict:
-    """Simulate panel Poisson flow data from a *separable* SAR flow model.
-
-    Identical to :func:`generate_panel_poisson_flow_data` except the network
-    parameter is derived as :math:`\\rho_w = -\\rho_d \\rho_o`.  Use this
-    function to generate training data for
-    :class:`~bayespecon.models.flow_panel.PoissonSARFlowSeparablePanel`.
-
-    Parameters
-    ----------
-    n : int
-        Number of spatial units.
-    T : int
-        Number of time periods.
-    G : libpysal.graph.Graph
-        Row-standardised spatial graph on *n* units.
-    rho_d : float, default 0.3
-        Destination autocorrelation parameter.
-    rho_o : float, default 0.2
-        Origin autocorrelation parameter.
-    **kwargs
-        Forwarded to :func:`generate_panel_poisson_flow_data` (e.g.
-        ``beta_d``, ``beta_o``, ``seed``).
-
-    Returns
-    -------
-    dict
-        Same as :func:`generate_panel_poisson_flow_data`.  The ``"rho_w"``
-        entry will equal ``-rho_d * rho_o``.
-    """
-    rho_w = -rho_d * rho_o
-    return generate_panel_poisson_flow_data(
-        n=n, T=T, G=G, rho_d=rho_d, rho_o=rho_o, rho_w=rho_w, **kwargs
     )
 
 

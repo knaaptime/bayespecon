@@ -1,0 +1,858 @@
+"""Reduced-form PG-Gibbs sampler for spatial-lag NB flow models.
+
+Targets the reduced-form NB2 spatial-lag flow model
+
+.. math::
+
+    y_{ij} \\sim \\operatorname{NegBin}(\\mu_{ij}, \\alpha), \\qquad
+    \\log \\boldsymbol{\\mu} = A(\\boldsymbol{\\rho})^{-1} X \\beta
+
+where :math:`A = I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w`
+(unrestricted) or :math:`A = L_d \\otimes L_o` with
+:math:`L_k = I_n - \\rho_k W` and :math:`\\rho_w = -\\rho_d \\rho_o`
+(separable).
+
+The sampler has four blocks per sweep:
+
+1. **ω** — Pólya–Gamma augmentation (shared with SAR-NB core).
+2. **β** — Conjugate Gaussian given :math:`\\tilde X = A^{-1} X`.
+3. **ρ** — 1-D adaptive slice on each spatial parameter (β marginalised).
+4. **α** — 1-D slice on log(α) (shared with SAR-NB core).
+
+There is no :math:`\\sigma` parameter — spatial dependence enters only
+through the mean propagator :math:`A^{-1}`, matching the LeSage & Pace
+spatial econometrics convention.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
+
+from .._utils._slice import (
+    SliceWidthState,
+    slice_sample_1d_adaptive,
+    update_slice_width,
+)
+from ..negbin._core import GibbsState as _StructuralState
+from ..negbin._core import _nb_loglik_pointwise, _sample_alpha
+from ._core import (
+    _KRYLOV_DEGREE_DEFAULT,
+    _KRYLOV_DMAX_DEFAULT,
+    ReducedGibbsPriors,
+    _build_krylov_basis,
+    _eval_U_from_basis,
+    _sample_beta,
+    _sample_omega,
+)
+
+# ---------------------------------------------------------------------------
+# State, priors, cache
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FlowReducedGibbsState:
+    """Mutable state for one chain of the reduced-form flow NB Gibbs sampler.
+
+    Parameters
+    ----------
+    beta : ndarray, shape (k,)
+        Regression coefficients.
+    rho_d, rho_o : float
+        Destination and origin spatial autoregressive parameters.
+    rho_w : float or None
+        Cross spatial parameter (None for separable models where
+        rho_w = -rho_d * rho_o is deterministic).
+    alpha : float
+        NB dispersion (NB2 parameterisation).
+    omega : ndarray, shape (N,)
+        Pólya–Gamma auxiliary variables (N = n²).
+    """
+
+    beta: np.ndarray
+    rho_d: float
+    rho_o: float
+    rho_w: Optional[float]
+    alpha: float
+    omega: np.ndarray
+
+
+@dataclass
+class FlowReducedGibbsPriors:
+    """Prior hyperparameters for the reduced-form flow NB sampler."""
+
+    beta_mu: np.ndarray | float = 0.0
+    beta_sigma: np.ndarray | float = 1e6
+    alpha_sigma: float = 2.5
+    alpha_nu: float = 3.0
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+
+
+class FlowReducedGibbsCache:
+    """Precomputed constants for the flow Gibbs sweep.
+
+    Parameters
+    ----------
+    Wd, Wo, Ww : scipy.sparse.csr_matrix, shape (N, N)
+        Flow weight matrices (destination, origin, cross).
+    W_csc : scipy.sparse.csc_matrix, shape (n, n)
+        Row-standardised regional weights in CSC format (for the
+        separable Kronecker solve and Krylov basis).
+    n : int
+        Number of regions (A is N×N where N = n²).
+    separable : bool
+        If True, use Kronecker factorisation (rho_w = -rho_d * rho_o).
+    rho_lower, rho_upper : float
+        Support bounds for each ρ.
+    krylov_degree : int
+        Krylov basis degree for the separable variant.  Default 8.
+        Ignored for the unrestricted variant.
+    krylov_dmax : float
+        Maximum |Δρ| for Krylov basis reuse.  Default 0.15.
+    n_rho_omega_cycles : int
+        Number of (ω, ρ, β) Gibbs cycles per sweep.  Default 1.
+    """
+
+    def __init__(
+        self,
+        Wd: sp.csr_matrix,
+        Wo: sp.csr_matrix,
+        Ww: sp.csr_matrix,
+        W_csc: sp.csc_matrix,
+        n: int,
+        separable: bool = False,
+        rho_lower: float = -0.999,
+        rho_upper: float = 0.999,
+        krylov_degree: int = _KRYLOV_DEGREE_DEFAULT,
+        krylov_dmax: float = _KRYLOV_DMAX_DEFAULT,
+        n_rho_omega_cycles: int = 1,
+    ):
+        self.Wd = Wd
+        self.Wo = Wo
+        self.Ww = Ww
+        self.W_csc = W_csc
+        self.n = n
+        self.separable = separable
+        self.rho_lower = rho_lower
+        self.rho_upper = rho_upper
+        self.krylov_degree = krylov_degree
+        self.krylov_dmax = krylov_dmax
+        self.n_rho_omega_cycles = n_rho_omega_cycles
+
+        # Eigenvalue bounds for the regional W (n×n).
+        # For row-standardised W: eigenvalues in [-1, 1].
+        try:
+            eigvals = sp.linalg.eigsh(W_csc.astype(np.float64), k=1, which="LM")
+            self.W_eig_max = float(np.max(np.abs(eigvals[0])))
+        except Exception:
+            self.W_eig_max = 1.0
+        try:
+            eigvals = sp.linalg.eigsh(W_csc.astype(np.float64), k=1, which="SA")
+            self.W_eig_min = float(eigvals[0][0])
+        except Exception:
+            self.W_eig_min = -1.0
+
+        # Adaptive slice width states for each ρ parameter
+        self.rho_d_slice_width_state = SliceWidthState()
+        self.rho_o_slice_width_state = SliceWidthState()
+        self.rho_w_slice_width_state = SliceWidthState()
+
+
+# ---------------------------------------------------------------------------
+# Helpers: assemble A and solve A⁻¹X
+# ---------------------------------------------------------------------------
+
+
+def _assemble_A_unrestricted(
+    rho_d: float,
+    rho_o: float,
+    rho_w: float,
+    Wd: sp.csr_matrix,
+    Wo: sp.csr_matrix,
+    Ww: sp.csr_matrix,
+    N: int,
+) -> sp.csr_matrix:
+    """Assemble A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww."""
+    eye = sp.eye(N, format="csr", dtype=np.float64)
+    return eye - rho_d * Wd - rho_o * Wo - rho_w * Ww
+
+
+def _solve_A_unrestricted(
+    A: sp.csr_matrix,
+    X: np.ndarray,
+) -> np.ndarray:
+    """Solve A η = X via sparse LU, returning η = A⁻¹X."""
+    lu = spla.splu(A.tocsc())
+    return lu.solve(X)
+
+
+def _solve_A_separable(
+    rho_d: float,
+    rho_o: float,
+    X: np.ndarray,
+    W_csc: sp.csc_matrix,
+    n: int,
+) -> np.ndarray:
+    """Solve (L_d ⊗ L_o) η = X via Kronecker two-step solve.
+
+    L_k = I_n - rho_k * W (n×n).
+    X has shape (N, k) where N = n².
+    """
+    from ..._ops import kron_solve_matrix
+
+    I_n = sp.eye(n, format="csr", dtype=np.float64)
+    Ld = (I_n - rho_d * W_csc).tocsr()
+    Lo = (I_n - rho_o * W_csc).tocsr()
+    return kron_solve_matrix(Lo, Ld, X, n)
+
+
+def _compute_eta_unrestricted(
+    rho_d: float,
+    rho_o: float,
+    rho_w: float,
+    Xbeta: np.ndarray,
+    cache: FlowReducedGibbsCache,
+) -> np.ndarray:
+    """Compute η = A⁻¹ Xβ for the unrestricted model."""
+    N = cache.Wd.shape[0]
+    A = _assemble_A_unrestricted(rho_d, rho_o, rho_w, cache.Wd, cache.Wo, cache.Ww, N)
+    return spla.spsolve(A.tocsc(), Xbeta)
+
+
+def _compute_eta_separable(
+    rho_d: float,
+    rho_o: float,
+    Xbeta: np.ndarray,
+    W_csc: sp.csc_matrix,
+    n: int,
+) -> np.ndarray:
+    """Compute η = A⁻¹ Xβ for the separable model via Kronecker solve."""
+    I_n = sp.eye(n, format="csr", dtype=np.float64)
+    Ld = (I_n - rho_d * W_csc).tocsr()
+    Lo = (I_n - rho_o * W_csc).tocsr()
+    # kron_solve_matrix expects (N, k) — reshape Xbeta to (N, 1)
+    Xbeta_mat = Xbeta.reshape(-1, 1)
+    from ..._ops import kron_solve_matrix
+
+    eta_mat = kron_solve_matrix(Lo, Ld, Xbeta_mat, n)
+    return eta_mat.ravel()
+
+
+# ---------------------------------------------------------------------------
+# ρ slice density (β-marginalised)
+# ---------------------------------------------------------------------------
+
+
+def _rho_log_density_marginal_flow(
+    rho_val: float,
+    rho_name: str,
+    state: FlowReducedGibbsState,
+    cache: FlowReducedGibbsCache,
+    y: np.ndarray,
+    X: np.ndarray,
+    priors: FlowReducedGibbsPriors,
+    *,
+    basis: Optional[object] = None,
+    intercept_col: int = -1,
+) -> float:
+    r"""β-marginalised conditional log-density for one ρ parameter.
+
+    For the unrestricted model, each ρ_k is sliced while holding the
+    other two fixed.  The system matrix A depends on all three ρ's,
+    so we recompute A⁻¹X at each candidate.
+
+    For the separable model, ρ_d and ρ_o are sliced independently.
+    The Kronecker structure means A⁻¹X can be computed via two n×n
+    solves, and a Krylov basis can be used for each ρ_k.
+    """
+    if rho_val <= cache.rho_lower or rho_val >= cache.rho_upper:
+        return -np.inf
+
+    # Build the current ρ vector with the candidate value
+    if rho_name == "rho_d":
+        rho_d = rho_val
+        rho_o = state.rho_o
+        rho_w = state.rho_w if state.rho_w is not None else -rho_d * rho_o
+    elif rho_name == "rho_o":
+        rho_d = state.rho_d
+        rho_o = rho_val
+        rho_w = state.rho_w if state.rho_w is not None else -rho_d * rho_o
+    elif rho_name == "rho_w":
+        rho_d = state.rho_d
+        rho_o = state.rho_o
+        rho_w = rho_val
+    else:
+        raise ValueError(f"Unknown rho_name: {rho_name}")
+
+    N = X.shape[0]
+    k = X.shape[1]
+    n = cache.n
+    omega = state.omega
+    alpha = state.alpha
+    log_alpha = np.log(alpha)
+    kappa = 0.5 * (y - alpha)
+
+    # Prior precision and mean
+    beta_sigma = priors.beta_sigma
+    if np.isscalar(beta_sigma):
+        V0_inv_diag = np.full(k, 1.0 / (float(beta_sigma) ** 2))
+    else:
+        V0_inv_diag = 1.0 / (np.asarray(beta_sigma, dtype=np.float64) ** 2)
+    beta_mu = priors.beta_mu
+    if np.isscalar(beta_mu):
+        mu0 = np.full(k, float(beta_mu))
+    else:
+        mu0 = np.asarray(beta_mu, dtype=np.float64)
+
+    # Compute U = A⁻¹X at the candidate ρ
+    try:
+        if cache.separable:
+            # Use Krylov basis if available
+            if basis is not None and basis.degree > 0:
+                drho = rho_val - basis.rho_basis
+                if abs(drho) <= cache.krylov_dmax:
+                    U = _eval_U_from_basis(basis, drho)
+                else:
+                    U = _solve_A_separable(rho_d, rho_o, X, cache.W_csc, n)
+            else:
+                U = _solve_A_separable(rho_d, rho_o, X, cache.W_csc, n)
+        else:
+            A = _assemble_A_unrestricted(
+                rho_d, rho_o, rho_w, cache.Wd, cache.Wo, cache.Ww, N
+            )
+            U = _solve_A_unrestricted(A, X)
+    except (RuntimeError, ValueError, spla.ArpackNoConvergence):
+        return -np.inf
+
+    # Working response and residual
+    s = kappa / omega + log_alpha
+    r = s - U @ mu0
+
+    # M = V0^{-1} + U^T Ω U  (k x k)
+    Uw = U * omega[:, None]
+    M = U.T @ Uw
+    M.flat[:: k + 1] += V0_inv_diag
+
+    v = Uw.T @ r
+
+    try:
+        L = np.linalg.cholesky(M)
+    except np.linalg.LinAlgError:
+        M.flat[:: k + 1] += 1e-10
+        try:
+            L = np.linalg.cholesky(M)
+        except np.linalg.LinAlgError:
+            return -np.inf
+
+    from scipy.linalg import solve_triangular
+
+    w = solve_triangular(L, v, lower=True)
+    quad_pen = float(w @ w)
+    rOr = float(np.dot(r, omega * r))
+    log_det_M = 2.0 * float(np.sum(np.log(np.diag(L))))
+
+    result = -0.5 * log_det_M - 0.5 * (rOr - quad_pen)
+    if not np.isfinite(result):
+        return -np.inf
+    return result
+
+
+def _sample_rho_k(
+    rho_name: str,
+    state: FlowReducedGibbsState,
+    cache: FlowReducedGibbsCache,
+    y: np.ndarray,
+    X: np.ndarray,
+    priors: FlowReducedGibbsPriors,
+    *,
+    rng: np.random.Generator,
+    sweep_idx: int,
+    tune: int,
+    basis: Optional[object] = None,
+    intercept_col: int = -1,
+) -> float:
+    """1-D adaptive slice on one ρ parameter with β marginalised."""
+    rho_lower = cache.rho_lower
+    rho_upper = cache.rho_upper
+
+    # Get current value and width state
+    if rho_name == "rho_d":
+        rho_current = state.rho_d
+        width_state = cache.rho_d_slice_width_state
+    elif rho_name == "rho_o":
+        rho_current = state.rho_o
+        width_state = cache.rho_o_slice_width_state
+    elif rho_name == "rho_w":
+        rho_current = state.rho_w
+        width_state = cache.rho_w_slice_width_state
+    else:
+        raise ValueError(f"Unknown rho_name: {rho_name}")
+
+    def log_density(rho_val: float) -> float:
+        return _rho_log_density_marginal_flow(
+            rho_val=rho_val,
+            rho_name=rho_name,
+            state=state,
+            cache=cache,
+            y=y,
+            X=X,
+            priors=priors,
+            basis=basis,
+            intercept_col=intercept_col,
+        )
+
+    log_dens_x0 = log_density(rho_current)
+    rho_new, log_density_new, steps_left, steps_right = slice_sample_1d_adaptive(
+        log_density=log_density,
+        x0=rho_current,
+        lower=rho_lower,
+        upper=rho_upper,
+        width_state=width_state,
+        rng=rng,
+        log_density_x0=log_dens_x0,
+    )
+    if sweep_idx < tune:
+        update_slice_width(width_state, steps_left, steps_right)
+
+    return rho_new
+
+
+# ---------------------------------------------------------------------------
+# Chain runner — unrestricted (3 ρ's)
+# ---------------------------------------------------------------------------
+
+
+def run_chain_unrestricted(
+    y: np.ndarray,
+    X: np.ndarray,
+    Wd: sp.csr_matrix,
+    Wo: sp.csr_matrix,
+    Ww: sp.csr_matrix,
+    priors: FlowReducedGibbsPriors,
+    cache: FlowReducedGibbsCache,
+    init: FlowReducedGibbsState,
+    draws: int,
+    tune: int,
+    thin: int = 1,
+    rng: np.random.Generator | None = None,
+    chain_id: int = 0,
+    progress_manager: object | None = None,
+) -> dict[str, np.ndarray]:
+    """Run one chain of the reduced-form flow NB Gibbs sampler (unrestricted).
+
+    Parameters
+    ----------
+    y : ndarray, shape (N,)
+        Integer responses (N = n²).
+    X : ndarray, shape (N, k)
+        Design matrix.
+    Wd, Wo, Ww : scipy.sparse.csr_matrix, shape (N, N)
+        Flow weight matrices.
+    priors : FlowReducedGibbsPriors
+    cache : FlowReducedGibbsCache
+    init : FlowReducedGibbsState
+    draws, tune : int
+        Post-warmup draws and warmup sweeps.
+    thin : int, default 1
+    rng : numpy.random.Generator, optional
+    chain_id : int, default 0
+    progress_manager : object, optional
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Keys: ``rho_d``, ``rho_o``, ``rho_w``, ``beta``, ``alpha``,
+        ``log_lik``.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    N, k = X.shape
+    total_iters = tune + draws
+    n_keep = draws // thin if thin > 0 else draws
+
+    rho_d_samples = np.empty(n_keep, dtype=np.float64)
+    rho_o_samples = np.empty(n_keep, dtype=np.float64)
+    rho_w_samples = np.empty(n_keep, dtype=np.float64)
+    beta_samples = np.empty((n_keep, k), dtype=np.float64)
+    alpha_samples = np.empty(n_keep, dtype=np.float64)
+    log_lik_samples = np.empty((n_keep, N), dtype=np.float64)
+
+    state = FlowReducedGibbsState(
+        beta=np.asarray(init.beta, dtype=np.float64).copy(),
+        rho_d=float(init.rho_d),
+        rho_o=float(init.rho_o),
+        rho_w=float(init.rho_w) if init.rho_w is not None else 0.0,
+        alpha=float(init.alpha),
+        omega=np.asarray(init.omega, dtype=np.float64).copy(),
+    )
+
+    X = np.ascontiguousarray(X, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+
+    # Detect intercept column
+    intercept_col = -1
+    for _j in range(k):
+        if np.all(X[:, _j] == 1.0):
+            intercept_col = _j
+            break
+
+    # Shared priors object for _sample_beta (same fields)
+    core_priors = ReducedGibbsPriors(
+        beta_mu=priors.beta_mu,
+        beta_sigma=priors.beta_sigma,
+        alpha_sigma=priors.alpha_sigma,
+        alpha_nu=priors.alpha_nu,
+        rho_lower=priors.rho_lower,
+        rho_upper=priors.rho_upper,
+    )
+
+    for i in range(total_iters):
+        # Compute η = A⁻¹ Xβ at current ρ's
+        A = _assemble_A_unrestricted(
+            state.rho_d, state.rho_o, state.rho_w, Wd, Wo, Ww, N
+        )
+        Xbeta = X @ state.beta
+        eta = _compute_eta_unrestricted(
+            state.rho_d, state.rho_o, state.rho_w, Xbeta, cache
+        )
+        psi = eta - np.log(state.alpha)
+
+        # --- Block 1: ω ---
+        state.omega = _sample_omega(y, state.alpha, psi, rng=rng)
+
+        # --- (ρ, β) cycles ---
+        _n_cycles = cache.n_rho_omega_cycles
+        Xtilde = None
+
+        for _cycle in range(_n_cycles):
+            # --- ρ_d | ω, α, y (β marginalised) ---
+            state.rho_d = _sample_rho_k(
+                "rho_d",
+                state,
+                cache,
+                y,
+                X,
+                priors,
+                rng=rng,
+                sweep_idx=i,
+                tune=tune,
+                intercept_col=intercept_col,
+            )
+
+            # --- ρ_o | ω, α, y (β marginalised) ---
+            state.rho_o = _sample_rho_k(
+                "rho_o",
+                state,
+                cache,
+                y,
+                X,
+                priors,
+                rng=rng,
+                sweep_idx=i,
+                tune=tune,
+                intercept_col=intercept_col,
+            )
+
+            # --- ρ_w | ω, α, y (β marginalised) ---
+            state.rho_w = _sample_rho_k(
+                "rho_w",
+                state,
+                cache,
+                y,
+                X,
+                priors,
+                rng=rng,
+                sweep_idx=i,
+                tune=tune,
+                intercept_col=intercept_col,
+            )
+
+            # --- β | ρ, ω, α, y ---
+            A = _assemble_A_unrestricted(
+                state.rho_d, state.rho_o, state.rho_w, Wd, Wo, Ww, N
+            )
+            Xtilde = _solve_A_unrestricted(A, X)
+
+            state.beta = _sample_beta(
+                beta_current=state.beta,
+                Xtilde=Xtilde,
+                omega=state.omega,
+                y=y,
+                alpha=state.alpha,
+                priors=core_priors,
+                rng=rng,
+                rho=0.0,  # no single-ρ intercept reparam for flow
+                intercept_col=-1,  # disable intercept reparam
+            )
+
+            # η = X̃ @ β
+            eta = Xtilde @ state.beta
+
+            # Draw ω for next cycle
+            if _cycle < _n_cycles - 1:
+                psi = eta - np.log(state.alpha)
+                state.omega = _sample_omega(y, state.alpha, psi, rng=rng)
+
+        # --- Block 4: α | y, η ---
+        alpha_state = _StructuralState(
+            eta=eta,
+            beta=state.beta,
+            sigma2=1.0,
+            rho=state.rho_d,
+            alpha=state.alpha,
+            omega=state.omega,
+        )
+        state.alpha = _sample_alpha(alpha_state, y, core_priors, rng=rng)
+
+        # --- Store post-warmup draw ---
+        if i >= tune and (i - tune) % thin == 0:
+            idx = (i - tune) // thin
+            if idx < n_keep:
+                rho_d_samples[idx] = state.rho_d
+                rho_o_samples[idx] = state.rho_o
+                rho_w_samples[idx] = state.rho_w
+                beta_samples[idx] = state.beta
+                alpha_samples[idx] = state.alpha
+                log_lik_samples[idx] = _nb_loglik_pointwise(y, eta, state.alpha)
+
+        if progress_manager is not None:
+            progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
+
+    return {
+        "rho_d": rho_d_samples,
+        "rho_o": rho_o_samples,
+        "rho_w": rho_w_samples,
+        "beta": beta_samples,
+        "alpha": alpha_samples,
+        "log_lik": log_lik_samples,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Chain runner — separable (2 ρ's, Kronecker)
+# ---------------------------------------------------------------------------
+
+
+def run_chain_separable(
+    y: np.ndarray,
+    X: np.ndarray,
+    W_csc: sp.csc_matrix,
+    n: int,
+    priors: FlowReducedGibbsPriors,
+    cache: FlowReducedGibbsCache,
+    init: FlowReducedGibbsState,
+    draws: int,
+    tune: int,
+    thin: int = 1,
+    rng: np.random.Generator | None = None,
+    chain_id: int = 0,
+    progress_manager: object | None = None,
+) -> dict[str, np.ndarray]:
+    """Run one chain of the reduced-form flow NB Gibbs sampler (separable).
+
+    Parameters
+    ----------
+    y : ndarray, shape (N,)
+        Integer responses (N = n²).
+    X : ndarray, shape (N, k)
+        Design matrix.
+    W_csc : scipy.sparse.csc_matrix, shape (n, n)
+        Row-standardised regional weights.
+    n : int
+        Number of regions.
+    priors : FlowReducedGibbsPriors
+    cache : FlowReducedGibbsCache
+    init : FlowReducedGibbsState
+    draws, tune : int
+    thin : int, default 1
+    rng : numpy.random.Generator, optional
+    chain_id : int, default 0
+    progress_manager : object, optional
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Keys: ``rho_d``, ``rho_o``, ``rho_w``, ``beta``, ``alpha``,
+        ``log_lik``.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    N, k = X.shape
+    total_iters = tune + draws
+    n_keep = draws // thin if thin > 0 else draws
+
+    rho_d_samples = np.empty(n_keep, dtype=np.float64)
+    rho_o_samples = np.empty(n_keep, dtype=np.float64)
+    rho_w_samples = np.empty(n_keep, dtype=np.float64)
+    beta_samples = np.empty((n_keep, k), dtype=np.float64)
+    alpha_samples = np.empty(n_keep, dtype=np.float64)
+    log_lik_samples = np.empty((n_keep, N), dtype=np.float64)
+
+    state = FlowReducedGibbsState(
+        beta=np.asarray(init.beta, dtype=np.float64).copy(),
+        rho_d=float(init.rho_d),
+        rho_o=float(init.rho_o),
+        rho_w=None,  # deterministic: -rho_d * rho_o
+        alpha=float(init.alpha),
+        omega=np.asarray(init.omega, dtype=np.float64).copy(),
+    )
+
+    X = np.ascontiguousarray(X, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+
+    # Detect intercept column
+    intercept_col = -1
+    for _j in range(k):
+        if np.all(X[:, _j] == 1.0):
+            intercept_col = _j
+            break
+
+    core_priors = ReducedGibbsPriors(
+        beta_mu=priors.beta_mu,
+        beta_sigma=priors.beta_sigma,
+        alpha_sigma=priors.alpha_sigma,
+        alpha_nu=priors.alpha_nu,
+        rho_lower=priors.rho_lower,
+        rho_upper=priors.rho_upper,
+    )
+
+    use_krylov = cache.krylov_degree > 0
+    krylov_degree = cache.krylov_degree
+
+    for i in range(total_iters):
+        # Compute η = A⁻¹ Xβ at current ρ's
+        Xbeta = X @ state.beta
+        eta = _compute_eta_separable(state.rho_d, state.rho_o, Xbeta, W_csc, n)
+        psi = eta - np.log(state.alpha)
+
+        # --- Block 1: ω ---
+        state.omega = _sample_omega(y, state.alpha, psi, rng=rng)
+
+        # --- (ρ, β) cycles ---
+        _n_cycles = cache.n_rho_omega_cycles
+        Xtilde = None
+
+        # Build Krylov bases for ρ_d and ρ_o at current values
+        basis_d = None
+        basis_o = None
+        if use_krylov:
+            try:
+                basis_d = _build_krylov_basis(
+                    state.rho_d,
+                    X,
+                    W_csc,
+                    n,
+                    degree=krylov_degree,
+                    W_eig_max=cache.W_eig_max,
+                    W_eig_min=cache.W_eig_min,
+                )
+            except (RuntimeError, ValueError):
+                basis_d = None
+            try:
+                basis_o = _build_krylov_basis(
+                    state.rho_o,
+                    X,
+                    W_csc,
+                    n,
+                    degree=krylov_degree,
+                    W_eig_max=cache.W_eig_max,
+                    W_eig_min=cache.W_eig_min,
+                )
+            except (RuntimeError, ValueError):
+                basis_o = None
+
+        for _cycle in range(_n_cycles):
+            # --- ρ_d | ω, α, y (β marginalised) ---
+            state.rho_d = _sample_rho_k(
+                "rho_d",
+                state,
+                cache,
+                y,
+                X,
+                priors,
+                rng=rng,
+                sweep_idx=i,
+                tune=tune,
+                basis=basis_d,
+                intercept_col=intercept_col,
+            )
+
+            # --- ρ_o | ω, α, y (β marginalised) ---
+            state.rho_o = _sample_rho_k(
+                "rho_o",
+                state,
+                cache,
+                y,
+                X,
+                priors,
+                rng=rng,
+                sweep_idx=i,
+                tune=tune,
+                basis=basis_o,
+                intercept_col=intercept_col,
+            )
+
+            # --- β | ρ, ω, α, y ---
+            Xtilde = _solve_A_separable(state.rho_d, state.rho_o, X, W_csc, n)
+
+            state.beta = _sample_beta(
+                beta_current=state.beta,
+                Xtilde=Xtilde,
+                omega=state.omega,
+                y=y,
+                alpha=state.alpha,
+                priors=core_priors,
+                rng=rng,
+                rho=0.0,
+                intercept_col=-1,
+            )
+
+            # η = X̃ @ β
+            eta = Xtilde @ state.beta
+
+            # Draw ω for next cycle
+            if _cycle < _n_cycles - 1:
+                psi = eta - np.log(state.alpha)
+                state.omega = _sample_omega(y, state.alpha, psi, rng=rng)
+
+        # --- Block 4: α | y, η ---
+        alpha_state = _StructuralState(
+            eta=eta,
+            beta=state.beta,
+            sigma2=1.0,
+            rho=state.rho_d,
+            alpha=state.alpha,
+            omega=state.omega,
+        )
+        state.alpha = _sample_alpha(alpha_state, y, core_priors, rng=rng)
+
+        # --- Store post-warmup draw ---
+        if i >= tune and (i - tune) % thin == 0:
+            idx = (i - tune) // thin
+            if idx < n_keep:
+                rho_d_samples[idx] = state.rho_d
+                rho_o_samples[idx] = state.rho_o
+                rho_w_samples[idx] = -state.rho_d * state.rho_o
+                beta_samples[idx] = state.beta
+                alpha_samples[idx] = state.alpha
+                log_lik_samples[idx] = _nb_loglik_pointwise(y, eta, state.alpha)
+
+        if progress_manager is not None:
+            progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
+
+    return {
+        "rho_d": rho_d_samples,
+        "rho_o": rho_o_samples,
+        "rho_w": rho_w_samples,
+        "beta": beta_samples,
+        "alpha": alpha_samples,
+        "log_lik": log_lik_samples,
+    }

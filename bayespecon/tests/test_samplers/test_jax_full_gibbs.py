@@ -175,7 +175,7 @@ class TestMakeGibbsStepWithData:
         )
 
         key = jax.random.PRNGKey(42)
-        new_state, accept = gibbs_step(state, key)
+        new_state, accept = gibbs_step(state, key, jnp.float64(0.01))
 
         assert new_state.eta.shape == (n,)
         assert new_state.beta.shape == (k,)
@@ -223,7 +223,7 @@ class TestMakeGibbsStepWithData:
         )
 
         key = jax.random.PRNGKey(42)
-        new_state, accept = gibbs_step(state, key)
+        new_state, accept = gibbs_step(state, key, jnp.float64(0.01))
 
         assert jnp.all(jnp.isfinite(new_state.eta))
         assert jnp.all(jnp.isfinite(new_state.beta))
@@ -278,7 +278,7 @@ class TestMakeGibbsStepWithData:
 
         for i in range(20):
             key, step_key = jax.random.split(key)
-            state, accept = gibbs_step(state, step_key)
+            state, accept = gibbs_step(state, step_key, jnp.float64(0.01))
             accept_count += int(accept)
             alpha_new = _sample_alpha_python(
                 state, y, priors.alpha_sigma, priors.alpha_nu, alpha_rng

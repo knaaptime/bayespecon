@@ -200,6 +200,7 @@ class SEMSpatialLogit(SpatialModel):
         pg_n_terms: int = 25,
         n_probes: int = 5,
         lanczos_deg: int = 15,
+        mala_eps: float = 0.1,
         **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
@@ -232,8 +233,9 @@ class SEMSpatialLogit(SpatialModel):
             - ``"jax_dense"``: force JAX-accelerated path.  Requires
               JAX with float64 enabled.  Viable for n ≤ ~10 000.
         pg_n_terms : int, default 25
-            Number of alternating-series terms for the JAX Pólya–Gamma
-            sampler.  Only used when ``gibbs_method="jax_dense"``.
+            Ignored (kept for API compatibility).  PG draws now use the
+            exact sum-of-exponentials method which does not require
+            truncation.  Only relevant when ``gibbs_method="jax_dense"``.
         n_probes : int, default 5
             Number of Lanczos probe vectors for stochastic log|P|
             estimation.  Only used when ``gibbs_method="jax_dense"``.
@@ -412,6 +414,7 @@ class SEMSpatialLogit(SpatialModel):
                 pg_n_terms=pg_n_terms,
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
+                mala_eps=mala_eps,
                 progressbar=progressbar,
             )
         else:

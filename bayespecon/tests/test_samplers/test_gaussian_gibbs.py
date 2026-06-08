@@ -31,7 +31,6 @@ from bayespecon.samplers.gaussian._core import (
     _sample_sigma2,
     _sar_collapsed_log_density,
     _sem_collapsed_log_density,
-    _sem_conditional_log_density,
     run_gaussian_chain,
 )
 from bayespecon.samplers.gaussian._loglik import (
@@ -87,7 +86,7 @@ def _make_sem_data(side=SIDE, lam_true=0.4, beta_true=None, sigma_true=1.0, seed
     return out["y"], out["X"], W_dense, W_dense.shape[0]
 
 
-def _build_cache(W_dense, X, model_type="sar", Wy=None, method="eigenvalue"):
+def _build_cache(W_dense, X, model_type="sar", y=None, Wy=None, method="eigenvalue"):
     """Build a GaussianGibbsCache from data."""
     W_sparse = sp.csr_matrix(W_dense)
     eigs = np.linalg.eigvals(W_dense).real
@@ -107,6 +106,37 @@ def _build_cache(W_dense, X, model_type="sar", Wy=None, method="eigenvalue"):
 
     XtX_cho = cho_factor(XtX)
 
+    # Precompute Wy for all model types
+    if Wy is None and y is not None:
+        Wy = W_dense @ y
+    elif Wy is None:
+        Wy = W_dense @ np.ones(X.shape[0])  # placeholder; caller should override
+
+    # Precompute WX, XtWX, WXtWX for SEM/SDEM models
+    WX = None
+    XtWX = None
+    WXtWX = None
+    yty = None
+    yTWy = None
+    WyTWy = None
+    XTy = None
+    XTWy = None
+    WXTy = None
+    WXTWy = None
+    if model_type in ("sem", "sdem"):
+        WX = W_sparse @ X
+        XtWX = X.T @ WX
+        WXtWX = WX.T @ WX
+        # Precompute inner products for O(k) collapsed density
+        if y is not None:
+            yty = float(y @ y)
+            yTWy = float(y @ Wy)
+            WyTWy = float(Wy @ Wy)
+            XTy = X.T @ y
+            XTWy = X.T @ Wy
+            WXTy = WX.T @ y
+            WXTWy = WX.T @ Wy
+
     return GaussianGibbsCache(
         XtX=XtX,
         XtX_cho=XtX_cho,
@@ -117,6 +147,16 @@ def _build_cache(W_dense, X, model_type="sar", Wy=None, method="eigenvalue"):
         model_type=model_type,
         Wy=Wy,
         W_sparse=W_sparse,
+        WX=WX,
+        XtWX=XtWX,
+        WXtWX=WXtWX,
+        yty=yty,
+        yTWy=yTWy,
+        WyTWy=WyTWy,
+        XTy=XTy,
+        XTWy=XTWy,
+        WXTy=WXTy,
+        WXTWy=WXTWy,
     )
 
 
@@ -196,55 +236,27 @@ class TestSARCollapsedLogDensity:
         np.testing.assert_allclose(rss_woodbury, rss_direct, rtol=1e-10)
 
 
-class TestSEMConditionalLogDensity:
-    """Tests for _sem_conditional_log_density."""
-
-    def test_returns_scalar(self):
-        y, X, W_dense, n = _make_sem_data()
-        W_sparse = sp.csr_matrix(W_dense)
-        cache = _build_cache(W_dense, X, model_type="sem")
-        beta = np.array([1.0, 2.0])
-        sigma2 = 1.0
-        result = _sem_conditional_log_density(
-            0.3, beta, sigma2, y, X, W_sparse, cache.logdet_fn
-        )
-        assert np.isscalar(result) or result.ndim == 0
-
-    def test_maximum_near_true_lam(self):
-        """Conditional density does NOT necessarily peak near true λ.
-
-        The conditional density p(λ | β, σ², y) conditions on β and σ²,
-        which are correlated with λ in the SEM likelihood.  With OLS β,
-        the mode can be far from the true λ.  This is exactly why we use
-        the *collapsed* density for Gibbs sampling.
-        """
-        lam_true = 0.4
-        y, X, W_dense, n = _make_sem_data(lam_true=lam_true)
-        W_sparse = sp.csr_matrix(W_dense)
-        cache = _build_cache(W_dense, X, model_type="sem")
-        beta = np.linalg.lstsq(X, y, rcond=None)[0]
-        sigma2 = 1.0
-
-        lam_grid = np.linspace(cache.rho_lower + 0.01, cache.rho_upper - 0.01, 50)
-        log_dens = [
-            _sem_conditional_log_density(
-                l, beta, sigma2, y, X, W_sparse, cache.logdet_fn
-            )
-            for l in lam_grid
-        ]
-        # Just verify it's a valid density (finite values)
-        assert all(np.isfinite(ld) for ld in log_dens)
-
-
 class TestSEMCollapsedLogDensity:
     """Tests for _sem_collapsed_log_density."""
 
     def test_returns_scalar(self):
         y, X, W_dense, n = _make_sem_data()
-        W_sparse = sp.csr_matrix(W_dense)
-        cache = _build_cache(W_dense, X, model_type="sem")
+        cache = _build_cache(W_dense, X, model_type="sem", y=y)
         result = _sem_collapsed_log_density(
-            0.3, y, X, W_sparse, cache.logdet_fn, n, X.shape[1]
+            0.3,
+            cache.XtX,
+            cache.XtWX,
+            cache.WXtWX,
+            cache.yty,
+            cache.yTWy,
+            cache.WyTWy,
+            cache.XTy,
+            cache.XTWy,
+            cache.WXTy,
+            cache.WXTWy,
+            cache.logdet_fn,
+            n,
+            X.shape[1],
         )
         assert np.isscalar(result) or result.ndim == 0
 
@@ -252,34 +264,30 @@ class TestSEMCollapsedLogDensity:
         """Collapsed density should peak near the true λ."""
         lam_true = 0.4
         y, X, W_dense, n = _make_sem_data(lam_true=lam_true)
-        W_sparse = sp.csr_matrix(W_dense)
-        cache = _build_cache(W_dense, X, model_type="sem")
+        cache = _build_cache(W_dense, X, model_type="sem", y=y)
 
         lam_grid = np.linspace(cache.rho_lower + 0.01, cache.rho_upper - 0.01, 50)
         log_dens = [
             _sem_collapsed_log_density(
-                l, y, X, W_sparse, cache.logdet_fn, n, X.shape[1]
+                l,
+                cache.XtX,
+                cache.XtWX,
+                cache.WXtWX,
+                cache.yty,
+                cache.yTWy,
+                cache.WyTWy,
+                cache.XTy,
+                cache.XTWy,
+                cache.WXTy,
+                cache.WXTWy,
+                cache.logdet_fn,
+                n,
+                X.shape[1],
             )
             for l in lam_grid
         ]
         lam_argmax = lam_grid[np.argmax(log_dens)]
         assert abs(lam_argmax - lam_true) < 0.3
-
-    def test_zero_lam_gives_ols_residuals(self):
-        """At λ=0, the density reduces to OLS log-likelihood."""
-        y, X, W_dense, n = _make_sem_data(lam_true=0.0)
-        W_sparse = sp.csr_matrix(W_dense)
-        cache = _build_cache(W_dense, X, model_type="sem")
-        beta = np.linalg.lstsq(X, y, rcond=None)[0]
-        sigma2 = 1.0
-
-        ld = _sem_conditional_log_density(
-            0.0, beta, sigma2, y, X, W_sparse, cache.logdet_fn
-        )
-        # At λ=0: log|I| = 0, eps = y - Xβ, so ld = -||eps||²/(2σ²)
-        eps = y - X @ beta
-        expected = -np.dot(eps, eps) / (2.0 * sigma2)
-        np.testing.assert_allclose(ld, expected, rtol=1e-10)
 
 
 # ===================================================================
@@ -302,9 +310,11 @@ class TestBetaBlock:
     def test_sample_beta_sem_shape(self):
         y, X, W_dense, n = _make_sem_data()
         W_sparse = sp.csr_matrix(W_dense)
+        Wy = W_dense @ y
+        WX = W_sparse @ X
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
-        beta = _sample_beta_sem(0.3, 1.0, y, X, W_sparse, priors, rng)
+        beta = _sample_beta_sem(0.3, 1.0, y, X, Wy, WX, priors, rng)
         assert beta.shape == (X.shape[1],)
 
     def test_conjugate_normal_matches_analytical(self):
@@ -357,10 +367,12 @@ class TestSigma2Block:
     def test_sample_sigma2_sem_positive(self):
         y, X, W_dense, n = _make_sem_data()
         W_sparse = sp.csr_matrix(W_dense)
+        Wy = W_dense @ y
+        WX = W_sparse @ X
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
         beta = np.array([1.0, 2.0])
-        sigma2 = _sample_sigma2(0.3, beta, y, None, W_sparse, X, priors, "sem", rng)
+        sigma2 = _sample_sigma2(0.3, beta, y, Wy, WX, X, priors, "sem", rng)
         assert sigma2 > 0
         assert isinstance(sigma2, float)
 
@@ -610,7 +622,7 @@ class TestChainRunner:
 
     def test_sem_chain_produces_valid_output(self):
         y, X, W_dense, n = _make_sem_data()
-        cache = _build_cache(W_dense, X, model_type="sem")
+        cache = _build_cache(W_dense, X, model_type="sem", y=y)
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
         init = _initialize_gaussian_gibbs(y, X, cache.XtX_cho, priors, rng)

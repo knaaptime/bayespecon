@@ -16,12 +16,13 @@ Use this model when:
 - You want to compare with the NUTS path for validation.
 
 Use :class:`SARNegativeBinomial` (canonical reduced form, PG-Gibbs) for
-most spatial-econometric work, and :class:`SARNegativeBinomialNUTS` when
-you need the full PyMC model graph for custom inference.
+most spatial-econometric work, and :class:`SARNegativeBinomial` when
+you need the full PyMC model graph for custom inference (NUTS).
 """
 
 from __future__ import annotations
 
+import warnings
 from typing import Optional
 
 import arviz as az
@@ -186,6 +187,7 @@ class SARNegBinLatent(SpatialModel):
         lanczos_deg: int = 15,
         mh_proposal_sd: float = 0.05,
         use_mala: bool = True,
+        mala_eps: float = 0.01,
         **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
@@ -263,13 +265,23 @@ class SARNegBinLatent(SpatialModel):
                 raise TypeError(
                     f"SARNegBinLatent.fit() does not accept '{bad_kwarg}'. "
                     f"This model uses a Gibbs sampler, not NUTS. "
-                    f"Use SARNegativeBinomialNUTS for NUTS-based sampling."
+                    f"Use SARNegativeBinomial for NUTS-based sampling."
                 )
 
         y = self._y
         X = self._X
         W_sparse = self._W_sparse
         n, k = X.shape
+
+        if n < 900:
+            warnings.warn(
+                f"SAR Negative Binomial models require large samples for "
+                f"reliable spatial parameter recovery. With n={n}, "
+                f"posterior estimates of ρ and α may be severely "
+                f"attenuated. n ≥ 900 is recommended.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Build priors
         priors = GibbsPriors(
@@ -459,6 +471,7 @@ class SARNegBinLatent(SpatialModel):
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
                 use_mala=use_mala,
+                mala_eps=mala_eps,
                 progressbar=progressbar,
             )
         else:
@@ -561,7 +574,7 @@ class SARNegBinLatent(SpatialModel):
         raise NotImplementedError(
             "SARNegBinLatent does not build a PyMC model. "
             "Use the fit() method for Gibbs sampling, or use "
-            "SARNegativeBinomialNUTS for NUTS-based inference."
+            "SARNegativeBinomial for NUTS-based inference."
         )
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:

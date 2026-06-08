@@ -1,8 +1,8 @@
 """Fast build/method tests for the reduced-form SARNegativeBinomial.
 
-These exercise the reduced-form (PG-Gibbs, no σ) model added in this
-phase.  A separate, slower recovery-style test lives in
-``test_sar_negbin_reduced_recovery.py`` (gated by a marker if added).
+These exercise the reduced-form (PG-Gibbs, no σ) model.  A separate,
+slower recovery-style test lives in ``test_sar_negbin_reduced_recovery.py``
+(gated by a marker if added).
 """
 
 from __future__ import annotations
@@ -36,9 +36,11 @@ def _count_data(seed: int = 101, n: int = 10):
 # ---------------------------------------------------------------------------
 
 
-def test_reduced_inherits_from_nuts():
-    """The reduced-form class shares the post-fit machinery with NUTS."""
-    assert issubclass(bp.SARNegativeBinomial, bp.SARNegativeBinomialNUTS)
+def test_reduced_inherits_from_spatial_model():
+    """The reduced-form class inherits from SpatialModel."""
+    from bayespecon.models.base import SpatialModel
+
+    assert issubclass(bp.SARNegativeBinomial, SpatialModel)
 
 
 def test_reduced_rejects_noninteger_or_negative_y():
@@ -59,12 +61,22 @@ def test_reduced_robust_is_unsupported():
         bp.SARNegativeBinomial(y=y, X=X, W=W, robust=True)
 
 
-def test_reduced_build_pymc_model_raises():
-    """The reduced-form model does not build a PyMC graph."""
+def test_reduced_build_pymc_model_returns_valid_model():
+    """The reduced-form model builds a valid PyMC model with Jacobian."""
+    import pymc as pm
+
     y, X, W = _count_data()
     model = bp.SARNegativeBinomial(y=y, X=X, W=W)
-    with pytest.raises(NotImplementedError, match="Pólya"):
-        model._build_pymc_model()
+    pymc_model = model._build_pymc_model()
+    assert isinstance(pymc_model, pm.Model)
+    assert "rho" in pymc_model.named_vars
+    assert "beta" in pymc_model.named_vars
+    assert "alpha" in pymc_model.named_vars
+    assert "jacobian" in pymc_model.named_vars
+    # Reduced form must NOT have sigma, sigma2, or z
+    assert "sigma" not in pymc_model.named_vars
+    assert "sigma2" not in pymc_model.named_vars
+    assert "z" not in pymc_model.named_vars
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +138,25 @@ def test_reduced_fit_returns_inference_data():
     assert idata.posterior["alpha"].shape == (2, 30)
     assert idata.posterior["beta"].shape == (2, 30, 2)
     assert idata.log_likelihood["obs"].shape == (2, 30, n)
+
+
+def test_reduced_fit_default_is_gibbs():
+    """Default sampler='gibbs' should produce the same result as explicit."""
+    rng = np.random.default_rng(42)
+    n = 30
+    W = W_to_graph(make_line_W(n))
+    x1 = rng.normal(size=n)
+    X = np.column_stack([np.ones(n), x1])
+    eta = 0.3 + 0.5 * x1
+    mu = np.exp(eta)
+    y = rng.poisson(mu)
+
+    model = bp.SARNegativeBinomial(y=y, X=X, W=W)
+    # Default call (no sampler kwarg) should use Gibbs
+    idata = model.fit(draws=10, tune=10, chains=1, random_seed=0)
+    assert isinstance(idata, az.InferenceData)
+    assert "rho" in idata.posterior.data_vars
+    assert "alpha" in idata.posterior.data_vars
 
 
 # ---------------------------------------------------------------------------
