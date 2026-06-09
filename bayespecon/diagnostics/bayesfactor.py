@@ -1005,7 +1005,7 @@ def bayes_factor_compare_models(
     log : bool, default False
         If True, return **log** Bayes factors (i.e. ``logml_i - logml_j``)
         instead of Bayes factors.  Useful when the marginal-likelihood
-        differences are large enough to overflow ``exp`` (|Δlogml| > ~709).
+        differences are large enough to overflow ``exp`` (\\|Δlogml\\| > ~709).
     **kwargs
         Additional keyword arguments forwarded to the marginal-likelihood
         estimator.  For ``method='bridge'``, the following are accepted:

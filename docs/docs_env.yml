@@ -1,0 +1,47 @@
+name: test
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - libpysal
+  - esda
+  - arviz < 1
+  - formulaic
+  - pymc
+  - spreg
+  - statsmodels
+  - geopandas
+  - codecov
+  - coverage
+  - pytest
+  - pytest-cov
+  - pytest-mpl
+  - pytest-xdist
+  - openpyxl
+  - lazy_loader
+  - fastprogress
+  - nutpie
+  - polyagamma
+  - scikit-umfpack
+  - scikit-sparse
+  - optimistix
+  - equinox
+  - lineax
+  - pip
+  - pip:
+    - klujax
+    - git+https://github.com/ljwolf/geovalidate/
+  
+  # docs
+  - numpydoc
+  - nbsphinx
+  - myst-parser
+  - sphinx-autodoc2
+  - geodatasets
+  - watermark
+  - myst-nb
+  - sphinx
+  - sphinxcontrib-bibtex
+  - sphinx-autosummary-accessors
+  - sphinx-copybutton
+  - sphinx-immaterial

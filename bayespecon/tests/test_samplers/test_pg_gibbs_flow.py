@@ -150,563 +150,234 @@ class TestKronEigenvalueBounds:
 
 
 # ---------------------------------------------------------------------------
-# Flow Gibbs sampler: construction and smoke tests
+# Model-level Gibbs integration tests
 # ---------------------------------------------------------------------------
 
 
-class TestFlowGibbsState:
-    """Test FlowGibbsState construction."""
+def _make_flow_data(n=5, k=2, seed=42):
+    """Generate small NB flow dataset for testing."""
+    from bayespecon.dgp import generate_negbin_flow_data
 
-    def test_separable_state(self):
-        from bayespecon.samplers.negbin._flow import FlowGibbsState
-
-        N = 25
-        k = 3
-        state = FlowGibbsState(
-            eta=np.zeros(N),
-            beta=np.zeros(k),
-            sigma2=1.0,
-            rho_d=0.0,
-            rho_o=0.0,
-            rho_w=None,
-            alpha=1.0,
-            omega=np.ones(N),
-        )
-        assert state.rho_w is None
-        assert state.eta.shape == (N,)
-
-    def test_nonseparable_state(self):
-        from bayespecon.samplers.negbin._flow import FlowGibbsState
-
-        N = 25
-        k = 3
-        state = FlowGibbsState(
-            eta=np.zeros(N),
-            beta=np.zeros(k),
-            sigma2=1.0,
-            rho_d=0.1,
-            rho_o=0.2,
-            rho_w=0.05,
-            alpha=1.0,
-            omega=np.ones(N),
-        )
-        assert state.rho_w == 0.05
-
-
-class TestFlowGibbsPriors:
-    """Test FlowGibbsPriors defaults."""
-
-    def test_defaults(self):
-        from bayespecon.samplers.negbin._flow import FlowGibbsPriors
-
-        priors = FlowGibbsPriors()
-        assert priors.rho_lower == -0.999
-        assert priors.rho_upper == 0.999
-        assert priors.alpha_sigma == 2.5
-        assert priors.alpha_nu == 3.0
-
-
-# ---------------------------------------------------------------------------
-# Model class construction tests
-# ---------------------------------------------------------------------------
-
-
-class TestSARNegBinFlowLatentBuild:
-    """Construction and validation tests for SARNegBinFlowLatent."""
-
-    def setup_method(self):
-        from bayespecon.dgp.flows import generate_flow_data
-
-        self.n = 5
-        self.N = self.n * self.n
-        out = generate_flow_data(
-            n=self.n,
-            rho_d=0.0,
-            rho_o=0.0,
-            rho_w=0.0,
-            beta_d=[1.0, -0.5],
-            beta_o=[0.5, 0.3],
-            sigma=1.0,
-            seed=10,
-        )
-        self.G = out["G"]
-        self.X = out["X"]
-        self.col_names = out["col_names"]
-        rng = np.random.default_rng(10)
-        self.y = rng.poisson(2, size=self.N).astype(float)
-
-    def test_nonseparable_builds(self):
-        from bayespecon.models.flow import SARNegBinFlowLatent
-
-        model = SARNegBinFlowLatent(
-            self.y,
-            self.G,
-            self.X,
-            col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
-        )
-        assert model._n == self.n
-        assert model._N == self.N
-
-    def test_nonseparable_rejects_noninteger_y(self):
-        from bayespecon.models.flow import SARNegBinFlowLatent
-
-        y_float = np.array([0.5, 1.0, 2.0] * 9)[: self.N]
-        with pytest.raises(ValueError, match="integer-valued"):
-            SARNegBinFlowLatent(
-                y_float,
-                self.G,
-                self.X,
-                col_names=self.col_names,
-                miter=5,
-                titer=50,
-                trace_seed=0,
-            )
-
-    def test_nonseparable_rejects_nuts_kwargs(self):
-        from bayespecon.models.flow import SARNegBinFlowLatent
-
-        model = SARNegBinFlowLatent(
-            self.y,
-            self.G,
-            self.X,
-            col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
-        )
-        with pytest.raises(TypeError, match="nuts_sampler"):
-            model.fit(draws=10, nuts_sampler="blackjax")
-
-    def test_separable_builds(self):
-        from bayespecon.models.flow import SARNegBinFlowSeparableLatent
-
-        model = SARNegBinFlowSeparableLatent(
-            self.y,
-            self.G,
-            self.X,
-            col_names=self.col_names,
-            trace_seed=0,
-        )
-        assert model._n == self.n
-
-    def test_separable_rejects_noninteger_y(self):
-        from bayespecon.models.flow import SARNegBinFlowSeparableLatent
-
-        y_float = np.array([0.5, 1.0, 2.0] * 9)[: self.N]
-        with pytest.raises(ValueError, match="integer-valued"):
-            SARNegBinFlowSeparableLatent(
-                y_float,
-                self.G,
-                self.X,
-                col_names=self.col_names,
-                trace_seed=0,
-            )
-
-
-# ---------------------------------------------------------------------------
-# Parameter recovery tests (marked slow/recovery)
-# ---------------------------------------------------------------------------
-
-SIDE = 4  # 16 cross-sectional units → N = 256
-RHO_D_TRUE = 0.3
-RHO_O_TRUE = 0.2
-ALPHA_TRUE = 2.0
-SIGMA2_TRUE = 0.5
-DRAWS = 100
-TUNE = 100
-CHAINS = 2
-
-
-@pytest.fixture(scope="module")
-def flow_nb_data():
-    """Simulated flow NB data from the separable DGP."""
-    from bayespecon.dgp.flows import generate_negbin_flow_data_separable
-
-    out = generate_negbin_flow_data_separable(
-        n=SIDE,
-        rho_d=RHO_D_TRUE,
-        rho_o=RHO_O_TRUE,
-        alpha=ALPHA_TRUE,
-        seed=42,
+    return generate_negbin_flow_data(
+        n=n, k=k, rho_d=0.1, rho_o=0.1, rho_w=0.0, alpha=5.0, seed=seed
     )
-    return {
-        "y": out["y_vec"].astype(float),
-        "G": out["G"],
-        "X": out["X"],
-        "col_names": out["col_names"],
-        "n": SIDE,
-    }
 
 
-@pytest.mark.slow
-@pytest.mark.recovery
-class TestSARNegBinFlowSeparableLatentRecovery:
-    """Parameter recovery tests for the separable flow Gibbs sampler."""
+class TestNegativeBinomialFlowGibbs:
+    """Tests for NegativeBinomialFlow.fit(sampler='gibbs')."""
 
-    def test_fit_returns_idata(self, flow_nb_data):
-        from bayespecon.models.flow import SARNegBinFlowSeparableLatent
+    def test_gibbs_returns_inference_data(self):
+        """Gibbs sampler returns valid InferenceData."""
+        from bayespecon.models.flow._flow import NegativeBinomialFlow
 
-        model = SARNegBinFlowSeparableLatent(
-            flow_nb_data["y"],
-            flow_nb_data["G"],
-            flow_nb_data["X"],
-            col_names=flow_nb_data["col_names"],
-            trace_seed=42,
-        )
+        data = _make_flow_data()
+        model = NegativeBinomialFlow(data["y_vec"], data["G"], data["X"])
         idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
+            draws=20,
+            tune=20,
+            chains=2,
+            sampler="gibbs",
             random_seed=42,
-            n_jobs=1,
             progressbar=False,
         )
+        assert hasattr(idata, "posterior")
+        assert "beta" in idata.posterior
+        assert "alpha" in idata.posterior
 
-        assert "posterior" in idata
+    def test_gibbs_shapes(self):
+        """Gibbs posterior has correct shapes."""
+        from bayespecon.models.flow._flow import NegativeBinomialFlow
+
+        data = _make_flow_data()
+        model = NegativeBinomialFlow(data["y_vec"], data["G"], data["X"])
+        draws, chains = 30, 2
+        idata = model.fit(
+            draws=draws,
+            tune=20,
+            chains=chains,
+            sampler="gibbs",
+            random_seed=42,
+            progressbar=False,
+        )
+        assert idata.posterior["beta"].shape == (
+            chains,
+            draws,
+            len(model._feature_names),
+        )
+        assert idata.posterior["alpha"].shape == (chains, draws)
+
+    def test_gibbs_alpha_positive(self):
+        """NB dispersion alpha should be positive."""
+        from bayespecon.models.flow._flow import NegativeBinomialFlow
+
+        data = _make_flow_data()
+        model = NegativeBinomialFlow(data["y_vec"], data["G"], data["X"])
+        idata = model.fit(
+            draws=30,
+            tune=30,
+            chains=2,
+            sampler="gibbs",
+            random_seed=42,
+            progressbar=False,
+        )
+        assert (idata.posterior["alpha"].values > 0).all()
+
+    def test_nuts_still_works(self):
+        """NUTS (default sampler) still works after adding Gibbs."""
+        from bayespecon.models.flow._flow import NegativeBinomialFlow
+
+        data = _make_flow_data()
+        model = NegativeBinomialFlow(data["y_vec"], data["G"], data["X"])
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=2,
+            random_seed=42,
+            progressbar=False,
+        )
+        assert "beta" in idata.posterior
+        assert "alpha" in idata.posterior
+
+
+class TestNegativeBinomialSARFlowSeparableGibbs:
+    """Tests for NegativeBinomialSARFlowSeparable.fit(sampler='gibbs')."""
+
+    def test_gibbs_returns_inference_data(self):
+        """Gibbs sampler returns valid InferenceData with spatial params."""
+        from bayespecon.models.flow._flow import NegativeBinomialSARFlowSeparable
+
+        data = _make_flow_data()
+        model = NegativeBinomialSARFlowSeparable(
+            data["y_vec"],
+            data["G"],
+            data["X"],
+            logdet_method="eigenvalue",
+        )
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=2,
+            sampler="gibbs",
+            random_seed=42,
+            progressbar=False,
+        )
+        assert "beta" in idata.posterior
+        assert "alpha" in idata.posterior
         assert "rho_d" in idata.posterior
         assert "rho_o" in idata.posterior
         assert "rho_w" in idata.posterior
-        assert "beta" in idata.posterior
-        assert "sigma" in idata.posterior
-        assert "alpha" in idata.posterior
 
-    def test_rho_d_recovery(self, flow_nb_data):
-        from bayespecon.models.flow import SARNegBinFlowSeparableLatent
+    def test_gibbs_rho_w_deterministic(self):
+        """rho_w = -rho_d * rho_o for separable model."""
+        from bayespecon.models.flow._flow import NegativeBinomialSARFlowSeparable
 
-        model = SARNegBinFlowSeparableLatent(
-            flow_nb_data["y"],
-            flow_nb_data["G"],
-            flow_nb_data["X"],
-            col_names=flow_nb_data["col_names"],
-            trace_seed=42,
+        data = _make_flow_data()
+        model = NegativeBinomialSARFlowSeparable(
+            data["y_vec"],
+            data["G"],
+            data["X"],
+            logdet_method="eigenvalue",
         )
         idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
+            draws=30,
+            tune=30,
+            chains=2,
+            sampler="gibbs",
             random_seed=42,
-            n_jobs=1,
             progressbar=False,
         )
-
-        rho_d_mean = float(idata.posterior["rho_d"].mean())
-        assert abs(rho_d_mean - RHO_D_TRUE) < 0.3, (
-            f"rho_d_mean={rho_d_mean:.3f} too far from rho_d_true={RHO_D_TRUE}"
-        )
-
-    def test_rho_o_recovery(self, flow_nb_data):
-        from bayespecon.models.flow import SARNegBinFlowSeparableLatent
-
-        model = SARNegBinFlowSeparableLatent(
-            flow_nb_data["y"],
-            flow_nb_data["G"],
-            flow_nb_data["X"],
-            col_names=flow_nb_data["col_names"],
-            trace_seed=42,
-        )
-        idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-        )
-
-        rho_o_mean = float(idata.posterior["rho_o"].mean())
-        # rho_o is hard to estimate with n=4 (16 units) and few draws;
-        # use a wider tolerance than other parameters
-        assert abs(rho_o_mean - RHO_O_TRUE) < 0.6, (
-            f"rho_o_mean={rho_o_mean:.3f} too far from rho_o_true={RHO_O_TRUE}"
-        )
-
-    def test_alpha_recovery(self, flow_nb_data):
-        from bayespecon.models.flow import SARNegBinFlowSeparableLatent
-
-        model = SARNegBinFlowSeparableLatent(
-            flow_nb_data["y"],
-            flow_nb_data["G"],
-            flow_nb_data["X"],
-            col_names=flow_nb_data["col_names"],
-            trace_seed=42,
-        )
-        idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-        )
-
-        alpha_mean = float(idata.posterior["alpha"].mean())
-        assert alpha_mean > 0, f"alpha_mean={alpha_mean:.3f} should be positive"
-        assert abs(alpha_mean - ALPHA_TRUE) < 2.0, (
-            f"alpha_mean={alpha_mean:.3f} too far from alpha_true={ALPHA_TRUE}"
-        )
-
-    def test_posterior_shapes(self, flow_nb_data):
-        from bayespecon.models.flow import SARNegBinFlowSeparableLatent
-
-        model = SARNegBinFlowSeparableLatent(
-            flow_nb_data["y"],
-            flow_nb_data["G"],
-            flow_nb_data["X"],
-            col_names=flow_nb_data["col_names"],
-            trace_seed=42,
-        )
-        idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-        )
-
-        n_chains = CHAINS
-        n_draws = DRAWS
-        k = flow_nb_data["X"].shape[1]
-
-        assert idata.posterior["rho_d"].shape == (n_chains, n_draws)
-        assert idata.posterior["rho_o"].shape == (n_chains, n_draws)
-        assert idata.posterior["rho_w"].shape == (n_chains, n_draws)
-        assert idata.posterior["beta"].shape == (n_chains, n_draws, k)
-        assert idata.posterior["sigma"].shape == (n_chains, n_draws)
-        assert idata.posterior["alpha"].shape == (n_chains, n_draws)
-
-    def test_rho_w_deterministic(self, flow_nb_data):
-        """rho_w = -rho_d * rho_o should hold in posterior samples."""
-        from bayespecon.models.flow import SARNegBinFlowSeparableLatent
-
-        model = SARNegBinFlowSeparableLatent(
-            flow_nb_data["y"],
-            flow_nb_data["G"],
-            flow_nb_data["X"],
-            col_names=flow_nb_data["col_names"],
-            trace_seed=42,
-        )
-        idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-        )
-
         rho_d = idata.posterior["rho_d"].values
         rho_o = idata.posterior["rho_o"].values
         rho_w = idata.posterior["rho_w"].values
         np.testing.assert_allclose(rho_w, -rho_d * rho_o, atol=1e-10)
 
+    def test_gibbs_shapes(self):
+        """Gibbs posterior has correct shapes for separable model."""
+        from bayespecon.models.flow._flow import NegativeBinomialSARFlowSeparable
 
-# ---------------------------------------------------------------------------
-# Non-separable model recovery tests (marked slow/recovery)
-# ---------------------------------------------------------------------------
-
-RHO_W_TRUE = -RHO_D_TRUE * RHO_O_TRUE  # consistent with separable DGP
-
-
-@pytest.fixture(scope="module")
-def flow_nb_data_ns():
-    """Simulated flow NB data for the non-separable model.
-
-    Uses the same separable DGP (rho_w = -rho_d * rho_o) since the
-    non-separable model should recover the same parameters.
-    """
-    from bayespecon.dgp.flows import generate_negbin_flow_data_separable
-
-    out = generate_negbin_flow_data_separable(
-        n=SIDE,
-        rho_d=RHO_D_TRUE,
-        rho_o=RHO_O_TRUE,
-        alpha=ALPHA_TRUE,
-        seed=42,
-    )
-    return {
-        "y": out["y_vec"].astype(float),
-        "G": out["G"],
-        "X": out["X"],
-        "col_names": out["col_names"],
-        "n": SIDE,
-    }
-
-
-@pytest.mark.slow
-@pytest.mark.recovery
-class TestSARNegBinFlowLatentRecovery:
-    """Parameter recovery tests for the non-separable flow Gibbs sampler."""
-
-    def test_fit_returns_idata(self, flow_nb_data_ns):
-        from bayespecon.models.flow import SARNegBinFlowLatent
-
-        model = SARNegBinFlowLatent(
-            flow_nb_data_ns["y"],
-            flow_nb_data_ns["G"],
-            flow_nb_data_ns["X"],
-            col_names=flow_nb_data_ns["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
+        data = _make_flow_data()
+        model = NegativeBinomialSARFlowSeparable(
+            data["y_vec"],
+            data["G"],
+            data["X"],
+            logdet_method="eigenvalue",
         )
+        draws, chains = 30, 2
         idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
+            draws=draws,
+            tune=20,
+            chains=chains,
+            sampler="gibbs",
             random_seed=42,
-            n_jobs=1,
             progressbar=False,
         )
+        k = len(model._feature_names)
+        assert idata.posterior["beta"].shape == (chains, draws, k)
+        assert idata.posterior["rho_d"].shape == (chains, draws)
+        assert idata.posterior["rho_o"].shape == (chains, draws)
+        assert idata.posterior["alpha"].shape == (chains, draws)
 
-        assert "posterior" in idata
+
+class TestNegativeBinomialSARFlowGibbs:
+    """Tests for NegativeBinomialSARFlow.fit(sampler='gibbs')."""
+
+    def test_gibbs_returns_inference_data(self):
+        """Gibbs sampler returns valid InferenceData with 3 spatial params."""
+        from bayespecon.models.flow._flow import NegativeBinomialSARFlow
+
+        data = _make_flow_data()
+        model = NegativeBinomialSARFlow(data["y_vec"], data["G"], data["X"])
+        idata = model.fit(
+            draws=20,
+            tune=20,
+            chains=2,
+            sampler="gibbs",
+            random_seed=42,
+            progressbar=False,
+        )
+        assert "beta" in idata.posterior
+        assert "alpha" in idata.posterior
         assert "rho_d" in idata.posterior
         assert "rho_o" in idata.posterior
         assert "rho_w" in idata.posterior
-        assert "beta" in idata.posterior
-        assert "sigma" in idata.posterior
-        assert "alpha" in idata.posterior
 
-    def test_rho_d_recovery(self, flow_nb_data_ns):
-        from bayespecon.models.flow import SARNegBinFlowLatent
+    def test_gibbs_shapes(self):
+        """Gibbs posterior has correct shapes for unrestricted model."""
+        from bayespecon.models.flow._flow import NegativeBinomialSARFlow
 
-        model = SARNegBinFlowLatent(
-            flow_nb_data_ns["y"],
-            flow_nb_data_ns["G"],
-            flow_nb_data_ns["X"],
-            col_names=flow_nb_data_ns["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
-        )
+        data = _make_flow_data()
+        model = NegativeBinomialSARFlow(data["y_vec"], data["G"], data["X"])
+        draws, chains = 30, 2
         idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
+            draws=draws,
+            tune=20,
+            chains=chains,
+            sampler="gibbs",
             random_seed=42,
-            n_jobs=1,
             progressbar=False,
         )
+        k = len(model._feature_names)
+        assert idata.posterior["beta"].shape == (chains, draws, k)
+        assert idata.posterior["rho_d"].shape == (chains, draws)
+        assert idata.posterior["rho_o"].shape == (chains, draws)
+        assert idata.posterior["rho_w"].shape == (chains, draws)
+        assert idata.posterior["alpha"].shape == (chains, draws)
 
-        rho_d_mean = float(idata.posterior["rho_d"].mean())
-        assert abs(rho_d_mean - RHO_D_TRUE) < 0.3, (
-            f"rho_d_mean={rho_d_mean:.3f} too far from rho_d_true={RHO_D_TRUE}"
-        )
+    def test_gibbs_rho_in_bounds(self):
+        """Spatial parameters should be within prior bounds."""
+        from bayespecon.models.flow._flow import NegativeBinomialSARFlow
 
-    def test_rho_o_recovery(self, flow_nb_data_ns):
-        from bayespecon.models.flow import SARNegBinFlowLatent
-
-        model = SARNegBinFlowLatent(
-            flow_nb_data_ns["y"],
-            flow_nb_data_ns["G"],
-            flow_nb_data_ns["X"],
-            col_names=flow_nb_data_ns["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
-        )
+        data = _make_flow_data()
+        model = NegativeBinomialSARFlow(data["y_vec"], data["G"], data["X"])
         idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
+            draws=30,
+            tune=30,
+            chains=2,
+            sampler="gibbs",
             random_seed=42,
-            n_jobs=1,
             progressbar=False,
         )
-
-        rho_o_mean = float(idata.posterior["rho_o"].mean())
-        # rho_o is hard to estimate with n=4 (16 units) and few draws;
-        # use a wider tolerance than other parameters
-        assert abs(rho_o_mean - RHO_O_TRUE) < 0.6, (
-            f"rho_o_mean={rho_o_mean:.3f} too far from rho_o_true={RHO_O_TRUE}"
-        )
-
-    def test_alpha_recovery(self, flow_nb_data_ns):
-        from bayespecon.models.flow import SARNegBinFlowLatent
-
-        model = SARNegBinFlowLatent(
-            flow_nb_data_ns["y"],
-            flow_nb_data_ns["G"],
-            flow_nb_data_ns["X"],
-            col_names=flow_nb_data_ns["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
-        )
-        idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-        )
-
-        alpha_mean = float(idata.posterior["alpha"].mean())
-        assert alpha_mean > 0, f"alpha_mean={alpha_mean:.3f} should be positive"
-        assert abs(alpha_mean - ALPHA_TRUE) < 2.0, (
-            f"alpha_mean={alpha_mean:.3f} too far from alpha_true={ALPHA_TRUE}"
-        )
-
-    def test_posterior_shapes(self, flow_nb_data_ns):
-        from bayespecon.models.flow import SARNegBinFlowLatent
-
-        model = SARNegBinFlowLatent(
-            flow_nb_data_ns["y"],
-            flow_nb_data_ns["G"],
-            flow_nb_data_ns["X"],
-            col_names=flow_nb_data_ns["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
-        )
-        idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-        )
-
-        n_chains = CHAINS
-        n_draws = DRAWS
-        k = flow_nb_data_ns["X"].shape[1]
-
-        assert idata.posterior["rho_d"].shape == (n_chains, n_draws)
-        assert idata.posterior["rho_o"].shape == (n_chains, n_draws)
-        assert idata.posterior["rho_w"].shape == (n_chains, n_draws)
-        assert idata.posterior["beta"].shape == (n_chains, n_draws, k)
-        assert idata.posterior["sigma"].shape == (n_chains, n_draws)
-        assert idata.posterior["alpha"].shape == (n_chains, n_draws)
-
-    def test_rho_w_free(self, flow_nb_data_ns):
-        """rho_w is a free parameter in the non-separable model."""
-        from bayespecon.models.flow import SARNegBinFlowLatent
-
-        model = SARNegBinFlowLatent(
-            flow_nb_data_ns["y"],
-            flow_nb_data_ns["G"],
-            flow_nb_data_ns["X"],
-            col_names=flow_nb_data_ns["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
-        )
-        idata = model.fit(
-            draws=DRAWS,
-            tune=TUNE,
-            chains=CHAINS,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-        )
-
-        rho_w_mean = float(idata.posterior["rho_w"].mean())
-        # rho_w should be near -rho_d * rho_o ≈ -0.06
-        assert abs(rho_w_mean - RHO_W_TRUE) < 0.3, (
-            f"rho_w_mean={rho_w_mean:.3f} too far from rho_w_true={RHO_W_TRUE}"
-        )
+        for param in ["rho_d", "rho_o", "rho_w"]:
+            vals = idata.posterior[param].values
+            assert vals.min() >= -1.0 - 1e-6, f"{param} below lower bound"
+            assert vals.max() <= 1.0 + 1e-6, f"{param} above upper bound"

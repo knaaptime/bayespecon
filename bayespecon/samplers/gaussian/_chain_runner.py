@@ -8,80 +8,15 @@ via ``jax.vmap``.
 
 from __future__ import annotations
 
-import importlib.util
+import gc
 import logging
-import multiprocessing
-import platform
 import threading
-import warnings
 from multiprocessing import shared_memory
 from typing import Callable
 
 import numpy as np
 
 _log = logging.getLogger(__name__)
-
-
-def _initialize_multiprocessing_context(
-    mp_ctx: str | None = None,
-    *,
-    quiet: bool = False,
-) -> multiprocessing.context.BaseContext:
-    """Pick a safe multiprocessing start method.
-
-    Detects JAX and auto-switches from ``'fork'`` to
-    ``'forkserver'``/``'spawn'`` to avoid deadlocks from forking
-    a multithreaded JAX runtime.
-
-    Mimics PyMC's ``_initialize_multiprocessing_context`` pattern.
-
-    Parameters
-    ----------
-    mp_ctx : str or None
-        Requested start method. If None, a platform-appropriate
-        default is chosen.
-    quiet : bool
-        Suppress auto-switch log messages.
-
-    Returns
-    -------
-    multiprocessing.context.BaseContext
-        A multiprocessing context with a safe start method.
-    """
-    user_specified = mp_ctx is not None
-    jax_available = importlib.util.find_spec("jax") is not None
-
-    if mp_ctx is None:
-        if platform.system() == "Darwin" and platform.processor() == "arm":
-            mp_ctx = "fork"  # fastest on macOS ARM
-        else:
-            mp_ctx = "forkserver"
-
-    ctx = multiprocessing.get_context(mp_ctx)
-
-    if jax_available and ctx.get_start_method() == "fork":
-        if user_specified:
-            warnings.warn(
-                "Using multiprocessing start method 'fork' with JAX installed "
-                "is unsafe and may deadlock. Consider passing mp_ctx='forkserver' "
-                "or mp_ctx='spawn'.",
-                UserWarning,
-                stacklevel=2,
-            )
-        else:
-            new_method = (
-                "forkserver"
-                if "forkserver" in multiprocessing.get_all_start_methods()
-                else "spawn"
-            )
-            ctx = multiprocessing.get_context(new_method)
-            if not quiet:
-                _log.debug(
-                    f"Auto-switched multiprocessing from 'fork' to '{new_method}' "
-                    "because JAX is installed."
-                )
-
-    return ctx
 
 
 def run_chains(
@@ -94,6 +29,7 @@ def run_chains(
     draws: int = 2000,
     tune: int = 1000,
     model_type: str = "sar",
+    timeout: float | None = 600,
 ) -> list[dict]:
     """Run n_chains independent Gibbs chains.
 
@@ -125,6 +61,12 @@ def run_chains(
         Warmup draws per chain (used for progress bar setup).
     model_type : str, default "sar"
         Model type (used for progress bar display).
+    timeout : float or None, default None
+        Maximum wall-clock seconds to wait for **all** chains to
+        finish when ``parallel=True``.  If any worker has not
+        returned by this deadline, a :class:`TimeoutError` is raised.
+        ``None`` waits indefinitely (backward-compatible default).
+        Ignored when ``parallel=False``.
 
     Returns
     -------
@@ -144,7 +86,7 @@ def run_chains(
         # Process-based parallelism via joblib (handles closures)
         import os
 
-        from joblib import Parallel, delayed
+        from joblib import Parallel, delayed, parallel_config
 
         # Cap workers at n_chains: launching more processes than chains
         # wastes spawn/import cost (the extra workers sit idle) and risks
@@ -153,6 +95,35 @@ def run_chains(
             n_workers = min(n_chains, os.cpu_count() or 1)
         else:
             n_workers = min(n_jobs, n_chains)
+
+        # Limit BLAS/OpenMP threads per worker to avoid oversubscription.
+        # With n_workers processes each using cpu_count threads, total
+        # threads would be n_workers * cpu_count — far exceeding actual
+        # cores.  Setting inner_max_num_threads = cpu_count // n_workers
+        # gives each worker a proportional share, keeping total threads
+        # near cpu_count.  This prevents one worker from starving others
+        # while still allowing multi-threaded BLAS within each worker.
+        cpu_count = os.cpu_count() or 1
+        inner_threads = max(1, cpu_count // n_workers)
+
+        # Kill any existing loky workers so that new ones are spawned
+        # with the correct thread-limiting environment variables.
+        # Without this, reused workers keep their original (unlimited)
+        # thread settings, which can cause BLAS deadlocks on macOS
+        # with Apple Accelerate after many parallel calls.
+        try:
+            from joblib.externals.loky import get_reusable_executor
+
+            get_reusable_executor(reuse=True).shutdown(wait=True)
+        except Exception:
+            pass  # executor may not exist yet
+
+        # Force garbage collection before spawning workers.  Each fit()
+        # call creates CholmodFactor objects that hold C-level resources
+        # (CHOLMOD common structs, SuiteSparse memory).  Python's GC may
+        # not collect these promptly, and accumulated C resources can
+        # cause issues after many calls.
+        gc.collect()
 
         if progressbar:
             # Per-chain progress bars via shared-memory counters + rich.
@@ -196,15 +167,27 @@ def run_chains(
                 with renderer:
                     poll_thread.start()
                     try:
-                        results = Parallel(n_jobs=n_workers)(
-                            delayed(chain_fn)(
-                                chain_id,
-                                seed,
-                                progress_manager=reporters[chain_id],
-                                chain_id_kw=chain_id,
+                        with parallel_config(
+                            backend="loky", inner_max_num_threads=inner_threads
+                        ):
+                            # Wrap each chain call to ensure the shared-memory
+                            # reporter is closed in the worker process, even if
+                            # the chain raises an exception.
+                            def _run_with_cleanup(cid, seed, pm):
+                                try:
+                                    return chain_fn(
+                                        cid, seed, progress_manager=pm, chain_id_kw=cid
+                                    )
+                                finally:
+                                    if pm is not None and hasattr(pm, "close"):
+                                        pm.close()
+
+                            results = Parallel(n_jobs=n_workers, timeout=timeout)(
+                                delayed(_run_with_cleanup)(
+                                    chain_id, seed, reporters[chain_id]
+                                )
+                                for chain_id, seed in enumerate(seeds)
                             )
-                            for chain_id, seed in enumerate(seeds)
-                        )
                     finally:
                         stop_event.set()
                         poll_thread.join(timeout=5.0)
@@ -216,10 +199,12 @@ def run_chains(
                 except FileNotFoundError:
                     pass
         else:
-            # No progress bar — silent parallel execution
-            results = Parallel(n_jobs=n_workers)(
-                delayed(chain_fn)(chain_id, seed) for chain_id, seed in enumerate(seeds)
-            )
+            # No progress bar — silent parallel execution.
+            with parallel_config(backend="loky", inner_max_num_threads=inner_threads):
+                results = Parallel(n_jobs=n_workers, timeout=timeout)(
+                    delayed(chain_fn)(chain_id, seed)
+                    for chain_id, seed in enumerate(seeds)
+                )
             return list(results)
 
     # Sequential execution with progress bars

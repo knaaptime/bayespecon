@@ -91,6 +91,7 @@ _register("bayespecon.models.cross_section.tobit.SDMTobit", SDM_TOBIT_SUITE)
 _register(
     "bayespecon.models.cross_section.sar_negbin.SARNegativeBinomial", SAR_NEGBIN_SUITE
 )
+
 _register(
     "bayespecon.models.cross_section.sar_negbin_latent.SARNegBinLatent",
     SAR_NEGBIN_SUITE,
@@ -103,17 +104,12 @@ _register("bayespecon.models.cross_section.negbin.NegativeBinomial", NEGBIN_SUIT
 # Flow (cross-sectional)
 _register("bayespecon.models.flow._flow.SARFlow", FLOW_SUITE)
 _register("bayespecon.models.flow._flow.SARFlowSeparable", FLOW_SUITE)
-_register("bayespecon.models.flow._flow.PoissonSARFlow", FLOW_SUITE)
-_register("bayespecon.models.flow._flow.PoissonSARFlowSeparable", FLOW_SUITE)
 _register("bayespecon.models.flow._flow.NegativeBinomialSARFlow", FLOW_SUITE)
 _register("bayespecon.models.flow._flow.NegativeBinomialSARFlowSeparable", FLOW_SUITE)
 _register("bayespecon.models.flow._flow.OLSFlow", FLOW_INTRA_SUITE)
-_register("bayespecon.models.flow._flow.PoissonFlow", FLOW_INTRA_SUITE)
 _register("bayespecon.models.flow._flow.NegativeBinomialFlow", FLOW_INTRA_SUITE)
 _register("bayespecon.models.flow._flow.SEMFlow", FLOW_SUITE)
 _register("bayespecon.models.flow._flow.SEMFlowSeparable", FLOW_SUITE)
-_register("bayespecon.models.flow._flow.SARNegBinFlowLatent", FLOW_SUITE)
-_register("bayespecon.models.flow._flow.SARNegBinFlowSeparableLatent", FLOW_SUITE)
 
 # ---------------------------------------------------------------------------
 # Panel models
@@ -160,10 +156,6 @@ _register("bayespecon.models.panel._tobit.SEMPanelTobit", SEM_PANEL_DYNAMIC_SUIT
 # Flow Panel
 _register("bayespecon.models.flow_panel._panel.SARFlowPanel", FLOW_PANEL_SUITE)
 _register("bayespecon.models.flow_panel._panel.SARFlowSeparablePanel", FLOW_PANEL_SUITE)
-_register("bayespecon.models.flow_panel._panel.PoissonSARFlowPanel", FLOW_PANEL_SUITE)
-_register(
-    "bayespecon.models.flow_panel._panel.PoissonSARFlowSeparablePanel", FLOW_PANEL_SUITE
-)
 _register("bayespecon.models.flow_panel._panel.OLSFlowPanel", FLOW_PANEL_SUITE)
 _register("bayespecon.models.flow_panel._panel.SEMFlowPanel", FLOW_PANEL_SUITE)
 _register("bayespecon.models.flow_panel._panel.SEMFlowSeparablePanel", FLOW_PANEL_SUITE)

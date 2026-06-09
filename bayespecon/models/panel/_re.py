@@ -422,9 +422,9 @@ class SARPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=self._W_eigs
-            if self._resolved_logdet_method == "eigenvalue"
-            else None,
+            W_eigs=(
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
+            ),
             logdet_method=self.logdet_method,
         )
 
@@ -1009,9 +1009,9 @@ class SEMPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=self._W_eigs
-            if self._resolved_logdet_method == "eigenvalue"
-            else None,
+            W_eigs=(
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
+            ),
             logdet_method=self.logdet_method,
         )
 

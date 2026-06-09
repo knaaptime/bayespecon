@@ -334,9 +334,14 @@ def simulate_spatial_probit(
             "n_per_region": n_per_region,
         },
     }
+    # When n_per_region > 1, the output has m * n_per_region rows
+    # but gdf has only m rows, so we cannot attach the gdf geometry.
+    # Only pass gdf when the dimensions match (n_per_region == 1)
+    # and create_gdf is True.
+    gdf_for_output = gdf if (create_gdf and n_per_region == 1) else None
     return _attach_optional_gdf(
         out,
-        source_gdf=gdf,
+        source_gdf=gdf_for_output,
         create_gdf=create_gdf,
         geometry_type=geometry_type,
     )

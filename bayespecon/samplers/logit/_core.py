@@ -13,8 +13,8 @@ fully conjugate Gibbs updates for η and β.
 
 Because the logit link absorbs the error scale, σ² is fixed at 1
 and does not appear as a free parameter.  The PG shape parameter is
-always h = 1 (one trial per observation), so the Devroye sampler is
-valid and typically the fastest method.
+always h = 1 (one trial per observation), so the exact sum-of-
+exponentials method is used (no truncation bias).
 
 The ρ update uses a **collapsed** (marginal) posterior that integrates
 out η, avoiding the slow mixing that arises from conditioning on the
@@ -504,6 +504,9 @@ def _sample_rho(
         # --- scipy sparse path (β-marginalised, σ² = 1) ---
         log_det_A = logdet_fn(rho)
 
+        # u = A_ρᵀ X = X − ρ Wᵀ X   — (n, k) dense
+        u = X - rho * WtX
+
         # Precision: P = base - ρ * W_sym + ρ² * WtW  (σ² = 1)
         if W_sym is not None and WtW is not None:
             P = base - rho * W_sym + rho**2 * WtW
@@ -512,8 +515,6 @@ def _sample_rho(
             AtA = A_rho.T @ A_rho  # σ² = 1
             P = AtA + sp.diags(omega, format="csr")
 
-        # u = A_ρᵀ X = X − ρ Wᵀ X   — (n, k) dense
-        u = X - rho * WtX
         rhs_stack = np.column_stack([kappa, u])  # (n, k+1)
 
         # --- log|P_η| ---
@@ -563,13 +564,16 @@ def _sample_rho(
         quad_kappa = float(kappa @ z)
         quad_b = float(rhs_b @ m_b)
 
-        return (
+        result = (
             log_det_A
             - 0.5 * log_det_P
             - 0.5 * log_det_Sig_inv
             + 0.5 * quad_kappa
             + 0.5 * quad_b
         )
+        if not np.isfinite(result):
+            return -np.inf
+        return result
 
     # Cache log-density at current x0
     x0 = state.rho

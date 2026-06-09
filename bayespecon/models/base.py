@@ -294,17 +294,8 @@ class SpatialModel(ABC):
         uses ILU-based approximation (``lndetichol`` analog);
         ``"chebyshev"`` (default for ``n > 500``) uses a Chebyshev
         polynomial approximation evaluated via Clenshaw's algorithm.
-        For large ``n`` the Chebyshev coefficients are built from a
-        stochastic trace estimator selected by ``trace_estimator``.
-    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
-        Stochastic trace estimator used to build the Chebyshev
-        coefficients when an eigendecomposition is unavailable.  Ignored
-        for non-Chebyshev methods.  See
-        ``docs/source/user-guide/logdet_profiling.ipynb`` for the
-        cost/accuracy frontier.
-    trace_k : int, optional
-        Number of probe vectors for the trace estimator.  Defaults:
-        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
+        For large ``n`` the Chebyshev coefficients are built from
+        Barry-Pace Hutchinson stochastic trace estimates.
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal,
         yielding a model that is robust to heavy-tailed outliers. When
@@ -367,8 +358,6 @@ class SpatialModel(ABC):
         robust: bool = False,
         w_vars: Optional[list] = None,
         backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
-        trace_estimator: str = "hutchpp",
-        trace_k: int | None = None,
     ):
         # Resolve typed priors (dataclass) and dict view.
         from .priors import BasePriors, priors_as_dict, resolve_priors
@@ -377,8 +366,6 @@ class SpatialModel(ABC):
         self.priors_obj = resolve_priors(priors, _priors_cls)
         self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
-        self.trace_estimator = trace_estimator
-        self.trace_k = trace_k
         self.robust = robust
 
         # Resolve probabilistic backend (PyMC, NumPyro, BlackJAX, nutpie).
@@ -540,8 +527,6 @@ class SpatialModel(ABC):
                 self._W_sparse,
                 eigs,
                 method=self.logdet_method,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_numpy_fn_cache
 
@@ -556,8 +541,6 @@ class SpatialModel(ABC):
                 self._W_sparse,
                 eigs,
                 method=self.logdet_method,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_numpy_vec_fn_cache
 
@@ -570,8 +553,6 @@ class SpatialModel(ABC):
                 method=self.logdet_method,
                 rho_min=self._logdet_bounds.rho_min,
                 rho_max=self._logdet_bounds.rho_max,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_pytensor_fn_cache
 
@@ -957,6 +938,7 @@ class SpatialModel(ABC):
         thin: int,
         n_jobs: int,
         progressbar: bool,
+        gibbs_method: str = "jax",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs`.
@@ -964,6 +946,13 @@ class SpatialModel(ABC):
         This keeps model ``fit`` methods thin by centralizing how Gibbs-specific
         kwargs are popped from ``sample_kwargs``.
         """
+        # Resolve "jax" → "numpy" fallback when JAX is not installed.
+        if gibbs_method == "jax":
+            import importlib.util
+
+            if importlib.util.find_spec("jax") is None:
+                gibbs_method = "numpy"
+
         sample_kwargs = dict(sample_kwargs or {})
         return self._fit_gibbs(
             draws=draws,
@@ -973,7 +962,7 @@ class SpatialModel(ABC):
             thin=thin,
             n_jobs=n_jobs,
             progressbar=progressbar,
-            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+            gibbs_method=gibbs_method,
             mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
             use_mala=sample_kwargs.pop("use_mala", True),
             use_slice=sample_kwargs.pop("use_slice", True),
@@ -1093,7 +1082,7 @@ class SpatialModel(ABC):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
+        gibbs_method: str = "jax",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
         use_slice: bool = True,
@@ -1124,10 +1113,11 @@ class SpatialModel(ABC):
             all CPUs.
         progressbar : bool, default True
             Show per-chain progress bars.
-        gibbs_method : str, default "numpy"
-            Execution backend: ``"numpy"`` for Python-loop Gibbs with
-            adaptive slice sampling, or ``"jax"`` for full-JIT Gibbs
-            with MALA for ρ/λ.
+        gibbs_method : str, default "jax"
+            Execution backend: ``"jax"`` for full-JIT Gibbs with
+            slice sampling for ρ/λ (default, falls back to ``"numpy"``
+            when JAX is not installed), or ``"numpy"`` for Python-loop
+            Gibbs with adaptive slice sampling.
         mala_step_size : float, default 0.05
             Initial MALA step size for the JAX path.
         use_mala : bool, default True

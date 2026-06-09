@@ -15,9 +15,6 @@ from ._config import (
     _LOGDET_FN_CACHE,
     _LOGDET_FN_CACHE_MAXSIZE,
     VALID_LOGDET_METHODS,
-    TraceEstimatorName,
-    _default_trace_k,
-    _resolve_trace_estimator,
     resolve_logdet_method,
 )
 from ._grids import (
@@ -83,8 +80,6 @@ def make_logdet_numpy_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
-    trace_estimator: TraceEstimatorName = "hutchpp",
-    trace_k: int | None = None,
 ):
     """Return a **pure-numpy** ``(rho: float) -> float`` logdet evaluator.
 
@@ -108,12 +103,6 @@ def make_logdet_numpy_fn(
     T : int, default 1
         Panel time-period count.  The returned log-determinant is
         multiplied by *T*.
-    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
-        Stochastic trace estimator used to build the Chebyshev
-        coefficients when an eigendecomposition is unavailable.
-    trace_k : int, optional
-        Number of probe vectors for the trace estimator.  Defaults:
-        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
 
     Returns
     -------
@@ -122,8 +111,6 @@ def make_logdet_numpy_fn(
         (or T * log|I - rho*W| for panel models).
     """
     T = int(T)
-    trace_estimator = _resolve_trace_estimator(trace_estimator)
-    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
     method = resolve_logdet_method(method, n=n)
 
@@ -147,8 +134,6 @@ def make_logdet_numpy_fn(
             rmin=rho_min,
             rmax=rho_max,
             eigs=eigs,
-            estimator=trace_estimator,
-            n_mc_iter=_k,
         )
         coeffs = out["coeffs"]
         rmin_cb, rmax_cb = out["rmin"], out["rmax"]
@@ -203,8 +188,6 @@ def make_logdet_numpy_vec_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
-    trace_estimator: TraceEstimatorName = "hutchpp",
-    trace_k: int | None = None,
 ):
     """Return a **vectorized** numpy ``(rho_arr: np.ndarray) -> np.ndarray`` logdet evaluator.
 
@@ -225,12 +208,6 @@ def make_logdet_numpy_vec_fn(
     T : int, default 1
         Panel time-period count.  The returned log-determinant is
         multiplied by *T*.
-    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
-        Stochastic trace estimator used to build the Chebyshev
-        coefficients when an eigendecomposition is unavailable.
-    trace_k : int, optional
-        Number of probe vectors for the trace estimator.  Defaults:
-        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
 
     Returns
     -------
@@ -239,8 +216,6 @@ def make_logdet_numpy_vec_fn(
         computing log|I - rho*W| (or T * log|I - rho*W| for panel models).
     """
     T = int(T)
-    trace_estimator = _resolve_trace_estimator(trace_estimator)
-    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
     method = resolve_logdet_method(method, n=n)
 
@@ -267,8 +242,6 @@ def make_logdet_numpy_vec_fn(
             rmin=rho_min,
             rmax=rho_max,
             eigs=eigs,
-            estimator=trace_estimator,
-            n_mc_iter=_k,
         )
         coeffs = out["coeffs"].astype(np.float64)
         rmin_cb, rmax_cb = float(out["rmin"]), float(out["rmax"])
@@ -332,8 +305,6 @@ def make_logdet_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
-    trace_estimator: TraceEstimatorName = "hutchpp",
-    trace_k: int | None = None,
 ):
     """Return a function (rho) -> pytensor log|I - rho*W| expression.
 
@@ -365,8 +336,8 @@ def make_logdet_fn(
         (:cite:p:`pace2004ChebyshevApproximation`); near-minimax
         polynomial evaluated via Clenshaw's algorithm.  Coefficients are
         built from exact eigenvalues when ``n`` is small (or ``eigs`` is
-        supplied); otherwise from a stochastic trace estimator selected
-        by ``trace_estimator``.
+        supplied); otherwise from Barry-Pace Hutchinson trace estimates
+        (:cite:t:`barry1999MonteCarlo`).
     rho_min : float, default=-1.0
         Lower bound for the grid method.
     rho_max : float, default=1.0
@@ -376,15 +347,6 @@ def make_logdet_fn(
         by *T*, exploiting
         ``log|I_{NT} - ρ(I_T⊗W_N)| = T · log|I_N - ρW_N|``.
         Leave at 1 for cross-sectional models.
-    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
-        Stochastic trace estimator used to build the Chebyshev
-        coefficients when an eigendecomposition is unavailable.  Ignored
-        for non-Chebyshev methods and when eigenvalues are passed in.
-        See ``docs/source/user-guide/logdet_profiling.ipynb`` for the
-        cost/accuracy frontier.
-    trace_k : int, optional
-        Number of probe vectors for the trace estimator.  Defaults:
-        ``30`` (hutchinson), ``50`` (hutchpp), ``25`` (xtrace).
 
     Returns
     -------
@@ -392,8 +354,6 @@ def make_logdet_fn(
         Function mapping symbolic ``rho`` to symbolic log-determinant.
     """
     T = int(T)
-    trace_estimator = _resolve_trace_estimator(trace_estimator)
-    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
 
     if sp.issparse(W):
         W_sparse = W.tocsr().astype(np.float64)
@@ -405,8 +365,6 @@ def make_logdet_fn(
                 order=20,
                 rmin=rho_min,
                 rmax=rho_max,
-                estimator=trace_estimator,
-                n_mc_iter=_k,
             )
             coeffs_np = out["coeffs"]
             rmin_cb = out["rmin"]
@@ -491,8 +449,6 @@ def make_logdet_fn(
             order=20,
             rmin=rho_min,
             rmax=rho_max,
-            estimator=trace_estimator,
-            n_mc_iter=_k,
         )
         coeffs_np = out["coeffs"]
         rmin_cb = out["rmin"]
@@ -549,18 +505,14 @@ def get_cached_logdet_fn(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     T: int = 1,
-    trace_estimator: TraceEstimatorName = "hutchpp",
-    trace_k: int | None = None,
 ):
     """Return a shared cached ``make_logdet_fn`` callable.
 
     Cache key includes a stable signature of ``W`` plus ``method``, bounds,
-    panel multiplier ``T``, and the Chebyshev trace estimator settings.
-    This avoids repeatedly rebuilding equivalent logdet approximations
-    across model instances.
+    and panel multiplier ``T``.  This avoids repeatedly rebuilding
+    equivalent logdet approximations across model instances.
     """
     T = int(T)
-    trace_estimator = _resolve_trace_estimator(trace_estimator)
     if sp.issparse(W):
         n_w = int(W.shape[0])
     else:
@@ -577,8 +529,6 @@ def get_cached_logdet_fn(
         float(rho_min),
         float(rho_max),
         T,
-        trace_estimator,
-        trace_k,
     )
     fn = _LOGDET_FN_CACHE.get(key)
     if fn is not None:
@@ -591,8 +541,6 @@ def get_cached_logdet_fn(
         rho_min=rho_min,
         rho_max=rho_max,
         T=T,
-        trace_estimator=trace_estimator,
-        trace_k=trace_k,
     )
     _LOGDET_FN_CACHE[key] = fn
     if len(_LOGDET_FN_CACHE) > _LOGDET_FN_CACHE_MAXSIZE:

@@ -3,6 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - libpysal
+  - esda
   - formulaic
   - pymc
   - arviz
@@ -22,4 +23,3 @@ dependencies:
 # - pip
 #   - pip:
 #     - klujax
-      - traceax 

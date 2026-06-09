@@ -7,21 +7,22 @@ r"""Structural-form SAR Negative Binomial with Pólya–Gamma Gibbs sampler.
     \nu \sim N(0, \sigma^2 I)
 
 Same observable likelihood as :class:`SARNegativeBinomial` (reduced form)
-but sampled via Pólya–Gamma data augmentation and block Gibbs, yielding
-substantially higher ESS/s for n > ~1000.
+but sampled via Pólya–Gamma data augmentation and block Gibbs on the
+structural form, yielding substantially higher ESS/s for n > ~1000.
 
 Use this model when:
-- n is large (> 1000) and NUTS ESS/s is poor.
+- You want the structural form with explicit ``sigma2`` noise.
 - You need reliable ρ and α posteriors without long tuning.
 - You want to compare with the NUTS path for validation.
 
-Use :class:`SARNegativeBinomial` when:
-- n is small (< 500) and NUTS works fine.
-- You need the full PyMC model graph for custom inference.
+Use :class:`SARNegativeBinomial` (canonical reduced form, PG-Gibbs) for
+most spatial-econometric work, and :class:`SARNegativeBinomial` when
+you need the full PyMC model graph for custom inference (NUTS).
 """
 
 from __future__ import annotations
 
+import warnings
 from typing import Optional
 
 import arviz as az
@@ -105,8 +106,6 @@ class SARNegBinLatent(SpatialModel):
             method=bounds.method,
             rho_min=bounds.rho_min,
             rho_max=bounds.rho_max,
-            trace_estimator=self.trace_estimator,
-            trace_k=self.trace_k,
         )
 
     # ------------------------------------------------------------------
@@ -188,6 +187,7 @@ class SARNegBinLatent(SpatialModel):
         lanczos_deg: int = 15,
         mh_proposal_sd: float = 0.05,
         use_mala: bool = True,
+        mala_eps: float = 0.01,
         **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
@@ -273,6 +273,16 @@ class SARNegBinLatent(SpatialModel):
         W_sparse = self._W_sparse
         n, k = X.shape
 
+        if n < 900:
+            warnings.warn(
+                f"SAR Negative Binomial models require large samples for "
+                f"reliable spatial parameter recovery. With n={n}, "
+                f"posterior estimates of ρ and α may be severely "
+                f"attenuated. n ≥ 900 is recommended.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         # Build priors
         priors = GibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
@@ -302,19 +312,27 @@ class SARNegBinLatent(SpatialModel):
         W_sym = W_sparse + W_sparse.T
         WtW = W_sparse.T @ W_sparse
 
-        # Create CHOLMOD factor for the precision matrix sparsity pattern.
+        # CHOLMOD factor for the precision matrix sparsity pattern.
         # P = I/σ² + diag(ω) - ρ*(W+W^T)/σ² + ρ²*W^T W/σ²
         # The sparsity pattern is the union of diag, W+W^T, and W^T W,
         # which is the same for any ρ≠0.  Use a representative ρ to build
         # the pattern matrix (ρ=0 gives a diagonal matrix, which has the
         # wrong pattern and forces CHOLMOD to redo symbolic analysis each
         # call — very expensive).
-        if has_cholmod():
+        #
+        # We only build the pattern matrix here; the actual ``CholmodFactor``
+        # is created *inside* each chain (see ``_run_one_chain`` below).
+        # CHOLMOD's C handle does not survive pickling (``__setstate__``
+        # rebuilds it on unpickle), so sharing one factor across joblib
+        # workers gives no savings, and the concurrent symbolic-analysis
+        # calls at unpickle time can deadlock on macOS + Accelerate.
+        # Building per-chain isolates each chain's CHOLMOD state.
+        _have_cholmod = has_cholmod()
+        if _have_cholmod:
             # Any ρ≠0 gives the correct pattern; ρ=0.5 is arbitrary.
-            _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
-            cholmod_factor = CholmodFactor(_P0)
+            _cholmod_pattern = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
         else:
-            cholmod_factor = None
+            _cholmod_pattern = None
 
         # Resolve Gibbs method based on user choice or auto-selection
         _valid_methods = {"auto", "factorize", "jax_dense"}
@@ -334,9 +352,9 @@ class SARNegBinLatent(SpatialModel):
             )
 
         if gibbs_method == "factorize":
-            solve_method = "cholmod" if cholmod_factor is not None else "splu"
+            solve_method = "cholmod" if _have_cholmod else "splu"
             logdet_P_method = "cholmod"
-            sample_method = "cholmod" if cholmod_factor is not None else "splu"
+            sample_method = "cholmod" if _have_cholmod else "splu"
         elif gibbs_method == "jax_dense":
             solve_method = "jax_dense"
             logdet_P_method = "jax_dense"
@@ -345,7 +363,7 @@ class SARNegBinLatent(SpatialModel):
             # Prefer exact factorisation when CHOLMOD is available.
             # CHOLMOD is 3× faster than jax_dense at n=2500 on CPU.
             # JAX dense wins on GPU or when CHOLMOD is unavailable.
-            if cholmod_factor is not None:
+            if _have_cholmod:
                 solve_method = "cholmod"
                 logdet_P_method = "cholmod"
                 sample_method = "cholmod"
@@ -384,8 +402,6 @@ class SARNegBinLatent(SpatialModel):
                 method=bounds.method,
                 rho_min=bounds.rho_min,
                 rho_max=bounds.rho_max,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
 
         cache = GibbsCache(
@@ -394,7 +410,7 @@ class SARNegBinLatent(SpatialModel):
             logdet_fn=self._logdet_fn,
             rho_lower=priors.rho_lower,
             rho_upper=priors.rho_upper,
-            cholmod_factor=cholmod_factor,
+            cholmod_factor=None,  # per-chain; built inside _run_one_chain
             W_sym_over_s2=W_sym,
             WtW_over_s2=WtW,
             solve_method=solve_method,
@@ -407,7 +423,7 @@ class SARNegBinLatent(SpatialModel):
             rho_mode_update_freq=5,  # recompute mode every 5 sweeps during burn-in
             rho_mode_w_factor=2.0,
             rho_adaptive_width=True,
-            rho_slice_width_state=SliceWidthState(w=0.2),
+            rho_slice_width_state=None,  # per-chain; built inside _run_one_chain
         )
 
         # Derive per-chain seeds
@@ -455,6 +471,7 @@ class SARNegBinLatent(SpatialModel):
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
                 use_mala=use_mala,
+                mala_eps=mala_eps,
                 progressbar=progressbar,
             )
         else:
@@ -462,12 +479,28 @@ class SARNegBinLatent(SpatialModel):
             def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
                 rng = np.random.default_rng(seed)
                 init = self._initialize_from_glm(rng)
+                # Per-chain CHOLMOD factor and slice-width state.
+                # The C handle inside ``CholmodFactor`` does not survive
+                # pickling (``__setstate__`` re-runs symbolic analysis on
+                # unpickle), so building per-chain costs the same as the
+                # parent build while avoiding concurrent CHOLMOD init in
+                # joblib workers (which can deadlock on macOS+Accelerate).
+                # ``SliceWidthState`` must also be per-chain so adaptive
+                # widths from one chain don't pollute the next.
+                chain_cache = cache._replace(
+                    cholmod_factor=(
+                        CholmodFactor(_cholmod_pattern)
+                        if _cholmod_pattern is not None
+                        else None
+                    ),
+                    rho_slice_width_state=SliceWidthState(w=0.2),
+                )
                 return run_chain(
                     y=y,
                     X=X,
                     W_sparse=W_sparse,
                     priors=priors,
-                    cache=cache,
+                    cache=chain_cache,
                     init=init,
                     draws=draws,
                     tune=tune,
@@ -600,3 +633,7 @@ class SARNegBinLatent(SpatialModel):
         indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
+
+
+# Public alias — keep in sync with the .pyi stub re-export.
+SARNegativeBinomialLatent = SARNegBinLatent

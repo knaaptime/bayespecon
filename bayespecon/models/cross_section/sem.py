@@ -115,6 +115,7 @@ class SEM(GaussianLikelihoodMixin, SpatialModel):
         random_seed: Optional[int] = None,
         idata_kwargs: Optional[dict] = None,
         sampler: str = "gibbs",
+        gibbs_method: str = "jax",
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
@@ -139,12 +140,20 @@ class SEM(GaussianLikelihoodMixin, SpatialModel):
             ``log_likelihood: True``, the complete pointwise log-likelihood
             (including the Jacobian correction) is attached to the output.
             Only used when ``sampler="nuts"``.
-        sampler : str, default "nuts"
+        sampler : str, default "gibbs"
             Sampling method:
 
-            - ``"nuts"``: NUTS via PyMC (default).
+            - ``"nuts"``: NUTS via PyMC.
             - ``"gibbs"``: 3-block Gibbs sampler (β conjugate normal,
               σ² conjugate Inv-Γ, λ conditional slice).
+        gibbs_method : {"jax", "numpy"}, default "jax"
+            Execution backend for the Gibbs sampler:
+
+            - ``"jax"``: Full-JIT Gibbs with slice sampling for λ.
+              Uses ``jax.vmap`` for vectorized chains.  Falls back to
+              ``"numpy"`` when JAX is not installed.
+            - ``"numpy"``: Python-loop Gibbs with adaptive slice
+              sampling for λ.  Uses ``joblib`` for parallel chains.
         thin : int, default 1
             Keep every ``thin``-th draw after warmup.  Only used when
             ``sampler="gibbs"``.
@@ -191,6 +200,7 @@ class SEM(GaussianLikelihoodMixin, SpatialModel):
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
+                gibbs_method=gibbs_method,
                 sample_kwargs=sample_kwargs,
             )
         elif sampler != "nuts":

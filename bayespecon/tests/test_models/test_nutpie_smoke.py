@@ -30,9 +30,9 @@ from bayespecon import (
     dgp,
 )
 from bayespecon.models.flow._flow import (
-    PoissonFlow,
-    PoissonSARFlow,
-    PoissonSARFlowSeparable,
+    NegativeBinomialFlow,
+    NegativeBinomialSARFlow,
+    NegativeBinomialSARFlowSeparable,
 )
 from bayespecon.tests.helpers import (
     PANEL_N,
@@ -116,16 +116,14 @@ def test_panel_re_samples_with_nutpie(
 
 @pytest.fixture(scope="module")
 def _flow_data() -> dict:
-    return dgp.generate_poisson_flow_data(n=8, seed=2026)
+    return dgp.generate_negbin_flow_data(n=8, seed=2026)
 
 
 @pytest.mark.parametrize(
-    "model_cls", [PoissonFlow, PoissonSARFlowSeparable, PoissonSARFlow]
+    "model_cls",
+    [NegativeBinomialFlow, NegativeBinomialSARFlowSeparable, NegativeBinomialSARFlow],
 )
-def test_poisson_flow_samples_with_nutpie(model_cls, _flow_data: dict) -> None:
-    # PoissonSARFlow note: samples cleanly under nutpie even though the
-    # KroneckerFlowSolveOp / SparseFlowSolveOp dispatches fall back to Numba
-    # object mode. If that ever regresses, mark xfail with a clear reason.
+def test_negbin_flow_samples_with_nutpie(model_cls, _flow_data: dict) -> None:
     model = model_cls(
         y=_flow_data["y_vec"],
         G=_flow_data["G"],

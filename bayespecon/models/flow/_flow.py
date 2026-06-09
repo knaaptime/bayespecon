@@ -301,13 +301,9 @@ class FlowModel(ABC):
         trace_riter: int = 50,
         trace_seed: Optional[int] = None,
         symmetric_xo_xd: Optional[bool] = None,
-        trace_estimator: str = "hutchpp",
-        trace_k: int | None = None,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
-        self.trace_estimator = trace_estimator
-        self.trace_k = trace_k
         self.restrict_positive = restrict_positive
         self.miter = miter
         self.titer = titer
@@ -543,7 +539,7 @@ class FlowModel(ABC):
         store_lambda : bool, default False
             If True, include the high-dimensional fitted mean ``lambda`` in the
             stored posterior. Leaving this False reduces memory and conversion
-            overhead for Poisson flow models.
+            overhead for NB flow models.
         idata_kwargs : dict, optional
             Forwarded to ``pm.sample``.  Defaults to
             ``{"log_likelihood": True}`` so that ``az.loo`` / ``az.waic`` /
@@ -829,8 +825,8 @@ class FlowModel(ABC):
         """Per-draw :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`.
 
         Returns ``None`` (the default) when no Jacobian correction is
-        required — for example, OLS / Poisson flow baselines (``A = I_N``)
-        and the Poisson SAR variants (the ``pm.Poisson("obs", ...)``
+        required — for example, OLS / NB flow baselines (``A = I_N``)
+        and the NB SAR variants (the ``pm.NegativeBinomial("obs", ...)``
         log-likelihood already captured by PyMC is the appropriate
         pointwise density on observed counts).
 
@@ -1032,7 +1028,7 @@ class FlowModel(ABC):
 
         Default implementation: Gaussian SAR flow,
         ``y_rep = A^{-1} (X β + σ ε)`` with ``ε ~ N(0, I_N)``.
-        Subclasses (PoissonSARFlow, PoissonSARFlowSeparable) override this.
+        Subclasses (NegativeBinomialSARFlow, NegativeBinomialSARFlowSeparable) override this.
         """
         A = self._assemble_A(rho_d, rho_o, rho_w)
         Xb = self._X_design @ beta
@@ -1050,14 +1046,14 @@ class FlowModel(ABC):
         For each (subsampled) posterior draw, simulates a new flow vector
         ``y_rep`` from the implied data-generating process by solving the
         sparse system ``A(rho) y_rep = X β + ε`` (Gaussian) or
-        ``y_rep ~ Poisson(exp(A^{-1} X β))`` (Poisson variants).
+        ``y_rep ~ NegBin(exp(A^{-1} X β), α)`` (NB variants).
 
         Parameters
         ----------
         n_draws : int, optional
             Number of posterior draws to use.  Defaults to all available.
         random_seed : int, optional
-            Seed for the noise/Poisson sampler.
+            Seed for the posterior-predictive sampler.
 
         Returns
         -------
@@ -1397,9 +1393,8 @@ class SARFlowSeparable(FlowModel):
 
         * ``"chebyshev"`` (default) — Chebyshev polynomial approximation
           via Clenshaw recurrence. For large *n* the Chebyshev coefficients
-          are built from stochastic trace estimates (controlled by
-          ``trace_estimator`` and ``trace_k``). Best performance/accuracy
-          trade-off for repeated evaluation.
+          are built from Barry-Pace Hutchinson stochastic trace estimates.
+          Best performance/accuracy trade-off for repeated evaluation.
         * ``"eigenvalue"`` — exact eigendecomposition. :math:`O(n^3)`
           setup, then :math:`O(n)` per call. Good for moderate *n*.
         * ``"traces"`` — precompute :math:`N \\times N` flow traces
@@ -1589,316 +1584,7 @@ class SARFlowSeparable(FlowModel):
 
 
 # ---------------------------------------------------------------------------
-# Model 3: PoissonSARFlow — Poisson response, unrestricted 3-rho
-# ---------------------------------------------------------------------------
-
-
-class PoissonSARFlow(SARFlow):
-    """Bayesian SAR flow model with a Poisson observation distribution.
-
-    Models origin-destination flow **counts**
-    :math:`y_{ij} \\in \\mathbb{N}_0` as:
-
-    .. math::
-
-        y_{ij} \\sim \\operatorname{Poisson}(\\lambda_{ij}), \\qquad
-        \\log \\boldsymbol{\\lambda} = A(\\boldsymbol{\\rho})^{-1} X\\beta
-
-    where the system matrix :math:`A(\\rho_d, \\rho_o, \\rho_w) =
-    I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w`.
-
-    The spatial filter is on the **log-mean** scale. The implicit solve
-    :math:`\\eta = A^{-1} X\\beta` is embedded in the PyMC graph via
-    :class:`~bayespecon._ops.SparseFlowSolveOp`, which provides NUTS
-    gradients via the adjoint method.
-
-    Parameters
-    ----------
-    y : array-like of int, shape (n, n) or (N,)
-        Observed non-negative integer flow counts. Float arrays whose
-        values round exactly to integers are silently coerced.
-    G : libpysal.graph.Graph
-        Row-standardised spatial graph on *n* units.
-    X : np.ndarray or pandas.DataFrame, shape (N, p)
-        Full origin-destination design matrix with :math:`N = n^2` rows.
-        DataFrame columns are preserved as feature names.
-    col_names : list of str, optional
-        Column labels for ``X``. Inferred from a DataFrame if omitted;
-        otherwise defaults to ``["x0", "x1", ...]``.
-    k : int, optional
-        Number of regional attribute columns (destination/origin variable
-        pairs). Inferred from ``dest_*``/``orig_*`` column names when the
-        standard LeSage layout is used.
-    logdet_method : str, default "traces"
-        Log-determinant method. Only ``"traces"`` is supported here.
-    restrict_positive : bool, default True
-        If True, use ``pm.Dirichlet("rho_simplex", a=ones(4))`` to enforce
-        :math:`\\rho_d, \\rho_o, \\rho_w \\geq 0` and
-        :math:`\\rho_d + \\rho_o + \\rho_w \\leq 1`. If False, three
-        independent ``pm.Uniform(rho_lower, rho_upper)`` priors are used
-        with a differentiable quadratic-wall stability potential.
-    miter : int, default 30
-        Trace polynomial order for the log-determinant.
-    titer : int, default 800
-        Geometric tail cutoff for the log-determinant series.
-    trace_riter : int, default 50
-        Number of Monte Carlo probes for trace estimation.
-    trace_seed : int, optional
-        Random seed for trace estimation reproducibility.
-    symmetric_xo_xd : bool, optional
-        If ``None`` (default), origin and destination design blocks are
-        compared and symmetry is auto-detected.
-    priors : dict, optional
-        Override default priors. Supported keys:
-
-        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
-        - ``beta_sigma`` : float, default 10.0 — Normal prior std for ``beta``.
-        - ``rho_lower`` : float, default -1.0 — Lower bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
-        - ``rho_upper`` : float, default 1.0 — Upper bound of Uniform prior on each ρ (only when ``restrict_positive=False``).
-
-    Notes
-    -----
-    There is no ``sigma`` parameter; the Poisson variance equals the mean.
-    Robust (Student-t) likelihoods are not supported for Poisson counts.
-    """
-
-    def __init__(self, y, G, X, **kwargs):
-        y_arr = np.asarray(y)
-        if not np.issubdtype(y_arr.dtype, np.integer):
-            y_rounded = np.round(y_arr).astype(np.int64)
-            if not np.allclose(y_arr, y_rounded):
-                raise ValueError(
-                    "PoissonSARFlow requires integer-valued observations; "
-                    f"got dtype {y_arr.dtype} with non-integer values."
-                )
-            y_arr = y_rounded
-        if np.any(y_arr < 0):
-            raise ValueError(
-                "PoissonSARFlow requires non-negative integer observations."
-            )
-        super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
-        self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
-
-    def _compute_jacobian_log_det(self, posterior) -> Optional[np.ndarray]:
-        # Poisson observation density on observed counts is captured
-        # directly by PyMC; the pm.Potential("jacobian", ...) acts on the
-        # latent linear predictor, not on the observed-data density.
-        return None
-
-    def _simulate_y_rep(
-        self,
-        rho_d: float,
-        rho_o: float,
-        rho_w: float,
-        beta: np.ndarray,
-        sigma: Optional[float],  # unused
-        rng: np.random.Generator,
-    ) -> np.ndarray:
-        A = self._assemble_A(rho_d, rho_o, rho_w)
-        eta = sp.linalg.spsolve(A, self._X_design @ beta)
-        # Clip to avoid overflow on extreme draws.
-        lam = np.exp(np.clip(eta, -50.0, 50.0))
-        return rng.poisson(lam).astype(np.float64)
-
-    def _build_pymc_model(self) -> pm.Model:
-        from ..._ops import SparseFlowSolveOp
-
-        beta_mu = self.priors.get("beta_mu", 0.0)
-        beta_sigma = self.priors.get("beta_sigma", 10.0)
-
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
-
-        with pm.Model(coords=self._model_coords()) as model:
-            if self.restrict_positive:
-                rho_simplex = pm.Dirichlet("rho_simplex", a=np.ones(4))
-                rho_d = pm.Deterministic("rho_d", rho_simplex[0])
-                rho_o = pm.Deterministic("rho_o", rho_simplex[1])
-                rho_w = pm.Deterministic("rho_w", rho_simplex[2])
-            else:
-                rho_lower = self.priors.get("rho_lower", -1.0)
-                rho_upper = self.priors.get("rho_upper", 1.0)
-                rho_d = pm.Uniform("rho_d", lower=rho_lower, upper=rho_upper)
-                rho_o = pm.Uniform("rho_o", lower=rho_lower, upper=rho_upper)
-                rho_w = pm.Uniform("rho_w", lower=rho_lower, upper=rho_upper)
-                slack = 1.0 - rho_d - rho_o - rho_w
-                pm.Potential(
-                    "stability",
-                    pt.switch(slack > 0.0, 0.0, -1e6 * slack**2),
-                )
-
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-
-            Xb = pt.dot(X_t, beta)
-            solve_op = SparseFlowSolveOp(self._Wd, self._Wo, self._Ww)
-            eta = solve_op(rho_d, rho_o, rho_w, Xb)
-            lam = pm.Deterministic("lambda", pt.exp(eta))
-
-            pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
-
-            pm.Potential(
-                "jacobian",
-                flow_logdet_pytensor(
-                    rho_d,
-                    rho_o,
-                    rho_w,
-                    self._poly_a,
-                    self._poly_b,
-                    self._poly_c,
-                    self._poly_coeffs,
-                    self._miter_a,
-                    self._miter_b,
-                    self._miter_c,
-                    self._miter_coeffs,
-                    self.miter,
-                    self.titer,
-                ),
-            )
-
-        return model
-
-
-# ---------------------------------------------------------------------------
-# Model 4: PoissonSARFlowSeparable — Poisson response, rho_w = -rho_d * rho_o
-# ---------------------------------------------------------------------------
-
-
-class PoissonSARFlowSeparable(SARFlowSeparable):
-    """Bayesian separable SAR flow model with a Poisson observation distribution.
-
-    Combines the Poisson observation model of :class:`PoissonSARFlow` with
-    the separability constraint :math:`\\rho_w = -\\rho_d \\rho_o`,
-    enabling the exact eigenvalue-based log-determinant:
-
-    .. math::
-
-        \\log|A| = n\\,\\log|I_n - \\rho_d W| + n\\,\\log|I_n - \\rho_o W|
-
-    Parameters
-    ----------
-    y : array-like of int, shape (n, n) or (N,)
-        Observed non-negative integer flow counts. Float arrays whose
-        values round exactly to integers are silently coerced.
-    G : libpysal.graph.Graph
-        Row-standardised spatial graph on *n* units.
-    X : np.ndarray or pandas.DataFrame, shape (N, p)
-        Full origin-destination design matrix with :math:`N = n^2` rows.
-        DataFrame columns are preserved as feature names.
-    col_names : list of str, optional
-        Column labels for ``X``. Inferred from a DataFrame if omitted.
-    k : int, optional
-        Number of regional attribute columns. Inferred from
-        ``dest_*``/``orig_*`` column names when the standard LeSage
-        layout is used.
-    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
-        Method for the Kronecker-factored log-determinant.
-    miter : int, default 30
-        Polynomial / approximation order (used by ``"chebyshev"`` /
-
-    titer : int, default 800
-        Geometric tail cutoff for series-based variants.
-    trace_riter : int, default 50
-    trace_seed : int, optional
-        Random seed for trace estimation reproducibility.
-    symmetric_xo_xd : bool, optional
-        If ``None`` (default), origin and destination design blocks are
-        compared and symmetry is auto-detected.
-    priors : dict, optional
-        Override default priors. Supported keys:
-
-        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
-        - ``beta_sigma`` : float, default 10.0 — Normal prior std for ``beta``.
-        - ``rho_lower`` : float, default -0.999 — Lower bound of Uniform prior on ``rho_d`` and ``rho_o``.
-        - ``rho_upper`` : float, default 0.999 — Upper bound of Uniform prior on ``rho_d`` and ``rho_o``.
-
-    Notes
-    -----
-    There is no ``sigma`` parameter; the Poisson variance equals the mean.
-    Robust (Student-t) likelihoods are not supported for Poisson counts.
-    The ``restrict_positive`` argument has no effect on this class.
-    """
-
-    def __init__(self, y, G, X, **kwargs):
-        y_arr = np.asarray(y)
-        if not np.issubdtype(y_arr.dtype, np.integer):
-            y_rounded = np.round(y_arr).astype(np.int64)
-            if not np.allclose(y_arr, y_rounded):
-                raise ValueError(
-                    "PoissonSARFlowSeparable requires integer-valued observations; "
-                    f"got dtype {y_arr.dtype} with non-integer values."
-                )
-            y_arr = y_rounded
-        if np.any(y_arr < 0):
-            raise ValueError(
-                "PoissonSARFlowSeparable requires non-negative integer observations."
-            )
-        super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
-        self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
-
-    def _compute_jacobian_log_det(self, posterior) -> Optional[np.ndarray]:
-        # Poisson observation density on observed counts is captured
-        # directly by PyMC; the pm.Potential("jacobian", ...) acts on the
-        # latent linear predictor, not on the observed-data density.
-        return None
-
-    def _simulate_y_rep(
-        self,
-        rho_d: float,
-        rho_o: float,
-        rho_w: float,  # ignored: separable constraint enforces rho_w = -rho_d*rho_o
-        beta: np.ndarray,
-        sigma: Optional[float],  # unused
-        rng: np.random.Generator,
-    ) -> np.ndarray:
-        I_n = sp.eye(self._n, format="csr", dtype=np.float64)
-        Ld = I_n - rho_d * self._W_sparse
-        Lo = I_n - rho_o * self._W_sparse
-        eta = kron_solve_vec(Lo, Ld, self._X_design @ beta, self._n)
-        lam = np.exp(np.clip(eta, -50.0, 50.0))
-        return rng.poisson(lam).astype(np.float64)
-
-    def _build_pymc_model(self) -> pm.Model:
-        from ..._ops import KroneckerFlowSolveOp
-
-        beta_mu = self.priors.get("beta_mu", 0.0)
-        beta_sigma = self.priors.get("beta_sigma", 10.0)
-        rho_lower = self.priors.get("rho_lower", -0.999)
-        rho_upper = self.priors.get("rho_upper", 0.999)
-
-        n = self._n
-        if self._separable_logdet_fn is None:
-            raise RuntimeError(
-                "PoissonSARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
-            )
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
-
-        with pm.Model(coords=self._model_coords()) as model:
-            rho_d = pm.Uniform("rho_d", lower=rho_lower, upper=rho_upper)
-            rho_o = pm.Uniform("rho_o", lower=rho_lower, upper=rho_upper)
-            pm.Deterministic("rho_w", -rho_d * rho_o)
-
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-
-            # KroneckerFlowSolveOp exploits A = L_d ⊗ L_o (two n×n solves
-            # instead of one n²×n² solve — O(n³) vs O(n⁶)).
-            # rho_w is kept as a Deterministic for trace reporting only.
-            Xb = pt.dot(X_t, beta)
-            solve_op = KroneckerFlowSolveOp(self._W_sparse, n)
-            eta = solve_op(rho_d, rho_o, Xb)
-            lam = pm.Deterministic("lambda", pt.exp(eta))
-
-            pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
-
-            pm.Potential(
-                "jacobian",
-                self._separable_logdet_fn(rho_d, rho_o),
-            )
-
-        return model
-
-
-# ---------------------------------------------------------------------------
-# Model 5: OLSFlow — non-spatial gravity baseline (Thomas-Agnan & LeSage 2014)
+# Model 3: OLSFlow — non-spatial gravity baseline (Thomas-Agnan & LeSage 2014)
 # ---------------------------------------------------------------------------
 
 
@@ -2099,138 +1785,14 @@ class OLSFlow(FlowModel):
 
 
 # ---------------------------------------------------------------------------
-# Model 6: PoissonFlow — non-spatial Poisson gravity baseline
+# Model 4: NegativeBinomial SAR/OLS flow variants
 # ---------------------------------------------------------------------------
 
 
-class PoissonFlow(OLSFlow):
-    r"""Non-spatial Bayesian OD-flow Poisson gravity model (count baseline).
-
-    Aspatial count analogue of :class:`OLSFlow`: models origin-destination
-    flow **counts** :math:`y_{ij} \in \mathbb{N}_0` with a log-linear
-    gravity mean and no spatial-lag terms,
-
-    .. math::
-
-        y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \qquad
-        \log \boldsymbol{\lambda} = X\beta.
-
-    Provided as the count-data baseline analogue of :class:`OLSFlow`,
-    matching the role :class:`PoissonSARFlow` plays relative to
-    :class:`SARFlow`.  No spatial filter is applied (``A = I_N``), so there
-    is no log-determinant precomputation, no ``rho_*`` parameters, and no
-    ``sigma`` (the Poisson variance equals the mean).
-
-    Parameters
-    ----------
-    y : array-like, shape (n, n) or (N,)
-        Observed non-negative integer flow counts.  Float arrays whose
-        values are close to integers are silently rounded.
-    G : libpysal.graph.Graph
-        Graph on *n* units.  Required for API symmetry but the spatial
-        weights are not used in estimation.
-    X : np.ndarray or pandas.DataFrame, shape (N, p)
-        Full origin-destination design matrix.
-    col_names : list[str], optional
-        Column labels for *X*. Defaults to ``["x0", "x1", ...]`` when
-        not provided and *X* is not a DataFrame.
-    k : int, optional
-        Number of regional attribute columns. Inferred from column names
-        when they follow the ``dest_*``/``orig_*`` convention.
-    priors : dict, optional
-        Override default priors. Supported keys:
-
-        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
-        - ``beta_sigma`` : float, default 10.0 — Normal prior std for ``beta``.
-
-        Spatial keys (``rho_*``) and ``sigma_sigma`` are ignored.
-    symmetric_xo_xd : bool, optional
-        If ``None`` (default), origin/destination design symmetry is
-        auto-detected. Set explicitly to override.
-
-    Notes
-    -----
-    No spatial filter is applied (``A = I_N``); the closed-form
-    Thomas-Agnan & LeSage (2014, Table 83.1) effects from :class:`OLSFlow`
-    are reused unchanged on the (log-mean) linear-predictor scale.
-    """
-
-    def __init__(self, y, G, X, **kwargs):
-        y_arr = np.asarray(y)
-        if not np.issubdtype(y_arr.dtype, np.integer):
-            y_rounded = np.round(y_arr).astype(np.int64)
-            if not np.allclose(y_arr, y_rounded):
-                raise ValueError(
-                    "PoissonFlow requires integer-valued observations; "
-                    f"got dtype {y_arr.dtype} with non-integer values."
-                )
-            y_arr = y_rounded
-        if np.any(y_arr < 0):
-            raise ValueError("PoissonFlow requires non-negative integer observations.")
-        super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
-        self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
-
-    def _build_pymc_model(self) -> pm.Model:
-        beta_mu = self.priors.get("beta_mu", 0.0)
-        beta_sigma = self.priors.get("beta_sigma", 10.0)
-
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
-
-        with pm.Model(coords=self._model_coords()) as model:
-            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            eta = pt.dot(X_t, beta)
-            lam = pm.Deterministic("lambda", pt.exp(eta))
-            pm.Poisson("obs", mu=lam, observed=self._y_int_vec)
-
-        return model
-
-    def _simulate_y_rep(
-        self,
-        rho_d: float,  # unused
-        rho_o: float,  # unused
-        rho_w: float,  # unused
-        beta: np.ndarray,
-        sigma: Optional[float],  # unused
-        rng: np.random.Generator,
-    ) -> np.ndarray:
-        eta = self._X_design @ beta
-        lam = np.exp(np.clip(eta, -50.0, 50.0))
-        return rng.poisson(lam).astype(np.float64)
-
-    def posterior_predictive(
-        self,
-        n_draws: Optional[int] = None,
-        random_seed: Optional[int] = None,
-    ) -> np.ndarray:
-        """Draw posterior-predictive flow counts for the Poisson gravity model."""
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
-
-        post = self._idata.posterior
-        beta_draws = post["beta"].values.reshape(-1, len(self._feature_names))
-
-        total = beta_draws.shape[0]
-        if n_draws is not None:
-            total = min(int(n_draws), total)
-            beta_draws = beta_draws[:total]
-
-        rng = np.random.default_rng(random_seed)
-        out = np.empty((total, self._N), dtype=np.float64)
-        for g in range(total):
-            out[g] = self._simulate_y_rep(0.0, 0.0, 0.0, beta_draws[g], None, rng)
-        return out
-
-
-# ---------------------------------------------------------------------------
-# Model 7: NegativeBinomial SAR/OLS flow variants
-# ---------------------------------------------------------------------------
-
-
-class NegativeBinomialSARFlow(PoissonSARFlow):
+class NegativeBinomialSARFlow(SARFlow):
     r"""Bayesian SAR flow model with NB2 observation noise.
 
-    This class mirrors :class:`PoissonSARFlow` but replaces the Poisson
-    likelihood with:
+    This class extends :class:`SARFlow` with a Negative Binomial likelihood:
 
     .. math::
 
@@ -2239,6 +1801,27 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
     where ``alpha`` is an overdispersion parameter sampled from a
     HalfNormal prior.
     """
+
+    def __init__(self, y, G, X, **kwargs):
+        y_arr = np.asarray(y)
+        if not np.issubdtype(y_arr.dtype, np.integer):
+            y_rounded = np.round(y_arr).astype(np.int64)
+            if not np.allclose(y_arr, y_rounded):
+                raise ValueError(
+                    "NegativeBinomialSARFlow requires integer-valued "
+                    f"observations; got dtype {y_arr.dtype} with non-integer "
+                    "values."
+                )
+            y_arr = y_rounded
+        if np.any(y_arr < 0):
+            raise ValueError(
+                "NegativeBinomialSARFlow requires non-negative integer observations."
+            )
+        super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
+        self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
+
+    def _compute_jacobian_log_det(self, posterior) -> Optional[np.ndarray]:
+        return None
 
     def _build_pymc_model(self) -> pm.Model:
         from ..._ops import SparseFlowSolveOp
@@ -2335,9 +1918,232 @@ class NegativeBinomialSARFlow(PoissonSARFlow):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: Optional[int] = None,
+        sampler: str = "nuts",
+        gibbs_method: str = "numpy",
+        store_lambda: bool = False,
+        idata_kwargs: Optional[dict] = None,
+        progressbar: bool = True,
+        **sample_kwargs,
+    ) -> az.InferenceData:
+        """Draw samples from the posterior.
 
-class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of posterior samples per chain (after tuning).
+        tune : int, default 1000
+            Number of tuning (warm-up) steps per chain.
+        chains : int, default 4
+            Number of parallel chains.
+        target_accept : float, default 0.9
+            Target acceptance rate for NUTS.
+        random_seed : int, optional
+            Seed for reproducibility.
+        sampler : str, default "nuts"
+            Sampling method: ``"nuts"`` for NUTS (default) or
+            ``"gibbs"`` for Pólya–Gamma Gibbs.
+        gibbs_method : str, default "numpy"
+            Gibbs backend (only used when ``sampler="gibbs"``).
+            Currently only ``"numpy"`` is supported.
+        store_lambda : bool, default False
+            If True, include the high-dimensional fitted mean
+            ``lambda`` in the stored posterior.
+        idata_kwargs : dict, optional
+            Forwarded to ``pm.sample`` (NUTS only).
+        progressbar : bool, default True
+            Show progress bar during sampling.
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample``
+            (NUTS only).
+
+        Returns
+        -------
+        arviz.InferenceData
+        """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                gibbs_method=gibbs_method,
+                sample_kwargs=sample_kwargs,
+            )
+        # NUTS path — delegate to parent
+        return super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            store_lambda=store_lambda,
+            idata_kwargs=idata_kwargs,
+            progressbar=progressbar,
+            **sample_kwargs,
+        )
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> az.InferenceData:
+        """Sample posterior via reduced-form PG-Gibbs (unrestricted 3-ρ).
+
+        Builds the cache, priors, and initial state from model attributes,
+        then dispatches to :func:`run_chain_unrestricted`.
+        """
+        from ...models.base import gelman_default_beta_prior
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.gaussian._chain_runner import run_chains
+        from ...samplers.negbin_reduced._flow import (
+            FlowReducedGibbsCache,
+            FlowReducedGibbsPriors,
+            FlowReducedGibbsState,
+            run_chain_unrestricted,
+        )
+
+        X = self._X_design
+        y = self._y_int_vec.astype(np.float64)
+        k = X.shape[1]
+
+        # --- Build cache ---
+        W_csc = self._W_sparse.tocsc()
+        cache = FlowReducedGibbsCache(
+            Wd=self._Wd,
+            Wo=self._Wo,
+            Ww=self._Ww,
+            W_csc=W_csc,
+            n=self._n,
+            separable=False,
+            rho_lower=self.priors.get("rho_lower", -0.999),
+            rho_upper=self.priors.get("rho_upper", 0.999),
+        )
+
+        # --- Build priors ---
+        default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
+            self._y_vec, X, list(self._feature_names)
+        )
+        priors = FlowReducedGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
+            rho_lower=self.priors.get("rho_lower", -0.999),
+            rho_upper=self.priors.get("rho_upper", 0.999),
+        )
+
+        # --- Build init state (per-chain, via closure) ---
+        def _make_init(rng: np.random.Generator) -> FlowReducedGibbsState:
+            beta0 = rng.normal(0.0, 0.1, size=k)
+            rho_d0 = rng.uniform(-0.1, 0.1)
+            rho_o0 = rng.uniform(-0.1, 0.1)
+            rho_w0 = rng.uniform(-0.05, 0.05)
+            alpha0 = 1.0
+            omega0 = np.ones(self._N, dtype=np.float64) * 0.5
+            return FlowReducedGibbsState(
+                beta=beta0,
+                rho_d=rho_d0,
+                rho_o=rho_o0,
+                rho_w=rho_w0,
+                alpha=alpha0,
+                omega=omega0,
+            )
+
+        # --- Chain function ---
+        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
+            rng = np.random.default_rng(seed)
+            init = _make_init(rng)
+            return run_chain_unrestricted(
+                y=y,
+                X=X,
+                Wd=self._Wd,
+                Wo=self._Wo,
+                Ww=self._Ww,
+                priors=priors,
+                cache=cache,
+                init=init,
+                draws=draws,
+                tune=tune,
+                thin=1,
+                rng=rng,
+                chain_id=chain_id,
+                progress_manager=progress_manager,
+            )
+
+        # --- Run chains ---
+        chain_results = run_chains(
+            chain_fn=_chain_fn,
+            n_chains=chains,
+            seeds=[random_seed + i for i in range(chains)]
+            if random_seed is not None
+            else None,
+            n_jobs=1,
+            progressbar=progressbar,
+            parallel=False,
+            draws=draws,
+            tune=tune,
+            model_type="nb_sar_flow",
+        )
+
+        # --- Assemble InferenceData ---
+        posterior_samples = {
+            "rho_d": np.stack([c["rho_d"] for c in chain_results], axis=0),
+            "rho_o": np.stack([c["rho_o"] for c in chain_results], axis=0),
+            "rho_w": np.stack([c["rho_w"] for c in chain_results], axis=0),
+            "beta": np.stack([c["beta"] for c in chain_results], axis=0),
+            "alpha": np.stack([c["alpha"] for c in chain_results], axis=0),
+        }
+        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
+        coords = {"coefficient": list(self._feature_names)}
+        dims = {"beta": ["coefficient"]}
+
+        self._idata = gibbs_to_inference_data(
+            posterior_samples=posterior_samples,
+            log_likelihood={"obs": log_lik},
+            observed_data={"obs": self._y_int_vec},
+            coords=coords,
+            dims=dims,
+        )
+        return self._idata
+
+
+class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
     """Separable SAR flow model with NB2 observation noise."""
+
+    def __init__(self, y, G, X, **kwargs):
+        y_arr = np.asarray(y)
+        if not np.issubdtype(y_arr.dtype, np.integer):
+            y_rounded = np.round(y_arr).astype(np.int64)
+            if not np.allclose(y_arr, y_rounded):
+                raise ValueError(
+                    "NegativeBinomialSARFlowSeparable requires integer-valued "
+                    f"observations; got dtype {y_arr.dtype} with non-integer "
+                    "values."
+                )
+            y_arr = y_rounded
+        if np.any(y_arr < 0):
+            raise ValueError(
+                "NegativeBinomialSARFlowSeparable requires non-negative integer "
+                "observations."
+            )
+        super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
+        self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
+
+    def _compute_jacobian_log_det(self, posterior) -> Optional[np.ndarray]:
+        return None
 
     def _build_pymc_model(self) -> pm.Model:
         from ..._ops import KroneckerFlowSolveOp
@@ -2416,9 +2222,228 @@ class NegativeBinomialSARFlowSeparable(PoissonSARFlowSeparable):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: Optional[int] = None,
+        sampler: str = "nuts",
+        gibbs_method: str = "numpy",
+        store_lambda: bool = False,
+        idata_kwargs: Optional[dict] = None,
+        progressbar: bool = True,
+        **sample_kwargs,
+    ) -> az.InferenceData:
+        """Draw samples from the posterior.
 
-class NegativeBinomialFlow(PoissonFlow):
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of posterior samples per chain (after tuning).
+        tune : int, default 1000
+            Number of tuning (warm-up) steps per chain.
+        chains : int, default 4
+            Number of parallel chains.
+        target_accept : float, default 0.9
+            Target acceptance rate for NUTS.
+        random_seed : int, optional
+            Seed for reproducibility.
+        sampler : str, default "nuts"
+            Sampling method: ``"nuts"`` for NUTS (default) or
+            ``"gibbs"`` for Pólya–Gamma Gibbs.
+        gibbs_method : str, default "numpy"
+            Gibbs backend (only used when ``sampler="gibbs"``).
+            Currently only ``"numpy"`` is supported.
+        store_lambda : bool, default False
+            If True, include the high-dimensional fitted mean
+            ``lambda`` in the stored posterior.
+        idata_kwargs : dict, optional
+            Forwarded to ``pm.sample`` (NUTS only).
+        progressbar : bool, default True
+            Show progress bar during sampling.
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample``
+            (NUTS only).
+
+        Returns
+        -------
+        arviz.InferenceData
+        """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                gibbs_method=gibbs_method,
+                sample_kwargs=sample_kwargs,
+            )
+        return super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            store_lambda=store_lambda,
+            idata_kwargs=idata_kwargs,
+            progressbar=progressbar,
+            **sample_kwargs,
+        )
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> az.InferenceData:
+        """Sample posterior via reduced-form PG-Gibbs (separable 2-ρ).
+
+        Builds the cache, priors, and initial state from model attributes,
+        then dispatches to :func:`run_chain_separable`.
+        """
+        from ...models.base import gelman_default_beta_prior
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.gaussian._chain_runner import run_chains
+        from ...samplers.negbin_reduced._flow import (
+            FlowReducedGibbsCache,
+            FlowReducedGibbsPriors,
+            FlowReducedGibbsState,
+            run_chain_separable,
+        )
+
+        X = self._X_design
+        y = self._y_int_vec.astype(np.float64)
+        k = X.shape[1]
+        W_csc = self._W_sparse.tocsc()
+
+        # --- Build cache ---
+        cache = FlowReducedGibbsCache(
+            Wd=self._Wd,
+            Wo=self._Wo,
+            Ww=self._Ww,
+            W_csc=W_csc,
+            n=self._n,
+            separable=True,
+            rho_lower=self.priors.get("rho_lower", -0.999),
+            rho_upper=self.priors.get("rho_upper", 0.999),
+        )
+
+        # --- Build priors ---
+        default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
+            self._y_vec, X, list(self._feature_names)
+        )
+        priors = FlowReducedGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
+            rho_lower=self.priors.get("rho_lower", -0.999),
+            rho_upper=self.priors.get("rho_upper", 0.999),
+        )
+
+        # --- Build init state (per-chain, via closure) ---
+        def _make_init(rng: np.random.Generator) -> FlowReducedGibbsState:
+            beta0 = rng.normal(0.0, 0.1, size=k)
+            rho_d0 = rng.uniform(-0.1, 0.1)
+            rho_o0 = rng.uniform(-0.1, 0.1)
+            alpha0 = 1.0
+            omega0 = np.ones(self._N, dtype=np.float64) * 0.5
+            return FlowReducedGibbsState(
+                beta=beta0,
+                rho_d=rho_d0,
+                rho_o=rho_o0,
+                rho_w=None,
+                alpha=alpha0,
+                omega=omega0,
+            )
+
+        # --- Chain function ---
+        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
+            rng = np.random.default_rng(seed)
+            init = _make_init(rng)
+            return run_chain_separable(
+                y=y,
+                X=X,
+                W_csc=W_csc,
+                n=self._n,
+                priors=priors,
+                cache=cache,
+                init=init,
+                draws=draws,
+                tune=tune,
+                thin=1,
+                rng=rng,
+                chain_id=chain_id,
+                progress_manager=progress_manager,
+            )
+
+        # --- Run chains ---
+        chain_results = run_chains(
+            chain_fn=_chain_fn,
+            n_chains=chains,
+            seeds=[random_seed + i for i in range(chains)]
+            if random_seed is not None
+            else None,
+            n_jobs=1,
+            progressbar=progressbar,
+            parallel=False,
+            draws=draws,
+            tune=tune,
+            model_type="nb_sar_flow_sep",
+        )
+
+        # --- Assemble InferenceData ---
+        posterior_samples = {
+            "rho_d": np.stack([c["rho_d"] for c in chain_results], axis=0),
+            "rho_o": np.stack([c["rho_o"] for c in chain_results], axis=0),
+            "rho_w": np.stack([c["rho_w"] for c in chain_results], axis=0),
+            "beta": np.stack([c["beta"] for c in chain_results], axis=0),
+            "alpha": np.stack([c["alpha"] for c in chain_results], axis=0),
+        }
+        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
+        coords = {"coefficient": list(self._feature_names)}
+        dims = {"beta": ["coefficient"]}
+
+        self._idata = gibbs_to_inference_data(
+            posterior_samples=posterior_samples,
+            log_likelihood={"obs": log_lik},
+            observed_data={"obs": self._y_int_vec},
+            coords=coords,
+            dims=dims,
+        )
+        return self._idata
+
+
+class NegativeBinomialFlow(OLSFlow):
     """Aspatial OD-flow Negative Binomial gravity baseline."""
+
+    def __init__(self, y, G, X, **kwargs):
+        y_arr = np.asarray(y)
+        if not np.issubdtype(y_arr.dtype, np.integer):
+            y_rounded = np.round(y_arr).astype(np.int64)
+            if not np.allclose(y_arr, y_rounded):
+                raise ValueError(
+                    "NegativeBinomialFlow requires integer-valued "
+                    f"observations; got dtype {y_arr.dtype} with non-integer "
+                    "values."
+                )
+            y_arr = y_rounded
+        if np.any(y_arr < 0):
+            raise ValueError(
+                "NegativeBinomialFlow requires non-negative integer observations."
+            )
+        super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
+        self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
+
+    def _compute_jacobian_log_det(self, posterior) -> Optional[np.ndarray]:
+        return None
 
     def _build_pymc_model(self) -> pm.Model:
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -2466,9 +2491,243 @@ class NegativeBinomialFlow(PoissonFlow):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: Optional[int] = None,
+        sampler: str = "nuts",
+        gibbs_method: str = "numpy",
+        store_lambda: bool = False,
+        idata_kwargs: Optional[dict] = None,
+        progressbar: bool = True,
+        **sample_kwargs,
+    ) -> az.InferenceData:
+        """Draw samples from the posterior.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of posterior samples per chain (after tuning).
+        tune : int, default 1000
+            Number of tuning (warm-up) steps per chain.
+        chains : int, default 4
+            Number of parallel chains.
+        target_accept : float, default 0.9
+            Target acceptance rate for NUTS.
+        random_seed : int, optional
+            Seed for reproducibility.
+        sampler : str, default "nuts"
+            Sampling method: ``"nuts"`` for NUTS (default) or
+            ``"gibbs"`` for Pólya–Gamma Gibbs.
+        gibbs_method : str, default "numpy"
+            Gibbs backend (only used when ``sampler="gibbs"``).
+            Currently only ``"numpy"`` is supported.
+        store_lambda : bool, default False
+            If True, include the high-dimensional fitted mean
+            ``lambda`` in the stored posterior.
+        idata_kwargs : dict, optional
+            Forwarded to ``pm.sample`` (NUTS only).
+        progressbar : bool, default True
+            Show progress bar during sampling.
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample``
+            (NUTS only).
+
+        Returns
+        -------
+        arviz.InferenceData
+        """
+        if sampler == "gibbs":
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                gibbs_method=gibbs_method,
+                sample_kwargs=sample_kwargs,
+            )
+        return super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            store_lambda=store_lambda,
+            idata_kwargs=idata_kwargs,
+            progressbar=progressbar,
+            **sample_kwargs,
+        )
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        sample_kwargs: dict[str, Any] | None = None,
+    ) -> az.InferenceData:
+        """Sample posterior via aspatial PG-Gibbs (no spatial parameters).
+
+        Three blocks per sweep: ω (Pólya–Gamma), β (conjugate normal),
+        α (slice on log(α)).
+        """
+        from ...models.base import gelman_default_beta_prior
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.gaussian._chain_runner import run_chains
+        from ...samplers.negbin._core import GibbsState
+        from ...samplers.negbin_reduced._core import (
+            ReducedGibbsPriors,
+            _nb_loglik_pointwise,
+            _sample_alpha,
+            _sample_beta,
+            _sample_omega,
+        )
+
+        X = self._X_design
+        y = self._y_int_vec.astype(np.float64)
+        N, k = X.shape
+
+        # --- Build priors ---
+        default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
+            self._y_vec, X, list(self._feature_names)
+        )
+        priors = ReducedGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
+            rho_lower=-0.999,
+            rho_upper=0.999,
+        )
+
+        # --- Aspatial chain runner ---
+        def _run_chain_aspatial(
+            y: np.ndarray,
+            X: np.ndarray,
+            priors: ReducedGibbsPriors,
+            beta0: np.ndarray,
+            alpha0: float,
+            draws: int,
+            tune: int,
+            rng: np.random.Generator | None = None,
+            chain_id: int = 0,
+            progress_manager: object | None = None,
+        ) -> dict[str, np.ndarray]:
+            if rng is None:
+                rng = np.random.default_rng()
+            total = tune + draws
+            n_keep = draws
+            beta_samples = np.empty((n_keep, k), dtype=np.float64)
+            alpha_samples = np.empty(n_keep, dtype=np.float64)
+            log_lik_samples = np.empty((n_keep, N), dtype=np.float64)
+
+            beta = beta0.copy()
+            alpha = alpha0
+            omega = np.ones(N, dtype=np.float64) * 0.5
+
+            for i in range(total):
+                eta = X @ beta
+                psi = eta - np.log(alpha)
+                omega = _sample_omega(y, alpha, psi, rng=rng)
+                # X̃ = X (no spatial solve)
+                beta = _sample_beta(
+                    beta_current=beta,
+                    Xtilde=X,
+                    omega=omega,
+                    y=y,
+                    alpha=alpha,
+                    priors=priors,
+                    rng=rng,
+                    rho=0.0,
+                    intercept_col=-1,
+                )
+                eta = X @ beta
+                state = GibbsState(
+                    eta=eta,
+                    beta=beta,
+                    sigma2=1.0,
+                    rho=0.0,
+                    alpha=alpha,
+                    omega=omega,
+                )
+                alpha = _sample_alpha(state, y, priors, rng=rng)
+
+                if i >= tune:
+                    idx = i - tune
+                    if idx < n_keep:
+                        beta_samples[idx] = beta
+                        alpha_samples[idx] = alpha
+                        log_lik_samples[idx] = _nb_loglik_pointwise(y, eta, alpha)
+
+                if progress_manager is not None:
+                    progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
+
+            return {
+                "beta": beta_samples,
+                "alpha": alpha_samples,
+                "log_lik": log_lik_samples,
+            }
+
+        # --- Chain function ---
+        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
+            rng = np.random.default_rng(seed)
+            beta0 = rng.normal(0.0, 0.1, size=k)
+            alpha0 = 1.0
+            return _run_chain_aspatial(
+                y=y,
+                X=X,
+                priors=priors,
+                beta0=beta0,
+                alpha0=alpha0,
+                draws=draws,
+                tune=tune,
+                rng=rng,
+                chain_id=chain_id,
+                progress_manager=progress_manager,
+            )
+
+        # --- Run chains ---
+        chain_results = run_chains(
+            chain_fn=_chain_fn,
+            n_chains=chains,
+            seeds=[random_seed + i for i in range(chains)]
+            if random_seed is not None
+            else None,
+            n_jobs=1,
+            progressbar=progressbar,
+            parallel=False,
+            draws=draws,
+            tune=tune,
+            model_type="nb_flow",
+        )
+
+        # --- Assemble InferenceData ---
+        posterior_samples = {
+            "beta": np.stack([c["beta"] for c in chain_results], axis=0),
+            "alpha": np.stack([c["alpha"] for c in chain_results], axis=0),
+        }
+        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
+        coords = {"coefficient": list(self._feature_names)}
+        dims = {"beta": ["coefficient"]}
+
+        self._idata = gibbs_to_inference_data(
+            posterior_samples=posterior_samples,
+            log_likelihood={"obs": log_lik},
+            observed_data={"obs": self._y_int_vec},
+            coords=coords,
+            dims=dims,
+        )
+        return self._idata
+
 
 # ---------------------------------------------------------------------------
-# Model 7: SEMFlow — Spatial-error analogue of SARFlow (unrestricted 3-rho)
+# Model 5: SEMFlow — Spatial-error analogue of SARFlow (unrestricted 3-rho)
 # ---------------------------------------------------------------------------
 
 
@@ -2735,7 +2994,7 @@ class SEMFlow(FlowModel):
 
 
 # ---------------------------------------------------------------------------
-# Model 8: SEMFlowSeparable — separable SEM with lam_w = -lam_d * lam_o
+# Model 6: SEMFlowSeparable — separable SEM with lam_w = -lam_d * lam_o
 # ---------------------------------------------------------------------------
 
 
@@ -2865,671 +3124,3 @@ class SEMFlowSeparable(SEMFlow):
                 "Initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
         return self._separable_logdet_numpy_fn(lam_d, lam_o)
-
-
-# ---------------------------------------------------------------------------
-# Model 7: SARNegBinFlowLatent — Non-separable NB flow with PG-Gibbs
-# ---------------------------------------------------------------------------
-
-
-class SARNegBinFlowLatent(FlowModel):
-    r"""Bayesian structural-form SAR-NB flow model with Pólya–Gamma Gibbs sampler.
-
-    The structural form parameterises the latent log-mean as
-
-    .. math::
-
-        \eta = \rho_d W_d \eta + \rho_o W_o \eta + \rho_w W_w \eta
-            + X\beta + \nu, \quad \nu \sim N(0, \sigma^2 I_N)
-
-    where :math:`N = n^2` and :math:`W_d = I_n \otimes W`,
-    :math:`W_o = W \otimes I_n`, :math:`W_w = W \otimes W`.
-
-    Three free :math:`\rho` parameters are estimated via collapsed 1-D slice
-    samplers (one per :math:`\rho`, cycling with the others fixed). The
-    :math:`\eta` draw uses the general sparse :math:`N \times N` precision
-    matrix with Chebyshev polynomial approximation.
-
-    Use this model when:
-    - The separability constraint :math:`\rho_w = -\rho_d \rho_o` is too
-      restrictive for the data.
-    - You need to test whether :math:`\rho_w` is significantly different
-      from :math:`-\rho_d \rho_o`.
-
-    Use :class:`SARNegBinFlowSeparableLatent` when:
-    - The separability constraint is plausible (most flow applications).
-    - You want the faster :math:`O(n^3)` Kronecker-structured sampler.
-
-    Parameters
-    ----------
-    y : array-like of int, shape (n, n) or (N,)
-        Observed non-negative integer flow counts.
-    G : libpysal.graph.Graph
-        Row-standardised spatial graph on *n* units.
-    X : np.ndarray or pandas.DataFrame, shape (N, p)
-        Full origin-destination design matrix with :math:`N = n^2` rows.
-    col_names : list of str, optional
-        Column labels for ``X``.
-    k : int, optional
-        Number of regional attribute columns.
-    logdet_method : str, default "traces"
-        Log-determinant method for the :math:`N \\times N` flow log-determinant.
-        Only ``"traces"`` is supported because the 3-:math:`\\rho` logdet
-        :math:`\\log|I_N - \\rho_d W_d - \\rho_o W_o - \\rho_w W_w|`
-        cannot be decomposed into :math:`n \\times n` eigenvalues.
-    priors : dict, optional
-        Override default priors. Supported keys:
-
-        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
-        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
-        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
-        - ``alpha_sigma`` : float, default 2.5 — Half-Student-t prior scale for ``alpha``.
-        - ``alpha_nu`` : float, default 3.0 — Half-Student-t degrees of freedom for ``alpha``.
-        - ``rho_lower`` : float, default -0.999 — Lower bound for each :math:`\rho`.
-        - ``rho_upper`` : float, default 0.999 — Upper bound for each :math:`\rho`.
-
-    Notes
-    -----
-    The sampler bypasses PyMC's NUTS entirely. It produces an
-    ``arviz.InferenceData`` object compatible with all downstream
-    diagnostics (``spatial_diagnostics()``, ``spatial_effects()``,
-    ``summary()``).
-
-    The ``fit()`` method does **not** accept ``nuts_sampler`` or
-    ``target_accept`` kwargs — these are NUTS-specific and will raise
-    ``TypeError`` if passed.
-
-    :math:`\\alpha` (NB dispersion) mixing can be slower than :math:`\\rho`
-    or :math:`\\beta`.  Monitor ESS for :math:`\\alpha` specifically and use
-    longer runs if needed.
-    """
-
-    def __init__(self, y, G, X, **kwargs):
-        method = kwargs.pop("logdet_method", "traces")
-        if method != "traces":
-            raise ValueError(
-                f"SARNegBinFlowLatent only supports logdet_method='traces'; "
-                f"got {method!r}."
-            )
-        kwargs["logdet_method"] = method
-        super().__init__(y, G, X, **kwargs)
-
-        # Validate y is integer and non-negative
-        y_round = np.round(self._y_vec).astype(np.int64)
-        if not np.allclose(self._y_vec, y_round):
-            raise ValueError(
-                "SARNegBinFlowLatent requires integer-valued observations."
-            )
-        if np.any(y_round < 0):
-            raise ValueError(
-                "SARNegBinFlowLatent requires non-negative integer observations."
-            )
-        self._y_int = y_round
-        self._y_vec = y_round.astype(np.float64)
-
-    def _build_pymc_model(self) -> pm.Model:
-        raise NotImplementedError(
-            "SARNegBinFlowLatent uses a Gibbs sampler, not NUTS. Call fit() instead."
-        )
-
-    def _compute_spatial_effects_posterior(
-        self, draws: Optional[int] = None
-    ) -> dict[str, np.ndarray]:
-        """Compute posterior spatial effects for the NB flow model.
-
-        Raises
-        ------
-        NotImplementedError
-            Spatial effects decomposition for the latent NB flow model
-            is not yet implemented.
-        """
-        raise NotImplementedError(
-            "Spatial effects decomposition for SARNegBinFlowLatent "
-            "is not yet implemented."
-        )
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        thin: int = 1,
-        return_eta: bool = False,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        chebyshev_degree: int = 30,
-        **kwargs,
-    ) -> az.InferenceData:
-        """Sample posterior via Pólya–Gamma block Gibbs.
-
-        Parameters
-        ----------
-        draws : int
-            Number of post-warmup draws per chain.
-        tune : int
-            Number of warmup (burn-in) draws per chain.
-        chains : int
-            Number of independent chains.
-        random_seed : int or None
-            Seed for reproducibility.
-        thin : int
-            Keep every ``thin``-th draw. Default 1.
-        return_eta : bool
-            If True, store the full latent field η. Default False.
-        n_jobs : int
-            Number of parallel chains. -1 = all CPUs.
-        progressbar : bool
-            Show per-chain progress bars.
-        chebyshev_degree : int, default 30
-            Chebyshev polynomial degree for η draw.
-
-        Returns
-        -------
-        arviz.InferenceData
-        """
-        for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
-            if bad_kwarg in kwargs:
-                raise TypeError(
-                    f"SARNegBinFlowLatent.fit() does not accept '{bad_kwarg}'. "
-                    f"This model uses a Gibbs sampler, not NUTS."
-                )
-
-        from ..._logdet import flow_logdet_numpy
-        from ...samplers._utils._idata import gibbs_to_inference_data
-        from ...samplers.gaussian._chain_runner import run_chains
-        from ...samplers.negbin._flow import (
-            FlowGibbsCacheNS,
-            FlowGibbsPriors,
-            run_flow_chain_nonseparable,
-        )
-
-        y = self._y_int.astype(np.float64)
-        X = self._X_design
-        N, k = X.shape
-
-        # Build priors
-        priors = FlowGibbsPriors(
-            beta_mu=self.priors.get("beta_mu", 0.0),
-            beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
-            sigma2_beta=self.priors.get("sigma2_beta", 1.0),
-            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
-            alpha_nu=self.priors.get("alpha_nu", 3.0),
-            rho_lower=self.priors.get("rho_lower", -0.999),
-            rho_upper=self.priors.get("rho_upper", 0.999),
-        )
-
-        # Build cache
-        XtX = X.T @ X
-        Wd = self._Wd
-        Wo = self._Wo
-        Ww = self._Ww
-
-        # Precompute symmetric and cross-product matrices for P construction
-        Wd_sym = (Wd + Wd.T).tocsr()
-        Wo_sym = (Wo + Wo.T).tocsr()
-        Ww_sym = (Ww + Ww.T).tocsr()
-        WdWd = (Wd.T @ Wd).tocsr()
-        WoWo = (Wo.T @ Wo).tocsr()
-        WwWw = (Ww.T @ Ww).tocsr()
-        WdWo = (Wd.T @ Wo + Wo.T @ Wd).tocsr()
-        WdWw = (Wd.T @ Ww + Ww.T @ Wd).tocsr()
-        WoWw = (Wo.T @ Ww + Ww.T @ Wo).tocsr()
-
-        # Build flow logdet callable
-        def logdet_fn(rd, ro, rw):
-            return flow_logdet_numpy(
-                rd,
-                ro,
-                rw,
-                self._poly_a,
-                self._poly_b,
-                self._poly_c,
-                self._poly_coeffs,
-                self._miter_a,
-                self._miter_b,
-                self._miter_c,
-                self._miter_coeffs,
-                self.miter,
-                self.titer,
-            )
-
-        # Build cache (immutable, safe to share across chains)
-        cache = FlowGibbsCacheNS(
-            Wd=Wd,
-            Wo=Wo,
-            Ww=Ww,
-            Wd_sym=Wd_sym,
-            Wo_sym=Wo_sym,
-            Ww_sym=Ww_sym,
-            WdWd=WdWd,
-            WoWo=WoWo,
-            WwWw=WwWw,
-            WdWo=WdWo,
-            WdWw=WdWw,
-            WoWw=WoWw,
-            N=N,
-            XtX=XtX,
-            logdet_fn=logdet_fn,
-            rho_lower=priors.rho_lower,
-            rho_upper=priors.rho_upper,
-            rho_adaptive_width=True,
-        )
-
-        # Derive per-chain seeds
-        if random_seed is not None:
-            parent_ss = np.random.SeedSequence(random_seed)
-        else:
-            parent_ss = np.random.SeedSequence()
-        child_seeds = parent_ss.spawn(chains)
-        seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
-
-        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
-            rng = np.random.default_rng(seed)
-            init = self._initialize_from_glm(rng)
-            return run_flow_chain_nonseparable(
-                y=y,
-                X=X,
-                priors=priors,
-                cache=cache,
-                init=init,
-                draws=draws,
-                tune=tune,
-                thin=thin,
-                return_eta=return_eta,
-                rng=rng,
-                chebyshev_degree=chebyshev_degree,
-            )
-
-        chain_results = run_chains(
-            chain_fn=_run_one_chain,
-            n_chains=chains,
-            seeds=seeds,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-        )
-
-        # Assemble InferenceData
-        param_keys = ["rho_d", "rho_o", "rho_w", "sigma", "alpha"]
-        if return_eta:
-            param_keys.append("eta")
-
-        posterior_samples = {}
-        for key in param_keys:
-            arrays = [c[key] for c in chain_results]
-            posterior_samples[key] = np.stack(arrays, axis=0)
-        posterior_samples["beta"] = np.stack([c["beta"] for c in chain_results], axis=0)
-
-        feature_names = list(self._feature_names)
-        coords = {"coefficient": feature_names}
-        dims = {"beta": ["coefficient"]}
-        if return_eta:
-            coords["obs_id"] = list(range(N))
-            dims["eta"] = ["obs_id"]
-
-        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
-
-        idata = gibbs_to_inference_data(
-            posterior_samples=posterior_samples,
-            log_likelihood={"y": log_lik},
-            observed_data={"y": y},
-            coords=coords,
-            dims=dims,
-        )
-
-        self._idata = idata
-        return idata
-
-    def _initialize_from_glm(self, rng):
-        """Warm-start from a non-spatial NB GLM fit."""
-        y = self._y_int.astype(np.float64)
-        X = self._X_design
-        N, k = X.shape
-
-        y_offset = np.log(np.maximum(y, 0.5))
-        try:
-            beta_init = np.linalg.lstsq(X, y_offset, rcond=None)[0]
-        except np.linalg.LinAlgError:
-            beta_init = np.zeros(k)
-
-        eta_init = X @ beta_init
-        residuals = y_offset - eta_init
-        sigma2_init = max(float(residuals @ residuals) / N, 0.01)
-
-        rho_d_init = 0.0
-        rho_o_init = 0.0
-        rho_w_init = 0.0
-
-        y_mean = np.mean(y)
-        y_var = np.var(y)
-        if y_var > y_mean and y_mean > 0:
-            alpha_init = y_mean**2 / (y_var - y_mean)
-            alpha_init = max(alpha_init, 0.1)
-        else:
-            alpha_init = 1.0
-
-        from ...samplers._utils._polyagamma import sample_polyagamma
-        from ...samplers.negbin._flow import FlowGibbsState
-
-        omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
-
-        return FlowGibbsState(
-            eta=eta_init,
-            beta=beta_init,
-            sigma2=sigma2_init,
-            rho_d=rho_d_init,
-            rho_o=rho_o_init,
-            rho_w=rho_w_init,
-            alpha=alpha_init,
-            omega=omega_init,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Model 8: SARNegBinFlowSeparableLatent — Separable NB flow with PG-Gibbs
-# ---------------------------------------------------------------------------
-
-
-class SARNegBinFlowSeparableLatent(FlowModel):
-    r"""Bayesian separable SAR-NB flow model with Pólya–Gamma Gibbs sampler.
-
-    Same observable likelihood as :class:`SARFlowSeparable` (Gaussian) but
-    with a Negative Binomial observation model and Pólya–Gamma data
-    augmentation, yielding fully conjugate Gibbs updates for :math:`\eta`,
-    :math:`\beta`, and :math:`\sigma^2`.
-
-    The separability constraint :math:`\rho_w = -\rho_d \rho_o` enables the
-    Kronecker-structured sampler with :math:`O(n^3)` matvec instead of
-    :math:`O(n^6)`, making it practical for :math:`n \geq 50`.
-
-    Parameters
-    ----------
-    y : array-like of int, shape (n, n) or (N,)
-        Observed non-negative integer flow counts.
-    G : libpysal.graph.Graph
-        Row-standardised spatial graph on *n* units.
-    X : np.ndarray or pandas.DataFrame, shape (N, p)
-        Full origin-destination design matrix with :math:`N = n^2` rows.
-    col_names : list of str, optional
-        Column labels for ``X``.
-    k : int, optional
-        Number of regional attribute columns.
-    logdet_method : {"traces", "eigenvalue", "chebyshev"}, default "chebyshev"
-        Method for the log-determinant.  ``"traces"`` precomputes
-        :math:`N \\times N` flow traces (also used by Bayesian LM diagnostics);
-        ``"eigenvalue"`` uses the Kronecker-factored
-        :math:`n \\log|I_n - \\rho_d W| + n \\log|I_n - \\rho_o W|`;
-        ``"chebyshev"`` is a polynomial approximation for
-        large *n*.
-    priors : dict, optional
-        Override default priors. Supported keys:
-
-        - ``beta_mu`` : float, default 0.0 — Normal prior mean for ``beta``.
-        - ``beta_sigma`` : float, default 1e6 — Normal prior std for ``beta``.
-        - ``sigma_sigma`` : float, default 10.0 — HalfNormal prior std for ``sigma``.
-        - ``alpha_sigma`` : float, default 2.5 — Half-Student-t prior scale for ``alpha``.
-        - ``alpha_nu`` : float, default 3.0 — Half-Student-t degrees of freedom for ``alpha``.
-        - ``rho_lower`` : float, default -0.999 — Lower bound for each :math:`\rho`.
-        - ``rho_upper`` : float, default 0.999 — Upper bound for each :math:`\rho`.
-
-    Notes
-    -----
-    The sampler bypasses PyMC's NUTS entirely.  It produces an
-    ``arviz.InferenceData`` object compatible with all downstream
-    diagnostics.
-
-    :math:`\\alpha` (NB dispersion) mixing can be slower than :math:`\\rho`
-    or :math:`\\beta`.  Monitor ESS for :math:`\\alpha` specifically and use
-    longer runs if needed.
-    """
-
-    def __init__(self, y, G, X, **kwargs):
-        method = kwargs.pop("logdet_method", "chebyshev")
-        kwargs["logdet_method"] = method
-        super().__init__(y, G, X, **kwargs)
-
-        # Validate y is integer and non-negative
-        y_round = np.round(self._y_vec).astype(np.int64)
-        if not np.allclose(self._y_vec, y_round):
-            raise ValueError(
-                "SARNegBinFlowSeparableLatent requires integer-valued observations."
-            )
-        if np.any(y_round < 0):
-            raise ValueError(
-                "SARNegBinFlowSeparableLatent requires non-negative integer observations."
-            )
-        self._y_int = y_round
-        self._y_vec = y_round.astype(np.float64)
-
-    def _build_pymc_model(self) -> pm.Model:
-        raise NotImplementedError(
-            "SARNegBinFlowSeparableLatent uses a Gibbs sampler, not NUTS. "
-            "Call fit() instead."
-        )
-
-    def _compute_spatial_effects_posterior(
-        self, draws: Optional[int] = None
-    ) -> dict[str, np.ndarray]:
-        """Compute posterior spatial effects for the separable NB flow model.
-
-        Raises
-        ------
-        NotImplementedError
-            Spatial effects decomposition for the separable latent NB flow
-            model is not yet implemented.
-        """
-        raise NotImplementedError(
-            "Spatial effects decomposition for SARNegBinFlowSeparableLatent "
-            "is not yet implemented."
-        )
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        thin: int = 1,
-        return_eta: bool = False,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        chebyshev_degree: int = 30,
-        **kwargs,
-    ) -> az.InferenceData:
-        """Sample posterior via Pólya–Gamma block Gibbs (separable).
-
-        Parameters
-        ----------
-        draws : int
-            Number of post-warmup draws per chain.
-        tune : int
-            Number of warmup draws per chain.
-        chains : int
-            Number of independent chains.
-        random_seed : int or None
-            Seed for reproducibility.
-        thin : int
-            Keep every ``thin``-th draw. Default 1.
-        return_eta : bool
-            If True, store the full latent field η. Default False.
-        n_jobs : int
-            Number of parallel chains. -1 = all CPUs.
-        progressbar : bool
-            Show per-chain progress bars.
-        chebyshev_degree : int, default 30
-            Chebyshev polynomial degree for η draw.
-
-        Returns
-        -------
-        arviz.InferenceData
-        """
-        for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
-            if bad_kwarg in kwargs:
-                raise TypeError(
-                    f"SARNegBinFlowSeparableLatent.fit() does not accept '{bad_kwarg}'. "
-                    f"This model uses a Gibbs sampler, not NUTS."
-                )
-
-        from ..._logdet import make_logdet_numpy_fn
-        from ...samplers._utils._idata import gibbs_to_inference_data
-        from ...samplers.gaussian._chain_runner import run_chains
-        from ...samplers.negbin._flow import (
-            FlowGibbsCache,
-            FlowGibbsPriors,
-            run_flow_chain_separable,
-        )
-
-        y = self._y_int.astype(np.float64)
-        X = self._X_design
-        N, k = X.shape
-        n = self._n
-
-        # Build priors
-        priors = FlowGibbsPriors(
-            beta_mu=self.priors.get("beta_mu", 0.0),
-            beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
-            sigma2_beta=self.priors.get("sigma2_beta", 1.0),
-            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
-            alpha_nu=self.priors.get("alpha_nu", 3.0),
-            rho_lower=self.priors.get("rho_lower", -0.999),
-            rho_upper=self.priors.get("rho_upper", 0.999),
-        )
-
-        # Build cache (immutable, safe to share across chains)
-        XtX = X.T @ X
-        W_sparse = self._W_sparse
-
-        # Build logdet callable for the n×n weight matrix
-        logdet_fn = make_logdet_numpy_fn(
-            W_sparse,
-            eigs=self._W_eigs,
-            method=self.logdet_method,
-            trace_estimator=self.trace_estimator,
-            trace_k=self.trace_k,
-        )
-
-        cache = FlowGibbsCache(
-            W_sparse=W_sparse,
-            W_dense=W_sparse.toarray(),
-            W_eigs=self._W_eigs,
-            n=n,
-            XtX=XtX,
-            logdet_fn=logdet_fn,
-            rho_lower=priors.rho_lower,
-            rho_upper=priors.rho_upper,
-            rho_adaptive_width=True,
-        )
-
-        # Derive per-chain seeds
-        if random_seed is not None:
-            parent_ss = np.random.SeedSequence(random_seed)
-        else:
-            parent_ss = np.random.SeedSequence()
-        child_seeds = parent_ss.spawn(chains)
-        seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
-
-        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
-            rng = np.random.default_rng(seed)
-            init = self._initialize_from_glm(rng)
-            return run_flow_chain_separable(
-                y=y,
-                X=X,
-                W_sparse=W_sparse,
-                priors=priors,
-                cache=cache,
-                init=init,
-                draws=draws,
-                tune=tune,
-                thin=thin,
-                return_eta=return_eta,
-                rng=rng,
-                chebyshev_degree=chebyshev_degree,
-            )
-
-        chain_results = run_chains(
-            chain_fn=_run_one_chain,
-            n_chains=chains,
-            seeds=seeds,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-        )
-
-        # Assemble InferenceData
-        param_keys = ["rho_d", "rho_o", "sigma", "alpha"]
-        if return_eta:
-            param_keys.append("eta")
-
-        posterior_samples = {}
-        for key in param_keys:
-            arrays = [c[key] for c in chain_results]
-            posterior_samples[key] = np.stack(arrays, axis=0)
-        # rho_w is deterministic: rho_w = -rho_d * rho_o
-        posterior_samples["rho_w"] = (
-            -posterior_samples["rho_d"] * posterior_samples["rho_o"]
-        )
-        posterior_samples["beta"] = np.stack([c["beta"] for c in chain_results], axis=0)
-
-        feature_names = list(self._feature_names)
-        coords = {"coefficient": feature_names}
-        dims = {"beta": ["coefficient"]}
-        if return_eta:
-            coords["obs_id"] = list(range(N))
-            dims["eta"] = ["obs_id"]
-
-        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
-
-        idata = gibbs_to_inference_data(
-            posterior_samples=posterior_samples,
-            log_likelihood={"y": log_lik},
-            observed_data={"y": y},
-            coords=coords,
-            dims=dims,
-        )
-
-        self._idata = idata
-        return idata
-
-    def _initialize_from_glm(self, rng):
-        """Warm-start from a non-spatial NB GLM fit."""
-        y = self._y_int.astype(np.float64)
-        X = self._X_design
-        N, k = X.shape
-
-        y_offset = np.log(np.maximum(y, 0.5))
-        try:
-            beta_init = np.linalg.lstsq(X, y_offset, rcond=None)[0]
-        except np.linalg.LinAlgError:
-            beta_init = np.zeros(k)
-
-        eta_init = X @ beta_init
-        residuals = y_offset - eta_init
-        sigma2_init = max(float(residuals @ residuals) / N, 0.01)
-
-        rho_d_init = 0.0
-        rho_o_init = 0.0
-
-        y_mean = np.mean(y)
-        y_var = np.var(y)
-        if y_var > y_mean and y_mean > 0:
-            alpha_init = y_mean**2 / (y_var - y_mean)
-            alpha_init = max(alpha_init, 0.1)
-        else:
-            alpha_init = 1.0
-
-        from ...samplers._utils._polyagamma import sample_polyagamma
-        from ...samplers.negbin._flow import FlowGibbsState
-
-        omega_init = sample_polyagamma(y + alpha_init, eta_init, rng=rng)
-
-        return FlowGibbsState(
-            eta=eta_init,
-            beta=beta_init,
-            sigma2=sigma2_init,
-            rho_d=rho_d_init,
-            rho_o=rho_o_init,
-            rho_w=None,  # deterministic: rho_w = -rho_d * rho_o
-            alpha=alpha_init,
-            omega=omega_init,
-        )

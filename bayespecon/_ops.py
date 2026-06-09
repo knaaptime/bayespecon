@@ -38,8 +38,8 @@ The system matrix for a spatial flow model with three Kronecker weight matrices
     \\qquad N = n^2
 
 Solving :math:`A \\eta = b` (with :math:`b = X\\beta`) gives the spatially
-filtered log-mean :math:`\\eta` for the Poisson observation model
-:math:`y \\sim \\operatorname{Poisson}(\\exp(\\eta))`.
+filtered log-mean :math:`\\eta` for the NB2 observation model
+:math:`y \\sim \\operatorname{NegBin}(\\exp(\\eta), \\alpha)`.
 
 Separable Kronecker factorisation
 ----------------------------------
@@ -576,15 +576,15 @@ class SparseFlowSolveOp(pt.Op):
     :math:`W_w = W \otimes W` are the Kronecker-product flow weight matrices
     and :math:`N = n^2`.
 
-    This Op is used by :class:`~bayespecon.models.flow.PoissonSARFlow` to embed
-    the implicit spatial filter on the **log-mean** of a Poisson observation
+    This Op is used by :class:`~bayespecon.models.flow.NegativeBinomialSARFlow` to embed
+    the implicit spatial filter on the **log-mean** of a count observation
     model:
 
     .. math::
 
         \eta &= A^{-1} X\beta \\
-        \lambda_{ij} &= \exp(\eta_{ij}) \\
-        y_{ij} &\sim \operatorname{Poisson}(\lambda_{ij})
+        \mu_{ij} &= \exp(\eta_{ij}) \\
+        y_{ij} &\sim \operatorname{NegBin}(\mu_{ij}, \alpha)
 
     The Jacobian log-determinant :math:`\log|A(\rho)|` is added separately
     via :func:`~bayespecon.logdet.flow_logdet_pytensor` (identical to the
@@ -833,7 +833,7 @@ class SparseFlowSolveMatrixOp(pt.Op):
     r"""Differentiable sparse solve :math:`H = A(\rho)^{-1} B` for matrix RHS.
 
     Extends :class:`SparseFlowSolveOp` to a matrix right-hand side
-    :math:`B \in \mathbb{R}^{N \times T}`, which arises in panel Poisson flow
+    :math:`B \in \mathbb{R}^{N \times T}`, which arises in panel NB flow
     models where :math:`T` time periods share the same system matrix
     :math:`A(\rho_d, \rho_o, \rho_w)`.
 
@@ -910,7 +910,7 @@ class SparseFlowSolveMatrixOp(pt.Op):
 
 
 # ---------------------------------------------------------------------------
-# Kronecker-factored ops for separable Poisson flow models
+# Kronecker-factored ops for separable NB flow models
 # (rho_w = -rho_d * rho_o  =>  A = L_d ⊗ L_o,  L_k = I_n - rho_k * W)
 # ---------------------------------------------------------------------------
 
@@ -1061,7 +1061,7 @@ class _KroneckerFlowVJPOp(pt.Op):
 
 
 class KroneckerFlowSolveOp(pt.Op):
-    r"""Differentiable Kronecker-factored solve for separable Poisson flow models.
+    r"""Differentiable Kronecker-factored solve for separable NB flow models.
 
     Computes :math:`\eta = A(\rho_d, \rho_o)^{-1} b` where the system matrix
     exploits the separability constraint :math:`\rho_w = -\rho_d \rho_o`:
@@ -1406,7 +1406,7 @@ class _KroneckerFlowVJPMatrixOp(pt.Op):
 
 
 class KroneckerFlowSolveMatrixOp(pt.Op):
-    r"""Kronecker-factored solve for separable panel Poisson flow models.
+    r"""Kronecker-factored solve for separable panel NB flow models.
 
     Extends :class:`KroneckerFlowSolveOp` to a matrix right-hand side
     :math:`B \in \mathbb{R}^{N \times T}` that arises when :math:`T` time

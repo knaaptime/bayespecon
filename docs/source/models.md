@@ -132,9 +132,9 @@ Vectorize the origin-destination flow matrix to $y \in \mathbb{R}^{N}$ with $N =
 
 $$y = X\beta + \varepsilon$$
 
-### PoissonFlow
+### NegativeBinomialFlow
 
-$$y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = X\beta$$
+$$y_{ij} \sim \operatorname{NegBin}(\mu_{ij}, \alpha), \quad \log \boldsymbol{\mu} = X\beta$$
 
 ### SARFlow
 
@@ -144,13 +144,13 @@ $$y = \rho_d W_d y + \rho_o W_o y + \rho_w W_w y + X\beta + \varepsilon$$
 
 $$y = \rho_d W_d y + \rho_o W_o y - \rho_d \rho_o W_w y + X\beta + \varepsilon$$
 
-### PoissonSARFlow
+### NegativeBinomialSARFlow
 
-$$y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = A(\boldsymbol{\rho})^{-1} X\beta$$
+$$y_{ij} \sim \operatorname{NegBin}(\mu_{ij}, \alpha), \quad \log \boldsymbol{\mu} = A(\boldsymbol{\rho})^{-1} X\beta$$
 
-### PoissonSARFlowSeparable
+### NegativeBinomialSARFlowSeparable
 
-$$y_{ij} \sim \operatorname{Poisson}(\lambda_{ij}), \quad \log \boldsymbol{\lambda} = A(\boldsymbol{\rho})^{-1} X\beta, \quad \rho_w = -\rho_d \rho_o$$
+$$y_{ij} \sim \operatorname{NegBin}(\mu_{ij}, \alpha), \quad \log \boldsymbol{\mu} = A(\boldsymbol{\rho})^{-1} X\beta, \quad \rho_w = -\rho_d \rho_o$$
 
 ### SEMFlow
 
@@ -162,15 +162,15 @@ $$y = X\beta + u, \quad u = \lambda_d W_d u + \lambda_o W_o u - \lambda_d \lambd
 
 ## Panel Flow Models
 
-Stack the flow models above across $T$ periods in time-first order. The Poisson panel variants currently operate in pooled mode.
+Stack the flow models above across $T$ periods in time-first order. The NB panel variants currently operate in pooled mode.
 
 ### OLSFlowPanel
 
 $$y_t = X_t\beta + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0, \sigma^2 I_N)$$
 
-### PoissonFlowPanel
+### NegativeBinomialFlowPanel
 
-$$y_{ij,t} \sim \operatorname{Poisson}(\lambda_{ij,t}), \quad \log \boldsymbol{\lambda}_t = X_t\beta$$
+$$y_{ij,t} \sim \operatorname{NegBin}(\mu_{ij,t}, \alpha), \quad \log \boldsymbol{\mu}_t = X_t\beta$$
 
 ### SARFlowPanel
 
@@ -180,13 +180,13 @@ $$y_t = \rho_d W_d y_t + \rho_o W_o y_t + \rho_w W_w y_t + X_t\beta + \varepsilo
 
 $$y_t = \rho_d W_d y_t + \rho_o W_o y_t - \rho_d \rho_o W_w y_t + X_t\beta + \varepsilon_t$$
 
-### PoissonSARFlowPanel
+### NegativeBinomialSARFlowPanel
 
-$$y_{ij,t} \sim \operatorname{Poisson}(\lambda_{ij,t}), \quad \log \boldsymbol{\lambda}_t = A(\boldsymbol{\rho})^{-1} X_t\beta$$
+$$y_{ij,t} \sim \operatorname{NegBin}(\mu_{ij,t}, \alpha), \quad \log \boldsymbol{\mu}_t = A(\boldsymbol{\rho})^{-1} X_t\beta$$
 
-### PoissonSARFlowSeparablePanel
+### NegativeBinomialSARFlowSeparablePanel
 
-$$y_{ij,t} \sim \operatorname{Poisson}(\lambda_{ij,t}), \quad \log \boldsymbol{\lambda}_t = A(\boldsymbol{\rho})^{-1} X_t\beta, \quad \rho_w = -\rho_d \rho_o$$
+$$y_{ij,t} \sim \operatorname{NegBin}(\mu_{ij,t}, \alpha), \quad \log \boldsymbol{\mu}_t = A(\boldsymbol{\rho})^{-1} X_t\beta, \quad \rho_w = -\rho_d \rho_o$$
 
 ### SEMFlowPanel
 
@@ -202,7 +202,7 @@ $$y_t = X_t\beta + u_t, \quad u_t = \lambda_d W_d u_t + \lambda_o W_o u_t - \lam
 
 All models support NUTS (No-U-Turn Sampler) via PyMC by default. NUTS handles arbitrary posterior geometries but can be slow for spatial models due to the banana-shaped posterior created by the spatial Jacobian.
 
-### Gibbs Sampler (Gaussian models only)
+### Gibbs Sampler (Gaussian models)
 
 Gaussian cross-sectional models (SAR, SEM, SDM, SDEM) support a custom block-Gibbs sampler via `sampler="gibbs"`:
 
@@ -225,3 +225,23 @@ Two execution backends are available:
 - **JAX** (`gibbs_method="jax"`): Full-JIT compilation via `@eqx.filter_jit`. Uses MALA (gradient-guided) or RW-MH for ρ/λ. Requires JAX and equinox.
 
 See the [Gibbs Sampler User Guide](user-guide/gibbs_sampler.ipynb) for details.
+
+### Gibbs Sampler (NB flow models)
+
+NB flow models (`NegativeBinomialSARFlow`, `NegativeBinomialSARFlowSeparable`, `NegativeBinomialFlow`) support a Pólya–Gamma Gibbs sampler via `sampler="gibbs"`:
+
+```python
+model = NegativeBinomialSARFlow(y=y_int, G=G, X=X)
+idata = model.fit(sampler="gibbs", draws=2000, tune=1000, chains=4)
+```
+
+The sampler uses a reduced-form Pólya–Gamma augmentation strategy with no σ² parameter — spatial dependence enters only through the mean propagator $A^{-1}$:
+
+| Block | Full conditional | Update |
+|---|---|---|
+| ω \| β, α, y | Pólya–Gamma | Direct draw (conjugate augmentation) |
+| β \| ρ, ω, y | Normal | Direct draw (conjugate, via $\tilde{X} = A^{-1}X$) |
+| ρ \| ω, y | 1-D non-conjugate | Adaptive slice sampling (β marginalised) |
+| α \| y, η | 1-D non-conjugate | Slice sampling on log(α) |
+
+For the unrestricted model (`NegativeBinomialSARFlow`), each ρ parameter (ρ_d, ρ_o, ρ_w) is updated via independent 1-D slice sampling with β marginalised out. For the separable model (`NegativeBinomialSARFlowSeparable`), ρ_w = −ρ_d·ρ_o is deterministic and only ρ_d and ρ_o are sampled. The aspatial `NegativeBinomialFlow` omits the ρ block entirely.

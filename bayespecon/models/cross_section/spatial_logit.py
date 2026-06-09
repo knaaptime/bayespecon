@@ -136,8 +136,6 @@ class SARSpatialLogit(SpatialModel):
             method=bounds.method,
             rho_min=bounds.rho_min,
             rho_max=bounds.rho_max,
-            trace_estimator=self.trace_estimator,
-            trace_k=self.trace_k,
         )
 
     # ------------------------------------------------------------------
@@ -147,31 +145,67 @@ class SARSpatialLogit(SpatialModel):
     _JAX_DENSE_THRESHOLD: int = 10000
 
     def _initialize_from_ols(self, rng):
-        """Warm-start the Gibbs sampler from a linear probability model.
+        """Warm-start the Gibbs sampler from a spatial profile likelihood.
 
-        Fits OLS of y on X (treating y as continuous), then uses the
-        fitted values as initial η.  This is a standard approach for
-        logit/probit models — the linear probability model provides
-        reasonable starting values even though it can predict outside
-        [0, 1].
+        For each ρ on a coarse grid, computes X̃ = (I − ρW)⁻¹X and
+        the OLS estimate β̂ = (X̃ᵀX̃)⁻¹X̃ᵀy, then picks the (ρ, β)
+        that maximises the Gaussian log-likelihood on y (treating y as
+        continuous).  This places the chain near the posterior mode even
+        at high ρ, where starting at ρ = 0 can leave the chain stuck in
+        a wrong mode.
 
-        Returns a LogitGibbsState with reasonable starting values.
+        Falls back to a simple OLS on X (ρ = 0) if the grid search
+        fails for all ρ values.
         """
         y = self._y
         X = self._X
+        self._W_sparse.tocsr()
+        W_csc = self._W_sparse.tocsc()
         n, k = X.shape
 
-        # β₀: OLS on y (linear probability model)
+        # --- Profile-log-likelihood initialisation ---
+        # Search over a coarse ρ grid for the best starting point.
+        # For binary y, we use the linear probability model (OLS on y)
+        # as a proxy for the log-likelihood.
+        _rho_grid = np.arange(0.05, 0.96, 0.05)
+        _best_rho, _best_beta, _best_ll = 0.0, np.zeros(k), -np.inf
+        for _rho_g in _rho_grid:
+            try:
+                _A_g = sp.eye(n, format="csc") - _rho_g * W_csc
+                _Xtilde_g = sp.linalg.spsolve(_A_g, X)
+                _beta_g = np.linalg.lstsq(_Xtilde_g, y, rcond=None)[0]
+                _eta_g = _Xtilde_g @ _beta_g
+                _sig2_g = float(np.mean((y - _eta_g) ** 2))
+                if _sig2_g > 1e-10:
+                    _ll_g = -0.5 * n * np.log(_sig2_g) - 0.5 * n
+                    if _ll_g > _best_ll:
+                        _best_ll = _ll_g
+                        _best_rho = _rho_g
+                        _best_beta = _beta_g.copy()
+            except Exception:
+                pass
+
+        # Jitter around the profile-loglik estimates.
+        # Use a smaller jitter for ρ than for β because the
+        # posterior is extremely peaked in ρ at high spatial
+        # autocorrelation.
+        _rho_jitter = 0.02
+        beta_init = _best_beta + 0.1 * rng.standard_normal(k)
+        rho_init = float(
+            np.clip(
+                _best_rho + _rho_jitter * rng.standard_normal(),
+                self._logdet_bounds.rho_min + 0.01,
+                self._logdet_bounds.rho_max - 0.01,
+            )
+        )
+
+        # η₀: (I − ρ₀W)⁻¹Xβ₀ — spatially structured starting values
         try:
-            beta_init = np.linalg.lstsq(X, y, rcond=None)[0]
-        except np.linalg.LinAlgError:
-            beta_init = np.zeros(k)
-
-        # η₀: X @ β₀ (no spatial structure)
-        eta_init = X @ beta_init
-
-        # ρ₀: start at 0 (no spatial dependence)
-        rho_init = 0.0
+            _A_init = sp.eye(n, format="csc") - rho_init * W_csc
+            eta_init = sp.linalg.spsolve(_A_init, X @ beta_init)
+        except Exception:
+            # Fallback: no spatial structure
+            eta_init = X @ beta_init
 
         # ω₀: draw from PG(1, η)
         from ...samplers._utils._polyagamma import sample_polyagamma
@@ -199,6 +233,7 @@ class SARSpatialLogit(SpatialModel):
         pg_n_terms: int = 25,
         n_probes: int = 5,
         lanczos_deg: int = 15,
+        mala_eps: float = 0.1,
         **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
@@ -231,15 +266,15 @@ class SARSpatialLogit(SpatialModel):
             - ``"jax_dense"``: force JAX-accelerated path.  Requires
               JAX with float64 enabled.  Viable for n ≤ ~10 000.
         pg_n_terms : int, default 25
-            Number of alternating-series terms for the JAX Pólya–Gamma
-            sampler.  Only used when ``gibbs_method="jax_dense"``.
+            Ignored (kept for API compatibility).  PG draws now use the
+            exact sum-of-exponentials method which does not require
+            truncation.  Only relevant when ``gibbs_method="jax_dense"``.
         n_probes : int, default 5
             Number of Lanczos probe vectors for stochastic log|P|
             estimation.  Only used when ``gibbs_method="jax_dense"``.
         lanczos_deg : int, default 15
             Lanczos iteration depth for log|P| estimation.  Only used
             when ``gibbs_method="jax_dense"``.
-
         Returns
         -------
         az.InferenceData
@@ -351,8 +386,6 @@ class SARSpatialLogit(SpatialModel):
                 method=bounds.method,
                 rho_min=bounds.rho_min,
                 rho_max=bounds.rho_max,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
 
         cache = LogitGibbsCache(
@@ -415,6 +448,7 @@ class SARSpatialLogit(SpatialModel):
                 pg_n_terms=pg_n_terms,
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
+                mala_eps=mala_eps,
                 progressbar=progressbar,
             )
         else:

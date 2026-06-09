@@ -2,7 +2,7 @@
 
 Targets the cross-sectional SAR sparse solve family
 (:class:`~bayespecon._ops.SparseSARSolveOp`, :class:`~bayespecon._ops._SparseSARVJPOp`)
-and the Kronecker-factored Poisson flow Ops
+and the Kronecker-factored NB flow Ops
 (:class:`~bayespecon._ops.KroneckerFlowSolveOp`,
 :class:`~bayespecon._ops._KroneckerFlowVJPOp`,
 :class:`~bayespecon._ops.KroneckerFlowSolveMatrixOp`,
@@ -17,7 +17,7 @@ implementation.  Either branch suppresses PyTensor's generic
 ``"Numba will use object mode to run …'s perform method"`` warning while
 preserving correctness.
 
-The general 3-rho sparse Poisson flow Ops (``SparseFlowSolveOp`` family) are
+The general 3-rho sparse NB flow Ops (``SparseFlowSolveOp`` family) are
 intentionally **not** registered: PyTensor's default per-Op object-mode
 fallback works correctly downstream, whereas an explicit objmode wrapper over
 the multi-output ``_SparseFlowVJP*`` Ops drops the static shape information
@@ -130,7 +130,7 @@ def register_numba_dispatch() -> bool:
         return sparse_sar_vjp
 
     # ------------------------------------------------------------------
-    # Kronecker Poisson-flow Ops
+    # Kronecker NB-flow Ops
     # ------------------------------------------------------------------
     #
     # The vector forward / VJP perform two ``n x n`` dense LU solves
@@ -284,7 +284,7 @@ def register_numba_dispatch() -> bool:
         return kron_vjp_mat
 
     # ------------------------------------------------------------------
-    # General sparse Poisson-flow Ops (3 rho parameters)
+    # General sparse NB-flow Ops (3 rho parameters)
     # ------------------------------------------------------------------
     #
     # The forward solve uses scipy.sparse.linalg.splu / UMFPACK on the full

@@ -277,11 +277,6 @@ _RECOMMENDATIONS: dict[str, tuple[str, str]] = {
         "nutpie underperforms pymc/blackjax on bulk ESS/sec for "
         "cross-sectional SDM in the current benchmark.",
     ),
-    "PoissonSARFlow": (
-        "pymc",
-        "Custom sparse flow Ops fall back to Numba object mode under "
-        "nutpie; pymc remains the fastest option for ESS/sec.",
-    ),
 }
 
 
@@ -306,7 +301,7 @@ def recommend_backend(
     ----------
     model_family :
         Short model identifier, e.g. ``"SAR"``, ``"SEM"``, ``"SDM"``,
-        ``"PoissonSARFlow"``. Case-insensitive. Unknown families fall back
+        ``"SDM"``. Case-insensitive. Unknown families fall back
         to ``"pymc"``.
     with_rationale :
         When ``True`` return ``(backend, rationale)`` instead of just the

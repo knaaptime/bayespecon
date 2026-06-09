@@ -238,11 +238,11 @@ class TestDGPAsymmetric:
         assert "dest_x1" in names
         assert "orig_y0" in names
 
-    def test_generate_poisson_flow_data_asymmetric(self):
-        """generate_poisson_flow_data works with k_d ≠ k_o."""
-        from bayespecon.dgp.flows import generate_poisson_flow_data
+    def test_generate_negbin_flow_data_asymmetric(self):
+        """generate_negbin_flow_data works with k_d ≠ k_o."""
+        from bayespecon.dgp.flows import generate_negbin_flow_data
 
-        data = generate_poisson_flow_data(
+        data = generate_negbin_flow_data(
             n=5,
             k_d=2,
             k_o=1,

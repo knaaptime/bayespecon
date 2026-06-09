@@ -27,7 +27,6 @@ dependencies:
   - pip
   - pip:
     - klujax
-    - traceax 
   
   # docs
   - numpydoc

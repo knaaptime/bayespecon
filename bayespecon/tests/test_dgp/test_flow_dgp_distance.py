@@ -9,12 +9,12 @@ from libpysal.graph import Graph
 from bayespecon.dgp.flows import (
     generate_flow_data,
     generate_flow_data_separable,
+    generate_negbin_flow_data,
+    generate_negbin_flow_data_separable,
     generate_panel_flow_data,
     generate_panel_flow_data_separable,
-    generate_panel_poisson_flow_data,
-    generate_panel_poisson_flow_data_separable,
-    generate_poisson_flow_data,
-    generate_poisson_flow_data_separable,
+    generate_panel_negbin_flow_data,
+    generate_panel_negbin_flow_data_separable,
 )
 from bayespecon.dgp.utils import (
     pairwise_distance_matrix,
@@ -32,7 +32,7 @@ def all_dgp_outputs():
     """Outputs from all 8 flow DGPs with default args."""
     return {
         "flow": generate_flow_data(N, G, 0.2, 0.2, 0.05, BETA_D, BETA_O, seed=0),
-        "poisson": generate_poisson_flow_data(n=N, k=2, seed=0),
+        "negbin": generate_negbin_flow_data(n=N, k=2, seed=0),
         "panel": generate_panel_flow_data(
             n=N,
             T=2,
@@ -44,11 +44,11 @@ def all_dgp_outputs():
             beta_o=BETA_O,
             seed=0,
         ),
-        "panel_poisson": generate_panel_poisson_flow_data(n=N, T=2, G=G, seed=0),
+        "panel_negbin": generate_panel_negbin_flow_data(n=N, T=2, G=G, seed=0),
         "flow_sep": generate_flow_data_separable(
             N, G, 0.3, 0.2, BETA_D, BETA_O, seed=0
         ),
-        "poisson_sep": generate_poisson_flow_data_separable(n=N, k=2, seed=0),
+        "negbin_sep": generate_negbin_flow_data_separable(n=N, k=2, seed=0),
         "panel_sep": generate_panel_flow_data_separable(
             n=N,
             T=2,
@@ -59,7 +59,7 @@ def all_dgp_outputs():
             beta_o=BETA_O,
             seed=0,
         ),
-        "panel_poisson_sep": generate_panel_poisson_flow_data_separable(
+        "panel_negbin_sep": generate_panel_negbin_flow_data_separable(
             n=N, T=2, G=G, seed=0
         ),
     }
@@ -85,13 +85,13 @@ class TestDistanceColumnPresent:
         "key",
         [
             "flow",
-            "poisson",
+            "negbin",
             "panel",
-            "panel_poisson",
+            "panel_negbin",
             "flow_sep",
-            "poisson_sep",
+            "negbin_sep",
             "panel_sep",
-            "panel_poisson_sep",
+            "panel_negbin_sep",
         ],
     )
     def test_log_distance_column(self, all_dgp_outputs, key):
@@ -103,13 +103,13 @@ class TestDistanceColumnPresent:
         "key",
         [
             "flow",
-            "poisson",
+            "negbin",
             "panel",
-            "panel_poisson",
+            "panel_negbin",
             "flow_sep",
-            "poisson_sep",
+            "negbin_sep",
             "panel_sep",
-            "panel_poisson_sep",
+            "panel_negbin_sep",
         ],
     )
     def test_dist_and_gdf_returned(self, all_dgp_outputs, key):
@@ -187,7 +187,7 @@ class TestAutoBuildG:
 
     def test_n_only_auto_build(self):
         # Only n supplied → builds gdf and KNN graph for that n.
-        out = generate_poisson_flow_data(n=16, seed=0)
+        out = generate_negbin_flow_data(n=16, seed=0)
         assert out["G"].n_nodes == 16
         assert len(out["gdf"]) == 16
         assert out["y_mat"].shape == (16, 16)
@@ -214,11 +214,11 @@ class TestAutoBuildG:
 
     def test_n_inferred_from_G(self):
         # When G is supplied, n is inferred (and disagreeing n raises).
-        out = generate_panel_poisson_flow_data(T=2, G=G, seed=0)
+        out = generate_panel_negbin_flow_data(T=2, G=G, seed=0)
         assert out["G"].n_nodes == G.n_nodes
         assert out["y"].shape == (2 * G.n_nodes * G.n_nodes,)
         with pytest.raises(ValueError, match="disagrees"):
-            generate_panel_poisson_flow_data(n=G.n_nodes + 1, T=2, G=G, seed=0)
+            generate_panel_negbin_flow_data(n=G.n_nodes + 1, T=2, G=G, seed=0)
 
     def test_gdf_size_mismatch_raises(self):
         gdf = synth_point_geodataframe(7)

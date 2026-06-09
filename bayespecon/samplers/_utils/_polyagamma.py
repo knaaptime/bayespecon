@@ -1,11 +1,13 @@
 """Vectorized Pólya–Gamma draw wrapper.
 
 Thin wrapper around the ``polyagamma`` package that centralises the call
-site and provides a consistent interface. If ``polyagamma`` is unavailable,
-a ``ImportError`` is raised with a helpful message.
+site and provides a consistent interface. Uses the library's hybrid
+sampler (``method=None``) which automatically selects the fastest
+algorithm based on ``h`` values: Devroye for small integer h, saddle
+approximation for large h, and alternate for small non-integer h.
 
-The wrapper exists so that future fallback implementations (e.g., a numba
-Devroye sampler) can be swapped in without touching call sites.
+If ``polyagamma`` is unavailable, an ``ImportError`` is raised with a
+helpful message.
 """
 
 from __future__ import annotations
@@ -67,9 +69,16 @@ def sample_polyagamma(
     if np.any(h <= 0):
         raise ValueError("All h values must be positive.")
 
-    # random_polyagamma broadcasts h and z, and accepts a Generator via random_state.
-    # Use method="alternate" because the default hybrid may select the "devroye"
-    # method for small h, which requires integer-valued h.  In the NB-PG augmentation
-    # h_i = y_i + alpha is typically non-integer, so we must avoid devroye.
-    omega = _pg_draw(h=h, z=z, method="alternate", random_state=rng)
+    # Use the library's hybrid method (method=None) which automatically
+    # selects the fastest algorithm based on h values:
+    #   - Devroye for small integer h (e.g. logit with h=1)
+    #   - Saddle approximation for large h (h > ~20)
+    #   - Alternate for small non-integer h
+    # The saddle method is O(1) per draw regardless of h magnitude,
+    # making it essential for NB-PG augmentation where h_i = y_i + alpha
+    # can be very large (e.g. 10^6 for high-mu NB observations).
+    # Previously, we forced method="alternate" for non-integer h, but
+    # the alternate method's cost scales with h, making it catastrophically
+    # slow for large h values.
+    omega = _pg_draw(h=h, z=z, method=None, random_state=rng)
     return np.asarray(omega, dtype=np.float64)

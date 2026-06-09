@@ -10,10 +10,7 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 
 from ._config import (
-    TraceEstimatorName,
     _auto_logdet_method,
-    _default_trace_k,
-    _resolve_trace_estimator,
 )
 from ._grids import _barry_pace_traces, chebyshev
 from ._pytensor import logdet_chebyshev, logdet_eigenvalue
@@ -340,8 +337,6 @@ def make_flow_separable_logdet(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     cheb_order: int = 20,
-    trace_estimator: TraceEstimatorName = "hutchpp",
-    trace_k: int | None = None,
 ):
     r"""Pre-compute logdet data for separable flow models and return a logdet callable.
 
@@ -369,18 +364,13 @@ def make_flow_separable_logdet(
         ``"chebyshev"`` — near-minimax Chebyshev polynomial; O(m) per step
         after O(n³) or O(R·n·m) precomputation via :func:`chebyshev`.
         Coefficients use exact eigenvalues when ``n`` is small, otherwise
-        a stochastic trace estimator selected by ``trace_estimator``.
+        Barry-Pace Hutchinson trace estimates.
     rho_min : float, default -1.0
         Lower bound of the rho domain (``"chebyshev"`` only).
     rho_max : float, default 1.0
         Upper bound of the rho domain (``"chebyshev"`` only).
     cheb_order : int, default 20
         Chebyshev polynomial order (``"chebyshev"`` only).
-    trace_estimator : {"hutchinson", "hutchpp", "xtrace"}, default "hutchpp"
-        Stochastic trace estimator used to build Chebyshev coefficients
-        when an eigendecomposition is unavailable.
-    trace_k : int, optional
-        Number of probe vectors for the trace estimator.
 
     Returns
     -------
@@ -389,9 +379,6 @@ def make_flow_separable_logdet(
         :math:`n\,f(\rho_d) + n\,f(\rho_o)` where
         :math:`f(\rho) = \log|I_n - \rho W|`.
     """
-    trace_estimator = _resolve_trace_estimator(trace_estimator)
-    _k = trace_k if trace_k is not None else _default_trace_k(trace_estimator)
-
     if sp.issparse(W_sparse):
         W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
     else:
@@ -411,8 +398,6 @@ def make_flow_separable_logdet(
             order=cheb_order,
             rmin=rho_min,
             rmax=rho_max,
-            estimator=trace_estimator,
-            n_mc_iter=_k,
         )
         coeffs = out["coeffs"]
         rmin_cb = out["rmin"]
@@ -435,8 +420,6 @@ def make_flow_separable_logdet_numpy(
     rho_min: float = -1.0,
     rho_max: float = 1.0,
     cheb_order: int = 20,
-    trace_estimator: TraceEstimatorName = "hutchpp",
-    trace_k: int | None = None,
 ):
     r"""Pre-compute numeric logdet data for separable flow models.
 
@@ -450,8 +433,6 @@ def make_flow_separable_logdet_numpy(
     symmetry.
     """
     from ._numpy import make_logdet_numpy_vec_fn
-
-    trace_estimator = _resolve_trace_estimator(trace_estimator)
 
     if sp.issparse(W_sparse):
         W_sp = W_sparse.tocsr().astype(np.float64)
@@ -476,8 +457,6 @@ def make_flow_separable_logdet_numpy(
         method=method,
         rho_min=rho_min,
         rho_max=rho_max,
-        trace_estimator=trace_estimator,
-        trace_k=trace_k,
     )
 
     def _eval(rho_d, rho_o) -> np.ndarray:

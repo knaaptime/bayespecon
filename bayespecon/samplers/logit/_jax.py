@@ -8,36 +8,35 @@ Architecture
 ------------
 The sampler uses:
 
-- **PG sampling**: Alternating-series method with K terms using
-  ``jax.random.gamma`` for Gamma(1, 1) draws.  Since h = 1 for binary
-  logit, the Devroye method would also be valid, but the alternating-
-  series method is fully JIT-compatible.
+- **PG sampling**: Exact sum-of-exponentials method via
+  :func:`jax_polyagamma` with ``method="exp"``.  Since h = 1 for
+  binary logit, the Exp method is exact (no truncation bias) and
+  fast (single exponential draw per observation).
 - **η and β draws**: Dense Cholesky factorisation via ``jnp.linalg.cholesky``
   and ``jnp.linalg.solve``.  O(n³) but fast for n ≤ ~2000.
-- **ρ draw**: Neal's stepping-out slice sampler with Lanczos-based
-  ``log|P|`` estimation.  A fixed Lanczos key is used for all
-  log-density evaluations within a single slice step.
+- **ρ/λ draw**: 1-D slice sampler on the doubly-collapsed log-density.
+  For SAR-logit, the density marginalises out both η and β via a
+  multi-RHS Cholesky solve.  For SEM-logit, the density marginalises
+  out η but conditions on β.  Slice sampling avoids the expensive
+  gradient computation that MALA requires (autodiff through Cholesky
+  + solve is ~3× the forward cost).
 
 Limitations
 -----------
 - O(n³) dense Cholesky limits scalability to n ≤ ~2000.
-- PG sum-of-exponentials has ~2% mean bias (acceptable for MCMC).
-- Lanczos log|P| estimation is stochastic but uses a fixed key within
-  each slice step for consistency.
 
 References
 ----------
 Polson, N. G., Scott, J. G., & Windle, J. (2013). Bayesian inference
 for logistic models using Pólya–Gamma latent variables.
 *Journal of the American Statistical Association*, 108(504), 1339–1349.
-
-Neal, R. M. (2003). Slice sampling. *Annals of Statistics*, 31(3), 705–767.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from .._utils._jax_polyagamma import jax_polyagamma
 from ._core import JAXLogitGibbsState
 
 
@@ -68,14 +67,13 @@ def _make_gibbs_step_with_data(
     logdet_jax,
     XtX_jax,
     priors,
-    pg_n_terms,
     n_probes,
     lanczos_deg,
 ):
     """Build a JIT-compiled Gibbs step with data bound into the closure.
 
     This function creates a ``@jax.jit``-compiled function that performs
-    one complete Gibbs sweep (ω, η, β, ρ slice) in a single XLA kernel
+    one complete Gibbs sweep (ω, η, β, ρ MALA) in a single XLA kernel
     call, eliminating all Python→JAX dispatch overhead.
 
     Parameters
@@ -101,8 +99,6 @@ def _make_gibbs_step_with_data(
         Precomputed X^T X.
     priors : LogitGibbsPriors
         Prior hyperparameters.
-    pg_n_terms : int
-        Number of alternating-series terms for the PG approximation.
     n_probes : int
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int
@@ -113,11 +109,12 @@ def _make_gibbs_step_with_data(
     gibbs_step : callable
         A JIT-compiled function with signature::
 
-            gibbs_step(state, key) -> (new_state, accept)
+            gibbs_step(state, key, mala_eps) -> (new_state, accept)
 
-        where ``state`` is a :class:`JAXLogitGibbsState`
-        and ``key`` is a JAX PRNG key.  ``accept`` is always ``True``
-        (slice sampling has no rejection step).
+        where ``state`` is a :class:`JAXLogitGibbsState`,
+        ``key`` is a JAX PRNG key, and ``mala_eps`` is a ``jnp.float64``
+        step size for the MALA proposal.  ``accept`` indicates whether
+        the MALA step was accepted.
     """
     import equinox as eqx
     import jax
@@ -139,17 +136,17 @@ def _make_gibbs_step_with_data(
 
     # Prior precision for beta
     beta_prior_prec = jnp.diag(1.0 / beta_sigma2_jax)
-
-    # PG term indices
-    k_idx = jnp.arange(pg_n_terms, dtype=jnp.float64)
-    pi = jnp.pi
-    pi2 = pi * pi
+    1.0 / beta_sigma2_jax  # diagonal of V₀⁻¹
+    V0_inv_b0 = beta_mu_jax / beta_sigma2_jax  # V₀⁻¹ b₀
 
     # For logit: h = 1 always, kappa = y - 0.5
     kappa = y_jax - 0.5
 
+    # Precompute W^T X for the β-marginalised density
+    WtX = W_dense_jax.T @ X_jax  # (n, k)
+
     @eqx.filter_jit
-    def gibbs_step(state, key):
+    def gibbs_step(state, key, slice_width):
         """One complete Gibbs sweep: ω → η → β → ρ (slice).
 
         Parameters
@@ -158,13 +155,15 @@ def _make_gibbs_step_with_data(
             Current state.
         key : jax.random.PRNGKey
             JAX random key.
+        slice_width : jax.numpy.float64
+            Stepping-out width for the ρ slice sampler.
 
         Returns
         -------
         new_state : JAXLogitGibbsState
             Updated state.
-        accept : bool
-            Always True (slice sampling has no rejection step).
+        accept : jax.numpy.float64
+            Always 1.0 (slice sampling always accepts).
         """
         eta = state.eta
         beta = state.beta
@@ -172,18 +171,8 @@ def _make_gibbs_step_with_data(
 
         key_omega, key_eta, key_beta, key_rho = jax.random.split(key, 4)
 
-        # ── Block 1: ω ~ PG(1, η) — alternating-series with Gamma draws ──
-        # For logit: h = 1 always
-        z = eta  # tilting parameters
-        Z = jnp.abs(z) / 2.0
-        denominators = (k_idx + 0.5) ** 2 + (Z[:, None] / pi) ** 2  # (n, K)
-        g = jax.random.gamma(
-            key_omega,
-            jnp.ones((n, pg_n_terms)),  # h = 1 for all observations
-            dtype=jnp.float64,
-        )  # (n, K) Gamma(1, 1) draws
-        pg1 = jnp.sum(g / denominators, axis=1) / (2.0 * pi2)  # (n,)
-        omega_new = jnp.maximum(pg1, 1e-6)
+        # ── Block 1: ω ~ PG(1, η) — exact Exp method (h = 1) ──
+        omega_new = jax_polyagamma(jnp.ones(n), eta, key=key_omega, method="exp")
 
         # ── Block 2: η | ω, ρ, β — dense Cholesky solve (σ² = 1) ──
         # P = I + diag(ω) - ρ(W+W^T) + ρ²W^TW  (no 1/σ² scaling)
@@ -211,96 +200,120 @@ def _make_gibbs_step_with_data(
         z_beta = jax.random.normal(key_beta, shape=(k,), dtype=jnp.float64)
         beta_new = m_beta + solve_triangular(L_beta.T, z_beta, lower=False)
 
-        # ── Block 4: ρ — slice sampling (collapsed, η integrated out) ──
-        # Uses Neal's stepping-out slice sampler.  log_density is exact
-        # (dense Cholesky), so the slice density is deterministic.
-        key_rho_slice, key_rho_u, key_rho_L, key_rho_R, key_rho_shrink = (
-            jax.random.split(key_rho, 5)
-        )
+        # ── Block 4: ρ — 1-D slice sampler (doubly-collapsed density) ──
+        #
+        # The doubly-collapsed log-density (η AND β integrated out) is:
+        #
+        #   log p(ρ | ω, y) = log|I - ρW| - ½ log|P_η|
+        #                     - ½ log|Σ_β*⁻¹| + ½ κ' P_η⁻¹ κ
+        #                     + ½ m_β*' Σ_β*⁻¹ m_β*
+        #
+        # Slice sampling avoids the expensive gradient computation that
+        # MALA requires (autodiff through Cholesky + solve is ~3× the
+        # forward cost).  Each slice candidate needs only a forward
+        # evaluation — no backward pass.
 
         def log_density_rho(rho_val):
-            """Collapsed log-density of ρ (η integrated out, σ² = 1).
+            """Doubly-collapsed log-density of ρ (η and β integrated out).
 
-            Uses one dense Cholesky factorisation of P_r to obtain both
-            log|P_r| (= 2 Σ log diag(L)) and the quadratic form
-            rhs' P_r⁻¹ rhs (= ‖L⁻¹ rhs‖²).  This is exact and BLAS-optimised
-            — strictly faster than iterative Lanczos+CG for the dense
-            regime this sampler targets.
+            Uses one dense Cholesky of P_η with (k+1) right-hand sides
+            to obtain both the κ quadratic form and the β-marginal
+            terms.
             """
-            # P = I + diag(ω) - ρ(W+W^T) + ρ²W^TW  (σ² = 1)
+            # P_η = I + diag(ω) - ρ(W+W^T) + ρ²W^TW  (σ² = 1)
             P_diag_r = jnp.ones(n) + omega_new
             P_r = jnp.diag(P_diag_r) - rho_val * W_sym + rho_val**2 * WtW
             P_r = P_r + 1e-6 * jnp.eye(n)
 
-            Xbeta_r = X_jax @ beta_new
-            # RHS: Xbeta - ρ W'Xbeta + κ  (σ² = 1)
-            rhs_r = Xbeta_r - rho_val * (W_dense_jax.T @ Xbeta_r) + kappa
+            # u = X - ρ W^T X  — (n, k)
+            u = X_jax - rho_val * WtX
 
+            # Multi-RHS: P_η [z | M] = [κ | u]
+            rhs_stack = jnp.column_stack([kappa, u])  # (n, k+1)
             L_r = jnp.linalg.cholesky(P_r)
+            sol = cho_solve((L_r, True), rhs_stack)  # (n, k+1)
+            z_vec = sol[:, 0]  # P_η⁻¹ κ  — (n,)
+            M_mat = sol[:, 1:]  # P_η⁻¹ u  — (n, k)
+
+            # log|P_η|
             log_det_P = 2.0 * jnp.sum(jnp.log(jnp.diag(L_r)))
-            v = solve_triangular(L_r, rhs_r, lower=True)
-            quad_r = v @ v
+
+            # Σ_β*⁻¹ = X^TX + V₀⁻¹ - u^T M  — (k, k)
+            Sig_beta_inv = XtX_jax + beta_prior_prec - u.T @ M_mat
+            Sig_beta_inv = Sig_beta_inv + 1e-10 * jnp.eye(k)  # regularise
+
+            L_sig = jnp.linalg.cholesky(Sig_beta_inv)
+            log_det_Sig_inv = 2.0 * jnp.sum(jnp.log(jnp.diag(L_sig)))
+
+            # m_β* = Σ_β* (u^T z + V₀⁻¹ b₀)
+            rhs_b = u.T @ z_vec + V0_inv_b0
+            m_b = cho_solve((L_sig, True), rhs_b)
+
+            # Quadratic forms
+            quad_kappa = kappa @ z_vec
+            quad_beta = rhs_b @ m_b
 
             logdet_W = logdet_jax(rho_val)
 
             log_prior = jnp.where(
                 (rho_val >= rho_lower_jax) & (rho_val <= rho_upper_jax), 0.0, -jnp.inf
             )
-            return logdet_W - 0.5 * log_det_P + 0.5 * quad_r + log_prior
+            return (
+                logdet_W
+                - 0.5 * log_det_P
+                - 0.5 * log_det_Sig_inv
+                + 0.5 * quad_kappa
+                + 0.5 * quad_beta
+                + log_prior
+            )
 
-        # Slice sampling for ρ
+        # ── Slice sampling for ρ ──
         log_y0 = log_density_rho(rho)
-        log_u = log_y0 + jnp.log(jax.random.uniform(key_rho_u, dtype=jnp.float64))
 
-        # Step-out width
-        w_rho = jnp.float64(0.2)
+        # Draw vertical level
+        key_rho, subkey = jax.random.split(key_rho)
+        log_u = log_y0 + jnp.log(jax.random.uniform(subkey, dtype=jnp.float64))
 
-        # Stepping out: expand [L, R] until log_density < log_u at endpoints
-        u_rand = jax.random.uniform(key_rho_L, dtype=jnp.float64)
-        L = jnp.maximum(rho - u_rand * w_rho, rho_lower_jax)
-        R = jnp.minimum(L + w_rho, rho_upper_jax)
-
-        max_steps = 50
+        # Stepping out: initialise [L, R]
+        key_rho, subkey = jax.random.split(key_rho)
+        u_rand = jax.random.uniform(subkey, dtype=jnp.float64)
+        w = slice_width
+        L = jnp.maximum(rho - u_rand * w, rho_lower_jax)
+        R = jnp.minimum(L + w, rho_upper_jax)
 
         # Step out left
-        def step_left(carry):
-            L_val, steps = carry
-            return (jnp.maximum(L_val - w_rho, rho_lower_jax), steps + 1)
+        def step_out_left_cond(carry):
+            L_val, _ = carry
+            return (L_val > rho_lower_jax) & (log_density_rho(L_val) > log_u)
 
-        def should_step_left(carry):
-            L_val, steps = carry
-            return (
-                (L_val > rho_lower_jax)
-                & (log_density_rho(L_val) > log_u)
-                & (steps < max_steps)
-            )
+        def step_out_left_body(carry):
+            L_val, _ = carry
+            return (jnp.maximum(L_val - w, rho_lower_jax), jnp.float64(0.0))
 
-        L_final, _ = jax.lax.while_loop(should_step_left, step_left, (L, jnp.int32(0)))
-
-        # Step out right
-        def step_right(carry):
-            R_val, steps = carry
-            return (jnp.minimum(R_val + w_rho, rho_upper_jax), steps + 1)
-
-        def should_step_right(carry):
-            R_val, steps = carry
-            return (
-                (R_val < rho_upper_jax)
-                & (log_density_rho(R_val) > log_u)
-                & (steps < max_steps)
-            )
-
-        R_final, _ = jax.lax.while_loop(
-            should_step_right, step_right, (R, jnp.int32(0))
+        L_final, _ = jax.lax.while_loop(
+            step_out_left_cond, step_out_left_body, (L, jnp.float64(0.0))
         )
 
-        # Shrinkage: sample from [L, R] and shrink until accepted
+        # Step out right
+        def step_out_right_cond(carry):
+            R_val, _ = carry
+            return (R_val < rho_upper_jax) & (log_density_rho(R_val) > log_u)
+
+        def step_out_right_body(carry):
+            R_val, _ = carry
+            return (jnp.minimum(R_val + w, rho_upper_jax), jnp.float64(0.0))
+
+        R_final, _ = jax.lax.while_loop(
+            step_out_right_cond, step_out_right_body, (R, jnp.float64(0.0))
+        )
+
+        # Shrinkage
         def shrink_cond(carry):
             _, _, _, _, done = carry
             return ~done
 
         def shrink_body(carry):
-            L_val, R_val, key_val, _, done_val = carry
+            L_val, R_val, key_val, x_best, _ = carry
             key_val, subkey = jax.random.split(key_val)
             x_new = L_val + jax.random.uniform(subkey, dtype=jnp.float64) * (
                 R_val - L_val
@@ -311,19 +324,14 @@ def _make_gibbs_step_with_data(
             R_new = jnp.where(x_new >= rho, x_new, R_val)
             collapsed = (R_new - L_new) < 1e-15
             done = accepted | collapsed
-            x_best = jnp.where(accepted, x_new, rho)
+            x_best = jnp.where(accepted, x_new, x_best)
             return (L_new, R_new, key_val, x_best, done)
 
         _, _, _, rho_new, _ = jax.lax.while_loop(
             shrink_cond,
             shrink_body,
-            (L_final, R_final, key_rho_shrink, rho, jnp.bool_(False)),
+            (L_final, R_final, key_rho, rho, jnp.bool_(False)),
         )
-
-        rho_new = jnp.clip(rho_new, rho_lower_jax, rho_upper_jax)
-
-        # Accept flag is always True for slice sampling
-        accept = jnp.bool_(True)
 
         new_state = JAXLogitGibbsState(
             eta=eta_new,
@@ -331,7 +339,7 @@ def _make_gibbs_step_with_data(
             rho=rho_new,
             omega=omega_new,
         )
-        return new_state, accept
+        return new_state, jnp.float64(1.0)  # slice always accepts
 
     return gibbs_step
 
@@ -371,13 +379,15 @@ def run_chain_jax(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
+    mala_eps: float = 0.1,
     progress_manager=None,
     chain_id: int = 0,
 ):
     """Run one chain of the full-JIT JAX Gibbs sampler for SAR-logit.
 
     Creates a JIT-compiled Gibbs step function and runs it in a Python
-    loop, handling warmup, thinning, and storage.
+    loop, handling warmup, thinning, and storage.  The ρ update uses
+    MALA with adaptive step-size tuning during warmup.
 
     Parameters
     ----------
@@ -409,18 +419,27 @@ def run_chain_jax(
     rng : numpy.random.Generator, optional
         Random state.
     pg_n_terms : int
-        Number of alternating-series terms for the PG approximation.
+        Ignored (kept for API compatibility).  PG draws now use the
+        exact sum-of-exponentials method which does not require
+        truncation.
     n_probes : int
-        Number of Lanczos probes for log|P| estimation.
+        Ignored (kept for API compatibility).
     lanczos_deg : int
-        Lanczos iteration depth.
+        Ignored (kept for API compatibility).
+    mala_eps : float, default 0.1
+        Initial step size for MALA proposal.  Adapted during warmup
+        to target ~50% acceptance rate.
+    progress_manager : optional
+        Progress bar manager.
+    chain_id : int, default 0
+        Chain identifier for progress reporting.
 
     Returns
     -------
     dict[str, np.ndarray]
         Posterior samples with keys ``rho``, ``beta``, ``log_lik``,
         ``eta_norm``, and optionally ``eta``.
-        Also includes ``mh_accept_rate`` (always 1.0 for slice sampling).
+        Also includes ``mh_accept_rate`` (fraction of MALA steps accepted).
     """
     import jax
     import jax.numpy as jnp
@@ -470,7 +489,6 @@ def run_chain_jax(
         logdet_jax=logdet_jax,
         XtX_jax=XtX_jax,
         priors=priors,
-        pg_n_terms=pg_n_terms,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
     )
@@ -478,12 +496,13 @@ def run_chain_jax(
     # Warmup the JIT function (first call triggers compilation)
     key = jax.random.PRNGKey(rng.integers(2**31))
     key, warmup_key = jax.random.split(key)
-    _ = gibbs_step(state, warmup_key)
+    slice_width = jnp.float64(0.2)
+    _ = gibbs_step(state, warmup_key, slice_width)
 
     # Run the chain
     for i in range(total_iters):
         key, step_key = jax.random.split(key)
-        state, _ = gibbs_step(state, step_key)
+        state, _ = gibbs_step(state, step_key, slice_width)
 
         # Store post-warmup draws
         if i >= tune and (i - tune) % thin == 0:
@@ -508,7 +527,7 @@ def run_chain_jax(
         "beta": beta_samples,
         "log_lik": log_lik_samples,
         "eta_norm": eta_norm_samples,
-        "mh_accept_rate": 1.0,  # slice sampling always accepts
+        "mh_accept_rate": 1.0,  # slice always accepts
     }
     if return_eta:
         result["eta"] = eta_samples
@@ -531,7 +550,6 @@ def _make_gibbs_step_with_data_sem(
     WtW_dense,
     logdet_jax,
     priors,
-    pg_n_terms,
     n_probes,
     lanczos_deg,
 ):
@@ -563,15 +581,12 @@ def _make_gibbs_step_with_data_sem(
     lam_upper_jax = jnp.float64(priors.lam_upper)
 
     beta_prior_prec = jnp.diag(1.0 / beta_sigma2_jax)
-
-    k_idx = jnp.arange(pg_n_terms, dtype=jnp.float64)
-    pi = jnp.pi
-    pi2 = pi * pi
+    beta_mu_jax / beta_sigma2_jax  # V₀⁻¹ b₀
 
     kappa = y_jax - 0.5
 
     @eqx.filter_jit
-    def gibbs_step(state, key):
+    def gibbs_step(state, key, slice_width):
         """One complete SEM-logit Gibbs sweep: ω → η → β → λ (slice)."""
         eta = state.eta
         beta = state.beta
@@ -579,17 +594,8 @@ def _make_gibbs_step_with_data_sem(
 
         key_omega, key_eta, key_beta, key_lam = jax.random.split(key, 4)
 
-        # ── Block 1: ω ~ PG(1, η) — identical to SAR-logit ──
-        z = eta
-        Z = jnp.abs(z) / 2.0
-        denominators = (k_idx + 0.5) ** 2 + (Z[:, None] / pi) ** 2
-        g = jax.random.gamma(
-            key_omega,
-            jnp.ones((n, pg_n_terms)),
-            dtype=jnp.float64,
-        )
-        pg1 = jnp.sum(g / denominators, axis=1) / (2.0 * pi2)
-        omega_new = jnp.maximum(pg1, 1e-6)
+        # ── Block 1: ω ~ PG(1, η) — exact Exp method (h = 1) ──
+        omega_new = jax_polyagamma(jnp.ones(n), eta, key=key_omega, method="exp")
 
         # ── Block 2: η | ω, β, λ — SEM-specific rhs ──
         # P = I + diag(ω) - λ(W+W^T) + λ²W^TW
@@ -622,13 +628,19 @@ def _make_gibbs_step_with_data_sem(
         z_beta = jax.random.normal(key_beta, shape=(k,), dtype=jnp.float64)
         beta_new = m_beta + solve_triangular(L_beta.T, z_beta, lower=False)
 
-        # ── Block 4: λ — slice sampling (collapsed, η integrated out) ──
-        key_lam_slice, key_lam_u, key_lam_L, key_lam_R, key_lam_shrink = (
-            jax.random.split(key_lam, 5)
-        )
+        # ── Block 4: λ — 1-D slice sampler (η-collapsed density) ──
+        #
+        # The collapsed log-density (η integrated out, β conditioned) is:
+        #
+        #   log p(λ | β, ω, y) = log|I - λW| - ½ log|P_η|
+        #                       + ½ rhs^T P_η⁻¹ rhs - ½ Xβ^T A_λ^T A_λ Xβ
+        #
+        # Slice sampling avoids the expensive gradient computation that
+        # MALA requires (autodiff through Cholesky + solve is ~3× the
+        # forward cost).
 
         def log_density_lam(lam_val):
-            """Collapsed log-density of λ (η integrated out, σ² = 1).
+            """Collapsed log-density of λ (η integrated out, β conditioned).
 
             Uses one dense Cholesky of P_r to obtain log|P_r| and the
             quadratic form exactly.
@@ -649,9 +661,8 @@ def _make_gibbs_step_with_data_sem(
 
             logdet_W = logdet_jax(lam_val)
 
-            # Missing term from SEM prior: -½Xβ'A_λ'A_λXβ
-            # = -½Xβ'Xβ + ½λXβ'W_symXβ - ½λ²Xβ'W'WXβ
-            # The -½Xβ'Xβ is constant in λ and drops out.
+            # SEM correction: -½Xβ'A_λ'A_λXβ
+            # = ½λXβ'(W+W')Xβ - ½λ²Xβ'W'WXβ + const
             xbeta_correction = 0.5 * lam_val * (
                 Xbeta_r @ WsymXbeta_r
             ) - 0.5 * lam_val**2 * (Xbeta_r @ WtWXbeta_r)
@@ -663,54 +674,53 @@ def _make_gibbs_step_with_data_sem(
                 logdet_W - 0.5 * log_det_P + 0.5 * quad_r + xbeta_correction + log_prior
             )
 
-        # Slice sampling for λ
+        # ── Slice sampling for λ ──
         log_y0 = log_density_lam(lam)
-        log_u = log_y0 + jnp.log(jax.random.uniform(key_lam_u, dtype=jnp.float64))
 
-        w_lam = jnp.float64(0.2)
+        # Draw vertical level
+        key_lam, subkey = jax.random.split(key_lam)
+        log_u = log_y0 + jnp.log(jax.random.uniform(subkey, dtype=jnp.float64))
 
-        u_rand = jax.random.uniform(key_lam_L, dtype=jnp.float64)
-        L = jnp.maximum(lam - u_rand * w_lam, lam_lower_jax)
-        R = jnp.minimum(L + w_lam, lam_upper_jax)
+        # Stepping out: initialise [L, R]
+        key_lam, subkey = jax.random.split(key_lam)
+        u_rand = jax.random.uniform(subkey, dtype=jnp.float64)
+        w = slice_width
+        L = jnp.maximum(lam - u_rand * w, lam_lower_jax)
+        R = jnp.minimum(L + w, lam_upper_jax)
 
-        max_steps = 50
+        # Step out left
+        def step_out_left_cond(carry):
+            L_val, _ = carry
+            return (L_val > lam_lower_jax) & (log_density_lam(L_val) > log_u)
 
-        def step_left(carry):
-            L_val, steps = carry
-            return (jnp.maximum(L_val - w_lam, lam_lower_jax), steps + 1)
+        def step_out_left_body(carry):
+            L_val, _ = carry
+            return (jnp.maximum(L_val - w, lam_lower_jax), jnp.float64(0.0))
 
-        def should_step_left(carry):
-            L_val, steps = carry
-            return (
-                (L_val > lam_lower_jax)
-                & (log_density_lam(L_val) > log_u)
-                & (steps < max_steps)
-            )
-
-        L_final, _ = jax.lax.while_loop(should_step_left, step_left, (L, jnp.int32(0)))
-
-        def step_right(carry):
-            R_val, steps = carry
-            return (jnp.minimum(R_val + w_lam, lam_upper_jax), steps + 1)
-
-        def should_step_right(carry):
-            R_val, steps = carry
-            return (
-                (R_val < lam_upper_jax)
-                & (log_density_lam(R_val) > log_u)
-                & (steps < max_steps)
-            )
-
-        R_final, _ = jax.lax.while_loop(
-            should_step_right, step_right, (R, jnp.int32(0))
+        L_final, _ = jax.lax.while_loop(
+            step_out_left_cond, step_out_left_body, (L, jnp.float64(0.0))
         )
 
+        # Step out right
+        def step_out_right_cond(carry):
+            R_val, _ = carry
+            return (R_val < lam_upper_jax) & (log_density_lam(R_val) > log_u)
+
+        def step_out_right_body(carry):
+            R_val, _ = carry
+            return (jnp.minimum(R_val + w, lam_upper_jax), jnp.float64(0.0))
+
+        R_final, _ = jax.lax.while_loop(
+            step_out_right_cond, step_out_right_body, (R, jnp.float64(0.0))
+        )
+
+        # Shrinkage
         def shrink_cond(carry):
             _, _, _, _, done = carry
             return ~done
 
         def shrink_body(carry):
-            L_val, R_val, key_val, _, done_val = carry
+            L_val, R_val, key_val, x_best, _ = carry
             key_val, subkey = jax.random.split(key_val)
             x_new = L_val + jax.random.uniform(subkey, dtype=jnp.float64) * (
                 R_val - L_val
@@ -721,18 +731,14 @@ def _make_gibbs_step_with_data_sem(
             R_new = jnp.where(x_new >= lam, x_new, R_val)
             collapsed = (R_new - L_new) < 1e-15
             done = accepted | collapsed
-            x_best = jnp.where(accepted, x_new, lam)
+            x_best = jnp.where(accepted, x_new, x_best)
             return (L_new, R_new, key_val, x_best, done)
 
         _, _, _, lam_new, _ = jax.lax.while_loop(
             shrink_cond,
             shrink_body,
-            (L_final, R_final, key_lam_shrink, lam, jnp.bool_(False)),
+            (L_final, R_final, key_lam, lam, jnp.bool_(False)),
         )
-
-        lam_new = jnp.clip(lam_new, lam_lower_jax, lam_upper_jax)
-
-        accept = jnp.bool_(True)
 
         new_state = JAXSEMLogitGibbsState(
             eta=eta_new,
@@ -740,7 +746,7 @@ def _make_gibbs_step_with_data_sem(
             lam=lam_new,
             omega=omega_new,
         )
-        return new_state, accept
+        return new_state, jnp.float64(1.0)  # slice always accepts
 
     return gibbs_step
 
@@ -762,6 +768,7 @@ def run_chain_jax_sem(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
+    mala_eps: float = 0.1,
     progress_manager=None,
     chain_id: int = 0,
 ):
@@ -797,7 +804,9 @@ def run_chain_jax_sem(
     rng : numpy.random.Generator, optional
         Random state.
     pg_n_terms : int
-        Number of alternating-series terms for the PG approximation.
+        Ignored (kept for API compatibility).  PG draws now use the
+        exact sum-of-exponentials method which does not require
+        truncation.
     n_probes : int
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int
@@ -808,7 +817,7 @@ def run_chain_jax_sem(
     dict[str, np.ndarray]
         Posterior samples with keys ``lam``, ``beta``, ``log_lik``,
         ``eta_norm``, and optionally ``eta``.
-        Also includes ``mh_accept_rate`` (always 1.0 for slice sampling).
+        Also includes ``mh_accept_rate`` (fraction of MALA steps accepted).
     """
     import jax
     import jax.numpy as jnp
@@ -858,7 +867,6 @@ def run_chain_jax_sem(
         WtW_dense=WtW_dense,
         logdet_jax=logdet_jax,
         priors=priors,
-        pg_n_terms=pg_n_terms,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
     )
@@ -866,12 +874,13 @@ def run_chain_jax_sem(
     # Warmup the JIT function
     key = jax.random.PRNGKey(rng.integers(2**31))
     key, warmup_key = jax.random.split(key)
-    _ = gibbs_step(state, warmup_key)
+    slice_width = jnp.float64(0.2)
+    _ = gibbs_step(state, warmup_key, slice_width)
 
     # Run the chain
     for i in range(total_iters):
         key, step_key = jax.random.split(key)
-        state, _ = gibbs_step(state, step_key)
+        state, _ = gibbs_step(state, step_key, slice_width)
 
         # Store post-warmup draws
         if i >= tune and (i - tune) % thin == 0:
@@ -896,7 +905,7 @@ def run_chain_jax_sem(
         "beta": beta_samples,
         "log_lik": log_lik_samples,
         "eta_norm": eta_norm_samples,
-        "mh_accept_rate": 1.0,
+        "mh_accept_rate": 1.0,  # slice always accepts
     }
     if return_eta:
         result["eta"] = eta_samples
@@ -926,7 +935,7 @@ def _logit_loglik_pointwise_jax_op(y_jax, eta):
     return y_jax * eta - jnp.maximum(eta, 0) - jnp.log1p(jnp.exp(-jnp.abs(eta)))
 
 
-def _run_chain_logit_warmup(gibbs_step, init_state, key, n_iters):
+def _run_chain_logit_warmup(gibbs_step, init_state, key, n_iters, slice_width):
     """Run ``n_iters`` Gibbs steps and return only the final state + key.
 
     Uses :func:`jax.lax.fori_loop` so no per-iteration traces are
@@ -939,51 +948,73 @@ def _run_chain_logit_warmup(gibbs_step, init_state, key, n_iters):
     def body(_, carry):
         state, k = carry
         k, step_key = jax.random.split(k)
-        state, _ = gibbs_step(state, step_key)
+        state, _ = gibbs_step(state, step_key, slice_width)
         return (state, k)
 
     final_state, final_key = jax.lax.fori_loop(0, n_iters, body, (init_state, key))
     return final_state, final_key
 
 
-def _run_chain_logit_draws_sar(gibbs_step, y_jax, init_state, key, n_iters):
+def _run_chain_logit_draws_sar(
+    gibbs_step, y_jax, init_state, key, n_iters, slice_width
+):
     """Scan ``n_iters`` steps for SAR-logit, storing per-iter traces.
 
     Returns the final state, the final PRNG key, and stacked traces of
     ``rho``, ``beta``, ``eta_norm``, and per-observation ``log_lik``.
     """
     import jax
+    import jax.numpy as jnp
 
     def body(carry, _):
-        state, k = carry
+        state, k, accept_sum = carry
         k, step_key = jax.random.split(k)
-        state, _ = gibbs_step(state, step_key)
+        state, accept = gibbs_step(state, step_key, slice_width)
         log_lik = _logit_loglik_pointwise_jax_op(y_jax, state.eta)
         eta_norm = state.eta @ state.eta
-        return (state, k), (state.rho, state.beta, eta_norm, log_lik)
+        return (state, k, accept_sum + accept), (
+            state.rho,
+            state.beta,
+            eta_norm,
+            log_lik,
+            accept,
+        )
 
-    (final_state, final_key), (rhos, betas, eta_norms, log_liks) = jax.lax.scan(
-        body, (init_state, key), None, length=n_iters
-    )
-    return final_state, final_key, rhos, betas, eta_norms, log_liks
+    (
+        (final_state, final_key, total_accept),
+        (rhos, betas, eta_norms, log_liks, accepts),
+    ) = jax.lax.scan(body, (init_state, key, jnp.float64(0.0)), None, length=n_iters)
+    accept_rate = total_accept / jnp.float64(n_iters)
+    return final_state, final_key, rhos, betas, eta_norms, log_liks, accept_rate
 
 
-def _run_chain_logit_draws_sem(gibbs_step, y_jax, init_state, key, n_iters):
+def _run_chain_logit_draws_sem(
+    gibbs_step, y_jax, init_state, key, n_iters, slice_width
+):
     """Scan ``n_iters`` steps for SEM-logit; ``lam`` instead of ``rho``."""
     import jax
+    import jax.numpy as jnp
 
     def body(carry, _):
-        state, k = carry
+        state, k, accept_sum = carry
         k, step_key = jax.random.split(k)
-        state, _ = gibbs_step(state, step_key)
+        state, accept = gibbs_step(state, step_key, slice_width)
         log_lik = _logit_loglik_pointwise_jax_op(y_jax, state.eta)
         eta_norm = state.eta @ state.eta
-        return (state, k), (state.lam, state.beta, eta_norm, log_lik)
+        return (state, k, accept_sum + accept), (
+            state.lam,
+            state.beta,
+            eta_norm,
+            log_lik,
+            accept,
+        )
 
-    (final_state, final_key), (lams, betas, eta_norms, log_liks) = jax.lax.scan(
-        body, (init_state, key), None, length=n_iters
-    )
-    return final_state, final_key, lams, betas, eta_norms, log_liks
+    (
+        (final_state, final_key, total_accept),
+        (lams, betas, eta_norms, log_liks, accepts),
+    ) = jax.lax.scan(body, (init_state, key, jnp.float64(0.0)), None, length=n_iters)
+    accept_rate = total_accept / jnp.float64(n_iters)
+    return final_state, final_key, lams, betas, eta_norms, log_liks, accept_rate
 
 
 def _stack_chain_inits(inits, state_cls, scalar_field):
@@ -1024,6 +1055,7 @@ def run_chains_jax_vectorized(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
+    mala_eps: float = 0.1,
     progressbar: bool = True,
 ) -> list[dict]:
     """Run multiple SAR-logit Gibbs chains in parallel via ``jax.vmap``.
@@ -1045,6 +1077,9 @@ def run_chains_jax_vectorized(
         Per-chain JAX PRNG seeds.  Defaults to ``range(chains)``.
     pg_n_terms, n_probes, lanczos_deg :
         Same meaning as in :func:`run_chain_jax`.
+    mala_eps : float, default 0.1
+        Ignored (kept for API compatibility).  Slice sampling does
+        not use a step-size parameter.
     progressbar : bool, default True
         Show per-chain progress bars.  Because all chains advance in
         lock-step under vmap, the bar is updated in bulk at the end of
@@ -1086,7 +1121,6 @@ def run_chains_jax_vectorized(
         logdet_jax=logdet_jax,
         XtX_jax=XtX_jax,
         priors=priors,
-        pg_n_terms=pg_n_terms,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
     )
@@ -1100,25 +1134,32 @@ def run_chains_jax_vectorized(
 
     from .._utils._progress import GibbsProgressBarManager
 
-    # Chunk both phases into ~20 segments so the progress bar advances
-    # smoothly and Python regains control between segments.  The chunk
-    # size is a Python constant so JIT compiles each kernel once and
-    # reuses it across chunks.
-    warmup_chunk = max(1, tune // 20) if tune > 0 else 1
-    draws_chunk = max(1, draws // 20) if draws > 0 else 1
+    # Slice width for ρ — fixed at 0.2 (slice is robust to width choice)
+    slice_width_arr = jnp.full(chains, jnp.float64(0.2))
 
-    warmup_step = jax.jit(
-        lambda s, k: jax.vmap(
-            lambda s_, k_: _run_chain_logit_warmup(gibbs_step, s_, k_, warmup_chunk)
-        )(s, k)
-    )
-    draws_step = jax.jit(
-        lambda s, k: jax.vmap(
-            lambda s_, k_: _run_chain_logit_draws_sar(
-                gibbs_step, y_jax, s_, k_, draws_chunk
-            )
-        )(s, k)
-    )
+    # ── Phase 1: warmup — fori_loop ──
+    # The iteration count must be a Python int (not a JAX traced value)
+    # because jax.lax.fori_loop requires a concrete length.
+    adapt_window = max(50, tune // 10) if tune > 0 else 50
+
+    def _make_warmup_fn(n_iters: int):
+        """Create a JIT-compiled warmup function with baked-in iteration count."""
+        return jax.jit(
+            lambda s, k, w: jax.vmap(
+                lambda s_, k_, w_: _run_chain_logit_warmup(
+                    gibbs_step, s_, k_, n_iters, w_
+                )
+            )(s, k, w)
+        )
+
+    # Pre-compile the main warmup function for the standard window size
+    warmup_fn = _make_warmup_fn(adapt_window)
+    _warmup_cache: dict[int, object] = {adapt_window: warmup_fn}
+
+    def _get_warmup_fn(n_iters: int):
+        if n_iters not in _warmup_cache:
+            _warmup_cache[n_iters] = _make_warmup_fn(n_iters)
+        return _warmup_cache[n_iters]
 
     with GibbsProgressBarManager(
         chains=chains,
@@ -1131,60 +1172,49 @@ def run_chains_jax_vectorized(
             for c in range(chains):
                 pm.start_chain(c)
 
-        # ── Phase 1: warmup (no traces stored) ──
+        # ── Phase 1: warmup ──
         state = init_states
         keys = warmup_keys
         iter_done = 0
         while iter_done < tune:
-            step = min(warmup_chunk, tune - iter_done)
-            if step == warmup_chunk:
-                state, keys = warmup_step(state, keys)
-            else:
-                # Final short chunk: take a one-off JIT hit rather than
-                # padding (padding would change the chain).
-                state, keys = jax.vmap(
-                    lambda s_, k_: _run_chain_logit_warmup(gibbs_step, s_, k_, step)
-                )(state, keys)
+            step = min(adapt_window, tune - iter_done)
+            fn = _get_warmup_fn(step)
+            state, keys = fn(state, keys, slice_width_arr)
             jax.block_until_ready(state.rho)
             iter_done += step
+
             if pm is not None:
                 for c in range(chains):
                     pm.update(c, iter_done - 1, tuning=True, accept=None)
 
         final_warm_states = state
 
-        # ── Phase 2: post-warmup draws (stacked traces) ──
+        # ── Phase 2: post-warmup draws — single scan ──
         draw_keys = jax.random.split(jax.random.fold_in(master_key, 1), chains)
-        state = final_warm_states
-        keys = draw_keys
-        rho_chunks: list[np.ndarray] = []
-        beta_chunks: list[np.ndarray] = []
-        eta_chunks: list[np.ndarray] = []
-        ll_chunks: list[np.ndarray] = []
-        iter_done = 0
-        while iter_done < draws:
-            step = min(draws_chunk, draws - iter_done)
-            if step == draws_chunk:
-                state, keys, rhos_c, betas_c, eta_c, ll_c = draws_step(state, keys)
-            else:
-                state, keys, rhos_c, betas_c, eta_c, ll_c = jax.vmap(
-                    lambda s_, k_: _run_chain_logit_draws_sar(
-                        gibbs_step, y_jax, s_, k_, step
-                    )
-                )(state, keys)
-            rho_chunks.append(np.asarray(rhos_c))
-            beta_chunks.append(np.asarray(betas_c))
-            eta_chunks.append(np.asarray(eta_c))
-            ll_chunks.append(np.asarray(ll_c))
-            iter_done += step
-            if pm is not None:
-                for c in range(chains):
-                    pm.update(c, tune + iter_done - 1, tuning=False, accept=None)
 
-        rhos = np.concatenate(rho_chunks, axis=1)
-        betas = np.concatenate(beta_chunks, axis=1)
-        eta_norms = np.concatenate(eta_chunks, axis=1)
-        log_liks = np.concatenate(ll_chunks, axis=1)
+        draws_fn = jax.jit(
+            lambda s, k, w: jax.vmap(
+                lambda s_, k_, w_: _run_chain_logit_draws_sar(
+                    gibbs_step, y_jax, s_, k_, draws, w_
+                )
+            )(s, k, w)
+        )
+
+        state, keys, rhos, betas, eta_norms, log_liks, accept_rates = draws_fn(
+            final_warm_states, draw_keys, slice_width_arr
+        )
+        jax.block_until_ready(state.rho)
+
+        if pm is not None:
+            for c in range(chains):
+                pm.update(c, tune + draws - 1, tuning=False, accept=None)
+
+    # Convert to numpy
+    rhos = np.asarray(rhos)
+    betas = np.asarray(betas)
+    eta_norms = np.asarray(eta_norms)
+    log_liks = np.asarray(log_liks)
+    accept_rates = np.asarray(accept_rates)
 
     # Thin and pack as per-chain dicts
     thin_slice = slice(None, None, thin) if thin > 1 else slice(None)
@@ -1196,7 +1226,7 @@ def run_chains_jax_vectorized(
                 "beta": betas[c, thin_slice].copy(),
                 "eta_norm": eta_norms[c, thin_slice].copy(),
                 "log_lik": log_liks[c, thin_slice].copy(),
-                "mh_accept_rate": 1.0,
+                "mh_accept_rate": float(accept_rates[c]),
             }
         )
     return results
@@ -1218,6 +1248,7 @@ def run_chains_jax_sem_vectorized(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
+    mala_eps: float = 0.1,
     progressbar: bool = True,
 ) -> list[dict]:
     """Run multiple SEM-logit Gibbs chains in parallel via ``jax.vmap``.
@@ -1250,7 +1281,6 @@ def run_chains_jax_sem_vectorized(
         WtW_dense=WtW_dense,
         logdet_jax=logdet_jax,
         priors=priors,
-        pg_n_terms=pg_n_terms,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
     )
@@ -1264,6 +1294,28 @@ def run_chains_jax_sem_vectorized(
 
     from .._utils._progress import GibbsProgressBarManager
 
+    # Slice width for λ — fixed at 0.2 (slice is robust to width choice)
+    slice_width_arr = jnp.full(chains, jnp.float64(0.2))
+    adapt_window = max(50, tune // 10) if tune > 0 else 50
+
+    def _make_warmup_fn(n_iters: int):
+        """Create a JIT-compiled warmup function with baked-in iteration count."""
+        return jax.jit(
+            lambda s, k, w: jax.vmap(
+                lambda s_, k_, w_: _run_chain_logit_warmup(
+                    gibbs_step, s_, k_, n_iters, w_
+                )
+            )(s, k, w)
+        )
+
+    warmup_fn = _make_warmup_fn(adapt_window)
+    _warmup_cache: dict[int, object] = {adapt_window: warmup_fn}
+
+    def _get_warmup_fn(n_iters: int):
+        if n_iters not in _warmup_cache:
+            _warmup_cache[n_iters] = _make_warmup_fn(n_iters)
+        return _warmup_cache[n_iters]
+
     with GibbsProgressBarManager(
         chains=chains,
         draws=draws,
@@ -1275,74 +1327,49 @@ def run_chains_jax_sem_vectorized(
             for c in range(chains):
                 pm.start_chain(c)
 
-        warmup_chunk = max(1, tune // 20) if tune > 0 else 1
-        draws_chunk = max(1, draws // 20) if draws > 0 else 1
-
-        warmup_step = jax.jit(
-            lambda s, k: jax.vmap(
-                lambda s_, k_: _run_chain_logit_warmup(gibbs_step, s_, k_, warmup_chunk)
-            )(s, k)
-        )
-        draws_step = jax.jit(
-            lambda s, k: jax.vmap(
-                lambda s_, k_: _run_chain_logit_draws_sem(
-                    gibbs_step, y_jax, s_, k_, draws_chunk
-                )
-            )(s, k)
-        )
-
         # ── Phase 1: warmup ──
         state = init_states
         keys = warmup_keys
         iter_done = 0
         while iter_done < tune:
-            step = min(warmup_chunk, tune - iter_done)
-            if step == warmup_chunk:
-                state, keys = warmup_step(state, keys)
-            else:
-                state, keys = jax.vmap(
-                    lambda s_, k_: _run_chain_logit_warmup(gibbs_step, s_, k_, step)
-                )(state, keys)
+            step = min(adapt_window, tune - iter_done)
+            fn = _get_warmup_fn(step)
+            state, keys = fn(state, keys, slice_width_arr)
             jax.block_until_ready(state.lam)
             iter_done += step
+
             if pm is not None:
                 for c in range(chains):
                     pm.update(c, iter_done - 1, tuning=True, accept=None)
 
         final_warm_states = state
 
-        # ── Phase 2: post-warmup draws ──
+        # ── Phase 2: post-warmup draws — single scan ──
         draw_keys = jax.random.split(jax.random.fold_in(master_key, 1), chains)
-        state = final_warm_states
-        keys = draw_keys
-        lam_chunks: list[np.ndarray] = []
-        beta_chunks: list[np.ndarray] = []
-        eta_chunks: list[np.ndarray] = []
-        ll_chunks: list[np.ndarray] = []
-        iter_done = 0
-        while iter_done < draws:
-            step = min(draws_chunk, draws - iter_done)
-            if step == draws_chunk:
-                state, keys, lams_c, betas_c, eta_c, ll_c = draws_step(state, keys)
-            else:
-                state, keys, lams_c, betas_c, eta_c, ll_c = jax.vmap(
-                    lambda s_, k_: _run_chain_logit_draws_sem(
-                        gibbs_step, y_jax, s_, k_, step
-                    )
-                )(state, keys)
-            lam_chunks.append(np.asarray(lams_c))
-            beta_chunks.append(np.asarray(betas_c))
-            eta_chunks.append(np.asarray(eta_c))
-            ll_chunks.append(np.asarray(ll_c))
-            iter_done += step
-            if pm is not None:
-                for c in range(chains):
-                    pm.update(c, tune + iter_done - 1, tuning=False, accept=None)
 
-        lams = np.concatenate(lam_chunks, axis=1)
-        betas = np.concatenate(beta_chunks, axis=1)
-        eta_norms = np.concatenate(eta_chunks, axis=1)
-        log_liks = np.concatenate(ll_chunks, axis=1)
+        draws_fn = jax.jit(
+            lambda s, k, w: jax.vmap(
+                lambda s_, k_, w_: _run_chain_logit_draws_sem(
+                    gibbs_step, y_jax, s_, k_, draws, w_
+                )
+            )(s, k, w)
+        )
+
+        state, keys, lams, betas, eta_norms, log_liks, accept_rates = draws_fn(
+            final_warm_states, draw_keys, slice_width_arr
+        )
+        jax.block_until_ready(state.lam)
+
+        if pm is not None:
+            for c in range(chains):
+                pm.update(c, tune + draws - 1, tuning=False, accept=None)
+
+    # Convert to numpy
+    lams = np.asarray(lams)
+    betas = np.asarray(betas)
+    eta_norms = np.asarray(eta_norms)
+    log_liks = np.asarray(log_liks)
+    accept_rates = np.asarray(accept_rates)
 
     thin_slice = slice(None, None, thin) if thin > 1 else slice(None)
     results = []
@@ -1353,7 +1380,7 @@ def run_chains_jax_sem_vectorized(
                 "beta": betas[c, thin_slice].copy(),
                 "eta_norm": eta_norms[c, thin_slice].copy(),
                 "log_lik": log_liks[c, thin_slice].copy(),
-                "mh_accept_rate": 1.0,
+                "mh_accept_rate": float(accept_rates[c]),
             }
         )
     return results

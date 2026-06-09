@@ -10,7 +10,7 @@ PyMC supports several NUTS samplers via the ``nuts_sampler`` keyword:
 This module provides three small helpers used by ``fit()`` methods:
 
 * :func:`enforce_c_backend` — for models whose custom :class:`pytensor.graph.op.Op`
-  has no JAX dispatch (e.g. Poisson sparse-flow models that wrap
+  has no JAX dispatch (e.g. NB sparse-flow models that wrap
   :class:`scipy.sparse.linalg.splu`), downgrade a JAX-backed request to
   ``"pymc"`` with a one-time ``UserWarning``.
 * :func:`prepare_idata_kwargs` — strip ``log_likelihood=True`` for JAX backends

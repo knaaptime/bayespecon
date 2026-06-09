@@ -1,30 +1,48 @@
-r"""Spatial autoregressive Negative Binomial (SAR-NB) model.
+r"""Reduced-form spatial autoregressive Negative Binomial (SAR-NB) model.
 
-Count-outcome analogue of :class:`bayespecon.models.sar.SAR` with
-NB2 observation noise.  The latent log-mean follows the SAR structural
-form:
+This is the **canonical** Bayesian SAR-NB model in
+:mod:`bayespecon`: spatial dependence enters purely through the mean
+propagator :math:`(I - \rho W)^{-1}` and overdispersion is captured by
+the Negative Binomial dispersion parameter :math:`\alpha`.  There is no
+latent spatial random effect (no :math:`\sigma`).
 
 .. math::
 
     y_i \sim \mathrm{NegBin}(\mu_i, \alpha), \qquad
-    \eta = (I - \rho W)^{-1}(X \beta + \sigma z), \qquad
-    z \sim N(0, I).
+    \mu = \exp(\eta), \qquad
+    \eta = (I - \rho W)^{-1} X \beta.
 
-This is the non-centred parameterisation of the structural form
-:math:`\eta = \rho W \eta + X \beta + \nu, \; \nu \sim N(0, \sigma^2 I)`,
-which is equivalent to :class:`SARNegBinLatent` and enables fair
-comparison between NUTS and Gibbs samplers.
+This is the reduced form that the spatial-econometrics literature
+(LeSage & Pace 2009) writes down by default and is the preferred
+specification when there is no substantive reason to model an
+additional unobserved spatially-smoothed latent field.
 
-No spatial Jacobian is needed because the change-of-variables Jacobian
-:math:`|d\eta/dz| = \sigma^n / |I - \rho W|` cancels exactly with the
-multivariate-normal normalisation constant :math:`|\Sigma_\eta|^{-1/2} =
-|I - \rho W| / \sigma^n`.  This cancellation is specific to the
-non-centred parameterisation; a centred parameterisation would require
-:math:`\log|I - \rho W|`.
+Sampling
+--------
+Two samplers are available:
+
+* **Pólya-Gamma Gibbs** (default): call
+  :meth:`fit() <fit>` or :meth:`fit(sampler="gibbs") <fit>`.
+  Each sweep performs one Pólya-Gamma augmentation step, one
+  conjugate-Gaussian update for :math:`\beta`, one 1-D adaptive
+  slice sample for :math:`\rho`, and one 1-D slice sample for
+  :math:`\log\alpha`.
+
+* **NUTS**: call :meth:`fit(sampler="nuts") <fit>`.
+  Builds a PyMC model with the reduced-form likelihood and the
+  log-determinant Jacobian :math:`\log|I - \rho W|`, then samples
+  with NUTS.
+
+See also
+--------
+SARNegBinLatent
+    P\u00f3lya-Gamma Gibbs sampler for the structural form (with
+    :math:`\sigma`).  Also exported as ``SARNegativeBinomialLatent``.
 """
 
 from __future__ import annotations
 
+import warnings
 from typing import Optional
 
 import arviz as az
@@ -33,45 +51,21 @@ import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
+from ...samplers._utils._slice import SliceWidthState
+from ...samplers._utils._spatial_normal import has_cholmod
 from ..base import SpatialModel
 from ..priors import SARNegBinPriors
 
 
 class SARNegativeBinomial(SpatialModel):
-    r"""Bayesian SAR model with a Negative Binomial likelihood.
-
-    Parameters
-    ----------
-    formula, data, y, X, W, priors, logdet_method
-        Same interface and semantics as :class:`bayespecon.models.sar.SAR`.
-    robust : bool, default False
-        Not supported for count outcomes. If True, ``NotImplementedError`` is raised.
-
-    Notes
-    -----
-    The model uses the SAR structural form with a non-centred
-    parameterisation:
-
-    .. math::
-
-        \eta = (I - \rho W)^{-1}(X \beta + \sigma z), \quad
-        z \sim N(0, I),
-
-    which is equivalent to the centred form
-    :math:`\eta \sim N((I - \rho W)^{-1} X \beta,\;
-    \sigma^2 (I - \rho W)^{-1}(I - \rho W')^{-1})`.
-    This matches the structural form used by :class:`SARNegBinLatent`,
-    enabling fair comparison between NUTS and Gibbs samplers.
-
-    No spatial Jacobian :math:`\log|I - \rho W|` is needed because the
-    change-of-variables Jacobian cancels with the multivariate-normal
-    normalisation constant in the non-centred parameterisation.
-
-    Overdispersion is captured by the NB2 parameter ``alpha``, and
-    spatial noise in the latent field by ``sigma``.
-    """
-
     _priors_cls = SARNegBinPriors
+
+    #: Maximum n for which the JAX dense backend is used automatically.
+    _JAX_DENSE_THRESHOLD: int = 10000
+
+    #: Threshold above which count-scale spatial effects use the sparse
+    #: Hutchinson path instead of the eigendecomposition path.
+    _COUNT_EFFECTS_EIGEN_MAX_N: int = 2000
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -95,92 +89,547 @@ class SARNegativeBinomial(SpatialModel):
         self._y = y_round.astype(np.float64)
         self._Wy = np.asarray(self._W_sparse @ self._y, dtype=np.float64)
 
-    def _model_coords(self) -> dict[str, list[str]]:
-        """Return PyMC coordinate labels including obs_id for the latent z."""
-        coords = super()._model_coords()
-        coords["obs_id"] = list(range(self._X.shape[0]))
-        return coords
-
+    # ------------------------------------------------------------------
+    # PyMC graph (reduced-form NUTS)
+    # ------------------------------------------------------------------
     def _build_pymc_model(self) -> pm.Model:
+        r"""Build the reduced-form PyMC model for NUTS sampling.
+
+        The model is
+
+        .. math::
+
+            y_i \sim \mathrm{NegBin}(\mu_i, \alpha), \quad
+            \mu = \exp(\eta), \quad
+            \eta = (I - \rho W)^{-1} X \beta,
+
+        with a log-determinant Jacobian :math:`\log|I - \rho W|` added
+        as a ``pm.Potential``.  No latent :math:`\sigma` or :math:`z`
+        appears — this is the reduced form, not the structural form.
+        """
         bounds = self._logdet_bounds
         rho_lower = bounds.rho_min
         rho_upper = bounds.rho_max
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 1e6)
-        sigma2_alpha = self.priors.get("sigma2_alpha", 2.0)
-        sigma2_beta = self.priors.get("sigma2_beta", 1.0)
         alpha_sigma = self.priors.get("alpha_sigma", 2.5)
         alpha_nu = self.priors.get("alpha_nu", 3.0)
-        self._X.shape[0]
 
         with pm.Model(coords=self._model_coords()) as model:
             rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
-            sigma2 = pm.InverseGamma("sigma2", alpha=sigma2_alpha, beta=sigma2_beta)
-            sigma = pm.Deterministic("sigma", pt.sqrt(sigma2))
             alpha = pm.HalfStudentT("alpha", nu=alpha_nu, sigma=alpha_sigma)
 
-            # Structural form (non-centred parameterisation):
-            #   eta = (I - rho*W)^{-1} (X @ beta + sigma * z),  z ~ N(0, I)
-            #
-            # This is equivalent to the centred form:
-            #   eta | rho, beta, sigma ~ N((I-rho*W)^{-1} X beta,
-            #                              sigma^2 (I-rho*W)^{-1}(I-rho*W')^{-1})
-            #
-            # No Jacobian is needed because the change-of-variables
-            # Jacobian |d(eta)/d(z)| = sigma^n / |I - rho*W| cancels
-            # exactly with the MVN normalisation |Sigma_eta|^{-1/2}.
-            #
-            # Uses SparseSARSolveOp for efficient differentiable sparse LU.
-            # The eigendecomposition is NOT passed here because it forces
-            # an O(n³) decomposition at model construction time that is only
-            # consumed by the JAX eigen dispatch path. The PyMC NUTS path
-            # uses sparse LU exclusively and never touches eigenvalues.
+            # Reduced form: η = (I - ρW)⁻¹ Xβ
             from ..._ops import SparseSARSolveOp
 
             _sar_solve_op = SparseSARSolveOp(self._W_sparse)
-            z = pm.Normal("z", mu=0, sigma=1, dims="obs_id")
             Xbeta = pt.dot(self._X, beta)
-            rhs = Xbeta + sigma * z
-            eta = _sar_solve_op(rho, rhs)
+            eta = _sar_solve_op(rho, Xbeta)
             mu = pm.Deterministic("mu", pt.exp(eta))
             pm.NegativeBinomial("obs", mu=mu, alpha=alpha, observed=self._y_int)
 
-            # No Jacobian term is needed.  In the non-centred
-            # parameterisation, the change-of-variables Jacobian cancels
-            # with the MVN normalisation constant.  Adding log|I-rho*W|
-            # would incorrectly bias rho toward zero.
+            # Jacobian: log|I - ρW| — required for the reduced form
+            # (unlike the structural form where it cancels with the MVN
+            # normalisation constant).
+            pm.Potential("jacobian", self._logdet_pytensor_fn(rho))
+
         return model
 
+    # ------------------------------------------------------------------
+    # Fitting
+    # ------------------------------------------------------------------
     def fit(
         self,
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
-        idata_kwargs: Optional[dict] = None,
-        **sample_kwargs,
+        thin: int = 1,
+        init_jitter: float = 0.1,
+        progressbar: bool = True,
+        n_jobs: int = 1,
+        timeout: float | None = None,
+        sampler: str = "gibbs",
+        gibbs_method: str = "auto",
+        slice_width: float = 0.2,
+        **kwargs,
     ) -> "az.InferenceData":
-        """Sample posterior.
+        r"""Sample the posterior.
 
-        The Negative Binomial log-likelihood is auto-captured by PyMC.
-        No Jacobian correction is needed because the non-centred
-        parameterisation's change-of-variables Jacobian cancels with
-        the multivariate-normal normalisation constant.
+        By default, uses the Pólya-Gamma Gibbs sampler (fast, scalable).
+        To use NUTS instead, pass ``sampler="nuts"``.
+
+        Parameters
+        ----------
+        draws, tune : int
+            Post-warmup draws and warmup sweeps per chain.
+        chains : int, default 4
+            Number of independent chains.
+        random_seed : int, optional
+            Seed for the per-chain RNGs.  Each chain receives a distinct
+            child seed.
+        thin : int, default 1
+            Keep every ``thin``-th post-warmup draw.  Only used when
+            ``sampler="gibbs"``.
+        init_jitter : float, default 0.1
+            Std-dev of the Gaussian noise applied to the default
+            :math:`(\beta=0, \rho=0, \alpha=1)` initial state.
+            Only used when ``sampler="gibbs"``.
+        progressbar : bool, default True
+            Show per-chain progress bars (sequential or parallel,
+            depending on ``n_jobs``).
+        n_jobs : int, default 1
+            Number of parallel worker processes.  ``1`` runs chains
+            sequentially in this process (recommended for small problems
+            where the per-chain runtime is < a few seconds).  ``-1``
+            uses all available CPUs.  Only used when
+            ``sampler="gibbs"``.
+        timeout : float or None, default None
+            Maximum wall-clock seconds to wait for all chains to finish
+            when ``n_jobs != 1``.  If any worker has not returned by this
+            deadline, a :class:`TimeoutError` is raised.  Set to ``None``
+            to wait indefinitely.  Ignored when ``n_jobs == 1``.
+            Only used when ``sampler="gibbs"``.
+        sampler : {"gibbs", "nuts"}, default "gibbs"
+            Sampling method:
+
+            - ``"gibbs"``: Pólya-Gamma Gibbs sampler (default).  Fast and
+              scalable for large datasets.
+            - ``"nuts"``: NUTS via PyMC.  Uses the reduced-form model
+              with a log-determinant Jacobian potential.
+        gibbs_method : {"auto", "factorize", "jax_dense"}, default "auto"
+            Gibbs sampler backend.  Only used when ``sampler="gibbs"``.
+
+            - ``"auto"``: select based on JAX availability and problem
+              size.  When JAX is installed and n ≤ 10 000, uses
+              ``"jax_dense"``; otherwise uses ``"factorize"``.
+            - ``"factorize"``: NumPy/SciPy path with CHOLMOD or SPLU
+              factorisation and adaptive slice sampling for ρ.
+            - ``"jax_dense"``: JAX-accelerated path with dense matrix
+              operations and slice+Krylov sampling for ρ.  Requires JAX
+              with float64 enabled.  Viable for n ≤ ~10 000 on CPU;
+              faster on GPU.
+        slice_width : float, default 0.2
+            Stepping-out width for the ρ slice sampler.  Only used when
+            ``sampler="gibbs"`` with ``gibbs_method="jax_dense"``.
+        krylov_degree : int, default 8
+            Krylov basis degree for the shift-invert polynomial
+            approximation of :math:`(I - \rho W)^{-1} X` inside the
+            ρ-slice density.  Used by both ``"factorize"`` and
+            ``"jax_dense"`` Gibbs backends.
+        krylov_dmax : float, default 0.15
+            Maximum :math:`|\Delta\rho|` for which the Krylov basis is
+            used.  Used by both ``"factorize"`` and
+            ``"jax_dense"`` Gibbs backends.
+        n_rho_omega_cycles : int, default 1
+            Number of :math:`(\omega, \rho, \beta)` Gibbs cycles per
+            sweep.  Only used when ``sampler="gibbs"`` with
+            ``gibbs_method="factorize"``.
+        **kwargs
+            Additional keyword arguments.  When ``sampler="gibbs"``,
+            Gibbs-specific kwargs (``krylov_degree``,
+            ``krylov_dmax``, ``n_rho_omega_cycles``) are consumed.
+            When ``sampler="nuts"``, NUTS-specific kwargs
+            (``target_accept``, ``idata_kwargs``, ``nuts_sampler``)
+            are forwarded to :meth:`SpatialModel.fit`.
+
+        Returns
+        -------
+        arviz.InferenceData
+            Posterior draws of ``rho``, ``beta``, ``alpha`` and pointwise
+            ``log_likelihood`` for the observed counts.
         """
-        idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
+        # ── NUTS dispatch ──
+        if sampler == "nuts":
+            return super().fit(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                **kwargs,
+            )
+        elif sampler != "gibbs":
+            raise ValueError(f"sampler must be 'gibbs' or 'nuts', got '{sampler}'")
+
+        # ── Gibbs path ──
+        # Pop Krylov kwargs from kwargs before they're silently swallowed.
+        krylov_degree = kwargs.pop("krylov_degree", 8)
+        krylov_dmax = kwargs.pop("krylov_dmax", 0.15)
+        n_rho_omega_cycles = kwargs.pop("n_rho_omega_cycles", 1)
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.gaussian._chain_runner import run_chains
+        from ...samplers.negbin_reduced import (
+            ReducedGibbsCache,
+            ReducedGibbsPriors,
+            ReducedGibbsState,
+            run_chain,
+        )
+
+        n, k = self._X.shape
+
+        if n < 900:
+            warnings.warn(
+                f"SAR Negative Binomial models require large samples for "
+                f"reliable spatial parameter recovery. With n={n}, "
+                f"posterior estimates of ρ and α may be severely "
+                f"attenuated. n ≥ 900 is recommended.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        bounds = self._logdet_bounds
+        rho_lower = float(bounds.rho_min)
+        rho_upper = float(bounds.rho_max)
+
+        # Resolve Gibbs method
+        import importlib.util
+
+        _jax_available = importlib.util.find_spec("jax") is not None
+        _valid_methods = {"auto", "factorize", "jax_dense"}
+        if gibbs_method not in _valid_methods:
+            raise ValueError(
+                f"gibbs_method must be one of {_valid_methods}, got '{gibbs_method}'"
+            )
+        if gibbs_method == "jax_dense" and not _jax_available:
+            raise ImportError(
+                "gibbs_method='jax_dense' requires JAX. Install with: pip install jax"
+            )
+        if gibbs_method == "auto":
+            gibbs_method = (
+                "jax_dense"
+                if (_jax_available and n <= self._JAX_DENSE_THRESHOLD)
+                else "factorize"
+            )
+
+        priors = ReducedGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", 0.0),
+            beta_sigma=self.priors.get("beta_sigma", 1e6),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
+            rho_lower=rho_lower,
+            rho_upper=rho_upper,
+        )
+
+        W_csr = self._W_sparse.tocsr()
+        W_csc = self._W_sparse.tocsc()
+        X = np.ascontiguousarray(self._X, dtype=np.float64)
+
+        # ── JAX dense path ──
+        if gibbs_method == "jax_dense":
+            from ...samplers.negbin_reduced._jax import run_chains_jax_reduced
+
+            rng = np.random.default_rng(random_seed)
+            chain_seeds = [int(s) for s in rng.integers(0, 2**31, size=chains)]
+
+            # Smart initialization (same as NumPy path)
+            _log_y = np.log(self._y + 0.5)
+            _rho_grid = np.arange(0.05, 0.96, 0.05)
+            _best_rho, _best_beta, _best_ll = 0.0, np.zeros(k), -np.inf
+            for _rho_g in _rho_grid:
+                try:
+                    _A_g = sp.eye(n, format="csc") - _rho_g * W_csc
+                    _Xtilde_g = sp.linalg.spsolve(_A_g, X)
+                    _beta_g = np.linalg.lstsq(_Xtilde_g, _log_y, rcond=None)[0]
+                    _eta_g = _Xtilde_g @ _beta_g
+                    _sig2_g = float(np.mean((_log_y - _eta_g) ** 2))
+                    _ll_g = -0.5 * n * np.log(_sig2_g) - 0.5 * n
+                    if _ll_g > _best_ll:
+                        _best_ll = _ll_g
+                        _best_rho = _rho_g
+                        _best_beta = _beta_g.copy()
+                except Exception:
+                    pass
+            _rho_init_mle = float(
+                np.clip(_best_rho, rho_lower + 0.05, rho_upper - 0.05)
+            )
+            _beta_init_mle = _best_beta
+            try:
+                _A_init = sp.eye(n, format="csc") - _rho_init_mle * W_csc
+                _Xtilde_init = sp.linalg.spsolve(_A_init, X)
+                _eta_init = _Xtilde_init @ _beta_init_mle
+                _resid2 = float(np.mean((_log_y - _eta_init) ** 2))
+                _alpha_init_mle = float(np.clip(1.0 / max(_resid2, 0.01), 0.5, 50.0))
+            except Exception:
+                _alpha_init_mle = 1.0
+
+            # Detect intercept column
+            intercept_col = -1
+            for _j in range(k):
+                if np.all(X[:, _j] == 1.0):
+                    intercept_col = _j
+                    break
+
+            chain_inits = []
+            for seed in chain_seeds:
+                chain_rng = np.random.default_rng(seed)
+                _rho_jitter = min(init_jitter, 0.02)
+                beta_init = _beta_init_mle + init_jitter * chain_rng.standard_normal(k)
+                rho_init = float(
+                    np.clip(
+                        _rho_init_mle + _rho_jitter * chain_rng.standard_normal(),
+                        rho_lower + 0.01,
+                        rho_upper - 0.01,
+                    )
+                )
+                alpha_init = float(
+                    np.clip(
+                        _alpha_init_mle
+                        * np.exp(init_jitter * chain_rng.standard_normal()),
+                        0.05,
+                        50.0,
+                    )
+                )
+                omega_init = 0.25 * np.ones(n, dtype=np.float64)
+                chain_inits.append(
+                    ReducedGibbsState(
+                        beta=beta_init,
+                        rho=rho_init,
+                        alpha=alpha_init,
+                        omega=omega_init,
+                    )
+                )
+
+            chain_results = run_chains_jax_reduced(
+                y=self._y,
+                X=X,
+                W_sparse=self._W_sparse,
+                priors=priors,
+                inits=chain_inits,
+                draws=draws,
+                tune=tune,
+                thin=thin,
+                jax_seeds=chain_seeds,
+                progressbar=progressbar,
+                intercept_col=intercept_col,
+                krylov_degree=krylov_degree,
+                krylov_dmax=krylov_dmax,
+                slice_width=slice_width,
+            )
+
+            # Stack chains
+            stacked = {
+                "rho": np.stack([s["rho"] for s in chain_results], axis=0),
+                "beta": np.stack([s["beta"] for s in chain_results], axis=0),
+                "alpha": np.stack([s["alpha"] for s in chain_results], axis=0),
+            }
+            log_lik = np.stack([s["log_lik"] for s in chain_results], axis=0)
+
+            idata = gibbs_to_inference_data(
+                posterior_samples=stacked,
+                log_likelihood={"obs": log_lik},
+                observed_data={"obs": self._y_int},
+                coords={
+                    "coefficient": list(self._feature_names),
+                    "obs_id": list(range(n)),
+                },
+                dims={
+                    "beta": ["coefficient"],
+                    "obs": ["obs_id"],
+                },
+            )
+            self._idata = idata
+            return idata
+
+        # ── NumPy / SciPy factorize path ──
+        # Eigenvalue bounds for CG iterative solver.
+        # For A_ρ = I − ρW: λ_min(A_ρ) = 1 − ρ·λ_max(W), λ_max(A_ρ) = 1 − ρ·λ_min(W).
+        if self._W_eigs is not None:
+            W_eig_max = float(np.max(np.abs(self._W_eigs)))
+            W_eig_min = float(np.min(np.real(self._W_eigs)))
+        else:
+            W_eig_max = 1.0
+            W_eig_min = -1.0
+
+        # Precompute CHOLMOD pattern for the normal-equations matrix
+        # A^T A = I − ρ(W+W^T) + ρ² W^T W  (SPD for any valid ρ).
+        # When CHOLMOD is available, the sampler uses this instead of
+        # ``splu`` (UMFPACK) to avoid Apple Accelerate BLAS deadlocks
+        # on macOS under concurrent process access.
+        #
+        # IMPORTANT: We pass the *pattern matrix* (a sparse CSC matrix)
+        # to the worker, NOT a CholmodFactor object.  Creating a
+        # CholmodFactor in the parent process calls CHOLMOD/BLAS, which
+        # accumulates state across many fit() calls and eventually
+        # causes deadlocks on macOS.  The worker creates the
+        # CholmodFactor from the pattern matrix on its side.
+        from ...samplers.negbin_reduced._core import _make_cholmod_pattern
+
+        if has_cholmod():
+            W_sym, WtW, pattern = _make_cholmod_pattern(W_csc, n)
+            cholmod_pattern = pattern
+        else:
+            W_sym, WtW, cholmod_pattern = None, None, None
+
+        rng = np.random.default_rng(random_seed)
+        chain_seeds = [int(s) for s in rng.integers(0, 2**31, size=chains)]
+
+        # --- Smart initialization ---
+        # At high ρ, β and ρ are strongly correlated: the intercept
+        # β₀ at ρ = 0.8 is much smaller than at ρ = 0 because the
+        # spatial multiplier (I − ρW)⁻¹ amplifies Xβ.  Starting the
+        # chain at (ρ ≈ 0, β ≈ 0) places it in a completely wrong
+        # mode that the Gibbs sampler cannot escape.
+        #
+        # We use a profile-log-likelihood initialisation on log(y+0.5):
+        #   1. For each ρ on a coarse grid, compute
+        #      X̃ = (I − ρW)⁻¹ X and OLS β̂ = (X̃ᵀX̃)⁻¹ X̃ᵀ log(y)
+        #   2. Pick the (ρ, β) that maximises the Gaussian log-lik
+        #   3. Estimate α from method-of-moments on Pearson residuals
+        _log_y = np.log(self._y + 0.5)
+        _rho_grid = np.arange(0.05, 0.96, 0.05)
+        _best_rho, _best_beta, _best_ll = 0.0, np.zeros(k), -np.inf
+        for _rho_g in _rho_grid:
+            try:
+                _A_g = sp.eye(n, format="csc") - _rho_g * W_csc
+                _Xtilde_g = sp.linalg.spsolve(_A_g, X)
+                _beta_g = np.linalg.lstsq(_Xtilde_g, _log_y, rcond=None)[0]
+                _eta_g = _Xtilde_g @ _beta_g
+                _sig2_g = float(np.mean((_log_y - _eta_g) ** 2))
+                _ll_g = -0.5 * n * np.log(_sig2_g) - 0.5 * n
+                if _ll_g > _best_ll:
+                    _best_ll = _ll_g
+                    _best_rho = _rho_g
+                    _best_beta = _beta_g.copy()
+            except Exception:
+                pass
+        _rho_init_mle = float(np.clip(_best_rho, rho_lower + 0.05, rho_upper - 0.05))
+        _beta_init_mle = _best_beta
+        # Estimate α from the Pearson dispersion of the Gaussian fit
+        # on log(y).  The residual variance σ² from the profile
+        # log-likelihood gives the dispersion on the log scale.
+        # For NB data: Var(log y) ≈ 1/α + 1/(2μ) (delta method), so
+        # α ≈ 1/σ² when μ is large.  Cap at a reasonable range.
+        try:
+            _A_init = sp.eye(n, format="csc") - _rho_init_mle * W_csc
+            _Xtilde_init = sp.linalg.spsolve(_A_init, X)
+            _eta_init = _Xtilde_init @ _beta_init_mle
+            _resid2 = float(np.mean((_log_y - _eta_init) ** 2))
+            _alpha_init_mle = float(np.clip(1.0 / max(_resid2, 0.01), 0.5, 50.0))
+        except Exception:
+            _alpha_init_mle = 1.0
+
+        def _run_one_chain(chain_id, seed, progress_manager=None, chain_id_kw=None):
+            chain_rng = np.random.default_rng(seed)
+            # Jitter around the profile-loglik estimates.
+            # Use a smaller jitter for ρ than for β because the
+            # posterior is extremely peaked in ρ at high spatial
+            # autocorrelation, and a large ρ jitter can push the
+            # chain into a wrong mode that the Gibbs sampler
+            # cannot escape.
+            _rho_jitter = min(init_jitter, 0.02)
+            beta_init = _beta_init_mle + init_jitter * chain_rng.standard_normal(k)
+            rho_init = float(
+                np.clip(
+                    _rho_init_mle + _rho_jitter * chain_rng.standard_normal(),
+                    rho_lower + 0.01,
+                    rho_upper - 0.01,
+                )
+            )
+            alpha_init = float(
+                np.clip(
+                    _alpha_init_mle * np.exp(init_jitter * chain_rng.standard_normal()),
+                    0.05,
+                    50.0,
+                )
+            )
+            omega_init = 0.25 * np.ones(n, dtype=np.float64)
+            init = ReducedGibbsState(
+                beta=beta_init,
+                rho=rho_init,
+                alpha=alpha_init,
+                omega=omega_init,
+            )
+            cache = ReducedGibbsCache(
+                W_sparse=W_csr,
+                W_csc=W_csc,
+                rho_lower=rho_lower,
+                rho_upper=rho_upper,
+                rho_adaptive_width=True,
+                rho_slice_width_state=SliceWidthState(w=0.2),
+                krylov_degree=krylov_degree,
+                krylov_dmax=krylov_dmax,
+                cholmod_pattern=cholmod_pattern,
+                W_sym=W_sym,
+                WtW=WtW,
+                W_eig_max=W_eig_max,
+                W_eig_min=W_eig_min,
+                n_rho_omega_cycles=n_rho_omega_cycles,
+            )
+            return run_chain(
+                y=self._y,
+                X=X,
+                W_sparse=W_csr,
+                priors=priors,
+                cache=cache,
+                init=init,
+                draws=draws,
+                tune=tune,
+                thin=thin,
+                rng=chain_rng,
+                chain_id=chain_id_kw if chain_id_kw is not None else chain_id,
+                progress_manager=progress_manager,
+            )
+
+        chain_samples = run_chains(
+            chain_fn=_run_one_chain,
+            n_chains=chains,
+            seeds=chain_seeds,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            parallel=(n_jobs != 1),
             draws=draws,
             tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
+            model_type="sar_negbin",
+            timeout=timeout,
         )
+
+        # Stack chains: each entry → (chains, draws, ...)
+        stacked = {
+            "rho": np.stack([s["rho"] for s in chain_samples], axis=0),
+            "beta": np.stack([s["beta"] for s in chain_samples], axis=0),
+            "alpha": np.stack([s["alpha"] for s in chain_samples], axis=0),
+        }
+        log_lik = np.stack([s["log_lik"] for s in chain_samples], axis=0)
+
+        idata = gibbs_to_inference_data(
+            posterior_samples=stacked,
+            log_likelihood={"obs": log_lik},
+            observed_data={"obs": self._y_int},
+            coords={
+                "coefficient": list(self._feature_names),
+                "obs_id": list(range(n)),
+            },
+            dims={
+                "beta": ["coefficient"],
+                "obs": ["obs_id"],
+            },
+        )
+        self._idata = idata
         return idata
 
+    # ------------------------------------------------------------------
+    # Posterior-mean fitted values
+    # ------------------------------------------------------------------
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        r"""Posterior-mean fitted expected counts.
+
+        Computes :math:`\exp(\eta)` where
+        :math:`\eta = (I - \rho W)^{-1} X\beta` at the posterior means of
+        :math:`\rho` and :math:`\beta`.  There is no :math:`\sigma z`
+        term because the reduced form has no latent random effect.
+        """
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        n = self._X.shape[0]
+        A = sp.eye(n, format="csr", dtype=np.float64) - rho * self._W_sparse
+        eta = sp.linalg.spsolve(A, self._X @ beta)
+        return np.exp(eta)
+
+    # ------------------------------------------------------------------
+    # Spatial effects (log-mean and count scales)
+    # ------------------------------------------------------------------
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         """Compute average direct/indirect/total impacts on the log-mean scale."""
         rho = float(self._posterior_mean("rho"))
@@ -221,14 +670,6 @@ class SARNegativeBinomial(SpatialModel):
         indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
-
-    #: Threshold above which count-scale spatial effects use the sparse
-    #: Hutchinson path instead of the eigendecomposition path.  The eigen
-    #: path materialises three n×n complex128 matrices (V, V⁻¹, eigenvalues)
-    #: costing ~24n² bytes and O(n³) decomposition time.  For n > 2000 this
-    #: becomes prohibitive.  The sparse path uses O(nnz) per draw with
-    #: Hutchinson diagonal estimation.
-    _COUNT_EFFECTS_EIGEN_MAX_N: int = 2000
 
     def _compute_count_scale_spatial_effects_posterior(
         self,
@@ -379,27 +820,26 @@ class SARNegativeBinomial(SpatialModel):
         Parameters
         ----------
         A_solve : callable
-            Function ``(b) -> A^{-1} b`` where b is (n,).
+            Function that takes a vector or matrix ``b`` and returns
+            :math:`A^{-1} b`.
         n : int
-            Dimension of the matrix.
-        n_probes : int
+            Dimension of ``A``.
+        n_probes : int, default 20
             Number of Rademacher probe vectors.
-        rng : numpy random Generator, optional
-            Random state for reproducibility.
+        rng : numpy.random.Generator, optional
+            Random number generator.  If ``None``, a default generator
+            with seed 42 is used for reproducibility.
 
         Returns
         -------
-        np.ndarray, shape (n,)
+        numpy.ndarray, shape (n,)
             Estimated diagonal of :math:`A^{-1}`.
         """
         if rng is None:
-            rng = np.random.default_rng()
-        diag_est = np.zeros(n, dtype=np.float64)
-        for _ in range(n_probes):
-            z = rng.choice(np.array([-1.0, 1.0]), size=n)
-            Az = A_solve(z)
-            diag_est += z * Az
-        return diag_est / n_probes
+            rng = np.random.default_rng(42)
+        Z = rng.choice(np.array([-1.0, 1.0]), size=(n, n_probes))
+        AinvZ = np.asarray(A_solve(Z), dtype=np.float64)
+        return np.mean(Z * AinvZ, axis=1)
 
     def _compute_count_scale_spatial_effects_posterior_sparse(
         self,
@@ -421,16 +861,13 @@ class SARNegativeBinomial(SpatialModel):
           the optional row-sum vector :math:`\mathbf{1}`, and the
           Hutchinson probe matrix :math:`Z \in \{-1, +1\}^{n \times K}` are
           stacked into a single ``(n, 22)`` RHS and resolved with one
-          ``solver.solve`` call per draw. This collapses the prior
-          Python-level loop of 22 sequential solves into one C-level call
-          and lets UMFPACK / SuperLU batch the triangular sweeps.
+          ``solver.solve`` call per draw.
         - Hutchinson diagonal estimator for :math:`\operatorname{diag}(A^{-1})`.
         - Closed-form :math:`1/(1-\rho)` row sums for row-standardised :math:`W`,
           one extra sparse solve otherwise.
 
         Complexity is one LU factor plus a single batched triangular solve
-        per draw — orders of magnitude cheaper than the prior code path,
-        which re-factorised :math:`A` on every probe.
+        per draw.
 
         Parameters
         ----------
@@ -456,11 +893,7 @@ class SARNegativeBinomial(SpatialModel):
         n_probes = 20
 
         # Pre-sample all Hutchinson probes up front so the per-draw RHS
-        # assembly is purely vectorised.  Using a single Z matrix across
-        # draws is statistically valid (each row of `direct_samples` is
-        # still an unbiased estimate; the across-draw correlation does
-        # not bias the posterior mean of impacts) and removes RNG calls
-        # from the hot loop.
+        # assembly is purely vectorised.
         Z = rng.choice(
             np.array([-1.0, 1.0], dtype=np.float64),
             size=(n, n_probes),
@@ -590,20 +1023,3 @@ class SARNegativeBinomial(SpatialModel):
             }
             return df, posterior_samples
         return df
-
-    def _fitted_mean_from_posterior(self) -> np.ndarray:
-        """Posterior-mean fitted expected counts.
-
-        Computes ``exp(eta)`` where ``eta = (I - rho*W)^{-1} (X @ beta + sigma * z)``
-        at the posterior means of ``rho``, ``beta``, ``sigma``, and ``z``.
-        """
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        sigma = float(self._posterior_mean("sigma"))
-        z = self._posterior_mean("z")
-        Xbeta = self._X @ beta
-        rhs = Xbeta + sigma * z
-        n = self._X.shape[0]
-        A = sp.eye(n, format="csr", dtype=np.float64) - rho * self._W_sparse
-        eta = sp.linalg.spsolve(A, rhs)
-        return np.exp(eta)

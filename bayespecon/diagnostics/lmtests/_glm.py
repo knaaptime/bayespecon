@@ -63,7 +63,6 @@ def _pg_mean_weight(psi: np.ndarray, b: np.ndarray | float) -> np.ndarray:
     """
     psi = np.asarray(psi, dtype=np.float64)
     b_arr = np.asarray(b, dtype=np.float64)
-    # Broadcast b to psi shape.
     b_arr = np.broadcast_to(b_arr, psi.shape)
     half = 0.5 * psi
     small = np.abs(psi) < 1e-6
@@ -74,7 +73,7 @@ def _pg_mean_weight(psi: np.ndarray, b: np.ndarray | float) -> np.ndarray:
     if np.any(small):
         x2 = half[small] ** 2
         w_small = 0.25 * b_arr[small] * (1.0 - x2 / 3.0 + 2.0 * x2 * x2 / 15.0)
-        w = np.where(small, w_small, w)
+        w[small] = w_small
     return w
 
 

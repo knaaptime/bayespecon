@@ -5,11 +5,11 @@ dispatch for the 3-block Gaussian Gibbs sampler (β, σ², ρ/λ).
 
 Two execution backends are supported:
 
-- ``gibbs_method="numpy"`` (default): Python-loop Gibbs with adaptive
+- ``gibbs_method="jax"`` (default): Full-JIT Gibbs with
+  slice sampling for ρ/λ.  Requires JAX and equinox.
+  Falls back to ``"numpy"`` when JAX is not installed.
+- ``gibbs_method="numpy"``: Python-loop Gibbs with adaptive
   slice sampling for ρ/λ.  No JAX dependency.
-- ``gibbs_method="jax"``: Full-JIT Gibbs with MALA for ρ/λ.  Requires
-  JAX and equinox.  Faster per-iteration but has JIT compilation
-  overhead on the first call.
 
 Subclasses implement model-specific logic:
 - ``_spatial_param_name()``: "rho" or "lam"
@@ -104,7 +104,7 @@ class GibbsEstimation:
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
+        gibbs_method: str = "jax",
         mala_step_size: float = 0.05,
         use_mala: bool = True,
         use_slice: bool = True,
@@ -133,10 +133,11 @@ class GibbsEstimation:
             Ignored for the JAX path (use ``chain_method`` instead).
         progressbar : bool, default True
             Show per-chain progress bars.
-        gibbs_method : str, default "numpy"
-            Execution backend: ``"numpy"`` for Python-loop Gibbs with
-            adaptive slice sampling, or ``"jax"`` for full-JIT Gibbs
-            with MALA for ρ/λ.  The JAX path requires JAX and equinox.
+        gibbs_method : str, default "jax"
+            Execution backend: ``"jax"`` for full-JIT Gibbs with
+            slice sampling for ρ/λ (default, falls back to ``"numpy"``
+            when JAX is not installed), or ``"numpy"`` for Python-loop
+            Gibbs with adaptive slice sampling.
         mala_step_size : float, default 0.05
             Initial MALA step size (or RW-MH proposal sd) for the
             JAX path.  Ignored when ``gibbs_method="numpy"``.
@@ -500,6 +501,36 @@ class GibbsEstimation:
         XtX = self.X.T @ self.X
         XtX_cho = cho_factor(XtX)
 
+        # Precompute Wy for all model types (SAR uses it directly,
+        # SEM/SDEM use it for sigma2 and collapsed density)
+        Wy = self.Wy if self.Wy is not None else self.W_sparse @ self.y
+
+        # Precompute WX, XtWX, WXtWX for SEM/SDEM models
+        # These avoid repeated sparse matrix-vector products in the hot loop
+        WX = None
+        XtWX = None
+        WXtWX = None
+        # SEM/SDEM inner products for O(k) collapsed density
+        yty = None
+        yTWy = None
+        WyTWy = None
+        XTy = None
+        XTWy = None
+        WXTy = None
+        WXTWy = None
+        if self.model_type in ("sem", "sdem"):
+            WX = self.W_sparse @ self.X  # (n, k)
+            XtWX = self.X.T @ WX  # (k, k)
+            WXtWX = WX.T @ WX  # (k, k)
+            # Precompute inner products for O(k) collapsed density
+            yty = float(self.y @ self.y)
+            yTWy = float(self.y @ Wy)
+            WyTWy = float(Wy @ Wy)
+            XTy = self.X.T @ self.y  # (k,)
+            XTWy = self.X.T @ Wy  # (k,)
+            WXTy = WX.T @ self.y  # (k,)
+            WXTWy = WX.T @ Wy  # (k,)
+
         return GaussianGibbsCache(
             XtX=XtX,
             XtX_cho=XtX_cho,
@@ -508,8 +539,18 @@ class GibbsEstimation:
             rho_lower=self.priors.rho_lower,
             rho_upper=self.priors.rho_upper,
             model_type=self.model_type,
-            Wy=self.Wy,
+            Wy=Wy,
             W_sparse=self.W_sparse,
+            WX=WX,
+            XtWX=XtWX,
+            WXtWX=WXtWX,
+            yty=yty,
+            yTWy=yTWy,
+            WyTWy=WyTWy,
+            XTy=XTy,
+            XTWy=XTWy,
+            WXTy=WXTy,
+            WXTWy=WXTWy,
         )
 
     def _assemble_idata(

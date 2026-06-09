@@ -9,6 +9,7 @@ import scipy.sparse as sp
 from bayespecon.samplers._utils._spatial_normal import (
     CholmodFactor,
     has_cholmod,
+    iterative_solve,
     sample_spatial_normal,
 )
 
@@ -209,3 +210,138 @@ class TestSampleSpatialNormal:
     @pytest.fixture
     def rng(self):
         return np.random.default_rng(42)
+
+
+class TestIterativeSolve:
+    """Tests for CG-based iterative_solve (multi-RHS spatial solve)."""
+
+    def test_single_rhs_diagonal(self):
+        """CG solve matches direct solve for diagonal SPD system."""
+        A = sp.diags([1.0, 2.0, 3.0, 4.0, 5.0], 0, format="csr")
+        b = np.ones(5)
+        x = iterative_solve(A, b, lambda_min=1.0, lambda_max=5.0)
+        x_exact = sp.linalg.spsolve(A, b)
+        np.testing.assert_allclose(x, x_exact, atol=1e-10)
+
+    def test_multi_rhs_diagonal(self):
+        """CG solve matches direct solve for multi-RHS diagonal system."""
+        A = sp.diags([1.0, 2.0, 3.0, 4.0, 5.0], 0, format="csr")
+        X = np.column_stack([np.ones(5), 2.0 * np.ones(5), np.arange(5.0)])
+        U = iterative_solve(A, X, lambda_min=1.0, lambda_max=5.0)
+        U_exact = sp.linalg.spsolve(A, X)
+        np.testing.assert_allclose(U, U_exact, atol=1e-10)
+
+    def test_spatial_weights_moderate_rho(self):
+        """CG solve matches direct solve for A_ρ = I − 0.5W."""
+        from libpysal.weights import lat2W
+
+        W = lat2W(7, 7)
+        W_arr = W.sparse.toarray()
+        row_sums = W_arr.sum(axis=1, keepdims=True)
+        W_std = W_arr / np.where(row_sums == 0, 1, row_sums)
+        W_sparse = sp.csr_matrix(W_std)
+        n = W_sparse.shape[0]
+        rho = 0.5
+
+        A_rho = sp.eye(n) - rho * W_sparse
+        eigs = np.linalg.eigvalsh(W_std)
+        lam_min = min(1 - rho * eigs.max(), 1 - rho * eigs.min())
+        lam_max = max(1 - rho * eigs.max(), 1 - rho * eigs.min())
+
+        b = np.ones(n)
+        x = iterative_solve(A_rho, b, lambda_min=lam_min, lambda_max=lam_max)
+        x_exact = sp.linalg.spsolve(A_rho, b)
+        np.testing.assert_allclose(x, x_exact, atol=1e-8)
+
+    def test_spatial_weights_high_rho(self):
+        """CG solve matches direct solve for A_ρ = I − 0.9W."""
+        from libpysal.weights import lat2W
+
+        W = lat2W(7, 7)
+        W_arr = W.sparse.toarray()
+        row_sums = W_arr.sum(axis=1, keepdims=True)
+        W_std = W_arr / np.where(row_sums == 0, 1, row_sums)
+        W_sparse = sp.csr_matrix(W_std)
+        n = W_sparse.shape[0]
+        rho = 0.9
+
+        A_rho = sp.eye(n) - rho * W_sparse
+        eigs = np.linalg.eigvalsh(W_std)
+        lam_min = min(1 - rho * eigs.max(), 1 - rho * eigs.min())
+        lam_max = max(1 - rho * eigs.max(), 1 - rho * eigs.min())
+
+        b = np.ones(n)
+        x = iterative_solve(A_rho, b, lambda_min=lam_min, lambda_max=lam_max)
+        x_exact = sp.linalg.spsolve(A_rho, b)
+        np.testing.assert_allclose(x, x_exact, atol=1e-6)
+
+    def test_linear_operator(self):
+        """CG solve works with LinearOperator (no explicit matrix)."""
+        from libpysal.weights import lat2W
+
+        W = lat2W(5, 5)
+        W_arr = W.sparse.toarray()
+        row_sums = W_arr.sum(axis=1, keepdims=True)
+        W_std = W_arr / np.where(row_sums == 0, 1, row_sums)
+        W_csc = sp.csc_matrix(W_std)
+        n = W_csc.shape[0]
+        rho = 0.5
+
+        A_op = sp.linalg.LinearOperator((n, n), matvec=lambda v: v - rho * (W_csc @ v))
+        eigs = np.linalg.eigvalsh(W_std)
+        lam_min = min(1 - rho * eigs.max(), 1 - rho * eigs.min())
+        lam_max = max(1 - rho * eigs.max(), 1 - rho * eigs.min())
+
+        b = np.ones(n)
+        x = iterative_solve(A_op, b, lambda_min=lam_min, lambda_max=lam_max)
+        A_rho = sp.eye(n) - rho * W_csc
+        x_exact = sp.linalg.spsolve(A_rho, b)
+        np.testing.assert_allclose(x, x_exact, atol=1e-8)
+
+    def test_multi_rhs_spatial(self):
+        """CG solve matches direct solve for multi-RHS spatial system."""
+        from libpysal.weights import lat2W
+
+        W = lat2W(5, 5)
+        W_arr = W.sparse.toarray()
+        row_sums = W_arr.sum(axis=1, keepdims=True)
+        W_std = W_arr / np.where(row_sums == 0, 1, row_sums)
+        W_sparse = sp.csr_matrix(W_std)
+        n = W_sparse.shape[0]
+        rho = 0.7
+
+        A_rho = sp.eye(n) - rho * W_sparse
+        eigs = np.linalg.eigvalsh(W_std)
+        lam_min = min(1 - rho * eigs.max(), 1 - rho * eigs.min())
+        lam_max = max(1 - rho * eigs.max(), 1 - rho * eigs.min())
+
+        k = 3
+        X = np.column_stack([np.ones(n), np.arange(n, dtype=float), rng_vals(n)])
+        U = iterative_solve(A_rho, X, lambda_min=lam_min, lambda_max=lam_max)
+        U_exact = sp.linalg.spsolve(A_rho, X)
+        np.testing.assert_allclose(U, U_exact, atol=1e-4)
+
+    def test_invalid_eigenvalue_bounds(self):
+        """Non-SPD bounds raise ValueError."""
+        A = sp.eye(5, format="csr")
+        b = np.ones(5)
+        with pytest.raises(ValueError, match="lambda_min must be positive"):
+            iterative_solve(A, b, lambda_min=-1.0, lambda_max=2.0)
+        with pytest.raises(ValueError, match="lambda_max.*must be >= lambda_min"):
+            iterative_solve(A, b, lambda_min=2.0, lambda_max=1.0)
+
+    def test_degenerate_identity(self):
+        """lambda_min == lambda_max (A = scalar * I) returns trivial solution."""
+        A = sp.eye(5, format="csr")
+        b = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        x = iterative_solve(A, b, lambda_min=1.0, lambda_max=1.0)
+        np.testing.assert_allclose(x, b)
+        # Multi-RHS
+        X = np.ones((5, 3))
+        U = iterative_solve(A, X, lambda_min=1.0, lambda_max=1.0)
+        np.testing.assert_allclose(U, X)
+
+
+def rng_vals(n):
+    """Deterministic test values."""
+    return np.random.default_rng(123).standard_normal(n)

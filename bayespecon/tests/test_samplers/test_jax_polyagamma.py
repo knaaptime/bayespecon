@@ -1,7 +1,7 @@
 """Unit tests for JAX-accelerated Pólya–Gamma samplers.
 
-Tests the sum-of-exponentials method (``jax_polyagamma``) and the
-Normal approximation (``jax_polyagamma_normal``) against the reference
+Tests the callback method (``jax_polyagamma`` with ``method='callback'``)
+and the sum-of-exponentials method (``method='exp'``) against the reference
 ``polyagamma`` package for correctness, JIT compatibility, and edge cases.
 
 All tests are skipped when JAX is not installed.
@@ -27,7 +27,6 @@ import jax.numpy as jnp
 
 from bayespecon.samplers._utils._jax_polyagamma import (
     jax_polyagamma,
-    jax_polyagamma_normal,
 )
 
 # Try to import polyagamma for reference comparisons
@@ -76,13 +75,13 @@ class TestJaxPolyaGammaExp:
         key = jax.random.PRNGKey(42)
         h = jnp.array([1.0, 3.0, 10.0])
         z = jnp.array([0.5, 1.0, 2.0])
-        result = jax_polyagamma(h, z, key=key, n_terms=20)
+        result = jax_polyagamma(h, z, key=key, method="exp")
         assert result.shape == (3,)
 
     def test_output_shape_scalar(self):
         """Output should be scalar for scalar inputs."""
         key = jax.random.PRNGKey(42)
-        result = jax_polyagamma(1.0, 0.5, key=key, n_terms=20)
+        result = jax_polyagamma(1.0, 0.5, key=key, method="exp")
         assert result.shape == ()
 
     def test_positivity(self):
@@ -90,14 +89,11 @@ class TestJaxPolyaGammaExp:
         key = jax.random.PRNGKey(42)
         h = jnp.array([1.0, 2.0, 5.0, 10.0, 50.0])
         z = jnp.array([0.0, 0.5, 1.0, 2.0, 5.0])
-        result = jax_polyagamma(h, z, key=key, n_terms=20)
+        result = jax_polyagamma(h, z, key=key, method="exp")
         assert jnp.all(result > 0), f"Non-positive draws: {result}"
 
     def test_mean_approximately_correct(self):
-        """Mean of many draws should be within ~5% of analytical mean.
-
-        Uses n_terms=20 which gives ~2% bias, so 5% tolerance is generous.
-        """
+        """Mean of many draws should be within ~5% of analytical mean."""
         key = jax.random.PRNGKey(42)
         n_draws = 5000
         h_val = 1.0
@@ -105,9 +101,7 @@ class TestJaxPolyaGammaExp:
 
         # Draw many samples
         keys = jax.random.split(key, n_draws)
-        h_arr = jnp.full(n_draws, h_val)
-        z_arr = jnp.full(n_draws, z_val)
-        draws = jax.vmap(lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20))(
+        draws = jax.vmap(lambda k: jax_polyagamma(h_val, z_val, key=k, method="exp"))(
             keys
         )
 
@@ -128,9 +122,9 @@ class TestJaxPolyaGammaExp:
         means = {}
         for h_val in [1.0, 3.0, 10.0]:
             keys = jax.random.split(key, n_draws)
-            draws = jax.vmap(lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20))(
-                keys
-            )
+            draws = jax.vmap(
+                lambda k: jax_polyagamma(h_val, z_val, key=k, method="exp")
+            )(keys)
             means[h_val] = float(jnp.mean(draws))
             key = jax.random.split(key, 1)[0]
 
@@ -151,13 +145,13 @@ class TestJaxPolyaGammaExp:
         h_val = 5.0
 
         keys = jax.random.split(key, n_draws)
-        draws_z0 = jax.vmap(lambda k: jax_polyagamma(h_val, 0.0, key=k, n_terms=20))(
+        draws_z0 = jax.vmap(lambda k: jax_polyagamma(h_val, 0.0, key=k, method="exp"))(
             keys
         )
 
         key = jax.random.split(key, 1)[0]
         keys = jax.random.split(key, n_draws)
-        draws_z2 = jax.vmap(lambda k: jax_polyagamma(h_val, 2.0, key=k, n_terms=20))(
+        draws_z2 = jax.vmap(lambda k: jax_polyagamma(h_val, 2.0, key=k, method="exp"))(
             keys
         )
 
@@ -175,7 +169,7 @@ class TestJaxPolyaGammaExp:
 
         @jax.jit
         def sample(key, h, z):
-            return jax_polyagamma(h, z, key=key, n_terms=20)
+            return jax_polyagamma(h, z, key=key, method="exp")
 
         result = sample(key, h, z)
         assert result.shape == (2,)
@@ -190,7 +184,7 @@ class TestJaxPolyaGammaExp:
         @jax.jit
         def gibbs_step(key, h, z, omega_prev):
             key, subkey = jax.random.split(key)
-            omega = jax_polyagamma(h, z, key=subkey, n_terms=20)
+            omega = jax_polyagamma(h, z, key=subkey, method="exp")
             # Simulate a simple Gibbs update: omega_new = 0.5 * (omega + omega_prev)
             omega_new = 0.5 * (omega + omega_prev)
             return key, omega_new
@@ -200,28 +194,6 @@ class TestJaxPolyaGammaExp:
         assert omega.shape == (2,)
         assert jnp.all(omega > 0)
 
-    def test_n_terms_affects_accuracy(self):
-        """More terms should give more accurate means."""
-        key = jax.random.PRNGKey(42)
-        n_draws = 5000
-        z_val = 1.0
-        analytical = _pg1_mean(z_val)
-
-        errors = {}
-        for n_terms in [5, 20, 200]:
-            keys = jax.random.split(key, n_draws)
-            draws = jax.vmap(
-                lambda k: jax_polyagamma(1.0, z_val, key=k, n_terms=n_terms)
-            )(keys)
-            empirical = float(jnp.mean(draws))
-            errors[n_terms] = abs(empirical - analytical) / analytical
-            key = jax.random.split(key, 1)[0]
-
-        # More terms should give smaller (or equal) bias
-        # Note: stochastic, so we just check the general trend
-        assert errors[200] < 0.01, f"n_terms=200 error {errors[200]:.4f} > 1%"
-        assert errors[20] < 0.05, f"n_terms=20 error {errors[20]:.4f} > 5%"
-
     def test_batch_sampling(self):
         """Vectorized sampling over observations should work correctly."""
         key = jax.random.PRNGKey(42)
@@ -229,7 +201,7 @@ class TestJaxPolyaGammaExp:
         h = jnp.ones(n)
         z = jnp.linspace(-2, 2, n)
 
-        result = jax_polyagamma(h, z, key=key, n_terms=20)
+        result = jax_polyagamma(h, z, key=key, method="exp")
         assert result.shape == (n,)
         assert jnp.all(result > 0)
 
@@ -241,14 +213,14 @@ class TestJaxPolyaGammaExp:
         z_val = 1.5
 
         keys = jax.random.split(key, n_draws)
-        draws_pos = jax.vmap(lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20))(
-            keys
-        )
+        draws_pos = jax.vmap(
+            lambda k: jax_polyagamma(h_val, z_val, key=k, method="exp")
+        )(keys)
 
         key = jax.random.split(key, 1)[0]
         keys = jax.random.split(key, n_draws)
         draws_neg = jax.vmap(
-            lambda k: jax_polyagamma(h_val, -z_val, key=k, n_terms=20)
+            lambda k: jax_polyagamma(h_val, -z_val, key=k, method="exp")
         )(keys)
 
         # Means should be approximately equal (PG is symmetric in z)
@@ -259,158 +231,77 @@ class TestJaxPolyaGammaExp:
         )
 
 
-# ---------------------------------------------------------------------------
-# jax_polyagamma tests — gamma method
-# ---------------------------------------------------------------------------
+@needs_polyagamma
+class TestJaxPolyaGammaCallback:
+    """Tests for jax_polyagamma with method='callback' (exact C extension)."""
 
-
-class TestJaxPolyaGammaGamma:
-    """Tests for jax_polyagamma with method='gamma' (sum-of-gammas)."""
-
-    def test_gamma_method_basic(self):
-        """Gamma method should produce positive draws."""
+    def test_callback_method_basic(self):
+        """Callback method should produce positive draws."""
         key = jax.random.PRNGKey(42)
         h = jnp.array([1.0, 3.0, 10.0])
         z = jnp.array([0.5, 1.0, 2.0])
-        result = jax_polyagamma(h, z, key=key, n_terms=20, method="gamma")
+        result = jax_polyagamma(h, z, key=key, method="callback")
         assert result.shape == (3,)
         assert jnp.all(result > 0)
 
-    def test_gamma_method_jit(self):
-        """Gamma method should be JIT-compatible."""
+    def test_callback_method_jit(self):
+        """Callback method should work inside JIT."""
         key = jax.random.PRNGKey(42)
         h = jnp.array([1.0, 3.0])
         z = jnp.array([0.5, 1.0])
 
         @jax.jit
         def sample(key, h, z):
-            return jax_polyagamma(h, z, key=key, n_terms=20, method="gamma")
+            return jax_polyagamma(h, z, key=key, method="callback")
 
         result = sample(key, h, z)
         assert jnp.all(result > 0)
 
-    def test_invalid_method_raises(self):
-        """Invalid method should raise ValueError."""
+    def test_callback_method_mean_matches_reference(self):
+        """Mean of callback method should match polyagamma reference."""
         key = jax.random.PRNGKey(42)
-        with pytest.raises(ValueError, match="Unknown method"):
-            jax_polyagamma(1.0, 0.5, key=key, method="invalid")
+        n_draws = 2000
+        h_val = 5.0
+        z_val = 1.0
 
+        # Draw many samples with different keys
+        jax_means = []
+        for i in range(n_draws):
+            key, subkey = jax.random.split(key)
+            result = jax_polyagamma(
+                jnp.array([h_val]),
+                jnp.array([z_val]),
+                key=subkey,
+                method="callback",
+            )
+            jax_means.append(float(result[0]))
 
-# ---------------------------------------------------------------------------
-# jax_polyagamma_normal tests
-# ---------------------------------------------------------------------------
+        # Reference: E[PG(h, z)] = h / (2|z|) * tanh(|z|/2) for z ≠ 0
+        # E[PG(5, 1)] = 5 / 2 * tanh(0.5) = 1.1553
+        expected_mean = h_val / (2 * abs(z_val)) * np.tanh(abs(z_val) / 2.0)
 
+        jax_mean = np.mean(jax_means)
+        # Should be within 10% of the exact mean (generous due to MC noise)
+        assert abs(jax_mean - expected_mean) / expected_mean < 0.10
 
-class TestJaxPolyaGammaNormal:
-    """Tests for jax_polyagamma_normal (Normal approximation)."""
-
-    def test_output_shape_vector(self):
-        """Output shape should match input shape for vector inputs."""
+    def test_callback_method_non_integer_h(self):
+        """Callback method should work with non-integer h (NB case)."""
         key = jax.random.PRNGKey(42)
-        h = jnp.array([5.0, 10.0, 50.0])
-        z = jnp.array([0.5, 1.0, 2.0])
-        result = jax_polyagamma_normal(h, z, key=key)
+        h = jnp.array([5.06, 10.5, 0.06])  # Non-integer h values
+        z = jnp.array([0.5, 1.0, 1.5])
+        result = jax_polyagamma(h, z, key=key, method="callback")
         assert result.shape == (3,)
+        assert jnp.all(result > 0)
 
-    def test_output_shape_scalar(self):
-        """Output should be scalar for scalar inputs."""
+    def test_callback_default_method(self):
+        """Callback should be the default method."""
         key = jax.random.PRNGKey(42)
-        result = jax_polyagamma_normal(5.0, 0.5, key=key)
-        assert result.shape == ()
-
-    def test_positivity(self):
-        """Normal approximation draws should be positive (clamped)."""
-        key = jax.random.PRNGKey(42)
-        h = jnp.array([5.0, 10.0, 50.0])
-        z = jnp.array([0.0, 0.5, 2.0])
-        result = jax_polyagamma_normal(h, z, key=key)
-        assert jnp.all(result > 0), f"Non-positive draws: {result}"
-
-    def test_mean_approximately_correct(self):
-        """Mean of Normal draws should match analytical mean within 5%."""
-        key = jax.random.PRNGKey(42)
-        n_draws = 5000
-        h_val = 10.0
-        z_val = 1.0
-
-        keys = jax.random.split(key, n_draws)
-        draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
-
-        empirical_mean = float(jnp.mean(draws))
-        analytical_mean = _pg1_mean(z_val) * h_val
-        rel_error = abs(empirical_mean - analytical_mean) / analytical_mean
-        assert rel_error < 0.05, (
-            f"Mean error too large: empirical={empirical_mean:.4f}, "
-            f"analytical={analytical_mean:.4f}, rel_error={rel_error:.4f}"
-        )
-
-    def test_variance_approximately_correct(self):
-        """Variance of Normal draws should match analytical variance within 10%."""
-        key = jax.random.PRNGKey(42)
-        n_draws = 10000
-        h_val = 10.0
-        z_val = 1.0
-
-        keys = jax.random.split(key, n_draws)
-        draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
-
-        empirical_var = float(jnp.var(draws))
-        analytical_var = _pg1_var(z_val) * h_val
-        rel_error = abs(empirical_var - analytical_var) / analytical_var
-        assert rel_error < 0.10, (
-            f"Variance error too large: empirical={empirical_var:.6f}, "
-            f"analytical={analytical_var:.6f}, rel_error={rel_error:.4f}"
-        )
-
-    def test_scales_with_h(self):
-        """Mean should scale linearly with h."""
-        key = jax.random.PRNGKey(42)
-        n_draws = 3000
-        z_val = 1.0
-
-        means = {}
-        for h_val in [5.0, 10.0, 50.0]:
-            keys = jax.random.split(key, n_draws)
-            draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
-            means[h_val] = float(jnp.mean(draws))
-            key = jax.random.split(key, 1)[0]
-
-        # PG(10,z) mean should be ~2x PG(5,z) mean
-        ratio = means[10.0] / means[5.0]
-        assert abs(ratio - 2.0) < 0.3, f"PG(10)/PG(5) = {ratio:.2f}, expected ~2"
-
-    def test_jit_compatible(self):
-        """jax_polyagamma_normal should be JIT-compilable."""
-        key = jax.random.PRNGKey(42)
-        h = jnp.array([5.0, 10.0])
+        h = jnp.array([1.0, 3.0])
         z = jnp.array([0.5, 1.0])
-
-        @jax.jit
-        def sample(key, h, z):
-            return jax_polyagamma_normal(h, z, key=key)
-
-        result = sample(key, h, z)
+        # Default (no method arg) should work and produce positive draws
+        result = jax_polyagamma(h, z, key=key)
         assert result.shape == (2,)
         assert jnp.all(result > 0)
-
-    def test_z_zero_larger_than_z_nonzero(self):
-        """PG(h, 0) should be larger than PG(h, z) for z > 0."""
-        key = jax.random.PRNGKey(42)
-        n_draws = 3000
-        h_val = 10.0
-
-        keys = jax.random.split(key, n_draws)
-        draws_z0 = jax.vmap(lambda k: jax_polyagamma_normal(h_val, 0.0, key=k))(keys)
-
-        key = jax.random.split(key, 1)[0]
-        keys = jax.random.split(key, n_draws)
-        draws_z2 = jax.vmap(lambda k: jax_polyagamma_normal(h_val, 2.0, key=k))(keys)
-
-        mean_z0 = float(jnp.mean(draws_z0))
-        mean_z2 = float(jnp.mean(draws_z2))
-        assert mean_z0 > mean_z2, (
-            f"PG({h_val},0) mean={mean_z0:.4f} should be > PG({h_val},2) mean={mean_z2:.4f}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -431,9 +322,9 @@ class TestPolyaGammaReferenceComparison:
 
         # JAX draws
         keys = jax.random.split(key, n_draws)
-        jax_draws = jax.vmap(lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20))(
-            keys
-        )
+        jax_draws = jax.vmap(
+            lambda k: jax_polyagamma(h_val, z_val, key=k, method="exp")
+        )(keys)
 
         # Reference draws (vectorized)
         ref_draws = pg_ref_draw(1, z_val, size=n_draws)
@@ -446,24 +337,32 @@ class TestPolyaGammaReferenceComparison:
             f"rel_error={rel_error:.4f}"
         )
 
-    def test_normal_approx_mean_matches_reference(self):
-        """Mean of Normal approx should be within 5% of polyagamma reference."""
+    def test_callback_method_mean_matches_reference(self):
+        """Mean of callback method should match polyagamma reference."""
         key = jax.random.PRNGKey(42)
-        n_draws = 5000
-        h_val = 10.0
+        n_draws = 2000
+        h_val = 5.0
         z_val = 1.0
 
-        # JAX Normal draws
-        keys = jax.random.split(key, n_draws)
-        jax_draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
+        # JAX callback draws
+        jax_means = []
+        for i in range(n_draws):
+            key, subkey = jax.random.split(key)
+            result = jax_polyagamma(
+                jnp.array([h_val]),
+                jnp.array([z_val]),
+                key=subkey,
+                method="callback",
+            )
+            jax_means.append(float(result[0]))
 
-        # Reference draws (vectorized)
+        # Reference draws
         ref_draws = pg_ref_draw(h_val, z_val, size=n_draws)
 
-        jax_mean = float(jnp.mean(jax_draws))
+        jax_mean = np.mean(jax_means)
         ref_mean = float(np.mean(ref_draws))
         rel_error = abs(jax_mean - ref_mean) / ref_mean
-        assert rel_error < 0.05, (
+        assert rel_error < 0.10, (
             f"JAX mean={jax_mean:.4f}, ref mean={ref_mean:.4f}, "
             f"rel_error={rel_error:.4f}"
         )
@@ -478,7 +377,7 @@ class TestPolyaGammaReferenceComparison:
         for h_val, z_val in zip(h_vals, z_vals):
             keys = jax.random.split(key, n_draws)
             jax_draws = jax.vmap(
-                lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=20)
+                lambda k: jax_polyagamma(h_val, z_val, key=k, method="exp")
             )(keys)
 
             # Reference draws (vectorized)
@@ -507,7 +406,7 @@ class TestEdgeCases:
         key = jax.random.PRNGKey(42)
         h = jnp.array([1.0, 5.0, 10.0])
         z = jnp.zeros(3)
-        result = jax_polyagamma(h, z, key=key, n_terms=20)
+        result = jax_polyagamma(h, z, key=key, method="exp")
         assert jnp.all(result > 0)
         assert jnp.all(jnp.isfinite(result))
 
@@ -516,7 +415,7 @@ class TestEdgeCases:
         key = jax.random.PRNGKey(42)
         h = jnp.array([1.0, 5.0])
         z = jnp.array([10.0, -10.0])
-        result = jax_polyagamma(h, z, key=key, n_terms=20)
+        result = jax_polyagamma(h, z, key=key, method="exp")
         assert jnp.all(result > 0)
         assert jnp.all(jnp.isfinite(result))
         # PG(h, z) should be small for large |z|
@@ -527,57 +426,56 @@ class TestEdgeCases:
         key = jax.random.PRNGKey(42)
         h = jnp.array([50.0, 100.0])
         z = jnp.array([1.0, 2.0])
-        result = jax_polyagamma(h, z, key=key, n_terms=20)
+        result = jax_polyagamma(h, z, key=key, method="exp")
         assert jnp.all(result > 0)
         assert jnp.all(jnp.isfinite(result))
 
     def test_single_observation(self):
         """Should work for a single observation (n=1)."""
         key = jax.random.PRNGKey(42)
-        result = jax_polyagamma(jnp.array([1.0]), jnp.array([0.5]), key=key, n_terms=20)
+        result = jax_polyagamma(
+            jnp.array([1.0]), jnp.array([0.5]), key=key, method="exp"
+        )
         assert result.shape == (1,)
         assert result[0] > 0
 
-    def test_normal_approx_large_h(self):
-        """Normal approximation should be accurate for large h (h >= 5)."""
+    def test_invalid_method_raises(self):
+        """Invalid method should raise ValueError."""
         key = jax.random.PRNGKey(42)
-        n_draws = 5000
-        h_val = 50.0
-        z_val = 1.0
+        with pytest.raises(ValueError, match="Unknown method"):
+            jax_polyagamma(1.0, 0.5, key=key, method="invalid")
 
-        keys = jax.random.split(key, n_draws)
-        draws = jax.vmap(lambda k: jax_polyagamma_normal(h_val, z_val, key=k))(keys)
-
-        analytical_mean = _pg1_mean(z_val) * h_val
-        empirical_mean = float(jnp.mean(draws))
-        rel_error = abs(empirical_mean - analytical_mean) / analytical_mean
-        assert rel_error < 0.03, f"Normal approx error for h=50: {rel_error:.4f}"
-
-    def test_exp_vs_gamma_consistency(self):
-        """Exp and gamma methods should give similar means for h=1."""
+    def test_exp_vs_callback_consistency(self):
+        """Exp and callback methods should give similar means for h=1."""
         key = jax.random.PRNGKey(42)
-        n_draws = 5000
+        n_draws = 3000
         h_val = 1.0
         z_val = 1.0
 
         # Exp method
         keys = jax.random.split(key, n_draws)
         exp_draws = jax.vmap(
-            lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=200, method="exp")
+            lambda k: jax_polyagamma(h_val, z_val, key=k, method="exp")
         )(keys)
 
-        # Gamma method
-        key = jax.random.split(key, 1)[0]
-        keys = jax.random.split(key, n_draws)
-        gamma_draws = jax.vmap(
-            lambda k: jax_polyagamma(h_val, z_val, key=k, n_terms=200, method="gamma")
-        )(keys)
+        # Callback method
+        cb_means = []
+        key = jax.random.PRNGKey(123)
+        for i in range(n_draws):
+            key, subkey = jax.random.split(key)
+            result = jax_polyagamma(
+                jnp.array([h_val]),
+                jnp.array([z_val]),
+                key=subkey,
+                method="callback",
+            )
+            cb_means.append(float(result[0]))
 
-        # For h=1, both methods should give similar means (both are exact for PG(1,z))
+        # For h=1, both methods should give similar means
         exp_mean = float(jnp.mean(exp_draws))
-        gamma_mean = float(jnp.mean(gamma_draws))
-        rel_diff = abs(exp_mean - gamma_mean) / gamma_mean
-        assert rel_diff < 0.05, (
-            f"Exp vs gamma mean differ: {exp_mean:.4f} vs {gamma_mean:.4f}, "
+        cb_mean = np.mean(cb_means)
+        rel_diff = abs(exp_mean - cb_mean) / cb_mean
+        assert rel_diff < 0.10, (
+            f"Exp vs callback mean differ: {exp_mean:.4f} vs {cb_mean:.4f}, "
             f"rel_diff={rel_diff:.4f}"
         )

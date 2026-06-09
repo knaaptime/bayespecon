@@ -4,10 +4,10 @@ from .cross_section.negbin import NegativeBinomial as NegativeBinomial
 from .cross_section.ols import OLS as OLS
 from .cross_section.sar import SAR as SAR
 from .cross_section.sar_negbin import SARNegativeBinomial as SARNegativeBinomial
-from .cross_section.sar_negbin_latent import SARNegBinLatent as SARNegBinLatent
 from .cross_section.sar_negbin_latent import (
-    SARNegBinLatent as SARNegativeBinomialLatent,
+    SARNegativeBinomialLatent as SARNegativeBinomialLatent,
 )
+from .cross_section.sar_negbin_latent import SARNegBinLatent as SARNegBinLatent
 from .cross_section.sdem import SDEM as SDEM
 from .cross_section.sdm import SDM as SDM
 from .cross_section.sem import SEM as SEM
@@ -24,6 +24,7 @@ from .cross_section.tobit import (
 from .cross_section.tobit import (
     SEMTobit as SEMTobit,
 )
+from .cross_section.zinb import ZINBSAR as ZINBSAR
 from .flow._flow import (
     NegativeBinomialFlow as NegativeBinomialFlow,
 )
@@ -47,15 +48,6 @@ from .flow_panel._panel import (
 )
 from .flow_panel._panel import (
     OLSFlowPanel as OLSFlowPanel,
-)
-from .flow_panel._panel import (
-    PoissonFlowPanel as PoissonFlowPanel,
-)
-from .flow_panel._panel import (
-    PoissonSARFlowPanel as PoissonSARFlowPanel,
-)
-from .flow_panel._panel import (
-    PoissonSARFlowSeparablePanel as PoissonSARFlowSeparablePanel,
 )
 from .flow_panel._panel import (
     SARFlowPanel as SARFlowPanel,

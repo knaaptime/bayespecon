@@ -30,7 +30,7 @@ from .._logdet import (
     make_logdet_numpy_vec_fn,
 )
 from .._logdet._config import _auto_logdet_method
-from .base import (
+from ._base import (
     _is_row_standardized_csr,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
@@ -317,8 +317,6 @@ class SpatialPanelModel(ABC):
         robust: bool = False,
         w_vars: Optional[list] = None,
         backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
-        trace_estimator: str = "hutchpp",
-        trace_k: int | None = None,
     ):
         if W is None:
             raise ValueError("W is required.")
@@ -330,8 +328,6 @@ class SpatialPanelModel(ABC):
         self.priors_obj = resolve_priors(priors, _priors_cls)
         self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
-        self.trace_estimator = trace_estimator
-        self.trace_k = trace_k
         self.model = int(model)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
@@ -606,8 +602,6 @@ class SpatialPanelModel(ABC):
                 eigs,
                 method=self.logdet_method,
                 T=self._T,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_numpy_fn_cache
 
@@ -623,8 +617,6 @@ class SpatialPanelModel(ABC):
                 eigs,
                 method=self.logdet_method,
                 T=self._T,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_numpy_vec_fn_cache
 
@@ -636,8 +628,6 @@ class SpatialPanelModel(ABC):
                 self._W_for_logdet,
                 method=self.logdet_method,
                 T=self._T,
-                trace_estimator=self.trace_estimator,
-                trace_k=self.trace_k,
             )
         return self._logdet_pytensor_fn_cache
 
@@ -1084,12 +1074,20 @@ class SpatialPanelModel(ABC):
         thin: int,
         n_jobs: int,
         progressbar: bool,
+        gibbs_method: str = "jax",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
-        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs.
+        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs`.
 
         Centralizes how Gibbs-specific kwargs are popped from ``sample_kwargs``.
         """
+        # Resolve "jax" → "numpy" fallback when JAX is not installed.
+        if gibbs_method == "jax":
+            import importlib.util
+
+            if importlib.util.find_spec("jax") is None:
+                gibbs_method = "numpy"
+
         sample_kwargs = dict(sample_kwargs or {})
         return self._fit_gibbs(
             draws=draws,
@@ -1099,7 +1097,7 @@ class SpatialPanelModel(ABC):
             thin=thin,
             n_jobs=n_jobs,
             progressbar=progressbar,
-            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
+            gibbs_method=gibbs_method,
             mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
             use_mala=sample_kwargs.pop("use_mala", True),
             use_slice=sample_kwargs.pop("use_slice", True),
