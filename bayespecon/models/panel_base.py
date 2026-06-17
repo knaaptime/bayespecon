@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import inspect
 import warnings
-from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -19,23 +17,24 @@ from libpysal.graph import Graph
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
 
-from .._backends.sampler_helpers import (
-    prepare_compile_kwargs,
-    prepare_idata_kwargs,
-    use_jax_likelihood,
-)
+from .._backends.sampler_helpers import use_jax_likelihood
 from .._logdet import (
     make_logdet_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
 from .._logdet._config import _auto_logdet_method
-from ._base import (
+from ._base._shared import (
     _is_row_standardized_csr,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
-    gelman_default_beta_prior,
 )
+from .base import SpatialModel
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
 
 
 def _demean_panel(y: np.ndarray, X: np.ndarray, N: int, T: int, model: int):
@@ -163,7 +162,7 @@ def _parse_panel_W(
     W: Union[Graph, sp.spmatrix],
     N: int,
     T: int,
-) -> sp.csr_matrix:
+) -> tuple[sp.csr_matrix, bool]:
     """Validate W and return it as a CSR sparse matrix sized ``(N, N)``.
 
     Accepts a :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
@@ -223,12 +222,19 @@ def _parse_panel_W(
     return W_csr, row_std
 
 
-class SpatialPanelModel(ABC):
+# ---------------------------------------------------------------------------
+# SpatialPanelModel
+# ---------------------------------------------------------------------------
+
+
+class SpatialPanelModel(SpatialModel):
     """Base class for static spatial panel models with FE transforms.
 
-    Holds the within-transformation, panel-aware sorting, and weights
-    handling shared by all static fixed-effects panel model subclasses.
-    Not instantiated directly.
+    Inherits all infrastructure from :class:`SpatialModel` and adds
+    panel-specific logic: N/T dimensions, within-transformation (FE
+    demeaning), Kronecker spatial lag, and panel Jacobian (×T).
+
+    A cross-section model is a panel with T=1 and ``model=0``.
 
     Parameters
     ----------
@@ -474,23 +480,14 @@ class SpatialPanelModel(ABC):
         else:
             self._WX = np.empty((self._X.shape[0], 0), dtype=float)
 
-    def _gelman_default_beta_prior(
-        self,
-        design: np.ndarray,
-        feature_names: list[str],
-        scale: float = 2.5,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Weakly-informative default Gaussian prior on regression coefficients.
-
-        Thin wrapper around :func:`bayespecon.models.base.gelman_default_beta_prior`
-        that uses ``self._y`` as the response.
-        """
-        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
+    # ------------------------------------------------------------------
+    # Panel-specific spatial lag (Kronecker W ⊗ I_T)
+    # ------------------------------------------------------------------
 
     def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
         """Compute W @ X for panel models via the Kronecker structure.
 
-        Overrides :meth:`GaussianLikelihoodMixin._spatial_lag` to use
+        Overrides :meth:`SpatialModel._spatial_lag` to use
         :meth:`_sparse_panel_lag` which applies ``W ⊗ I_T``.
         """
         return self._sparse_panel_lag(X)
@@ -574,6 +571,74 @@ class SpatialPanelModel(ABC):
             )
         return np.asarray(W @ R.T, dtype=np.float64).T
 
+    # ------------------------------------------------------------------
+    # Panel-specific dense / sparse W properties
+    # ------------------------------------------------------------------
+
+    @property
+    def _W_dense(self) -> np.ndarray:
+        """Dense (N*T)×(N*T) weight matrix, materialised lazily on first access."""
+        if self._W_dense_cache is None:
+            # If W is N x N, dense panel matrix is (N*T) x (N*T); otherwise
+            # caller supplied full panel matrix already.
+            n_nt = (
+                self._N * self._T
+                if self._W_sparse.shape[0] == self._N
+                else int(self._W_sparse.shape[0])
+            )
+            nbytes = n_nt * n_nt * 8
+            if nbytes > int(self._DENSE_W_WARN_BYTES):
+                warnings.warn(
+                    f"Materialising a dense panel weight matrix of size {n_nt}x{n_nt} "
+                    f"(~{nbytes / 1024**2:.0f} MB).",
+                    ResourceWarning,
+                    stacklevel=2,
+                )
+            self._W_dense_cache = _as_dense_W(self._W_sparse, self._N, self._T)
+        return self._W_dense_cache
+
+    @property
+    def _W_sparse_NT(self) -> "sp.csr_matrix":
+        """Sparse (N*T)×(N*T) Kronecker-block weight matrix ``I_T ⊗ W_n``.
+
+        Cached on first access. Used by symbolic (PyMC/PyTensor) likelihoods
+        to avoid the O((N*T)²) memory footprint of :attr:`_W_dense` while
+        still exposing a single linear operator that can be applied to a
+        stacked panel residual vector.
+        """
+        if not hasattr(self, "_W_sparse_NT_cache") or self._W_sparse_NT_cache is None:
+            W = self._W_sparse
+            if W.shape[0] == self._N:
+                # Force ``csr_matrix`` (not ``csr_array``) so the result is
+                # accepted by :mod:`pytensor.sparse`, which currently only
+                # supports the legacy ``scipy.sparse`` matrix API.
+                self._W_sparse_NT_cache = sp.csr_matrix(
+                    sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
+                )
+            else:
+                # Caller already supplied a full (N*T)×(N*T) matrix.
+                self._W_sparse_NT_cache = sp.csr_matrix(W)
+        return self._W_sparse_NT_cache
+
+    @property
+    def _W_pt_sparse(self):
+        """PyTensor sparse variable wrapping :attr:`_W_sparse_NT`.
+
+        Cached so that repeated PyMC model builds reuse the same symbolic
+        sparse weight operator, avoiding redundant ``as_sparse_variable`` calls.
+        """
+        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
+            from pytensor import sparse as pts
+
+            self._W_pt_sparse_cache = pts.as_sparse_variable(
+                sp.csc_matrix(self._W_sparse_NT)
+            )
+        return self._W_pt_sparse_cache
+
+    # ------------------------------------------------------------------
+    # Panel-specific eigenvalue / trace properties
+    # ------------------------------------------------------------------
+
     @cached_property
     def _W_eigs(self) -> np.ndarray:
         """Eigenvalues of the N×N spatial weights matrix, computed lazily.
@@ -640,66 +705,6 @@ class SpatialPanelModel(ABC):
         return self._logdet_pytensor_fn_cache
 
     @property
-    def _W_dense(self) -> np.ndarray:
-        """Dense (N*T)×(N*T) weight matrix, materialised lazily on first access."""
-        if self._W_dense_cache is None:
-            # If W is N x N, dense panel matrix is (N*T) x (N*T); otherwise
-            # caller supplied full panel matrix already.
-            n_nt = (
-                self._N * self._T
-                if self._W_sparse.shape[0] == self._N
-                else int(self._W_sparse.shape[0])
-            )
-            nbytes = n_nt * n_nt * 8
-            if nbytes > int(self._DENSE_W_WARN_BYTES):
-                warnings.warn(
-                    f"Materialising a dense panel weight matrix of size {n_nt}x{n_nt} "
-                    f"(~{nbytes / 1024**2:.0f} MB).",
-                    ResourceWarning,
-                    stacklevel=2,
-                )
-            self._W_dense_cache = _as_dense_W(self._W_sparse, self._N, self._T)
-        return self._W_dense_cache
-
-    @property
-    def _W_sparse_NT(self) -> "sp.csr_matrix":
-        """Sparse (N*T)×(N*T) Kronecker-block weight matrix ``I_T ⊗ W_n``.
-
-        Cached on first access. Used by symbolic (PyMC/PyTensor) likelihoods
-        to avoid the O((N*T)²) memory footprint of :attr:`_W_dense` while
-        still exposing a single linear operator that can be applied to a
-        stacked panel residual vector.
-        """
-        if not hasattr(self, "_W_sparse_NT_cache") or self._W_sparse_NT_cache is None:
-            W = self._W_sparse
-            if W.shape[0] == self._N:
-                # Force ``csr_matrix`` (not ``csr_array``) so the result is
-                # accepted by :mod:`pytensor.sparse`, which currently only
-                # supports the legacy ``scipy.sparse`` matrix API.
-                self._W_sparse_NT_cache = sp.csr_matrix(
-                    sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
-                )
-            else:
-                # Caller already supplied a full (N*T)×(N*T) matrix.
-                self._W_sparse_NT_cache = sp.csr_matrix(W)
-        return self._W_sparse_NT_cache
-
-    @property
-    def _W_pt_sparse(self):
-        """PyTensor sparse variable wrapping :attr:`_W_sparse_NT`.
-
-        Cached so that repeated PyMC model builds reuse the same symbolic
-        sparse weight operator, avoiding redundant ``as_sparse_variable`` calls.
-        """
-        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
-            from pytensor import sparse as pts
-
-            self._W_pt_sparse_cache = pts.as_sparse_variable(
-                sp.csc_matrix(self._W_sparse_NT)
-            )
-        return self._W_pt_sparse_cache
-
-    @property
     def _T_ww(self) -> float:
         """Trace of W'W + W², cached on first access.
 
@@ -711,6 +716,10 @@ class SpatialPanelModel(ABC):
 
             self._T_ww_cache = sparse_trace_WtW_plus_WW(self._W_sparse)
         return self._T_ww_cache
+
+    # ------------------------------------------------------------------
+    # Panel-specific mean-row-sum (uses N×N cross-section W, not N*T)
+    # ------------------------------------------------------------------
 
     def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
@@ -794,37 +803,9 @@ class SpatialPanelModel(ABC):
 
         return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
 
-    @property
-    def _nonintercept_indices(self) -> list[int]:
-        """Return indices of non-constant (non-intercept) columns in X.
-
-        This is used to exclude the intercept from impact measures, since
-        the intercept has no meaningful spatial effect interpretation.
-
-        Returns
-        -------
-        list[int]
-            Column indices of X that are not constant/intercept columns.
-        """
-        indices: list[int] = []
-        for j, name in enumerate(self._feature_names):
-            column = self._X[:, j]
-            is_named_intercept = name.lower() == "intercept"
-            is_constant = np.allclose(column, column[0])
-            if not (is_named_intercept or is_constant):
-                indices.append(j)
-        return indices
-
-    @property
-    def _nonintercept_feature_names(self) -> list[str]:
-        """Return feature names for non-intercept columns.
-
-        Returns
-        -------
-        list[str]
-            Feature names excluding intercept/constant columns.
-        """
-        return [self._feature_names[i] for i in self._nonintercept_indices]
+    # ------------------------------------------------------------------
+    # FE-specific properties (intercept dropping)
+    # ------------------------------------------------------------------
 
     @property
     def _intercept_dropped(self) -> bool:
@@ -888,281 +869,45 @@ class SpatialPanelModel(ABC):
         n_const = ni[0] if ni else 0
         return [i - n_const for i in self._wx_column_indices]
 
-    @staticmethod
-    def _spatial_lag_column_indices(
-        X: np.ndarray, feature_names: list[str]
-    ) -> list[int]:
-        """Return indices of regressors that should receive spatial lags.
+    # ------------------------------------------------------------------
+    # Panel-specific log-likelihood reconstruction
+    # ------------------------------------------------------------------
 
-        Constant columns are treated as intercept-like and excluded, which
-        avoids adding redundant ``W * intercept`` terms to SLX/Durbin models.
+    # Override beta-index properties to account for FE intercept dropping.
+    # When the intercept is dropped (Gibbs + FE), the posterior beta has
+    # fewer columns than the full design matrix, so indices must be shifted.
 
-        Parameters
-        ----------
-        X : np.ndarray
-            Raw panel design matrix before FE transformation.
-        feature_names : list[str]
-            Column labels aligned with ``X``.
+    @property
+    def _beta_ni(self) -> list[int]:
+        """Non-intercept indices into the posterior beta (FE-aware)."""
+        return self._beta_nonintercept_indices
 
-        Returns
-        -------
-        list[int]
-            Column indices eligible for spatial lags.
+    @property
+    def _beta_wx_idx(self) -> list[int]:
+        """WX column indices into the posterior beta1 (FE-aware)."""
+        return self._beta_wx_column_indices
+
+    @property
+    def _beta_k(self) -> int:
+        """Number of columns in the beta1 block (FE-aware)."""
+        if self._intercept_dropped:
+            return len(self._beta_nonintercept_indices)
+        return self._X.shape[1]
+
+    def _get_decision_spec(self, model_type: str):
+        """Return the panel decision-tree spec for this model type.
+
+        Overrides :meth:`SpatialModel._get_decision_spec` to use
+        :func:`get_panel_spec` instead of :func:`get_spec`.
         """
-        indices: list[int] = []
-        for j, name in enumerate(feature_names):
-            column = X[:, j]
-            is_named_intercept = name.lower() == "intercept"
-            is_constant = np.allclose(column, column[0])
-            if not (is_named_intercept or is_constant):
-                indices.append(j)
-        return indices
-
-    def _add_nu_prior(self, model: pm.Model) -> pm.Model:
-        """Add the degrees-of-freedom prior for robust (Student-t) models.
-
-        Called inside ``_build_pymc_model`` when ``self.robust`` is True.
-        Uses an :math:`\\mathrm{Exp}(\\lambda_\\nu)` prior on ``nu`` with rate ``nu_lam`` (default
-        1/30, giving mean ≈ 30, favouring near-Normal tails). A lower
-        bound of 2 is enforced so that the variance exists.
-
-        Parameters
-        ----------
-        model : pymc.Model
-            The model context in which to add the ``nu`` prior.
-
-        Returns
-        -------
-        pymc.Model
-            The same model context (``nu`` is added as a side effect).
-        """
-        nu_lam = self.priors.get("nu_lam", 1.0 / 30.0)
-        pm.Truncated("nu", pm.Exponential.dist(lam=nu_lam), lower=2.0)
-        return model
-
-    @abstractmethod
-    def _build_pymc_model(self) -> pm.Model:
-        """Construct and return a pm.Model."""
-
-    @abstractmethod
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects at posterior mean."""
-
-    @abstractmethod
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute direct, indirect, and total effects for each posterior draw.
-
-        Returns
-        -------
-        tuple of np.ndarray
-            ``(direct_samples, indirect_samples, total_samples)`` where each
-            array has shape ``(G, k)`` or ``(G, k_wx)``.
-        """
-
-    @abstractmethod
-    def _fitted_mean_from_posterior(self) -> np.ndarray:
-        """Posterior-mean fitted values on transformed scale."""
-
-    def _beta_names(self) -> list[str]:
-        """Return coefficient labels used for posterior summaries.
-
-        Returns
-        -------
-        list[str]
-            Coefficient labels aligned with the ``beta`` parameter.
-        """
-        return list(self._feature_names)
-
-    def _model_coords(self) -> dict[str, list[str]]:
-        """Return PyMC coordinate labels for named dimensions.
-
-        Returns
-        -------
-        dict[str, list[str]]
-            Coordinates passed to :class:`pymc.Model`.
-        """
-        return {"coefficient": self._beta_names()}
-
-    @staticmethod
-    def _rename_summary_index(summary_df: pd.DataFrame) -> pd.DataFrame:
-        """Strip the ``beta[...]`` wrapper from coefficient row labels.
-
-        Parameters
-        ----------
-        summary_df : pandas.DataFrame
-            ArviZ summary output.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Summary with human-readable coefficient row labels.
-        """
-        renamed = []
-        for label in summary_df.index.astype(str):
-            if label.startswith("beta[") and label.endswith("]"):
-                renamed.append(label[5:-1])
-            else:
-                renamed.append(label)
-        out = summary_df.copy()
-        out.index = renamed
-        return out
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: Optional[int] = None,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Sample the posterior for the panel model.
-
-        Parameters
-        ----------
-        draws : int, default=2000
-            Number of post-tuning draws per chain.
-        tune : int, default=1000
-            Number of tuning draws per chain.
-        chains : int, default=4
-            Number of chains.
-        target_accept : float, default=0.9
-            NUTS target acceptance probability.
-        random_seed : int, optional
-            Random seed used by PyMC.
-        progressbar : bool, default True
-            Show progress bar during sampling.
-        **sample_kwargs
-            Extra keyword arguments forwarded to :func:`pymc.sample`.  Pass
-            ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
-            select an alternative NUTS backend; defaults to PyMC's built-in
-            sampler.
-
-        Returns
-        -------
-        arviz.InferenceData
-            Posterior samples and diagnostics.
-        """
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        try:
-            model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        except TypeError:
-            # Subclasses that don't accept ``nuts_sampler`` build the same
-            # model on every backend.
-            model = self._build_pymc_model()
-        self._pymc_model = model
-        if "idata_kwargs" in sample_kwargs:
-            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
-                sample_kwargs["idata_kwargs"], model, nuts_sampler
-            )
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                nuts_sampler=nuts_sampler,
-                **sample_kwargs,
-            )
-        return self._idata
-
-    def _fit_gibbs_dispatch(
-        self,
-        *,
-        draws: int,
-        tune: int,
-        chains: int,
-        random_seed: Optional[int],
-        thin: int,
-        n_jobs: int,
-        progressbar: bool,
-        gibbs_method: str = "jax",
-        sample_kwargs: dict[str, Any] | None = None,
-    ) -> az.InferenceData:
-        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs`.
-
-        Centralizes how Gibbs-specific kwargs are popped from ``sample_kwargs``.
-        """
-        # Resolve "jax" → "numpy" fallback when JAX is not installed.
-        if gibbs_method == "jax":
-            import importlib.util
-
-            if importlib.util.find_spec("jax") is None:
-                gibbs_method = "numpy"
-
-        sample_kwargs = dict(sample_kwargs or {})
-        return self._fit_gibbs(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            thin=thin,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-            gibbs_method=gibbs_method,
-            mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-            use_mala=sample_kwargs.pop("use_mala", True),
-            use_slice=sample_kwargs.pop("use_slice", True),
-            slice_width=sample_kwargs.pop("slice_width", None),
-            chain_method=sample_kwargs.pop("chain_method", None),
-        )
-
-    def _fit_nuts(
-        self,
-        *,
-        draws: int,
-        tune: int,
-        chains: int,
-        target_accept: float,
-        random_seed: Optional[int],
-        progressbar: bool,
-        nuts_sampler: str = "pymc",
-        idata_kwargs: dict[str, Any] | None = None,
-        compute_log_likelihood: bool = False,
-        sample_kwargs: dict[str, Any] | None = None,
-    ) -> tuple[az.InferenceData, bool]:
-        """Shared NUTS sampling path used by panel ``fit`` methods."""
-        sample_kwargs = dict(sample_kwargs or {})
-        idata_kwargs = dict(idata_kwargs or {})
-
-        build_kwargs: dict[str, Any] = {}
-        build_sig = inspect.signature(self._build_pymc_model)
-        if "nuts_sampler" in build_sig.parameters:
-            build_kwargs["nuts_sampler"] = nuts_sampler
-
-        model = self._build_pymc_model(**build_kwargs)
-        self._pymc_model = model
-
-        idata_kwargs = prepare_idata_kwargs(idata_kwargs, model, nuts_sampler)
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-
-        with model:
-            self._idata = pm.sample(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                target_accept=target_accept,
-                random_seed=random_seed,
-                idata_kwargs=idata_kwargs,
-                nuts_sampler=nuts_sampler,
-                progressbar=progressbar,
-                **sample_kwargs,
-            )
-
-        return self._idata, compute_log_likelihood
+        from ..diagnostics import _decision_trees as _dt
+        return _dt.get_panel_spec(model_type)
 
     def _reconstruct_log_likelihood(self, *, nuts_sampler: str) -> None:
         """Rebuild complete pointwise log-likelihood for panel models.
 
-        Overrides :meth:`GaussianLikelihoodMixin._reconstruct_log_likelihood`
-        to dispatch to :meth:`_reconstruct_panel_log_likelihood` with the
+        Overrides :meth:`SpatialModel._reconstruct_log_likelihood` to
+        dispatch to :meth:`_reconstruct_panel_log_likelihood` with the
         correct ``spatial_param`` (derived from ``_jacobian_param``) and
         ``T_eff`` (from ``self._T``).
         """
@@ -1300,307 +1045,3 @@ class SpatialPanelModel(ABC):
             )
 
         idata["log_likelihood"] = xr.Dataset(new_vars)
-
-    @property
-    def inference_data(self) -> Optional[az.InferenceData]:
-        """Return the ArviZ InferenceData from the most recent fit.
-
-        Returns
-        -------
-        arviz.InferenceData or None
-            The inference data object, or ``None`` if the model has not
-            been fit yet.
-        """
-        return self._idata
-
-    @property
-    def pymc_model(self) -> Optional[pm.Model]:
-        """Return the PyMC model object built for the most recent fit.
-
-        Returns
-        -------
-        pymc.Model or None
-            The model object used by :meth:`fit`, or ``None`` if the instance
-            has not been fit yet.
-        """
-        return self._pymc_model
-
-    def _require_fit(self):
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet. Call .fit() first.")
-
-    def _posterior_mean(self, var: str) -> np.ndarray:
-        return self._idata.posterior[var].mean(("chain", "draw")).to_numpy()
-
-    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
-        """Return posterior summary table.
-
-        Parameters
-        ----------
-        var_names : list, optional
-            Variable names to include.
-        **kwargs
-            Additional arguments passed to :func:`arviz.summary`.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Posterior summary table.
-        """
-        self._require_fit()
-        summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
-        return self._rename_summary_index(summary_df)
-
-    def fitted_values(self) -> np.ndarray:
-        """Return fitted values at posterior mean parameters.
-
-        Returns
-        -------
-        np.ndarray
-            Fitted values on transformed panel scale.
-        """
-        self._require_fit()
-        return self._fitted_mean_from_posterior()
-
-    def residuals(self) -> np.ndarray:
-        """Return transformed residuals ``y - fitted``.
-
-        Returns
-        -------
-        np.ndarray
-            Residual vector on transformed panel scale.
-        """
-        self._require_fit()
-        return self._y - self.fitted_values()
-
-    def spatial_diagnostics(self) -> pd.DataFrame:
-        """Run Bayesian LM specification tests and return a summary table.
-
-        Looks up the diagnostic suite registered for this model class
-        and calls each test function on this fitted model, collecting the
-        results into a tidy DataFrame.  The set of tests depends on the
-        model type — for example, an OLSPanelFE model runs Panel-LM-Lag,
-        Panel-LM-Error, Panel-LM-SDM-Joint, and Panel-LM-SLX-Error-Joint.
-
-        Requires the model to have been fit (``.fit()`` called) and a
-        spatial weights matrix ``W`` to have been supplied at construction
-        time.
-
-        Returns
-        -------
-        pandas.DataFrame
-            DataFrame indexed by test name with columns:
-
-            ==============  =====================================================
-            Column          Description
-            ==============  =====================================================
-            statistic       Posterior mean of the LM statistic
-            median          Posterior median of the LM statistic
-            df              Degrees of freedom for the :math:`\\chi^2` reference
-            p_value         Bayesian p-value: ``1 - chi2.cdf(mean, df)``
-            ci_lower        Lower bound of 95% credible interval (2.5%)
-            ci_upper        Upper bound of 95% credible interval (97.5%)
-            ==============  =====================================================
-
-            The DataFrame has ``attrs["model_type"]`` (class name) and
-            ``attrs["n_draws"]`` (total posterior draws) metadata.
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been fit yet.
-
-        See Also
-        --------
-        spatial_diagnostics_decision : Model-selection decision based on
-            the test results.
-        """
-        from ..diagnostics.lmtests.registry import get_diagnostic_suite
-        from .base import SpatialModel
-
-        self._require_fit()
-        suite = get_diagnostic_suite(self)
-        if suite is None:
-            raise ValueError(
-                f"No diagnostic suite registered for {type(self).__name__}. "
-                f"Register one in bayespecon.diagnostics.lmtests.registry."
-            )
-        return SpatialModel._run_lm_diagnostics(self, suite.tests)
-
-    def spatial_diagnostics_decision(
-        self, alpha: float = 0.05, format: str = "graphviz"
-    ) -> Any:
-        """Return a model-selection decision from Bayesian LM test results.
-
-        Implements the decision tree from :cite:t:`koley2024UseNot`
-        (the Bayesian analogue of the classical ``stge_kb`` procedure
-        in :cite:t:`anselin1996SimpleDiagnostic`), adapted for panel models
-        following :cite:t:`elhorst2014SpatialEconometrics`.
-
-        Parameters
-        ----------
-        alpha : float, default 0.05
-            Significance level for the Bayesian p-values.
-        format : {"graphviz", "ascii", "model"}, default "graphviz"
-            Output format. ``"model"`` returns the recommended-model name
-            string. ``"ascii"`` returns an indented box-drawing rendering
-            of the full decision tree with the chosen path highlighted.
-            ``"graphviz"`` returns a :class:`graphviz.Digraph` object that
-            renders inline in Jupyter; if the optional ``graphviz`` package
-            is not installed a :class:`UserWarning` is issued and the
-            ASCII rendering is returned instead.
-
-        Returns
-        -------
-        str or graphviz.Digraph
-            Recommended model name when ``format="model"``, an ASCII tree
-            string when ``format="ascii"``, or a ``graphviz.Digraph`` when
-            ``format="graphviz"`` (with ASCII fallback on missing dep).
-
-        See Also
-        --------
-        spatial_diagnostics : Compute the Bayesian LM test statistics.
-
-        References
-        ----------
-        :cite:t:`koley2024UseNot`, :cite:t:`anselin1996SimpleDiagnostic`,
-        :cite:t:`elhorst2014SpatialEconometrics`
-        """
-        from ..diagnostics import _decision_trees as _dt
-
-        diag = self.spatial_diagnostics()
-        model_type = self.__class__.__name__
-
-        def _sig(test_name: str) -> bool:
-            if test_name not in diag.index:
-                return False
-            pval = diag.loc[test_name, "p_value"]
-            return not np.isnan(pval) and pval < alpha
-
-        def _lag_le_error() -> bool:
-            return (
-                diag.loc["Panel-LM-Lag", "p_value"]
-                <= diag.loc["Panel-LM-Error", "p_value"]
-            )
-
-        def _robust_lag_le_error() -> bool:
-            # Panel-OLS tree tie-break.  See cross-sectional analogue in
-            # ``base.SpatialModel.spatial_diagnostics_decision``.
-            return (
-                diag.loc["Panel-Robust-LM-Lag", "p_value"]
-                <= diag.loc["Panel-Robust-LM-Error", "p_value"]
-            )
-
-        def _lag_sdm_le_error_sdem() -> bool:
-            return (
-                diag.loc["Panel-Robust-LM-Lag-SDM", "p_value"]
-                <= diag.loc["Panel-Robust-LM-Error-SDEM", "p_value"]
-            )
-
-        spec = _dt.get_panel_spec(model_type)
-        decision, path = _dt.evaluate(
-            spec,
-            sig_lookup=_sig,
-            predicate_lookup={
-                "panel_lag_pval_le_error_pval": _lag_le_error,
-                "panel_robust_lag_pval_le_error_pval": _robust_lag_le_error,
-                "panel_lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
-            },
-        )
-
-        p_values: dict[str, float] = {}
-        for test_name in diag.index:
-            pv = diag.loc[test_name, "p_value"]
-            if not np.isnan(pv):
-                p_values[str(test_name)] = float(pv)
-
-        return _dt.render(
-            spec,
-            path,
-            decision,
-            p_values=p_values,
-            alpha=alpha,
-            fmt=format,
-            title=f"{model_type} decision tree (alpha={alpha})",
-        )
-
-    def spatial_effects(
-        self, return_posterior_samples: bool = False
-    ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
-        """Compute Bayesian inference for direct, indirect, and total impacts.
-
-        Computes impact measures for each posterior draw, then summarises
-        the posterior distribution with means, 95% credible intervals, and
-        Bayesian p-values.
-
-        Parameters
-        ----------
-        return_posterior_samples : bool, optional
-            If ``True``, return a ``(DataFrame, dict)`` tuple where the
-            dict contains the full posterior draws under keys
-            ``"direct"``, ``"indirect"``, and ``"total"``.  Default
-            ``False``.
-
-        Returns
-        -------
-        pd.DataFrame or tuple of (pd.DataFrame, dict)
-            If *return_posterior_samples* is ``False`` (default), returns
-            a DataFrame indexed by feature names with columns for posterior
-            means, credible-interval bounds, and Bayesian p-values.
-
-            If *return_posterior_samples* is ``True``, returns
-            ``(DataFrame, dict)`` where the dict has keys
-            ``"direct"``, ``"indirect"``, ``"total"``, each mapping
-            to a ``(G, k)`` array of posterior draws.
-        """
-        from ..diagnostics.spatial_effects import _build_effects_dataframe
-
-        self._require_fit()
-        direct_samples, indirect_samples, total_samples = (
-            self._compute_spatial_effects_posterior()
-        )
-
-        # Determine feature names based on the shape of the posterior samples.
-        # Models with WX terms (SDM, SLX, SDEM) report effects only for
-        # lagged covariates (k_wx columns), while models without WX terms
-        # (SAR, SEM) report effects for non-intercept covariates.
-        k_effects = direct_samples.shape[1]
-        if (
-            hasattr(self, "_wx_feature_names")
-            and len(self._wx_feature_names) == k_effects
-        ):
-            feature_names = list(self._wx_feature_names)
-        elif (
-            hasattr(self, "_nonintercept_feature_names")
-            and len(self._nonintercept_feature_names) == k_effects
-        ):
-            feature_names = list(self._nonintercept_feature_names)
-        else:
-            feature_names = list(self._feature_names[:k_effects])
-
-        # Determine model type label
-        model_type = self.__class__.__name__
-
-        df = _build_effects_dataframe(
-            direct_samples=direct_samples,
-            indirect_samples=indirect_samples,
-            total_samples=total_samples,
-            feature_names=feature_names,
-            model_type=model_type,
-        )
-
-        if return_posterior_samples:
-            posterior_samples = {
-                "direct": direct_samples,
-                "indirect": indirect_samples,
-                "total": total_samples,
-            }
-            return df, posterior_samples
-        return df
-
-    def __repr__(self) -> str:
-        n, k = self._X.shape
-        return (
-            f"{self.__class__.__name__}(N={self._N}, T={self._T}, n={n}, "
-            f"k={k}, model={self.model}, features={self._feature_names})"
-        )

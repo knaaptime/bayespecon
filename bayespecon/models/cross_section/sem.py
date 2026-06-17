@@ -106,56 +106,6 @@ class SEM(GaussianLikelihoodMixin, SpatialModel):
     _gibbs_class: str | None = "GaussianSEMGibbs"
     _model_type: str = "sem"
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute SEM direct/indirect/total effects.
-
-        Returns
-        -------
-        dict
-            Direct, indirect, total effects and feature names.
-        """
-        # For SEM, spatial multiplier does not apply to X directly.
-        # Direct = beta, indirect = 0, total = beta.
-        beta = self._posterior_mean("beta")
-        ni = self._nonintercept_indices
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros(len(ni)),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
-
-    def _compute_spatial_effects_posterior(
-        self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute direct, indirect, and total effects for each posterior draw.
-
-        For the SEM model, the spatial multiplier does not apply to :math:`X`
-        directly, so:
-
-        .. math::
-            \\text{Direct}_k^{(g)} = \\beta_k^{(g)}, \\quad
-            \\text{Indirect}_k^{(g)} = 0, \\quad
-            \\text{Total}_k^{(g)} = \\beta_k^{(g)}
-
-        Returns
-        -------
-        tuple of np.ndarray
-            ``(direct_samples, indirect_samples, total_samples)``, each
-            of shape ``(G, k)`` where *k* is the number of covariates.
-        """
-        from ...diagnostics.lmtests import _get_posterior_draws
-
-        idata = self.inference_data
-        beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
-
-        ni = self._nonintercept_indices
-        direct_samples = beta_draws[:, ni].copy()
-        indirect_samples = np.zeros_like(direct_samples)
-        total_samples = direct_samples.copy()
-
-        return direct_samples, indirect_samples, total_samples
-
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean coefficients.
 

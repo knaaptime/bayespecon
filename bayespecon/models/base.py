@@ -1474,6 +1474,68 @@ class SpatialModel(ABC):
             )
         return self._run_lm_diagnostics(self, suite.tests)
 
+    def _get_decision_spec(self, model_type: str):
+        """Return the decision-tree spec for this model type.
+
+        Cross-section models use :func:`get_spec`.  Panel models override
+        this to use :func:`get_panel_spec`.
+        """
+        from ..diagnostics import _decision_trees as _dt
+        return _dt.get_spec(model_type)
+
+    def _decision_predicate_lookup(self, diag) -> dict:
+        """Return predicate callables for the decision-tree evaluation.
+
+        Includes both cross-section and panel-prefixed predicate IDs so
+        the same method works for both spec families.
+        """
+        def _lag_le_error() -> bool:
+            return diag.loc["LM-Lag", "p_value"] <= diag.loc["LM-Error", "p_value"]
+
+        def _robust_lag_le_error() -> bool:
+            return (
+                diag.loc["Robust-LM-Lag", "p_value"]
+                <= diag.loc["Robust-LM-Error", "p_value"]
+            )
+
+        def _lag_sdm_le_error_sdem() -> bool:
+            return (
+                diag.loc["Robust-LM-Lag-SDM", "p_value"]
+                <= diag.loc["Robust-LM-Error-SDEM", "p_value"]
+            )
+
+        def _lag_sem_le_wx_sem() -> bool:
+            return (
+                diag.loc["Robust-LM-Lag", "p_value"]
+                <= diag.loc["Robust-LM-WX", "p_value"]
+            )
+
+        # Panel variants use the same logic but with "Panel-" prefixed test names.
+        def _panel_lag_le_error() -> bool:
+            return diag.loc["Panel-LM-Lag", "p_value"] <= diag.loc["Panel-LM-Error", "p_value"]
+
+        def _panel_robust_lag_le_error() -> bool:
+            return (
+                diag.loc["Panel-Robust-LM-Lag", "p_value"]
+                <= diag.loc["Panel-Robust-LM-Error", "p_value"]
+            )
+
+        def _panel_lag_sdm_le_error_sdem() -> bool:
+            return (
+                diag.loc["Panel-Robust-LM-Lag-SDM", "p_value"]
+                <= diag.loc["Panel-Robust-LM-Error-SDEM", "p_value"]
+            )
+
+        return {
+            "lag_pval_le_error_pval": _lag_le_error,
+            "robust_lag_pval_le_error_pval": _robust_lag_le_error,
+            "lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
+            "lag_sem_pval_le_wx_sem_pval": _lag_sem_le_wx_sem,
+            "panel_lag_pval_le_error_pval": _panel_lag_le_error,
+            "panel_robust_lag_pval_le_error_pval": _panel_robust_lag_le_error,
+            "panel_lag_sdm_pval_le_error_sdem_pval": _panel_lag_sdm_le_error_sdem,
+        }
+
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
     ) -> Any:
@@ -1588,16 +1650,11 @@ class SpatialModel(ABC):
                 <= diag.loc["Robust-LM-WX", "p_value"]
             )
 
-        spec = _dt.get_spec(model_type)
+        spec = self._get_decision_spec(model_type)
         decision, path = _dt.evaluate(
             spec,
             sig_lookup=_sig,
-            predicate_lookup={
-                "lag_pval_le_error_pval": _lag_le_error,
-                "robust_lag_pval_le_error_pval": _robust_lag_le_error,
-                "lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
-                "lag_sem_pval_le_wx_sem_pval": _lag_sem_le_wx_sem,
-            },
+            predicate_lookup=self._decision_predicate_lookup(diag),
         )
 
         # Build p-value lookup for renderers (only test rows present).
@@ -1699,30 +1756,218 @@ class SpatialModel(ABC):
             return df, posterior_samples
         return df
 
-    @abstractmethod
+    # ------------------------------------------------------------------
+    # Spatial effects dispatch
+    # ------------------------------------------------------------------
+    # Three patterns dispatched based on _jacobian_param and _has_wx_in_beta:
+    #
+    # 1. Trivial (OLS, SEM): direct=beta, indirect=0, total=beta
+    #    _jacobian_param is None and not _has_wx_in_beta  → OLS
+    #    _jacobian_param == "lam" and not _has_wx_in_beta → SEM
+    #
+    # 2. Linear (SLX, SDEM): S_k = beta1_k*I + beta2_k*W
+    #    _jacobian_param is None and _has_wx_in_beta  → SLX
+    #    _jacobian_param == "lam" and _has_wx_in_beta → SDEM
+    #
+    # 3. Rho multiplier (SAR, SDM): S_k = (I-rho*W)^{-1} * (beta1_k*I + beta2_k*W)
+    #    _jacobian_param == "rho" and not _has_wx_in_beta → SAR
+    #    _jacobian_param == "rho" and _has_wx_in_beta     → SDM
+
+    # Properties that abstract intercept-dropping for FE panel models.
+    # Cross-section models use _nonintercept_indices / _wx_column_indices / _X.shape[1].
+    # Panel FE models override these to account for dropped intercept columns.
+
+    @property
+    def _beta_ni(self) -> list[int]:
+        """Non-intercept indices into the posterior beta vector."""
+        return self._nonintercept_indices
+
+    @property
+    def _beta_wx_idx(self) -> list[int]:
+        """WX column indices into the posterior beta1 block."""
+        return self._wx_column_indices
+
+    @property
+    def _beta_k(self) -> int:
+        """Number of columns in the beta1 block (X part of beta)."""
+        return self._X.shape[1]
+
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         """Compute model-specific impact measures at posterior mean.
 
-        Returns
-        -------
-        dict
-            Dictionary with direct, indirect, and total effects.
+        Dispatches based on ``_jacobian_param`` and ``_has_wx_in_beta``.
+        Subclasses normally do not need to override this.
         """
+        jp = self._jacobian_param
+        if jp == "rho":
+            return self._effects_rho()
+        if self._has_wx_in_beta:
+            return self._effects_linear()
+        return self._effects_trivial()
 
-    @abstractmethod
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
-        Returns
-        -------
-        tuple of np.ndarray
-            ``(direct_samples, indirect_samples, total_samples)`` where each
-            array has shape ``(G, k)`` or ``(G, k_wx)``, with *G* being the
-            total number of posterior draws and *k* / *k_wx* being the
-            number of covariates for which effects are reported.
+        Dispatches based on ``_jacobian_param`` and ``_has_wx_in_beta``.
+        Subclasses normally do not need to override this.
         """
+        jp = self._jacobian_param
+        if jp == "rho":
+            return self._effects_rho_posterior()
+        if self._has_wx_in_beta:
+            return self._effects_linear_posterior()
+        return self._effects_trivial_posterior()
+
+    # ------------------------------------------------------------------
+    # Pattern 1: Trivial (OLS, SEM)
+    # ------------------------------------------------------------------
+
+    def _effects_trivial(self) -> dict[str, np.ndarray]:
+        """Direct=beta, indirect=0, total=beta (OLS, SEM)."""
+        beta = self._posterior_mean("beta")
+        ni = self._beta_ni
+        return {
+            "direct": beta[ni].copy(),
+            "indirect": np.zeros(len(ni)),
+            "total": beta[ni].copy(),
+            "feature_names": self._nonintercept_feature_names,
+        }
+
+    def _effects_trivial_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior draws: direct=beta, indirect=0, total=beta."""
+        from ..diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        beta_draws = _get_posterior_draws(idata, "beta")
+        ni = self._beta_ni
+        direct = beta_draws[:, ni].copy()
+        indirect = np.zeros_like(direct)
+        total = direct.copy()
+        return direct, indirect, total
+
+    # ------------------------------------------------------------------
+    # Pattern 2: Linear (SLX, SDEM)
+    # ------------------------------------------------------------------
+
+    def _effects_linear(self) -> dict[str, np.ndarray]:
+        """S_k = beta1_k*I + beta2_k*W (SLX, SDEM)."""
+        beta = self._posterior_mean("beta")
+        k = self._beta_k
+        kw = self._WX.shape[1]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+        wx_idx = self._beta_wx_idx
+        direct = beta1[wx_idx] + beta2 * mean_diag_w
+        total = beta1[wx_idx] + beta2 * mean_row_sum_w
+        return {
+            "direct": direct,
+            "indirect": total - direct,
+            "total": total,
+            "feature_names": self._wx_feature_names,
+        }
+
+    def _effects_linear_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior draws: linear SLX/SDEM pattern."""
+        from ..diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        beta_draws = _get_posterior_draws(idata, "beta")
+        k = self._beta_k
+        kw = self._WX.shape[1]
+        beta1_draws = beta_draws[:, :k]
+        beta2_draws = beta_draws[:, k : k + kw]
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+        wx_idx = self._beta_wx_idx
+        direct = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+        total = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
+        return direct, total - direct, total
+
+    # ------------------------------------------------------------------
+    # Pattern 3: Rho multiplier (SAR, SDM)
+    # ------------------------------------------------------------------
+
+    def _effects_rho(self) -> dict[str, np.ndarray]:
+        """S_k = (I-rho*W)^{-1} * (beta1_k*I + beta2_k*W) (SAR, SDM)."""
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        eigs = self._W_eigs
+        inv_eigs = 1.0 / (1.0 - rho * eigs)
+        mean_diag_M = float(np.mean(inv_eigs.real))
+        mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
+        rho_arr = np.array([rho])
+        mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
+        mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
+
+        if self._has_wx_in_beta:
+            # SDM: beta = [beta1, beta2]
+            k = self._beta_k
+            kw = self._WX.shape[1]
+            beta1, beta2 = beta[:k], beta[k : k + kw]
+            wx_idx = self._beta_wx_idx
+            direct = np.array(
+                [beta1[j] * mean_diag_M + b2 * mean_diag_MW
+                 for j, b2 in zip(wx_idx, beta2)]
+            )
+            total = np.array(
+                [beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
+                 for j, b2 in zip(wx_idx, beta2)]
+            )
+            feature_names = self._wx_feature_names
+        else:
+            # SAR: beta only
+            ni = self._beta_ni
+            direct = mean_diag_M * beta[ni]
+            total = mean_row_sum_M * beta[ni]
+            feature_names = self._nonintercept_feature_names
+
+        return {
+            "direct": direct,
+            "indirect": total - direct,
+            "total": total,
+            "feature_names": feature_names,
+        }
+
+    def _effects_rho_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior draws: SAR/SDM rho-multiplier pattern."""
+        from ..diagnostics.lmtests import _get_posterior_draws
+        from ..diagnostics.spatial_effects import _chunked_eig_means
+
+        idata = self.inference_data
+        rho_draws = _get_posterior_draws(idata, "rho")
+        beta_draws = _get_posterior_draws(idata, "beta")
+        eigs = self._W_eigs
+
+        mean_diag_M = _chunked_eig_means(rho_draws, eigs)
+        mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
+
+        if self._has_wx_in_beta:
+            # SDM
+            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
+            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
+            k = self._beta_k
+            kw = self._WX.shape[1]
+            beta1_draws = beta_draws[:, :k]
+            beta2_draws = beta_draws[:, k : k + kw]
+            wx_idx = self._beta_wx_idx
+            direct = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
+        else:
+            # SAR
+            ni = self._beta_ni
+            direct = mean_diag_M[:, None] * beta_draws[:, ni]
+            total = mean_row_sum_M[:, None] * beta_draws[:, ni]
+
+        return direct, total - direct, total
 
     @abstractmethod
     def _fitted_mean_from_posterior(self) -> np.ndarray:
