@@ -5,7 +5,7 @@ from __future__ import annotations
 import arviz as az
 import numpy as np
 
-from .._mixins import PanelGaussianLikelihoodMixin
+from .._mixins import GaussianLikelihoodMixin
 from ..panel_base import SpatialPanelModel
 from ..priors import (
     PanelOLSPriors,
@@ -17,7 +17,7 @@ from ..priors import (
 )
 
 
-class OLSPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
+class OLSPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian pooled and fixed-effects linear panel regression.
 
     Implements the Gaussian panel model
@@ -111,6 +111,7 @@ class OLSPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
 
     _priors_cls = PanelOLSPriors
     _jacobian_param: str | None = None
+    _gibbs_class: str | None = None
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean coefficients.
@@ -163,7 +164,7 @@ class OLSPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
+class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial-lag panel regression.
 
     Implements
@@ -255,70 +256,7 @@ class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
 
     _priors_cls = PanelSARPriors
     _jacobian_param: str | None = "rho"
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        sampler: str = "gibbs",
-        gibbs_method: str = "jax",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach Jacobian-corrected log-likelihood.
-
-        The SAR panel model uses ``pm.Normal("obs", observed=y)`` which
-        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
-        Jacobian term that is not captured.  When ``log_likelihood=True``
-        is requested, the Jacobian correction is added post-sampling.
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path (default) ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="rho",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
-        return self._idata
+    _gibbs_class: str | None = "GaussianSARGibbs"
 
     def _fit_gibbs(
         self,
@@ -499,7 +437,7 @@ class SARPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
+class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial-error panel regression.
 
     Implements
@@ -592,72 +530,7 @@ class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
 
     _priors_cls = PanelSEMPriors
     _jacobian_param: str | None = "lam"
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        sampler: str = "gibbs",
-        gibbs_method: str = "jax",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
-
-        The SEM panel model uses ``pm.Potential`` for both the Gaussian
-        error log-likelihood and the Jacobian on the default (C / Numba)
-        backend, so neither is auto-captured.  On JAX backends the model
-        is built via ``pm.CustomDist`` with an observed RV, so PyMC
-        populates ``log_likelihood`` natively.  We compute the complete
-        pointwise log-likelihood manually after sampling only when needed.
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path (default) ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="lam",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
-        return self._idata
+    _gibbs_class: str | None = "GaussianSEMGibbs"
 
     def _fit_gibbs(
         self,
@@ -819,7 +692,7 @@ class SEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
+class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial Durbin panel regression.
 
     Implements
@@ -911,75 +784,12 @@ class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
 
     _has_wx_in_beta: bool = True
     _jacobian_param: str | None = "rho"
+    _gibbs_class: str | None = "GaussianSARGibbs"
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
     _priors_cls = PanelSDMPriors
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        sampler: str = "gibbs",
-        gibbs_method: str = "jax",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach Jacobian-corrected log-likelihood.
-
-        The SDM panel model uses ``pm.Normal("obs", observed=y)`` which
-        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
-        Jacobian term that is not captured.  When ``log_likelihood=True``
-        is requested, the Jacobian correction is added post-sampling.
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path (default) ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="rho",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
-        return self._idata
 
     def _fit_gibbs(
         self,
@@ -1205,7 +1015,7 @@ class SDMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
+class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial Durbin error panel regression.
 
     Implements
@@ -1297,77 +1107,12 @@ class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
 
     _has_wx_in_beta: bool = True
     _jacobian_param: str | None = "lam"
+    _gibbs_class: str | None = "GaussianSEMGibbs"
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
     _priors_cls = PanelSDEMPriors
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        sampler: str = "gibbs",
-        gibbs_method: str = "jax",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
-
-        The SDEM panel model uses ``pm.Potential`` for both the Gaussian
-        error log-likelihood and the Jacobian on the default (C / Numba)
-        backend, so neither is auto-captured.  On JAX backends the model
-        is built via ``pm.CustomDist`` with an observed RV, so PyMC
-        populates ``log_likelihood`` natively.  We compute the complete
-        pointwise log-likelihood manually after sampling only when needed.
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path (default) ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="lam",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
-        return self._idata
 
     def _fit_gibbs(
         self,
@@ -1562,7 +1307,7 @@ class SDEMPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
         return direct_samples, indirect_samples, total_samples
 
 
-class SLXPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
+class SLXPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian SLX panel regression.
 
     Implements
@@ -1649,6 +1394,7 @@ class SLXPanelFE(PanelGaussianLikelihoodMixin, SpatialPanelModel):
 
     _has_wx_in_beta: bool = True
     _jacobian_param: str | None = None
+    _gibbs_class: str | None = None
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]

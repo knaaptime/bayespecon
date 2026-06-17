@@ -487,6 +487,14 @@ class SpatialPanelModel(ABC):
         """
         return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
 
+    def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
+        """Compute W @ X for panel models via the Kronecker structure.
+
+        Overrides :meth:`GaussianLikelihoodMixin._spatial_lag` to use
+        :meth:`_sparse_panel_lag` which applies ``W ⊗ I_T``.
+        """
+        return self._sparse_panel_lag(X)
+
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
         """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
 
@@ -1149,6 +1157,23 @@ class SpatialPanelModel(ABC):
             )
 
         return self._idata, compute_log_likelihood
+
+    def _reconstruct_log_likelihood(self, *, nuts_sampler: str) -> None:
+        """Rebuild complete pointwise log-likelihood for panel models.
+
+        Overrides :meth:`GaussianLikelihoodMixin._reconstruct_log_likelihood`
+        to dispatch to :meth:`_reconstruct_panel_log_likelihood` with the
+        correct ``spatial_param`` (derived from ``_jacobian_param``) and
+        ``T_eff`` (from ``self._T``).
+        """
+        spatial_param = self._jacobian_param
+        if spatial_param not in {"rho", "lam"}:
+            return
+        self._reconstruct_panel_log_likelihood(
+            spatial_param=spatial_param,
+            nuts_sampler=nuts_sampler,
+            T_eff=self._T,
+        )
 
     def _reconstruct_panel_log_likelihood(
         self,

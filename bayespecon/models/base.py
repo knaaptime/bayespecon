@@ -755,6 +755,15 @@ class SpatialModel(ABC):
             feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
         return y_arr, X_arr, feature_names
 
+    def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
+        """Compute W @ X for the spatial filter.
+
+        Cross-section models use ``self._W_sparse @ X`` directly.
+        Panel models (:class:`SpatialPanelModel`) override this to apply
+        the Kronecker structure ``W ⊗ I_T`` via :meth:`_sparse_panel_lag`.
+        """
+        return np.asarray(self._W_sparse @ X, dtype=np.float64)
+
     @staticmethod
     def _spatial_lag_column_indices(
         X: np.ndarray, feature_names: list[str]
@@ -1022,6 +1031,17 @@ class SpatialModel(ABC):
                 **sample_kwargs,
             )
         return self._idata, compute_log_likelihood
+
+    def _reconstruct_log_likelihood(self, *, nuts_sampler: str) -> None:
+        """Rebuild complete pointwise log-likelihood after NUTS sampling.
+
+        Cross-section models delegate to
+        :meth:`_reconstruct_cross_sectional_log_likelihood`.
+        Panel models (:class:`SpatialPanelModel`) override this to call
+        :meth:`_reconstruct_panel_log_likelihood` with the correct
+        ``spatial_param`` and ``T_eff``.
+        """
+        self._reconstruct_cross_sectional_log_likelihood(nuts_sampler=nuts_sampler)
 
     def _reconstruct_cross_sectional_log_likelihood(
         self,
