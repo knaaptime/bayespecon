@@ -43,7 +43,6 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from ..._jax_dispatch import _eqx_available
 from .._utils._base import GibbsBasePriors, GibbsBaseState
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (

@@ -75,13 +75,22 @@ def make_jax_state_class(
     cls_dict: dict = {"__annotations__": annotations}
 
     if numpy_state_cls is not None:
+
         def to_numpy(self) -> GibbsBaseState:
             """Convert JAX arrays to the corresponding numpy state."""
             kwargs = {}
             for f in fields:
                 val = getattr(self, f)
-                if f in ("rho", "sigma2", "alpha", "sigma2_u", "sigma2_y",
-                         "rho_d", "rho_o", "gamma"):
+                if f in (
+                    "rho",
+                    "sigma2",
+                    "alpha",
+                    "sigma2_u",
+                    "sigma2_y",
+                    "rho_d",
+                    "rho_o",
+                    "gamma",
+                ):
                     kwargs[f] = float(val)
                 else:
                     kwargs[f] = np.asarray(val)

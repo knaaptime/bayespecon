@@ -279,8 +279,6 @@ def _make_gaussian_gibbs_step(
 
     jax.config.update("jax_enable_x64", True)
 
-    
-
     is_sar = model_type in ("sar", "sdm")
 
     # Convert constants to JAX arrays
@@ -700,7 +698,7 @@ def run_chain_jax_gaussian(
     )
 
     # Initialize JAX state
-    
+
     state = JAXGaussianGibbsState(
         beta=jnp.asarray(init.beta, dtype=jnp.float64),
         sigma2=jnp.float64(init.sigma2),
@@ -985,8 +983,6 @@ def run_chains_jax_gibbs_vectorized(
         use_mala=use_mala,
         use_slice=use_slice,
     )
-
-    
 
     # Convert NumPy initial states to JAX states, then batch into a
     # vmappable pytree by stacking each leaf.
