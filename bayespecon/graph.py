@@ -92,45 +92,16 @@ def flow_trace_blocks(W: sp.spmatrix) -> np.ndarray:
 def _validate_graph(G: Graph) -> sp.csr_matrix:
     """Validate a :class:`libpysal.graph.Graph` and return its CSR sparse matrix.
 
-    Parameters
-    ----------
-    G :
-        A :class:`libpysal.graph.Graph`. Must be row-standardised.
-
-    Returns
-    -------
-    scipy.sparse.csr_matrix
-        Row-compressed representation of *G*'s adjacency matrix.
-
-    Raises
-    ------
-    TypeError
-        If *G* is not a :class:`libpysal.graph.Graph`.
-
-    Warns
-    -----
-    UserWarning
-        If *G* does not appear to be row-standardised.
+    Thin wrapper around :func:`resolve_W` that returns only the CSR matrix
+    (without the row-standardisation flag).
     """
     if not isinstance(G, Graph):
         raise TypeError(
             f"G must be a libpysal.graph.Graph, got {type(G).__name__}. "
             "Convert a legacy libpysal.weights.W with Graph.from_W(w)."
         )
-    W_csr = G.sparse.tocsr().astype(np.float64)
-    transform = getattr(G, "transformation", None)
-    row_std = transform in ("r", "R")
-    if not row_std:
-        row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
-        row_std = bool(np.allclose(row_sums, 1.0, atol=1e-6))
-    if not row_std:
-        warnings.warn(
-            "G does not appear to be row-standardised (row sums ≠ 1). "
-            "Flow weight matrices assume W is row-standardised. "
-            "Apply graph.transform('r') before calling flow utilities.",
-            UserWarning,
-            stacklevel=3,
-        )
+    from .models._base._shared import resolve_W
+    W_csr, _ = resolve_W(G, G.sparse.shape[0])
     return W_csr
 
 

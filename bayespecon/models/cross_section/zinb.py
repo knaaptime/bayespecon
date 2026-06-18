@@ -66,7 +66,8 @@ from ...samplers.zinb import (
     ZINBGibbsState,
     run_zinb_chain,
 )
-from ..base import SpatialModel, _parse_W
+from .._base._shared import _parse_W
+from ..base import SpatialModel
 
 
 class ZINBSAR(SpatialModel):
@@ -194,7 +195,7 @@ class ZINBSAR(SpatialModel):
             self._same_W = True
 
         # Precompute logdet callable for the count equation ρ slice sampler
-        self._logdet_fn = self._make_logdet_fn()
+        self._logdet_fn = self._logdet_numpy_fn
 
     # ------------------------------------------------------------------
     # Selection-equation helpers
@@ -226,19 +227,6 @@ class ZINBSAR(SpatialModel):
     def _sel_nonintercept_feature_names(self) -> list[str]:
         """Feature names for non-intercept selection covariates."""
         return [self._sel_feature_names[i] for i in self._sel_nonintercept_indices]
-
-    def _make_logdet_fn(self):
-        """Build a callable logdet(rho) -> float for the ρ slice sampler."""
-        from ..._logdet import make_logdet_numpy_fn
-
-        bounds = self._logdet_bounds
-        return make_logdet_numpy_fn(
-            self._W_sparse,
-            eigs=self._W_eigs,
-            method=bounds.method,
-            rho_min=bounds.rho_min,
-            rho_max=bounds.rho_max,
-        )
 
     def _initialize_from_ols(self, rng):
         """Warm-start the ZINB Gibbs sampler.

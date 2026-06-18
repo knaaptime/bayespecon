@@ -30,7 +30,7 @@ import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 from .._logdet import get_cached_logdet_fn
-from .base import _pointwise_gaussian_loglik, _write_log_likelihood_to_idata
+from ._base._shared import _pointwise_gaussian_loglik, _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
 from .priors import PanelOLSDynamicPriors, PanelSARDynamicPriors, PanelSDEMDynamicPriors, PanelSDMRDynamicPriors, PanelSDMUDynamicPriors, PanelSEMDynamicPriors, PanelSLXDynamicPriors
 

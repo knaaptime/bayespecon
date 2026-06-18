@@ -85,11 +85,16 @@ def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
     return bool(np.allclose(row_sums, 1.0, atol=1e-6))
 
 
-def _parse_W(
+def resolve_W(
     W: Union[Graph, sp.spmatrix],
     n: int,
+    T: int = 1,
 ) -> tuple[sp.csr_matrix, bool]:
     """Validate and normalise a spatial weights argument to CSR.
+
+    Unified W parser for cross-section (T=1) and panel (T>1) models.
+    Accepts a :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
+    matrix.
 
     Parameters
     ----------
@@ -97,7 +102,11 @@ def _parse_W(
         Either a :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
         matrix.
     n :
-        Expected number of spatial units (must match both dimensions of W).
+        Expected number of cross-sectional units.
+    T :
+        Number of time periods.  When ``T=1`` (default), W must be ``n×n``.
+        When ``T>1``, W may be ``n×n`` (broadcast over time) or
+        ``(n*T)×(n*T)`` (full block-diagonal panel matrix).
 
     Returns
     -------
@@ -111,7 +120,7 @@ def _parse_W(
     TypeError
         If *W* is not a Graph or scipy sparse matrix.
     ValueError
-        If *W* is not square or its size does not match *n*.
+        If *W* is not square or its size does not match *n* (or *n*T*).
 
     Warns
     -----
@@ -126,7 +135,6 @@ def _parse_W(
         W_csr = W.tocsr().astype(np.float64)
         row_std = _is_row_standardized_csr(W_csr)
     elif hasattr(W, "sparse") and hasattr(W, "transform"):
-        # Legacy libpysal.weights.W object — not accepted directly.
         raise TypeError(
             "W appears to be a legacy libpysal.weights.W object. "
             "Convert it to a libpysal.graph.Graph first: "
@@ -140,11 +148,26 @@ def _parse_W(
 
     if W_csr.ndim != 2 or W_csr.shape[0] != W_csr.shape[1]:
         raise ValueError(f"W must be a square matrix, got shape {W_csr.shape}.")
-    if W_csr.shape[0] != n:
-        raise ValueError(
-            f"W has shape {W_csr.shape} but data has {n} observations. "
-            "W must be an n\u00d7n matrix."
-        )
+
+    if T > 1:
+        # Panel mode: accept n×n or (n*T)×(n*T)
+        if W_csr.shape[0] == n:
+            pass  # n×n — will be Kronecker-expanded by caller
+        elif W_csr.shape[0] == n * T:
+            pass  # full block-diagonal panel matrix
+        else:
+            raise ValueError(
+                f"W has shape {W_csr.shape} but data has N={n} units (T={T} periods). "
+                f"W must be ({n},{n}) or ({n * T},{n * T})."
+            )
+    else:
+        # Cross-section mode: must be n×n
+        if W_csr.shape[0] != n:
+            raise ValueError(
+                f"W has shape {W_csr.shape} but data has {n} observations. "
+                "W must be an n\u00d7n matrix."
+            )
+
     if not row_std:
         warnings.warn(
             "W does not appear to be row-standardised (row sums \u2260 1). "
@@ -157,6 +180,14 @@ def _parse_W(
             stacklevel=3,
         )
     return W_csr, row_std
+
+
+def _parse_W(
+    W: Union[Graph, sp.spmatrix],
+    n: int,
+) -> tuple[sp.csr_matrix, bool]:
+    """Backward-compatible alias for :func:`resolve_W` with ``T=1``."""
+    return resolve_W(W, n, T=1)
 
 
 def _pointwise_gaussian_loglik(

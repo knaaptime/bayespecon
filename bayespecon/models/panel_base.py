@@ -28,6 +28,7 @@ from ._base._shared import (
     _is_row_standardized_csr,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
+    resolve_W,
 )
 from .base import SpatialModel
 
@@ -156,70 +157,6 @@ def _as_dense_W(W: Union[Graph, sp.spmatrix, np.ndarray], N: int, T: int) -> np.
     raise ValueError(
         f"W has shape {Wn.shape}; expected (N,N)=({N},{N}) or (N*T,N*T)=({N * T},{N * T})."
     )
-
-
-def _parse_panel_W(
-    W: Union[Graph, sp.spmatrix],
-    N: int,
-    T: int,
-) -> tuple[sp.csr_matrix, bool]:
-    """Validate W and return it as a CSR sparse matrix sized ``(N, N)``.
-
-    Accepts a :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
-    matrix. Raises a :class:`ValueError` if the shape is incompatible with
-    *N* (and optionally *T*). Issues a :class:`UserWarning` when *W* does not
-    appear to be row-standardised.
-
-    Returns the CSR representation of the ``N x N`` cross-sectional matrix;
-    callers that need the full ``(N*T) x (N*T)`` Kronecker form should use
-    :func:`_as_dense_W` or build the sparse Kronecker product themselves.
-    """
-    if isinstance(W, Graph):
-        W_csr = W.sparse.tocsr().astype(np.float64)
-        transform = getattr(W, "transformation", None)
-        row_std = transform in ("r", "R") or _is_row_standardized_csr(W_csr)
-    elif sp.issparse(W):
-        W_csr = W.tocsr().astype(np.float64)
-        row_std = _is_row_standardized_csr(W_csr)
-    elif hasattr(W, "sparse") and hasattr(W, "transform"):
-        raise TypeError(
-            "W appears to be a legacy libpysal.weights.W object. "
-            "Convert it to a libpysal.graph.Graph first: "
-            "Graph.from_W(w), or pass w.sparse (the scipy sparse matrix) directly."
-        )
-    else:
-        raise TypeError(
-            f"W must be a libpysal.graph.Graph or a scipy sparse matrix, "
-            f"got {type(W).__name__}."
-        )
-
-    if W_csr.ndim != 2 or W_csr.shape[0] != W_csr.shape[1]:
-        raise ValueError(f"W must be square, got shape {W_csr.shape}.")
-
-    if W_csr.shape[0] == N:
-        pass  # N x N unit matrix — expected
-    elif W_csr.shape[0] == N * T:
-        # Caller passed the full block matrix; extract N x N block for storage.
-        # We keep it as-is but raise if neither shape matches.
-        pass
-    else:
-        raise ValueError(
-            f"W has shape {W_csr.shape} but data has N={N} units (T={T} periods). "
-            f"W must be ({N},{N}) or ({N * T},{N * T})."
-        )
-
-    if not row_std:
-        warnings.warn(
-            "W does not appear to be row-standardised (row sums \u2260 1). "
-            "Most spatial models assume W is row-standardised; results may be "
-            "unreliable otherwise. For a scipy sparse matrix normalise rows "
-            "manually (divide each row by its sum). To use a libpysal.graph.Graph "
-            "set its transformation attribute: "
-            "graph = graph.transform('r').",
-            UserWarning,
-            stacklevel=3,
-        )
-    return W_csr, row_std
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +350,7 @@ class SpatialPanelModel(SpatialModel):
         ]
 
         # Validate W and store as N×N CSR. Dense expansion is deferred.
-        self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
+        self._W_sparse, self._is_row_std = resolve_W(W, self._N, T=self._T)
         # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
 
         # Resolve rho/lambda bounds from method and priors.
@@ -673,7 +610,9 @@ class SpatialPanelModel(SpatialModel):
             self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
                 self._W_sparse,
                 eigs,
-                method=self.logdet_method,
+                method=self._logdet_bounds.method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
                 T=self._T,
             )
         return self._logdet_numpy_fn_cache
@@ -688,7 +627,9 @@ class SpatialPanelModel(SpatialModel):
             self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
                 self._W_sparse,
                 eigs,
-                method=self.logdet_method,
+                method=self._logdet_bounds.method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
                 T=self._T,
             )
         return self._logdet_numpy_vec_fn_cache
@@ -699,7 +640,9 @@ class SpatialPanelModel(SpatialModel):
         if self._logdet_pytensor_fn_cache is None:
             self._logdet_pytensor_fn_cache = make_logdet_fn(
                 self._W_for_logdet,
-                method=self.logdet_method,
+                method=self._logdet_bounds.method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
                 T=self._T,
             )
         return self._logdet_pytensor_fn_cache

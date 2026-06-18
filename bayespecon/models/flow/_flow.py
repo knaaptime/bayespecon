@@ -2005,7 +2005,7 @@ class NegativeBinomialSARFlow(SARFlow):
         Builds the cache, priors, and initial state from model attributes,
         then dispatches to :func:`run_chain_unrestricted`.
         """
-        from ...models.base import gelman_default_beta_prior
+        from ...models._base._shared import gelman_default_beta_prior
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin_reduced._flow import (
@@ -2308,7 +2308,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         Builds the cache, priors, and initial state from model attributes,
         then dispatches to :func:`run_chain_separable`.
         """
-        from ...models.base import gelman_default_beta_prior
+        from ...models._base._shared import gelman_default_beta_prior
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin_reduced._flow import (
@@ -2577,7 +2577,7 @@ class NegativeBinomialFlow(OLSFlow):
         Three blocks per sweep: ω (Pólya–Gamma), β (conjugate normal),
         α (slice on log(α)).
         """
-        from ...models.base import gelman_default_beta_prior
+        from ...models._base._shared import gelman_default_beta_prior
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin._core import GibbsState
