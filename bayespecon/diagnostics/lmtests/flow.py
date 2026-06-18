@@ -26,7 +26,7 @@ def _flow_score_info(model, *, restrict_keys=("d", "o", "w")):
         Fitted flow model providing ``inference_data`` (with ``beta`` and
         ``sigma`` posterior draws), the cached spatial lags
         ``_Wd_y``/``_Wo_y``/``_Ww_y``, the cached trace matrix
-        ``_T_flow_traces``, and the design matrix ``_X_design``.
+        ``_T_flow_traces``, and the design matrix ``_X``.
     restrict_keys : tuple of {"d","o","w"}
         Subset of the three spatial-lag directions to keep (in order).
         Mainly for test readability — the joint test uses the full triple.
@@ -40,8 +40,8 @@ def _flow_score_info(model, *, restrict_keys=("d", "o", "w")):
         ``J = T_flow_traces[K, K] * sigma2_bar + Q[K, K]``
         with ``Q[i, j] = (W_i y)^T (W_j y)``.
     """
-    np.asarray(model._y_vec, dtype=np.float64)
-    np.asarray(model._X_design, dtype=np.float64)
+    np.asarray(model._y, dtype=np.float64)
+    np.asarray(model._X, dtype=np.float64)
     Wy_all = np.column_stack(
         [
             np.asarray(model._Wd_y, dtype=np.float64),
@@ -173,8 +173,8 @@ def _flow_robust_score_info(sarflow_model):
     ``(rho_d, rho_o, rho_w, beta)``; the information matrix uses the
     SARFlow posterior mean of :math:`\\sigma^{2}`.
     """
-    y = np.asarray(sarflow_model._y_vec, dtype=np.float64)
-    X = np.asarray(sarflow_model._X_design, dtype=np.float64)
+    y = np.asarray(sarflow_model._y, dtype=np.float64)
+    X = np.asarray(sarflow_model._X, dtype=np.float64)
     Wd_y = np.asarray(sarflow_model._Wd_y, dtype=np.float64)
     Wo_y = np.asarray(sarflow_model._Wo_y, dtype=np.float64)
     Ww_y = np.asarray(sarflow_model._Ww_y, dtype=np.float64)
@@ -303,8 +303,8 @@ def bayesian_lm_flow_intra_test(model) -> BayesianLMTestResult:
         )
     intra_idx = np.asarray(intra_idx, dtype=int)
 
-    np.asarray(model._y_vec, dtype=np.float64)
-    X = np.asarray(model._X_design, dtype=np.float64)
+    np.asarray(model._y, dtype=np.float64)
+    X = np.asarray(model._X, dtype=np.float64)
     Xi = X[:, intra_idx]  # (N, k_intra)
     k_intra = Xi.shape[1]
 

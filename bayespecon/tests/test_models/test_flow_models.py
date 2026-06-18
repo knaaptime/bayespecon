@@ -286,7 +286,7 @@ class TestFlowModelConstruction:
             titer=50,
             trace_seed=0,
         )
-        np.testing.assert_allclose(model._y_vec, self.y_vec, atol=1e-12)
+        np.testing.assert_allclose(model._y, self.y_vec, atol=1e-12)
 
     def test_sar_flow_separable_builds(self):
         from bayespecon.models.flow import SARFlowSeparable
@@ -403,7 +403,7 @@ class TestGenerateFlowData:
         assert out["y_vec"].shape == (self.n * self.n,)
         assert out["y_mat"].shape == (self.n, self.n)
 
-    def test_y_vec_mat_consistency(self):
+    def test_y_mat_consistency(self):
         from bayespecon.dgp.flows import generate_flow_data
 
         out = generate_flow_data(

@@ -604,8 +604,8 @@ class TestFlowScoreInfo:
             pytest.skip(f"flow_trace_blocks unavailable: {exc}")
 
         model = MagicMock()
-        model._y_vec = y
-        model._X_design = X
+        model._y = y
+        model._X = X
         model._Wd_y = np.asarray(W_d @ y)
         model._Wo_y = np.asarray(W_o @ y)
         model._Ww_y = np.asarray(W_w @ y)

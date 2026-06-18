@@ -10,7 +10,7 @@ stacked to length n^2 * T.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Any, Optional, Union
 
 import arviz as az
@@ -36,15 +36,14 @@ from ..._logdet import (
 from ..._logdet._flow import _flow_logdet_poly_coeffs
 from ..._ops import kron_solve_matrix
 from ...graph import _graph_to_csr, flow_trace_blocks, flow_weight_matrices
-from ..base import SpatialModel
 from ..flow import (
     _build_flow_effect_masks,
     _compute_flow_effects_lesage,
 )
-from ..panel_base import _demean_panel
+from ..panel_base import SpatialPanelModel, _demean_panel
 
 
-class FlowPanelModel(ABC):
+class FlowPanelModel(SpatialPanelModel):
     """Abstract base class for balanced panel spatial flow models.
 
     Parameters
@@ -109,6 +108,7 @@ class FlowPanelModel(ABC):
 
         self.miter = miter
         self.titer = titer
+        self._is_row_std = True  # Graph is assumed row-standardised
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._approximation = None
@@ -234,8 +234,8 @@ class FlowPanelModel(ABC):
         )
 
         # Keep aliases matching flow model naming
-        self._y_vec = self._y
-        self._X_design = self._X
+        self._y = self._y
+        self._X = self._X
 
         # Build flow weight matrices on N_flow = n^2 system
         wms = flow_weight_matrices(G)
@@ -446,16 +446,6 @@ class FlowPanelModel(ABC):
         return self._idata
 
     @property
-    def inference_data(self) -> Optional[az.InferenceData]:
-        """Return posterior draws from the most recent fit."""
-        return self._idata
-
-    @property
-    def pymc_model(self) -> Optional[pm.Model]:
-        """Return the most recently built PyMC model."""
-        return self._pymc_model
-
-    @property
     def approximation(self):
         """Return the most recent PyMC variational approximation, if any."""
         return self._approximation
@@ -615,38 +605,6 @@ class FlowPanelModel(ABC):
         )
         return self._idata
 
-    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
-        """Return posterior summary table via ArviZ."""
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet. Call fit() first.")
-        return az.summary(self._idata, var_names=var_names, **kwargs)
-
-    def spatial_diagnostics(self) -> pd.DataFrame:
-        """Run Bayesian LM specification tests for flow panel models.
-
-        Looks up the diagnostic suite registered for this model class
-        and returns a tidy DataFrame with one row per test.  See
-        :meth:`bayespecon.models.base.SpatialModel.spatial_diagnostics`
-        for the column schema.
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been fit yet.
-        """
-
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet. Call fit() first.")
-        from ...diagnostics.lmtests.registry import get_diagnostic_suite
-
-        suite = get_diagnostic_suite(self)
-        if suite is None:
-            raise ValueError(
-                f"No diagnostic suite registered for {type(self).__name__}. "
-                f"Register one in bayespecon.diagnostics.lmtests.registry."
-            )
-        return SpatialModel._run_lm_diagnostics(self, suite.tests)
-
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
     ) -> Any:
@@ -699,6 +657,26 @@ class FlowPanelModel(ABC):
             alpha=alpha,
             fmt=format,
             title=f"{model_type} decision tree (alpha={alpha})",
+        )
+
+    def _get_decision_spec(self, model_type: str):
+        """Return the panel-flow decision-tree spec for this model type.
+
+        Overrides :meth:`SpatialPanelModel._get_decision_spec` to use
+        :func:`get_panel_flow_spec` instead of :func:`get_panel_spec`.
+        """
+        from ...diagnostics import _decision_trees as _dt
+
+        return _dt.get_panel_flow_spec(model_type)
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute fitted values at posterior mean parameters.
+
+        Flow panel models override this in subclasses when fitted values
+        are needed.  The base implementation raises ``NotImplementedError``.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement fitted_values()."
         )
 
     def _model_coords(self, extra: Optional[dict] = None) -> dict:
@@ -919,7 +897,7 @@ class FlowPanelModel(ABC):
         T = self._T
         A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
         lu = sp.linalg.splu(A)
-        Xb = self._X_design @ beta  # (N*T,)
+        Xb = self._X @ beta  # (N*T,)
         Xb_mat = Xb.reshape(T, N).T  # (N, T)
         if sigma is not None:
             noise = rng.normal(scale=float(sigma), size=(N, T))
@@ -1580,7 +1558,7 @@ class OLSFlowPanel(FlowPanelModel):
         rng: np.random.Generator,
     ) -> np.ndarray:
         """Posterior-predictive replicate ``y_rep = X β + σ ε`` (full panel stack)."""
-        Xb = self._X_design @ beta  # (N_flow * T,)
+        Xb = self._X @ beta  # (N_flow * T,)
         if sigma is None:
             return Xb
         return Xb + rng.normal(scale=float(sigma), size=Xb.shape[0])
@@ -1753,7 +1731,7 @@ class NegativeBinomialSARFlowPanel(SARFlowPanel):
         T = self._T
         A = self._assemble_A(rho_d, rho_o, rho_w).tocsc()
         lu = sp.linalg.splu(A)
-        Xb = self._X_design @ beta
+        Xb = self._X @ beta
         Xb_mat = Xb.reshape(T, N).T
         eta_mat = lu.solve(Xb_mat)
         eta = eta_mat.T.reshape(-1)
@@ -1943,7 +1921,7 @@ class NegativeBinomialSARFlowSeparablePanel(SARFlowSeparablePanel):
         I_n = sp.eye(n, format="csr", dtype=np.float64)
         Ld = (I_n - rho_d * self._W_sparse).tocsr()
         Lo = (I_n - rho_o * self._W_sparse).tocsr()
-        Xb = self._X_design @ beta
+        Xb = self._X @ beta
         Xb_mat = Xb.reshape(T, N).T  # (N, T)
         eta_mat = kron_solve_matrix(Lo, Ld, Xb_mat, n)
         eta = eta_mat.T.reshape(-1)
@@ -2074,7 +2052,7 @@ class NegativeBinomialFlowPanel(OLSFlowPanel):
         alpha: Optional[float] = None,
     ) -> np.ndarray:
         """NB2 posterior-predictive replicate ``y_rep`` (full panel stack)."""
-        eta = self._X_design @ beta  # (N_flow * T,)
+        eta = self._X @ beta  # (N_flow * T,)
         lam = np.exp(np.clip(eta, -50.0, 50.0))
         if alpha is None:
             raise ValueError(
@@ -2368,7 +2346,7 @@ class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
         """SEM panel posterior-predictive: ``y_rep,t = X_t β + B^{-1} ε_t``."""
         N = self._N_flow
         T = self._T
-        Xb = self._X_design @ beta  # (N*T,)
+        Xb = self._X @ beta  # (N*T,)
         if sigma is None:
             return Xb
         B = self._assemble_A(lam_d, lam_o, lam_w).tocsc()
@@ -2546,7 +2524,7 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         N = self._N_flow
         T = self._T
         n = self._n
-        Xb = self._X_design @ beta
+        Xb = self._X @ beta
         if sigma is None:
             return Xb
         I_n = sp.eye(n, format="csr", dtype=np.float64)

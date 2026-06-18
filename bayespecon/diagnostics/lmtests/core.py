@@ -336,7 +336,7 @@ def _compute_residuals(
     Parameters
     ----------
     model : fitted model instance
-        Must provide ``_y`` (or ``_y_vec``) and ``_X`` (or ``_X_design``),
+        Must provide ``_y`` (or ``_y``) and ``_X`` (or ``_X``),
         and optionally ``_WX``.
     beta_draws : np.ndarray, shape (draws, k)
         Posterior draws of beta.
@@ -359,7 +359,7 @@ def _compute_residuals(
     """
     y = model.__dict__.get("_y")
     if y is None:
-        y = model.__dict__.get("_y_vec")
+        y = model.__dict__.get("_y")
     idata = model.inference_data
 
     if use_Z:
@@ -370,7 +370,7 @@ def _compute_residuals(
         ni = model._nonintercept_indices
         X_full = model.__dict__.get("_X")
         if X_full is None:
-            X_full = model.__dict__.get("_X_design")
+            X_full = model.__dict__.get("_X")
         if len(ni) < X_full.shape[1] and beta_draws.shape[1] < X_full.shape[1]:
             Z = X_full[:, ni]
         else:
