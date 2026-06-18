@@ -8,9 +8,6 @@ Likelihood: epsilon ~ N(0, sigma^2 I), plus Jacobian log|I - lambda*W|.
 
 from __future__ import annotations
 
-from typing import Optional
-
-import arviz as az
 import numpy as np
 
 from .._mixins import GaussianLikelihoodMixin

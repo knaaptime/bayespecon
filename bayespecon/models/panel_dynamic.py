@@ -24,15 +24,27 @@ References
 Nickell, S. (1981). Biases in dynamic models with fixed effects.
 *Econometrica*, 49(6), 1417–1426.
 """
+
 from __future__ import annotations
+
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
+
 from .._logdet import get_cached_logdet_fn
 from ._base._shared import _pointwise_gaussian_loglik, _write_log_likelihood_to_idata
 from .panel_base import SpatialPanelModel
-from .priors import PanelOLSDynamicPriors, PanelSARDynamicPriors, PanelSDEMDynamicPriors, PanelSDMRDynamicPriors, PanelSDMUDynamicPriors, PanelSEMDynamicPriors, PanelSLXDynamicPriors
+from .priors import (
+    PanelOLSDynamicPriors,
+    PanelSARDynamicPriors,
+    PanelSDEMDynamicPriors,
+    PanelSDMRDynamicPriors,
+    PanelSDMUDynamicPriors,
+    PanelSEMDynamicPriors,
+    PanelSLXDynamicPriors,
+)
+
 
 class _DynamicPanelMixin:
     """Shared helpers for dynamic panel classes based on lagged stacked arrays.
@@ -47,6 +59,7 @@ class _DynamicPanelMixin:
     (pooled), model=2 (time FE), or model=3 (two-way FE).  Setting model=1
     (unit FE) raises a ValueError at construction time.
     """
+
     _y_dyn: np.ndarray
     _y_lag: np.ndarray
     _Wy_dyn: np.ndarray
@@ -57,16 +70,18 @@ class _DynamicPanelMixin:
     _n_time_eff: int
     _W_dense_dyn_cache: np.ndarray | None
 
-    def __init__(self, *args, model: int=0, **kwargs):
+    def __init__(self, *args, model: int = 0, **kwargs):
         if model == 1:
-            raise ValueError('model=1 (unit fixed effects) is not supported for dynamic panel models due to the Nickell bias (Nickell, 1981).  When unit fixed effects are removed via within-demeaning, the demeaned lagged dependent variable (y_{i,t-1} - ȳ_{i}) becomes mechanically correlated with the demeaned error (ε_{i,t} - ε̄_{i}), because ȳ_{i} contains ε_{i,t-1}.  This correlation biases the autoregressive coefficient φ toward zero, and the bias only vanishes as T → ∞.  For short panels (small T), the bias is severe and renders the estimator inconsistent.  Use model=0 (pooled), model=2 (time FE), or model=3 (two-way FE) instead.  For unit-specific heterogeneity with a lagged dependent variable, consider the Arellano-Bond GMM estimator or a random-effects specification (model=0 with unit priors).')
+            raise ValueError(
+                "model=1 (unit fixed effects) is not supported for dynamic panel models due to the Nickell bias (Nickell, 1981).  When unit fixed effects are removed via within-demeaning, the demeaned lagged dependent variable (y_{i,t-1} - ȳ_{i}) becomes mechanically correlated with the demeaned error (ε_{i,t} - ε̄_{i}), because ȳ_{i} contains ε_{i,t-1}.  This correlation biases the autoregressive coefficient φ toward zero, and the bias only vanishes as T → ∞.  For short panels (small T), the bias is severe and renders the estimator inconsistent.  Use model=0 (pooled), model=2 (time FE), or model=3 (two-way FE) instead.  For unit-specific heterogeneity with a lagged dependent variable, consider the Arellano-Bond GMM estimator or a random-effects specification (model=0 with unit priors)."
+            )
         super().__init__(*args, model=model, **kwargs)
 
     def _prepare_dynamic_design(self) -> None:
-        if hasattr(self, '_Z_dyn'):
+        if hasattr(self, "_Z_dyn"):
             return
         if self._T < 2:
-            raise ValueError('Dynamic panel models require T >= 2.')
+            raise ValueError("Dynamic panel models require T >= 2.")
         T, N = (self._T, self._N)
         k = self._X.shape[1]
         kw = self._WX.shape[1]
@@ -101,61 +116,89 @@ class _DynamicPanelMixin:
         """
         if self._W_dense_dyn_cache is None:
             import warnings
+
             n = self._N * self._n_time_eff
             nbytes = n * n * 8
             if nbytes > 100 * 1024 * 1024:
-                warnings.warn(f'Materialising a {n}×{n} dense dynamic-panel weight matrix ({nbytes / 1024 ** 2:.0f} MB).  Use _batch_sparse_lag with T_eff=self._n_time_eff instead.', ResourceWarning, stacklevel=3)
-            Wn = self._W_sparse.toarray() if hasattr(self._W_sparse, 'toarray') else np.asarray(self._W_sparse)
+                warnings.warn(
+                    f"Materialising a {n}×{n} dense dynamic-panel weight matrix ({nbytes / 1024**2:.0f} MB).  Use _batch_sparse_lag with T_eff=self._n_time_eff instead.",
+                    ResourceWarning,
+                    stacklevel=3,
+                )
+            Wn = (
+                self._W_sparse.toarray()
+                if hasattr(self._W_sparse, "toarray")
+                else np.asarray(self._W_sparse)
+            )
             self._W_dense_dyn_cache = np.kron(np.eye(self._n_time_eff), Wn)
         return self._W_dense_dyn_cache
 
     @property
     def _W_sparse_dyn(self):
         """Sparse (N*(T-1))×(N*(T-1)) Kronecker block weight ``I_{T-1} ⊗ W_n``."""
-        if not hasattr(self, '_W_sparse_dyn_cache') or self._W_sparse_dyn_cache is None:
+        if not hasattr(self, "_W_sparse_dyn_cache") or self._W_sparse_dyn_cache is None:
             import scipy.sparse as sp
+
             W = self._W_sparse
-            self._W_sparse_dyn_cache = sp.csr_matrix(sp.kron(sp.eye(self._n_time_eff, format='csr'), W, format='csr'))
+            self._W_sparse_dyn_cache = sp.csr_matrix(
+                sp.kron(sp.eye(self._n_time_eff, format="csr"), W, format="csr")
+            )
         return self._W_sparse_dyn_cache
 
     @property
     def _W_pt_sparse_dyn(self):
         """PyTensor sparse variable wrapping :attr:`_W_sparse_dyn`."""
-        if not hasattr(self, '_W_pt_sparse_dyn_cache') or self._W_pt_sparse_dyn_cache is None:
+        if (
+            not hasattr(self, "_W_pt_sparse_dyn_cache")
+            or self._W_pt_sparse_dyn_cache is None
+        ):
             import scipy.sparse as sp
             from pytensor import sparse as pts
-            self._W_pt_sparse_dyn_cache = pts.as_sparse_variable(sp.csc_matrix(self._W_sparse_dyn))
+
+            self._W_pt_sparse_dyn_cache = pts.as_sparse_variable(
+                sp.csc_matrix(self._W_sparse_dyn)
+            )
         return self._W_pt_sparse_dyn_cache
 
     def _beta_names(self) -> list[str]:
         if self._wx_feature_names:
-            return self._feature_names + [f'W*{name}' for name in self._wx_feature_names]
+            return self._feature_names + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
         return self._feature_names
 
     def _dynamic_logdet_fn(self, lower: float, upper: float):
         """Build and cache dynamic-panel logdet callable keyed by bounds."""
-        if not hasattr(self, '_dynamic_logdet_cache'):
+        if not hasattr(self, "_dynamic_logdet_cache"):
             self._dynamic_logdet_cache = {}
-        method = getattr(self, '_resolved_logdet_method', self.logdet_method)
+        method = getattr(self, "_resolved_logdet_method", self.logdet_method)
         key = (method, float(lower), float(upper), int(self._n_time_eff))
         fn = self._dynamic_logdet_cache.get(key)
         if fn is None:
-            fn = get_cached_logdet_fn(self._W_for_logdet, method=method, rho_min=lower, rho_max=upper, T=self._n_time_eff)
+            fn = get_cached_logdet_fn(
+                self._W_for_logdet,
+                method=method,
+                rho_min=lower,
+                rho_max=upper,
+                T=self._n_time_eff,
+            )
             self._dynamic_logdet_cache[key] = fn
         return fn
 
-    def _reconstruct_dynamic_log_likelihood(self, *, spatial_param: str, nuts_sampler: str) -> None:
+    def _reconstruct_dynamic_log_likelihood(
+        self, *, spatial_param: str, nuts_sampler: str
+    ) -> None:
         """Rebuild complete pointwise log-likelihood for dynamic panel models."""
-        if not hasattr(self, '_idata'):
+        if not hasattr(self, "_idata"):
             return
-        if spatial_param not in {'rho', 'lam'}:
+        if spatial_param not in {"rho", "lam"}:
             return
-        if spatial_param == 'lam' and self.backend.use_jax_likelihood(nuts_sampler):
+        if spatial_param == "lam" and self.backend.use_jax_likelihood(nuts_sampler):
             return
         self._prepare_dynamic_design()
         idata = self._idata
         n_obs = int(self._y_dyn.shape[0])
-        beta_raw = idata.posterior['beta'].values
+        beta_raw = idata.posterior["beta"].values
         beta_draws = beta_raw.reshape(-1, beta_raw.shape[-1])
         x_cols = int(self._X_dyn.shape[1])
         z_cols = int(self._X_dyn.shape[1] + self._WX_dyn.shape[1])
@@ -164,59 +207,78 @@ class _DynamicPanelMixin:
         elif beta_draws.shape[1] == z_cols:
             design = np.hstack([self._X_dyn, self._WX_dyn])
         else:
-            raise ValueError(f'beta draw width does not match dynamic design: {beta_draws.shape[1]} not in {{{x_cols}, {z_cols}}}.')
-        phi_draws = idata.posterior['phi'].values.reshape(-1)
-        sigma_draws = idata.posterior['sigma'].values.reshape(-1)
-        nu_draws = idata.posterior['nu'].values.reshape(-1) if self.robust else None
+            raise ValueError(
+                f"beta draw width does not match dynamic design: {beta_draws.shape[1]} not in {{{x_cols}, {z_cols}}}."
+            )
+        phi_draws = idata.posterior["phi"].values.reshape(-1)
+        sigma_draws = idata.posterior["sigma"].values.reshape(-1)
+        nu_draws = idata.posterior["nu"].values.reshape(-1) if self.robust else None
         spatial_draws = idata.posterior[spatial_param].values.reshape(-1)
-        if spatial_param == 'rho':
-            mu = phi_draws[:, None] * self._y_lag[None, :] + spatial_draws[:, None] * self._Wy_dyn[None, :] + beta_draws @ design.T
-            if 'theta' in idata.posterior:
-                theta_draws = idata.posterior['theta'].values.reshape(-1)
+        if spatial_param == "rho":
+            mu = (
+                phi_draws[:, None] * self._y_lag[None, :]
+                + spatial_draws[:, None] * self._Wy_dyn[None, :]
+                + beta_draws @ design.T
+            )
+            if "theta" in idata.posterior:
+                theta_draws = idata.posterior["theta"].values.reshape(-1)
                 mu = mu + theta_draws[:, None] * self._Wy_lag[None, :]
             elif design.shape[1] == z_cols:
-                mu = mu - spatial_draws[:, None] * phi_draws[:, None] * self._Wy_lag[None, :]
+                mu = (
+                    mu
+                    - spatial_draws[:, None]
+                    * phi_draws[:, None]
+                    * self._Wy_lag[None, :]
+                )
             eps = self._y_dyn[None, :] - mu
         else:
-            resid = self._y_dyn[None, :] - phi_draws[:, None] * self._y_lag[None, :] - beta_draws @ design.T
+            resid = (
+                self._y_dyn[None, :]
+                - phi_draws[:, None] * self._y_lag[None, :]
+                - beta_draws @ design.T
+            )
             w_resid = self._batch_sparse_lag(resid, T_eff=self._n_time_eff)
             eps = resid - spatial_draws[:, None] * w_resid
         ll_data = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
         jacobian = self._logdet_numpy_vec_fn(spatial_draws) * self._n_time_eff
         ll_total = ll_data + jacobian[:, None] / n_obs
-        n_chains = idata.posterior.sizes['chain']
-        n_draws_per_chain = idata.posterior.sizes['draw']
-        _write_log_likelihood_to_idata(idata, ll_total.reshape(n_chains, n_draws_per_chain, n_obs))
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        _write_log_likelihood_to_idata(
+            idata, ll_total.reshape(n_chains, n_draws_per_chain, n_obs)
+        )
+
 
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelOLSDynamicPriors
-    'Dynamic panel regression without contemporaneous spatial dependence.\n\n    Implements\n\n    .. math::\n\n        y_{it} = \\phi y_{i,t-1} + x_{it}\'\\beta\n        + \\Bigl(\\sum_j w_{ij} x_{jt}\\Bigr)\'\\theta + \\varepsilon_{it},\n        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),\n\n    where the :math:`(\\sum_j w_{ij} x_{jt})\'\\theta` block is present\n    only when the base design marks covariates as laggable. The admissible\n    panel transformations are pooled, time effects, and two-way effects;\n    ``model=1`` is rejected by :class:`_DynamicPanelMixin` because unit\n    fixed effects with a lagged dependent variable induce Nickell bias.\n\n    Parameters\n    ----------\n    formula : str, optional\n        Wilkinson-style formula, e.g. ``"y ~ x1 + x2"``. Requires\n        ``data``, ``unit_col``, and ``time_col``.\n    data : pandas.DataFrame, optional\n        Long-format panel data when using formula mode.\n    y : array-like, optional\n        Stacked response of shape ``(N*T,)`` in unit-major order.\n        Required in matrix mode.\n    X : array-like or pandas.DataFrame, optional\n        Stacked design matrix. Required in matrix mode.\n    W : libpysal.graph.Graph or scipy.sparse matrix\n        Spatial weights of shape ``(N, N)``. Used to construct the\n        ``WX`` block. Should be row-standardised.\n    unit_col : str, optional\n        Column in ``data`` identifying the cross-sectional unit.\n        Required in formula mode.\n    time_col : str, optional\n        Column in ``data`` identifying the time period. Required in\n        formula mode.\n    N : int, optional\n        Number of cross-sectional units. Required in matrix mode.\n    T : int, optional\n        Number of time periods. Required in matrix mode; must be\n        ``>= 2``.\n    model : int, default 0\n        Fixed-effects specification: ``0`` pooled, ``2`` time FE,\n        ``3`` two-way FE. ``1`` (unit FE) is rejected because it\n        induces Nickell bias.\n    priors : dict, optional\n        Override default priors. Supported keys:\n\n        - ``phi_lower`` (float, default -0.95): Lower bound of\n          Uniform prior on :math:`\\phi`.\n        - ``phi_upper`` (float, default 0.95): Upper bound of Uniform\n          prior on :math:`\\phi`.\n        - ``beta_mu`` (float, default 0.0): Normal prior mean for\n          :math:`[\\beta, \\theta]`.\n        - ``beta_sigma`` (float, default 1e6): Normal prior std for\n          :math:`[\\beta, \\theta]`.\n        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std\n          for :math:`\\sigma`.\n        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)\n          prior on :math:`\\nu` (only used when ``robust=True``).\n\n    logdet_method : str, optional\n        Accepted for API consistency; unused (no contemporaneous\n        spatial lag on ``y``).\n    robust : bool, default False\n        If True, replace the Normal error with Student-t. See\n        *Robust regression* below.\n    w_vars : list of str, optional\n        Names of X columns to spatially lag. By default all\n        non-constant columns are lagged.\n\n    Notes\n    -----\n    **Robust regression**\n\n    When ``robust=True``, the error distribution is changed from Normal\n    to Student-t, yielding a model that is robust to heavy-tailed outliers:\n\n    .. math::\n\n        \\varepsilon_t \\sim t_\\nu(0, \\sigma^2)\n\n    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).\n    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,\n    favouring near-Normal tails. The lower bound of 2 ensures the\n    variance exists.\n    '
+    "Dynamic panel regression without contemporaneous spatial dependence.\n\n    Implements\n\n    .. math::\n\n        y_{it} = \\phi y_{i,t-1} + x_{it}'\\beta\n        + \\Bigl(\\sum_j w_{ij} x_{jt}\\Bigr)'\\theta + \\varepsilon_{it},\n        \\qquad \\varepsilon_{it} \\sim \\mathcal{N}(0, \\sigma^2),\n\n    where the :math:`(\\sum_j w_{ij} x_{jt})'\\theta` block is present\n    only when the base design marks covariates as laggable. The admissible\n    panel transformations are pooled, time effects, and two-way effects;\n    ``model=1`` is rejected by :class:`_DynamicPanelMixin` because unit\n    fixed effects with a lagged dependent variable induce Nickell bias.\n\n    Parameters\n    ----------\n    formula : str, optional\n        Wilkinson-style formula, e.g. ``\"y ~ x1 + x2\"``. Requires\n        ``data``, ``unit_col``, and ``time_col``.\n    data : pandas.DataFrame, optional\n        Long-format panel data when using formula mode.\n    y : array-like, optional\n        Stacked response of shape ``(N*T,)`` in unit-major order.\n        Required in matrix mode.\n    X : array-like or pandas.DataFrame, optional\n        Stacked design matrix. Required in matrix mode.\n    W : libpysal.graph.Graph or scipy.sparse matrix\n        Spatial weights of shape ``(N, N)``. Used to construct the\n        ``WX`` block. Should be row-standardised.\n    unit_col : str, optional\n        Column in ``data`` identifying the cross-sectional unit.\n        Required in formula mode.\n    time_col : str, optional\n        Column in ``data`` identifying the time period. Required in\n        formula mode.\n    N : int, optional\n        Number of cross-sectional units. Required in matrix mode.\n    T : int, optional\n        Number of time periods. Required in matrix mode; must be\n        ``>= 2``.\n    model : int, default 0\n        Fixed-effects specification: ``0`` pooled, ``2`` time FE,\n        ``3`` two-way FE. ``1`` (unit FE) is rejected because it\n        induces Nickell bias.\n    priors : dict, optional\n        Override default priors. Supported keys:\n\n        - ``phi_lower`` (float, default -0.95): Lower bound of\n          Uniform prior on :math:`\\phi`.\n        - ``phi_upper`` (float, default 0.95): Upper bound of Uniform\n          prior on :math:`\\phi`.\n        - ``beta_mu`` (float, default 0.0): Normal prior mean for\n          :math:`[\\beta, \\theta]`.\n        - ``beta_sigma`` (float, default 1e6): Normal prior std for\n          :math:`[\\beta, \\theta]`.\n        - ``sigma_sigma`` (float, default 10.0): HalfNormal prior std\n          for :math:`\\sigma`.\n        - ``nu_lam`` (float, default 1/30): Rate of TruncExp(lower=2)\n          prior on :math:`\\nu` (only used when ``robust=True``).\n\n    logdet_method : str, optional\n        Accepted for API consistency; unused (no contemporaneous\n        spatial lag on ``y``).\n    robust : bool, default False\n        If True, replace the Normal error with Student-t. See\n        *Robust regression* below.\n    w_vars : list of str, optional\n        Names of X columns to spatially lag. By default all\n        non-constant columns are lagged.\n\n    Notes\n    -----\n    **Robust regression**\n\n    When ``robust=True``, the error distribution is changed from Normal\n    to Student-t, yielding a model that is robust to heavy-tailed outliers:\n\n    .. math::\n\n        \\varepsilon_t \\sim t_\\nu(0, \\sigma^2)\n\n    where :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).\n    The default ``nu_lam = 1/30`` gives a prior mean of approximately 30,\n    favouring near-Normal tails. The lower bound of 2 ensures the\n    variance exists.\n    "
 
     def _build_pymc_model(self) -> pm.Model:
         self._prepare_dynamic_design()
-        phi_lower = self.priors.get('phi_lower', -0.95)
-        phi_upper = self.priors.get('phi_upper', 0.95)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        phi_lower = self.priors.get("phi_lower", -0.95)
+        phi_upper = self.priors.get("phi_upper", 0.95)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         with pm.Model(coords=self._model_coords()) as model:
-            phi = pm.Uniform('phi', lower=phi_lower, upper=phi_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
+            phi = pm.Uniform("phi", lower=phi_lower, upper=phi_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             mu = phi * self._y_lag + pt.dot(self._Z_dyn, beta)
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model['nu']
-                pm.StudentT('obs', nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
             else:
-                pm.Normal('obs', mu=mu, sigma=sigma, observed=self._y_dyn)
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
         return model
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
-        phi = float(self._posterior_mean('phi'))
-        beta = self._posterior_mean('beta')
+        phi = float(self._posterior_mean("phi"))
+        beta = self._posterior_mean("beta")
         return phi * self._y_lag + self._Z_dyn @ beta
+
 
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDMRDynamicPriors
@@ -224,30 +286,44 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     def _build_pymc_model(self) -> pm.Model:
         self._prepare_dynamic_design()
-        rho_lower = self.priors.get('rho_lower', -0.95)
-        rho_upper = self.priors.get('rho_upper', 0.95)
-        phi_lower = self.priors.get('phi_lower', -0.95)
-        phi_upper = self.priors.get('phi_upper', 0.95)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        rho_lower = self.priors.get("rho_lower", -0.95)
+        rho_upper = self.priors.get("rho_upper", 0.95)
+        phi_lower = self.priors.get("phi_lower", -0.95)
+        phi_upper = self.priors.get("phi_upper", 0.95)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         logdet_fn = self._dynamic_logdet_fn(rho_lower, rho_upper)
         with pm.Model(coords=self._model_coords()) as model:
-            rho = pm.Uniform('rho', lower=rho_lower, upper=rho_upper)
-            phi = pm.Uniform('phi', lower=phi_lower, upper=phi_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
-            mu = phi * self._y_lag + rho * self._Wy_dyn - rho * phi * self._Wy_lag + pt.dot(self._Z_dyn, beta)
+            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
+            phi = pm.Uniform("phi", lower=phi_lower, upper=phi_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            mu = (
+                phi * self._y_lag
+                + rho * self._Wy_dyn
+                - rho * phi * self._Wy_lag
+                + pt.dot(self._Z_dyn, beta)
+            )
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model['nu']
-                pm.StudentT('obs', nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
             else:
-                pm.Normal('obs', mu=mu, sigma=sigma, observed=self._y_dyn)
-            pm.Potential('jacobian', logdet_fn(rho))
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
+            pm.Potential("jacobian", logdet_fn(rho))
         return model
 
-    def fit(self, draws: int=2000, tune: int=1000, chains: int=4, target_accept: float=0.9, random_seed: int | None=None, idata_kwargs: dict | None=None, **sample_kwargs):
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
         """Sample posterior and attach Jacobian-corrected log-likelihood.
 
         The SDMR panel model uses ``pm.Normal("obs", observed=y)`` which
@@ -256,20 +332,39 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         is requested, the Jacobian correction is added post-sampling.
         """
         idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get('log_likelihood', False))
-        nuts_sampler = sample_kwargs.pop('nuts_sampler', 'pymc')
-        progressbar = sample_kwargs.pop('progressbar', True)
-        _, compute_log_likelihood = self._fit_nuts(draws=draws, tune=tune, chains=chains, target_accept=target_accept, random_seed=random_seed, progressbar=progressbar, nuts_sampler=nuts_sampler, idata_kwargs=idata_kwargs, compute_log_likelihood=compute_log_likelihood, sample_kwargs=sample_kwargs)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
         if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(spatial_param='rho', nuts_sampler=nuts_sampler)
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="rho", nuts_sampler=nuts_sampler
+            )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
-        rho = float(self._posterior_mean('rho'))
-        phi = float(self._posterior_mean('phi'))
-        beta = self._posterior_mean('beta')
-        return phi * self._y_lag + rho * self._Wy_dyn - rho * phi * self._Wy_lag + self._Z_dyn @ beta
+        rho = float(self._posterior_mean("rho"))
+        phi = float(self._posterior_mean("phi"))
+        beta = self._posterior_mean("beta")
+        return (
+            phi * self._y_lag
+            + rho * self._Wy_dyn
+            - rho * phi * self._Wy_lag
+            + self._Z_dyn @ beta
+        )
+
 
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDMUDynamicPriors
@@ -280,31 +375,45 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         bounds = self._logdet_bounds
         rho_lower = bounds.rho_min
         rho_upper = bounds.rho_max
-        phi_lower = self.priors.get('phi_lower', -0.95)
-        phi_upper = self.priors.get('phi_upper', 0.95)
-        theta_lower = self.priors.get('theta_lower', -0.95)
-        theta_upper = self.priors.get('theta_upper', 0.95)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        phi_lower = self.priors.get("phi_lower", -0.95)
+        phi_upper = self.priors.get("phi_upper", 0.95)
+        theta_lower = self.priors.get("theta_lower", -0.95)
+        theta_upper = self.priors.get("theta_upper", 0.95)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         logdet_fn = self._dynamic_logdet_fn(rho_lower, rho_upper)
         with pm.Model(coords=self._model_coords()) as model:
-            rho = pm.Uniform('rho', lower=rho_lower, upper=rho_upper)
-            phi = pm.Uniform('phi', lower=phi_lower, upper=phi_upper)
-            theta = pm.Uniform('theta', lower=theta_lower, upper=theta_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
-            mu = phi * self._y_lag + rho * self._Wy_dyn + theta * self._Wy_lag + pt.dot(self._Z_dyn, beta)
+            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
+            phi = pm.Uniform("phi", lower=phi_lower, upper=phi_upper)
+            theta = pm.Uniform("theta", lower=theta_lower, upper=theta_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+            mu = (
+                phi * self._y_lag
+                + rho * self._Wy_dyn
+                + theta * self._Wy_lag
+                + pt.dot(self._Z_dyn, beta)
+            )
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model['nu']
-                pm.StudentT('obs', nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
             else:
-                pm.Normal('obs', mu=mu, sigma=sigma, observed=self._y_dyn)
-            pm.Potential('jacobian', logdet_fn(rho))
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
+            pm.Potential("jacobian", logdet_fn(rho))
         return model
 
-    def fit(self, draws: int=2000, tune: int=1000, chains: int=4, target_accept: float=0.9, random_seed: int | None=None, idata_kwargs: dict | None=None, **sample_kwargs):
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
         """Sample posterior and attach Jacobian-corrected log-likelihood.
 
         The SDMU panel model uses ``pm.Normal("obs", observed=y)`` which
@@ -313,21 +422,40 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         is requested, the Jacobian correction is added post-sampling.
         """
         idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get('log_likelihood', False))
-        nuts_sampler = sample_kwargs.pop('nuts_sampler', 'pymc')
-        progressbar = sample_kwargs.pop('progressbar', True)
-        _, compute_log_likelihood = self._fit_nuts(draws=draws, tune=tune, chains=chains, target_accept=target_accept, random_seed=random_seed, progressbar=progressbar, nuts_sampler=nuts_sampler, idata_kwargs=idata_kwargs, compute_log_likelihood=compute_log_likelihood, sample_kwargs=sample_kwargs)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
         if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(spatial_param='rho', nuts_sampler=nuts_sampler)
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="rho", nuts_sampler=nuts_sampler
+            )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
-        rho = float(self._posterior_mean('rho'))
-        phi = float(self._posterior_mean('phi'))
-        theta = float(self._posterior_mean('theta'))
-        beta = self._posterior_mean('beta')
-        return phi * self._y_lag + rho * self._Wy_dyn + theta * self._Wy_lag + self._Z_dyn @ beta
+        rho = float(self._posterior_mean("rho"))
+        phi = float(self._posterior_mean("phi"))
+        theta = float(self._posterior_mean("theta"))
+        beta = self._posterior_mean("beta")
+        return (
+            phi * self._y_lag
+            + rho * self._Wy_dyn
+            + theta * self._Wy_lag
+            + self._Z_dyn @ beta
+        )
+
 
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSARDynamicPriors
@@ -339,46 +467,69 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     def _build_pymc_model(self) -> pm.Model:
         self._prepare_dynamic_design()
-        rho_lower = self.priors.get('rho_lower', -0.95)
-        rho_upper = self.priors.get('rho_upper', 0.95)
-        phi_lower = self.priors.get('phi_lower', -0.95)
-        phi_upper = self.priors.get('phi_upper', 0.95)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        rho_lower = self.priors.get("rho_lower", -0.95)
+        rho_upper = self.priors.get("rho_upper", 0.95)
+        phi_lower = self.priors.get("phi_lower", -0.95)
+        phi_upper = self.priors.get("phi_upper", 0.95)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         logdet_fn = self._dynamic_logdet_fn(rho_lower, rho_upper)
         with pm.Model(coords=self._model_coords()) as model:
-            rho = pm.Uniform('rho', lower=rho_lower, upper=rho_upper)
-            phi = pm.Uniform('phi', lower=phi_lower, upper=phi_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
+            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
+            phi = pm.Uniform("phi", lower=phi_lower, upper=phi_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             mu = phi * self._y_lag + rho * self._Wy_dyn + pt.dot(self._X_dyn, beta)
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model['nu']
-                pm.StudentT('obs', nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
             else:
-                pm.Normal('obs', mu=mu, sigma=sigma, observed=self._y_dyn)
-            pm.Potential('jacobian', logdet_fn(rho))
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
+            pm.Potential("jacobian", logdet_fn(rho))
         return model
 
-    def fit(self, draws: int=2000, tune: int=1000, chains: int=4, target_accept: float=0.9, random_seed: int | None=None, idata_kwargs: dict | None=None, **sample_kwargs):
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
         """Sample posterior and attach Jacobian-corrected log-likelihood."""
         idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get('log_likelihood', False))
-        nuts_sampler = sample_kwargs.pop('nuts_sampler', 'pymc')
-        progressbar = sample_kwargs.pop('progressbar', True)
-        _, compute_log_likelihood = self._fit_nuts(draws=draws, tune=tune, chains=chains, target_accept=target_accept, random_seed=random_seed, progressbar=progressbar, nuts_sampler=nuts_sampler, idata_kwargs=idata_kwargs, compute_log_likelihood=compute_log_likelihood, sample_kwargs=sample_kwargs)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
         if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(spatial_param='rho', nuts_sampler=nuts_sampler)
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="rho", nuts_sampler=nuts_sampler
+            )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
-        rho = float(self._posterior_mean('rho'))
-        phi = float(self._posterior_mean('phi'))
-        beta = self._posterior_mean('beta')
+        rho = float(self._posterior_mean("rho"))
+        phi = float(self._posterior_mean("phi"))
+        beta = self._posterior_mean("beta")
         return phi * self._y_lag + rho * self._Wy_dyn + self._X_dyn @ beta
+
 
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSEMDynamicPriors
@@ -388,25 +539,25 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         """Return coefficient names without WX terms (SEM has no Durbin component)."""
         return self._feature_names
 
-    def _build_pymc_model(self, nuts_sampler: str='pymc') -> pm.Model:
+    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
         self._prepare_dynamic_design()
-        lam_lower = self.priors.get('lam_lower', -0.95)
-        lam_upper = self.priors.get('lam_upper', 0.95)
-        phi_lower = self.priors.get('phi_lower', -0.95)
-        phi_upper = self.priors.get('phi_upper', 0.95)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        lam_lower = self.priors.get("lam_lower", -0.95)
+        lam_upper = self.priors.get("lam_upper", 0.95)
+        phi_lower = self.priors.get("phi_lower", -0.95)
+        phi_upper = self.priors.get("phi_upper", 0.95)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         logdet_fn = self._dynamic_logdet_fn(lam_lower, lam_upper)
         W_pt = self._W_pt_sparse_dyn
         n_obs = int(self._y_dyn.shape[0])
         inv_n = 1.0 / n_obs
         jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
         with pm.Model(coords=self._model_coords()) as model:
-            lam = pm.Uniform('lam', lower=lam_lower, upper=lam_upper)
-            phi = pm.Uniform('phi', lower=phi_lower, upper=phi_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
+            lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
+            phi = pm.Uniform("phi", lower=phi_lower, upper=phi_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             if self.robust:
                 self._add_nu_prior(model)
             if jax_logp:
@@ -415,50 +566,100 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
                 def _eps(value, lam_, phi_, beta_):
                     resid = value - phi_ * ylag_const - pt.dot(X_const, beta_)
-                    return resid - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    return (
+                        resid
+                        - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    )
+
                 if self.robust:
-                    nu = model['nu']
+                    nu = model["nu"]
 
                     def sempanel_dyn_logp(value, lam_, phi_, beta_, sigma_, nu_):
                         eps = _eps(value, lam_, phi_, beta_)
-                        log_dens = pm.logp(pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps)
+                        log_dens = pm.logp(
+                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                        )
                         return log_dens + logdet_fn(lam_) * inv_n
-                    pm.CustomDist('obs', lam, phi, beta, sigma, nu, logp=sempanel_dyn_logp, observed=self._y_dyn)
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        phi,
+                        beta,
+                        sigma,
+                        nu,
+                        logp=sempanel_dyn_logp,
+                        observed=self._y_dyn,
+                    )
                 else:
 
                     def sempanel_dyn_logp(value, lam_, phi_, beta_, sigma_):
                         eps = _eps(value, lam_, phi_, beta_)
                         log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
                         return log_dens + logdet_fn(lam_) * inv_n
-                    pm.CustomDist('obs', lam, phi, beta, sigma, logp=sempanel_dyn_logp, observed=self._y_dyn)
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        phi,
+                        beta,
+                        sigma,
+                        logp=sempanel_dyn_logp,
+                        observed=self._y_dyn,
+                    )
             else:
                 resid = self._y_dyn - phi * self._y_lag - pt.dot(self._X_dyn, beta)
                 eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
                 if self.robust:
-                    nu = model['nu']
-                    logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                    nu = model["nu"]
+                    logp_eps = pm.logp(
+                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                    ).sum()
                 else:
                     logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-                pm.Potential('eps_loglik', logp_eps)
-                pm.Potential('jacobian', logdet_fn(lam))
+                pm.Potential("eps_loglik", logp_eps)
+                pm.Potential("jacobian", logdet_fn(lam))
         return model
 
-    def fit(self, draws: int=2000, tune: int=1000, chains: int=4, target_accept: float=0.9, random_seed: int | None=None, idata_kwargs: dict | None=None, **sample_kwargs):
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics."""
         idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get('log_likelihood', False))
-        nuts_sampler = sample_kwargs.pop('nuts_sampler', 'pymc')
-        progressbar = sample_kwargs.pop('progressbar', True)
-        _, compute_log_likelihood = self._fit_nuts(draws=draws, tune=tune, chains=chains, target_accept=target_accept, random_seed=random_seed, progressbar=progressbar, nuts_sampler=nuts_sampler, idata_kwargs=idata_kwargs, compute_log_likelihood=compute_log_likelihood, sample_kwargs=sample_kwargs)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
         if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(spatial_param='lam', nuts_sampler=nuts_sampler)
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="lam", nuts_sampler=nuts_sampler
+            )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
-        phi = float(self._posterior_mean('phi'))
-        beta = self._posterior_mean('beta')
+        phi = float(self._posterior_mean("phi"))
+        beta = self._posterior_mean("beta")
         return phi * self._y_lag + self._X_dyn @ beta
+
 
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDEMDynamicPriors
@@ -466,29 +667,31 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     def _beta_names(self) -> list[str]:
         if self._wx_feature_names:
-            return self._feature_names + [f'W*{name}' for name in self._wx_feature_names]
+            return self._feature_names + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
         return self._feature_names
 
-    def _build_pymc_model(self, nuts_sampler: str='pymc') -> pm.Model:
+    def _build_pymc_model(self, nuts_sampler: str = "pymc") -> pm.Model:
         self._prepare_dynamic_design()
         Z = np.hstack([self._X_dyn, self._WX_dyn])
-        lam_lower = self.priors.get('lam_lower', -0.95)
-        lam_upper = self.priors.get('lam_upper', 0.95)
-        phi_lower = self.priors.get('phi_lower', -0.95)
-        phi_upper = self.priors.get('phi_upper', 0.95)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        lam_lower = self.priors.get("lam_lower", -0.95)
+        lam_upper = self.priors.get("lam_upper", 0.95)
+        phi_lower = self.priors.get("phi_lower", -0.95)
+        phi_upper = self.priors.get("phi_upper", 0.95)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         logdet_fn = self._dynamic_logdet_fn(lam_lower, lam_upper)
         W_pt = self._W_pt_sparse_dyn
         n_obs = int(self._y_dyn.shape[0])
         inv_n = 1.0 / n_obs
         jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
         with pm.Model(coords=self._model_coords()) as model:
-            lam = pm.Uniform('lam', lower=lam_lower, upper=lam_upper)
-            phi = pm.Uniform('phi', lower=phi_lower, upper=phi_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
+            lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
+            phi = pm.Uniform("phi", lower=phi_lower, upper=phi_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             if self.robust:
                 self._add_nu_prior(model)
             if jax_logp:
@@ -497,51 +700,101 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
                 def _eps(value, lam_, phi_, beta_):
                     resid = value - phi_ * ylag_const - pt.dot(Z_const, beta_)
-                    return resid - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    return (
+                        resid
+                        - lam_ * pts.structured_dot(W_pt, resid[:, None]).flatten()
+                    )
+
                 if self.robust:
-                    nu = model['nu']
+                    nu = model["nu"]
 
                     def sdempanel_dyn_logp(value, lam_, phi_, beta_, sigma_, nu_):
                         eps = _eps(value, lam_, phi_, beta_)
-                        log_dens = pm.logp(pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps)
+                        log_dens = pm.logp(
+                            pm.StudentT.dist(nu=nu_, mu=0.0, sigma=sigma_), eps
+                        )
                         return log_dens + logdet_fn(lam_) * inv_n
-                    pm.CustomDist('obs', lam, phi, beta, sigma, nu, logp=sdempanel_dyn_logp, observed=self._y_dyn)
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        phi,
+                        beta,
+                        sigma,
+                        nu,
+                        logp=sdempanel_dyn_logp,
+                        observed=self._y_dyn,
+                    )
                 else:
 
                     def sdempanel_dyn_logp(value, lam_, phi_, beta_, sigma_):
                         eps = _eps(value, lam_, phi_, beta_)
                         log_dens = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma_), eps)
                         return log_dens + logdet_fn(lam_) * inv_n
-                    pm.CustomDist('obs', lam, phi, beta, sigma, logp=sdempanel_dyn_logp, observed=self._y_dyn)
+
+                    pm.CustomDist(
+                        "obs",
+                        lam,
+                        phi,
+                        beta,
+                        sigma,
+                        logp=sdempanel_dyn_logp,
+                        observed=self._y_dyn,
+                    )
             else:
                 resid = self._y_dyn - phi * self._y_lag - pt.dot(Z, beta)
                 eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
                 if self.robust:
-                    nu = model['nu']
-                    logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                    nu = model["nu"]
+                    logp_eps = pm.logp(
+                        pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                    ).sum()
                 else:
                     logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-                pm.Potential('eps_loglik', logp_eps)
-                pm.Potential('jacobian', logdet_fn(lam))
+                pm.Potential("eps_loglik", logp_eps)
+                pm.Potential("jacobian", logdet_fn(lam))
         return model
 
-    def fit(self, draws: int=2000, tune: int=1000, chains: int=4, target_accept: float=0.9, random_seed: int | None=None, idata_kwargs: dict | None=None, **sample_kwargs):
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics."""
         idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get('log_likelihood', False))
-        nuts_sampler = sample_kwargs.pop('nuts_sampler', 'pymc')
-        progressbar = sample_kwargs.pop('progressbar', True)
-        _, compute_log_likelihood = self._fit_nuts(draws=draws, tune=tune, chains=chains, target_accept=target_accept, random_seed=random_seed, progressbar=progressbar, nuts_sampler=nuts_sampler, idata_kwargs=idata_kwargs, compute_log_likelihood=compute_log_likelihood, sample_kwargs=sample_kwargs)
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
         if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(spatial_param='lam', nuts_sampler=nuts_sampler)
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param="lam", nuts_sampler=nuts_sampler
+            )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
-        phi = float(self._posterior_mean('phi'))
-        beta = self._posterior_mean('beta')
+        phi = float(self._posterior_mean("phi"))
+        beta = self._posterior_mean("beta")
         Z = np.hstack([self._X_dyn, self._WX_dyn])
         return phi * self._y_lag + Z @ beta
+
 
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSLXDynamicPriors
@@ -549,33 +802,35 @@ class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
 
     def _beta_names(self) -> list[str]:
         if self._wx_feature_names:
-            return self._feature_names + [f'W*{name}' for name in self._wx_feature_names]
+            return self._feature_names + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
         return self._feature_names
 
     def _build_pymc_model(self) -> pm.Model:
         self._prepare_dynamic_design()
         Z = np.hstack([self._X_dyn, self._WX_dyn])
-        phi_lower = self.priors.get('phi_lower', -0.95)
-        phi_upper = self.priors.get('phi_upper', 0.95)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        phi_lower = self.priors.get("phi_lower", -0.95)
+        phi_upper = self.priors.get("phi_upper", 0.95)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         with pm.Model(coords=self._model_coords()) as model:
-            phi = pm.Uniform('phi', lower=phi_lower, upper=phi_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
+            phi = pm.Uniform("phi", lower=phi_lower, upper=phi_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             mu = phi * self._y_lag + pt.dot(Z, beta)
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model['nu']
-                pm.StudentT('obs', nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
+                nu = model["nu"]
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=self._y_dyn)
             else:
-                pm.Normal('obs', mu=mu, sigma=sigma, observed=self._y_dyn)
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=self._y_dyn)
         return model
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
-        phi = float(self._posterior_mean('phi'))
-        beta = self._posterior_mean('beta')
+        phi = float(self._posterior_mean("phi"))
+        beta = self._posterior_mean("beta")
         Z = np.hstack([self._X_dyn, self._WX_dyn])
         return phi * self._y_lag + Z @ beta

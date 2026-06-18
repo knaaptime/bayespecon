@@ -8,18 +8,22 @@ Implements left-censored (default at 0) Bayesian spatial Tobit variants:
 
 All classes use latent-data augmentation for censored observations.
 """
+
 from __future__ import annotations
+
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
+
 from ..base import SpatialModel
 from ..priors import SARTobitPriors, SDMTobitPriors, SEMTobitPriors
+
 
 class _SpatialTobitBase(SpatialModel):
     """Shared helpers for spatial Tobit models."""
 
-    def __init__(self, *args, censoring: float=0.0, **kwargs):
+    def __init__(self, *args, censoring: float = 0.0, **kwargs):
         self.censoring = float(censoring)
         super().__init__(*args, **kwargs)
         self._censored_mask = self._y <= self.censoring
@@ -30,8 +34,8 @@ class _SpatialTobitBase(SpatialModel):
         y_lat = pt.as_tensor_variable(self._y.astype(np.float64))
         n_cens = int(self._censored_idx.size)
         if n_cens > 0:
-            censor_sigma = float(self.priors.get('censor_sigma', 10.0))
-            y_cens_gap = pm.HalfNormal('y_cens_gap', sigma=censor_sigma, shape=n_cens)
+            censor_sigma = float(self.priors.get("censor_sigma", 10.0))
+            y_cens_gap = pm.HalfNormal("y_cens_gap", sigma=censor_sigma, shape=n_cens)
             y_cens = self.censoring - y_cens_gap
             y_lat = pt.set_subtensor(y_lat[self._censored_idx], y_cens)
         return y_lat
@@ -39,10 +43,15 @@ class _SpatialTobitBase(SpatialModel):
     def _posterior_latent_y_mean(self) -> np.ndarray:
         """Posterior mean of latent y* on the observed index set."""
         y_lat = self._y.copy().astype(float)
-        if self._censored_idx.size > 0 and 'y_cens_gap' in self._idata.posterior:
-            gap_hat = self._idata.posterior['y_cens_gap'].mean(('chain', 'draw')).to_numpy()
-            y_lat[self._censored_idx] = self.censoring - np.asarray(gap_hat, dtype=float)
+        if self._censored_idx.size > 0 and "y_cens_gap" in self._idata.posterior:
+            gap_hat = (
+                self._idata.posterior["y_cens_gap"].mean(("chain", "draw")).to_numpy()
+            )
+            y_lat[self._censored_idx] = self.censoring - np.asarray(
+                gap_hat, dtype=float
+            )
         return y_lat
+
 
 class SARTobit(_SpatialTobitBase):
     """Bayesian spatial autoregressive Tobit model.
@@ -127,30 +136,37 @@ class SARTobit(_SpatialTobitBase):
     freedom, and :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     The default ``nu_lam = 1/30`` gives a prior mean of approximately 30.
     """
+
     _priors_cls = SARTobitPriors
 
     def _build_pymc_model(self) -> pm.Model:
-        rho_lower = self.priors.get('rho_lower', -1.0)
-        rho_upper = self.priors.get('rho_upper', 1.0)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        rho_lower = self.priors.get("rho_lower", -1.0)
+        rho_upper = self.priors.get("rho_upper", 1.0)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         logdet_fn = self._logdet_pytensor_fn
         W_pt = self._W_pt_sparse
         with pm.Model(coords=self._model_coords()) as model:
-            rho = pm.Uniform('rho', lower=rho_lower, upper=rho_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
+            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             y_lat = self._latent_y_tensor()
-            resid = y_lat - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten() - pt.dot(self._X, beta)
+            resid = (
+                y_lat
+                - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten()
+                - pt.dot(self._X, beta)
+            )
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model['nu']
-                logp_resid = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid).sum()
+                nu = model["nu"]
+                logp_resid = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid
+                ).sum()
             else:
                 logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
-            pm.Potential('resid_loglik', logp_resid)
-            pm.Potential('jacobian', logdet_fn(rho))
+            pm.Potential("resid_loglik", logp_resid)
+            pm.Potential("jacobian", logdet_fn(rho))
         return model
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -162,14 +178,23 @@ class SARTobit(_SpatialTobitBase):
         reported at the censoring point ``c`` (consistent with the
         observation rule ``y = max(c, y*)``).
         """
-        rho = float(self._posterior_mean('rho'))
-        beta = self._posterior_mean('beta')
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
         n = self._y.shape[0]
         A = np.eye(n) - rho * self._W_dense
         structural = np.linalg.solve(A, self._X @ beta)
         return np.maximum(self.censoring, structural)
 
-    def fit(self, draws: int=2000, tune: int=1000, chains: int=4, target_accept: float=0.9, random_seed: int | None=None, idata_kwargs: dict | None=None, **sample_kwargs):
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics.
 
         The SAR Tobit model uses ``pm.Potential`` for both the residual
@@ -181,14 +206,23 @@ class SARTobit(_SpatialTobitBase):
         - Censored:   log Phi((c - mu) / sigma)
         """
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(draws=draws, tune=tune, chains=chains, target_accept=target_accept, random_seed=random_seed, idata_kwargs=idata_kwargs, **sample_kwargs)
-        if 'log_likelihood' in idata.groups() and 'obs' in idata.log_likelihood:
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            idata_kwargs=idata_kwargs,
+            **sample_kwargs,
+        )
+        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
         import xarray as xr
         from scipy.stats import norm
-        rho = idata.posterior['rho'].values
-        beta = idata.posterior['beta'].values
-        sigma = idata.posterior['sigma'].values
+
+        rho = idata.posterior["rho"].values
+        beta = idata.posterior["beta"].values
+        sigma = idata.posterior["sigma"].values
         c, d = rho.shape
         s = c * d
         n = self._y.shape[0]
@@ -207,20 +241,41 @@ class SARTobit(_SpatialTobitBase):
         ll = np.empty((s, n), dtype=np.float64)
         uncens = ~censored
         if self.robust:
-            nu_f = idata.posterior['nu'].values.reshape(s)
+            nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
-            ll[:, uncens] = gammaln((nu_f[:, None] + 1) / 2) - gammaln(nu_f[:, None] / 2) - 0.5 * np.log(nu_f[:, None] * np.pi) - np.log(sigma_f[:, None]) - (nu_f[:, None] + 1) / 2 * np.log1p(((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            ll[:, censored] = t_dist.logcdf((censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None])
+
+            ll[:, uncens] = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - (nu_f[:, None] + 1)
+                / 2
+                * np.log1p(
+                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                    / nu_f[:, None]
+                )
+            )
+            ll[:, censored] = t_dist.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None]
+            )
         else:
-            ll[:, uncens] = -0.5 * (((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2 + np.log(2.0 * np.pi) + 2.0 * np.log(sigma_f[:, None]))
-            ll[:, censored] = norm.logcdf((censoring - mu[:, censored]) / sigma_f[:, None])
+            ll[:, uncens] = -0.5 * (
+                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
+            ll[:, censored] = norm.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None]
+            )
         jac = self._logdet_numpy_vec_fn(rho_f)
         ll = ll + jac[:, None] / n
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=('chain', 'draw', 'obs_dim'), name='obs')
-        idata['log_likelihood'] = xr.Dataset({'obs': ll_da})
+        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
+        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
         return idata
+
 
 class SEMTobit(_SpatialTobitBase):
     """Bayesian spatial error Tobit model.
@@ -293,31 +348,34 @@ class SEMTobit(_SpatialTobitBase):
     where :math:`T_\\nu` is the Student-t CDF and
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
+
     _priors_cls = SEMTobitPriors
 
     def _build_pymc_model(self) -> pm.Model:
-        lam_lower = self.priors.get('lam_lower', -1.0)
-        lam_upper = self.priors.get('lam_upper', 1.0)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        lam_lower = self.priors.get("lam_lower", -1.0)
+        lam_upper = self.priors.get("lam_upper", 1.0)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         logdet_fn = self._logdet_pytensor_fn
         W_pt = self._W_pt_sparse
         with pm.Model(coords=self._model_coords()) as model:
-            lam = pm.Uniform('lam', lower=lam_lower, upper=lam_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
+            lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             y_lat = self._latent_y_tensor()
             resid = y_lat - pt.dot(self._X, beta)
             eps = resid - lam * pts.structured_dot(W_pt, resid[:, None]).flatten()
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model['nu']
-                logp_eps = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps).sum()
+                nu = model["nu"]
+                logp_eps = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), eps
+                ).sum()
             else:
                 logp_eps = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), eps).sum()
-            pm.Potential('eps_loglik', logp_eps)
-            pm.Potential('jacobian', logdet_fn(lam))
+            pm.Potential("eps_loglik", logp_eps)
+            pm.Potential("jacobian", logdet_fn(lam))
         return model
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -328,10 +386,19 @@ class SEMTobit(_SpatialTobitBase):
         error term and integrates out). Censored entries are reported at
         the censoring point.
         """
-        beta = self._posterior_mean('beta')
+        beta = self._posterior_mean("beta")
         return np.maximum(self.censoring, self._X @ beta)
 
-    def fit(self, draws: int=2000, tune: int=1000, chains: int=4, target_accept: float=0.9, random_seed: int | None=None, idata_kwargs: dict | None=None, **sample_kwargs):
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics.
 
         The SEM Tobit model uses ``pm.Potential`` for both the error
@@ -346,14 +413,23 @@ class SEMTobit(_SpatialTobitBase):
         the Jacobian.
         """
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(draws=draws, tune=tune, chains=chains, target_accept=target_accept, random_seed=random_seed, idata_kwargs=idata_kwargs, **sample_kwargs)
-        if 'log_likelihood' in idata.groups() and 'obs' in idata.log_likelihood:
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            idata_kwargs=idata_kwargs,
+            **sample_kwargs,
+        )
+        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
         import xarray as xr
         from scipy.stats import norm
-        lam = idata.posterior['lam'].values
-        beta = idata.posterior['beta'].values
-        sigma = idata.posterior['sigma'].values
+
+        lam = idata.posterior["lam"].values
+        beta = idata.posterior["beta"].values
+        sigma = idata.posterior["sigma"].values
         c, d = lam.shape
         s = c * d
         n = self._y.shape[0]
@@ -367,20 +443,41 @@ class SEMTobit(_SpatialTobitBase):
         ll = np.empty((s, n), dtype=np.float64)
         uncens = ~censored
         if self.robust:
-            nu_f = idata.posterior['nu'].values.reshape(s)
+            nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
-            ll[:, uncens] = gammaln((nu_f[:, None] + 1) / 2) - gammaln(nu_f[:, None] / 2) - 0.5 * np.log(nu_f[:, None] * np.pi) - np.log(sigma_f[:, None]) - (nu_f[:, None] + 1) / 2 * np.log1p(((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            ll[:, censored] = t_dist.logcdf((censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None])
+
+            ll[:, uncens] = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - (nu_f[:, None] + 1)
+                / 2
+                * np.log1p(
+                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                    / nu_f[:, None]
+                )
+            )
+            ll[:, censored] = t_dist.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None]
+            )
         else:
-            ll[:, uncens] = -0.5 * (((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2 + np.log(2.0 * np.pi) + 2.0 * np.log(sigma_f[:, None]))
-            ll[:, censored] = norm.logcdf((censoring - mu[:, censored]) / sigma_f[:, None])
+            ll[:, uncens] = -0.5 * (
+                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
+            ll[:, censored] = norm.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None]
+            )
         jac = self._logdet_numpy_vec_fn(lam_f)
         ll = ll + jac[:, None] / n
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=('chain', 'draw', 'obs_dim'), name='obs')
-        idata['log_likelihood'] = xr.Dataset({'obs': ll_da})
+        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
+        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
         return idata
+
 
 class SDMTobit(_SpatialTobitBase):
     """Bayesian spatial Durbin Tobit model.
@@ -455,34 +552,41 @@ class SDMTobit(_SpatialTobitBase):
     where :math:`T_\\nu` is the Student-t CDF and
     :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)` with rate ``nu_lam`` (default 1/30).
     """
+
     _priors_cls = SDMTobitPriors
 
     def _beta_names(self) -> list[str]:
-        return self._feature_names + [f'W*{name}' for name in self._wx_feature_names]
+        return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
     def _build_pymc_model(self) -> pm.Model:
         Z = np.hstack([self._X, self._WX])
-        rho_lower = self.priors.get('rho_lower', -1.0)
-        rho_upper = self.priors.get('rho_upper', 1.0)
-        beta_mu = self.priors.get('beta_mu', 0.0)
-        beta_sigma = self.priors.get('beta_sigma', 1000000.0)
-        sigma_sigma = self.priors.get('sigma_sigma', 10.0)
+        rho_lower = self.priors.get("rho_lower", -1.0)
+        rho_upper = self.priors.get("rho_upper", 1.0)
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1000000.0)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
         logdet_fn = self._logdet_pytensor_fn
         W_pt = self._W_pt_sparse
         with pm.Model(coords=self._model_coords()) as model:
-            rho = pm.Uniform('rho', lower=rho_lower, upper=rho_upper)
-            beta = pm.Normal('beta', mu=beta_mu, sigma=beta_sigma, dims='coefficient')
-            sigma = pm.HalfNormal('sigma', sigma=sigma_sigma)
+            rho = pm.Uniform("rho", lower=rho_lower, upper=rho_upper)
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
             y_lat = self._latent_y_tensor()
-            resid = y_lat - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten() - pt.dot(Z, beta)
+            resid = (
+                y_lat
+                - rho * pts.structured_dot(W_pt, y_lat[:, None]).flatten()
+                - pt.dot(Z, beta)
+            )
             if self.robust:
                 self._add_nu_prior(model)
-                nu = model['nu']
-                logp_resid = pm.logp(pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid).sum()
+                nu = model["nu"]
+                logp_resid = pm.logp(
+                    pm.StudentT.dist(nu=nu, mu=0.0, sigma=sigma), resid
+                ).sum()
             else:
                 logp_resid = pm.logp(pm.Normal.dist(mu=0.0, sigma=sigma), resid).sum()
-            pm.Potential('resid_loglik', logp_resid)
-            pm.Potential('jacobian', logdet_fn(rho))
+            pm.Potential("resid_loglik", logp_resid)
+            pm.Potential("jacobian", logdet_fn(rho))
         return model
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -493,15 +597,24 @@ class SDMTobit(_SpatialTobitBase):
         evaluated at posterior means; censored entries are reported at
         the censoring point.
         """
-        rho = float(self._posterior_mean('rho'))
-        beta = self._posterior_mean('beta')
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
         Z = np.hstack([self._X, self._WX])
         n = self._y.shape[0]
         A = np.eye(n) - rho * self._W_dense
         structural = np.linalg.solve(A, Z @ beta)
         return np.maximum(self.censoring, structural)
 
-    def fit(self, draws: int=2000, tune: int=1000, chains: int=4, target_accept: float=0.9, random_seed: int | None=None, idata_kwargs: dict | None=None, **sample_kwargs):
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics.
 
         The SDM Tobit model uses ``pm.Potential`` for both the residual
@@ -515,14 +628,23 @@ class SDMTobit(_SpatialTobitBase):
         where mu = rho*Wy* + Z@beta.
         """
         idata_kwargs = idata_kwargs or {}
-        idata = super().fit(draws=draws, tune=tune, chains=chains, target_accept=target_accept, random_seed=random_seed, idata_kwargs=idata_kwargs, **sample_kwargs)
-        if 'log_likelihood' in idata.groups() and 'obs' in idata.log_likelihood:
+        idata = super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            idata_kwargs=idata_kwargs,
+            **sample_kwargs,
+        )
+        if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
         import xarray as xr
         from scipy.stats import norm
-        rho = idata.posterior['rho'].values
-        beta = idata.posterior['beta'].values
-        sigma = idata.posterior['sigma'].values
+
+        rho = idata.posterior["rho"].values
+        beta = idata.posterior["beta"].values
+        sigma = idata.posterior["sigma"].values
         c, d = rho.shape
         s = c * d
         n = self._y.shape[0]
@@ -541,17 +663,37 @@ class SDMTobit(_SpatialTobitBase):
         ll = np.empty((s, n), dtype=np.float64)
         uncens = ~censored
         if self.robust:
-            nu_f = idata.posterior['nu'].values.reshape(s)
+            nu_f = idata.posterior["nu"].values.reshape(s)
             from scipy.special import gammaln
             from scipy.stats import t as t_dist
-            ll[:, uncens] = gammaln((nu_f[:, None] + 1) / 2) - gammaln(nu_f[:, None] / 2) - 0.5 * np.log(nu_f[:, None] * np.pi) - np.log(sigma_f[:, None]) - (nu_f[:, None] + 1) / 2 * np.log1p(((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2 / nu_f[:, None])
-            ll[:, censored] = t_dist.logcdf((censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None])
+
+            ll[:, uncens] = (
+                gammaln((nu_f[:, None] + 1) / 2)
+                - gammaln(nu_f[:, None] / 2)
+                - 0.5 * np.log(nu_f[:, None] * np.pi)
+                - np.log(sigma_f[:, None])
+                - (nu_f[:, None] + 1)
+                / 2
+                * np.log1p(
+                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                    / nu_f[:, None]
+                )
+            )
+            ll[:, censored] = t_dist.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None]
+            )
         else:
-            ll[:, uncens] = -0.5 * (((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2 + np.log(2.0 * np.pi) + 2.0 * np.log(sigma_f[:, None]))
-            ll[:, censored] = norm.logcdf((censoring - mu[:, censored]) / sigma_f[:, None])
+            ll[:, uncens] = -0.5 * (
+                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
+                + np.log(2.0 * np.pi)
+                + 2.0 * np.log(sigma_f[:, None])
+            )
+            ll[:, censored] = norm.logcdf(
+                (censoring - mu[:, censored]) / sigma_f[:, None]
+            )
         jac = self._logdet_numpy_vec_fn(rho_f)
         ll = ll + jac[:, None] / n
         ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=('chain', 'draw', 'obs_dim'), name='obs')
-        idata['log_likelihood'] = xr.Dataset({'obs': ll_da})
+        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
+        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
         return idata

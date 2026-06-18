@@ -8,9 +8,6 @@ Jacobian log|I - rho*W| is required as in the SAR model.
 
 from __future__ import annotations
 
-from typing import Optional
-
-import arviz as az
 import numpy as np
 
 from .._mixins import GaussianLikelihoodMixin

@@ -22,33 +22,33 @@ def _make_ring_graph(n: int) -> Graph:
 
 
 # ---------------------------------------------------------------------------
-# _validate_graph
+# _graph_to_csr
 # ---------------------------------------------------------------------------
 
 
 class TestValidateGraph:
     def test_returns_csr(self):
-        from bayespecon.graph import _validate_graph
+        from bayespecon.graph import _graph_to_csr
 
         G = _make_ring_graph(5)
-        W = _validate_graph(G)
+        W = _graph_to_csr(G)
         assert sp.issparse(W)
         assert W.format == "csr"
         assert W.shape == (5, 5)
 
     def test_rejects_non_graph(self):
-        from bayespecon.graph import _validate_graph
+        from bayespecon.graph import _graph_to_csr
 
         with pytest.raises(TypeError, match="libpysal.graph.Graph"):
-            _validate_graph(np.eye(4))
+            _graph_to_csr(np.eye(4))
 
     def test_warns_if_not_row_standardised(self):
-        from bayespecon.graph import _validate_graph
+        from bayespecon.models._base._shared import resolve_W
 
         # Build a non-row-standardised graph by using "b" transformation
         G = _make_ring_graph(5).transform("b")
         with pytest.warns(UserWarning, match="row-standardised"):
-            _validate_graph(G)
+            resolve_W(G, n=5)
 
 
 # ---------------------------------------------------------------------------
@@ -84,11 +84,11 @@ class TestWeightMatrixShapes:
 
     def test_destination_block_diagonal(self):
         """W_d = I_n ⊗ W should be block-diagonal with n copies of W."""
-        from bayespecon.graph import _validate_graph, destination_weights
+        from bayespecon.graph import _graph_to_csr, destination_weights
 
         n = 4
         G = _make_ring_graph(n)
-        W = _validate_graph(G)
+        W = _graph_to_csr(G)
         Wd = destination_weights(G).toarray()
         W_arr = W.toarray()
 
@@ -98,11 +98,11 @@ class TestWeightMatrixShapes:
             np.testing.assert_allclose(block, W_arr, atol=1e-12)
 
     def test_network_equals_kron_W_W(self):
-        from bayespecon.graph import _validate_graph, network_weights
+        from bayespecon.graph import _graph_to_csr, network_weights
 
         n = 4
         G = _make_ring_graph(n)
-        W = _validate_graph(G)
+        W = _graph_to_csr(G)
         Ww = network_weights(G).toarray()
         expected = sp.kron(W, W, format="csr").toarray()
         np.testing.assert_allclose(Ww, expected, atol=1e-12)

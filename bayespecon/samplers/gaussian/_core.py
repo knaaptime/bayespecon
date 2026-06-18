@@ -36,6 +36,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
+from .._utils._base import GibbsBasePriors, GibbsBaseState
 from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d_adaptive,
@@ -47,7 +48,7 @@ from .._utils._slice import (
 
 
 @dataclass
-class GaussianGibbsState:
+class GaussianGibbsState(GibbsBaseState):
     """Mutable state for the Gaussian spatial Gibbs sampler.
 
     Parameters
@@ -60,13 +61,11 @@ class GaussianGibbsState:
         Spatial autoregressive parameter (ρ for SAR/SDM, λ for SEM/SDEM).
     """
 
-    beta: np.ndarray
-    sigma2: float
-    rho: float
+    sigma2: float = 1.0
 
 
 @dataclass
-class GaussianGibbsPriors:
+class GaussianGibbsPriors(GibbsBasePriors):
     """Prior hyperparameters for Gaussian spatial Gibbs.
 
     Parameters
@@ -95,8 +94,6 @@ class GaussianGibbsPriors:
     beta_sigma: float | np.ndarray = 1e6
     sigma2_alpha: float = 2.0
     sigma2_beta: float = 1.0
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
     # Accepted for backward compatibility with callers that still pass
     # ``sigma_sigma=...`` (e.g. panel models).  Ignored by the sampler;
     # use ``sigma2_alpha`` / ``sigma2_beta`` instead.

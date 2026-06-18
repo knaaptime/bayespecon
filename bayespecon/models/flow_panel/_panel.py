@@ -35,7 +35,7 @@ from ..._logdet import (
 )
 from ..._logdet._flow import _flow_logdet_poly_coeffs
 from ..._ops import kron_solve_matrix
-from ...graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
+from ...graph import _graph_to_csr, flow_trace_blocks, flow_weight_matrices
 from ..base import SpatialModel
 from ..flow import (
     _build_flow_effect_masks,
@@ -114,7 +114,7 @@ class FlowPanelModel(ABC):
         self._approximation = None
 
         # Validate and extract n x n W
-        self._W_sparse: sp.csr_matrix = _validate_graph(G)
+        self._W_sparse: sp.csr_matrix = _graph_to_csr(G)
         self._n: int = self._W_sparse.shape[0]
         self._N_flow: int = self._n * self._n
 

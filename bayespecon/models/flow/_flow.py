@@ -54,7 +54,7 @@ from ..._logdet import (
 )
 from ..._logdet._flow import _flow_logdet_poly_coeffs
 from ..._ops import kron_solve_matrix, kron_solve_vec
-from ...graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
+from ...graph import _graph_to_csr, flow_trace_blocks, flow_weight_matrices
 from ..base import SpatialModel
 
 
@@ -236,7 +236,7 @@ class FlowModel(ABC):
         matrix or a flat vector of length :math:`N = n^2`.
     G : libpysal.graph.Graph
         Row-standardised spatial graph on *n* units.  Validated by
-        :func:`~bayespecon.graph._validate_graph`.
+        :func:`~bayespecon.graph._graph_to_csr`.
     X : np.ndarray or pandas.DataFrame, shape (N, p)
         Full origin-destination design matrix with :math:`N = n^2` rows.
         This is typically produced by
@@ -312,7 +312,7 @@ class FlowModel(ABC):
         self._approximation = None
 
         # Validate and extract the n×n weight matrix
-        self._W_sparse: sp.csr_matrix = _validate_graph(G)
+        self._W_sparse: sp.csr_matrix = _graph_to_csr(G)
         self._n: int = self._W_sparse.shape[0]
         self._N: int = self._n * self._n
 

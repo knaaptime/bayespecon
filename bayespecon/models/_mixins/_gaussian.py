@@ -130,7 +130,9 @@ class GaussianLikelihoodMixin:
         """
         # Auto-select: Gibbs when available, NUTS otherwise.
         if sampler is None:
-            sampler = "gibbs" if getattr(self, "_gibbs_class", None) is not None else "nuts"
+            sampler = (
+                "gibbs" if getattr(self, "_gibbs_class", None) is not None else "nuts"
+            )
 
         if sampler == "gibbs":
             return self._fit_gibbs_dispatch(
@@ -385,7 +387,9 @@ class GaussianLikelihoodMixin:
         # Uses _spatial_lag hook so panel models use _sparse_panel_lag.
         cache_attr = "_WZ_cache"
         if not hasattr(self, cache_attr) or getattr(self, cache_attr) is None:
-            setattr(self, cache_attr, np.asarray(self._spatial_lag(Z), dtype=np.float64))
+            setattr(
+                self, cache_attr, np.asarray(self._spatial_lag(Z), dtype=np.float64)
+            )
         WZ = getattr(self, cache_attr)
 
         n_obs = int(self._y.shape[0])

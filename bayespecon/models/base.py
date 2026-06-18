@@ -30,7 +30,6 @@ from .._logdet import (
     resolve_logdet_bounds,
 )
 from .._logdet._config import _auto_logdet_method
-
 from ._base._shared import (
     _parse_W,
     _pointwise_gaussian_loglik,
@@ -1273,6 +1272,7 @@ class SpatialModel(ABC):
         this to use :func:`get_panel_spec`.
         """
         from ..diagnostics import _decision_trees as _dt
+
         return _dt.get_spec(model_type)
 
     def _decision_predicate_lookup(self, diag) -> dict:
@@ -1281,6 +1281,7 @@ class SpatialModel(ABC):
         Includes both cross-section and panel-prefixed predicate IDs so
         the same method works for both spec families.
         """
+
         def _lag_le_error() -> bool:
             return diag.loc["LM-Lag", "p_value"] <= diag.loc["LM-Error", "p_value"]
 
@@ -1304,7 +1305,10 @@ class SpatialModel(ABC):
 
         # Panel variants use the same logic but with "Panel-" prefixed test names.
         def _panel_lag_le_error() -> bool:
-            return diag.loc["Panel-LM-Lag", "p_value"] <= diag.loc["Panel-LM-Error", "p_value"]
+            return (
+                diag.loc["Panel-LM-Lag", "p_value"]
+                <= diag.loc["Panel-LM-Error", "p_value"]
+            )
 
         def _panel_robust_lag_le_error() -> bool:
             return (
@@ -1701,12 +1705,16 @@ class SpatialModel(ABC):
             beta1, beta2 = beta[:k], beta[k : k + kw]
             wx_idx = self._beta_wx_idx
             direct = np.array(
-                [beta1[j] * mean_diag_M + b2 * mean_diag_MW
-                 for j, b2 in zip(wx_idx, beta2)]
+                [
+                    beta1[j] * mean_diag_M + b2 * mean_diag_MW
+                    for j, b2 in zip(wx_idx, beta2)
+                ]
             )
             total = np.array(
-                [beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-                 for j, b2 in zip(wx_idx, beta2)]
+                [
+                    beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
+                    for j, b2 in zip(wx_idx, beta2)
+                ]
             )
             feature_names = self._wx_feature_names
         else:

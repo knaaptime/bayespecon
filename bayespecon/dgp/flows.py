@@ -18,7 +18,7 @@ import scipy.sparse as sp
 from libpysal.graph import Graph
 
 from ..graph import (
-    _validate_graph,
+    _graph_to_csr,
     flow_design_matrix,
     flow_design_matrix_asymmetric,
     flow_design_matrix_with_orig,
@@ -175,7 +175,7 @@ def generate_flow_data(
         )
 
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
-    W = _validate_graph(G)
+    W = _graph_to_csr(G)
     N = n * n
 
     if beta_d is None:
@@ -454,7 +454,7 @@ def generate_negbin_flow_data(
 
     # --- Resolve spatial weights & geometry ---
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
-    W = _validate_graph(G)
+    W = _graph_to_csr(G)
     N = n * n
 
     # --- Coefficient vectors ---
@@ -682,7 +682,7 @@ def generate_panel_flow_data(
         )
 
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
-    _validate_graph(G)
+    _graph_to_csr(G)
     N = n * n  # O-D pairs per period
 
     if beta_d is None:
@@ -891,7 +891,7 @@ def generate_panel_negbin_flow_data(
     rng = np.random.default_rng(seed)
 
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
-    _validate_graph(G)
+    _graph_to_csr(G)
     N = n * n
 
     # Coefficient vectors
@@ -1180,7 +1180,7 @@ def generate_sem_flow_data(
         )
 
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
-    W = _validate_graph(G)
+    W = _graph_to_csr(G)
     N = n * n
 
     if beta_d is None:
@@ -1376,7 +1376,7 @@ def generate_panel_sem_flow_data(
         )
 
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
-    _validate_graph(G)
+    _graph_to_csr(G)
     N = n * n
 
     if beta_d is None:

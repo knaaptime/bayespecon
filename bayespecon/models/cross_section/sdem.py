@@ -10,9 +10,6 @@ Jacobian log|I - lambda*W| is required for the error process.
 
 from __future__ import annotations
 
-from typing import Optional
-
-import arviz as az
 import numpy as np
 
 from .._mixins import GaussianLikelihoodMixin

@@ -1,10 +1,21 @@
 """Spatial panel model classes."""
+
 from __future__ import annotations
+
 import arviz as az
 import numpy as np
+
 from .._mixins import GaussianLikelihoodMixin
 from ..panel_base import SpatialPanelModel
-from ..priors import PanelOLSPriors, PanelSARPriors, PanelSDEMPriors, PanelSDMPriors, PanelSEMPriors, PanelSLXPriors
+from ..priors import (
+    PanelOLSPriors,
+    PanelSARPriors,
+    PanelSDEMPriors,
+    PanelSDMPriors,
+    PanelSEMPriors,
+    PanelSLXPriors,
+)
+
 
 class OLSPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian pooled and fixed-effects linear panel regression.
@@ -97,6 +108,7 @@ class OLSPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
     _priors_cls = PanelOLSPriors
     _jacobian_param: str | None = None
     _gibbs_class: str | None = None
@@ -109,11 +121,12 @@ class OLSPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         np.ndarray
             Posterior-mean fitted values.
         """
-        beta = self._posterior_mean('beta')
+        beta = self._posterior_mean("beta")
         if self._intercept_dropped:
             ni = self._beta_nonintercept_indices
             return self._X[:, ni] @ beta
         return self._X @ beta
+
 
 class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial-lag panel regression.
@@ -204,11 +217,27 @@ class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
-    _priors_cls = PanelSARPriors
-    _jacobian_param: str | None = 'rho'
-    _gibbs_class: str | None = 'GaussianSARGibbs'
 
-    def _fit_gibbs(self, draws: int=2000, tune: int=1000, chains: int=4, random_seed: int | None=None, thin: int=1, n_jobs: int=-1, progressbar: bool=True, gibbs_method: str='jax', mala_step_size: float=0.05, use_mala: bool=True, use_slice: bool=True, slice_width: float | None=None, chain_method: str | None=None) -> 'az.InferenceData':
+    _priors_cls = PanelSARPriors
+    _jacobian_param: str | None = "rho"
+    _gibbs_class: str | None = "GaussianSARGibbs"
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "jax",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
         """Sample posterior via 3-block Gaussian Gibbs.
 
         Parameters
@@ -250,12 +279,53 @@ class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         az.InferenceData
         """
         if self.robust:
-            raise NotImplementedError("Gibbs sampling is not yet supported for robust (Student-t) models. Use sampler='nuts' (the default).")
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) models. Use sampler='nuts' (the default)."
+            )
         from ...samplers.gaussian import GaussianGibbsPriors, GaussianSARGibbs
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(self._X, list(self._feature_names))
-        priors = GaussianGibbsPriors(beta_mu=self.priors.get('beta_mu', default_beta_mu), beta_sigma=self.priors.get('beta_sigma', default_beta_sigma), sigma2_alpha=self.priors.get('sigma2_alpha', 2.0), sigma2_beta=self.priors.get('sigma2_beta', float(np.var(self._y))), rho_lower=self._logdet_bounds.rho_min, rho_upper=self._logdet_bounds.rho_max)
-        gibbs = GaussianSARGibbs(y=self._y, X=self._X, W_sparse=self._W_sparse_NT, Wy=self._Wy, priors=priors, logdet_fn=self._logdet_numpy_fn, logdet_vec_fn=self._logdet_numpy_vec_fn, feature_names=list(self._feature_names), model_type='sar', W_eigs=self._W_eigs if self._resolved_logdet_method == 'eigenvalue' else None, logdet_method=self.logdet_method, T=self._T)
-        self._idata = gibbs.fit(draws=draws, tune=tune, chains=chains, random_seed=random_seed, thin=thin, n_jobs=n_jobs, progressbar=progressbar, gibbs_method=gibbs_method, mala_step_size=mala_step_size, use_mala=use_mala, use_slice=use_slice, slice_width=slice_width, chain_method=chain_method)
+
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            self._X, list(self._feature_names)
+        )
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+        gibbs = GaussianSARGibbs(
+            y=self._y,
+            X=self._X,
+            W_sparse=self._W_sparse_NT,
+            Wy=self._Wy,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=list(self._feature_names),
+            model_type="sar",
+            W_eigs=self._W_eigs
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            use_slice=use_slice,
+            slice_width=slice_width,
+            chain_method=chain_method,
+        )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -266,12 +336,13 @@ class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         np.ndarray
             Posterior-mean fitted values.
         """
-        rho = float(self._posterior_mean('rho'))
-        beta = self._posterior_mean('beta')
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
         if self._intercept_dropped:
             ni = self._beta_nonintercept_indices
             return rho * self._Wy + self._X[:, ni] @ beta
         return rho * self._Wy + self._X @ beta
+
 
 class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial-error panel regression.
@@ -363,11 +434,27 @@ class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
-    _priors_cls = PanelSEMPriors
-    _jacobian_param: str | None = 'lam'
-    _gibbs_class: str | None = 'GaussianSEMGibbs'
 
-    def _fit_gibbs(self, draws: int=2000, tune: int=1000, chains: int=4, random_seed: int | None=None, thin: int=1, n_jobs: int=-1, progressbar: bool=True, gibbs_method: str='jax', mala_step_size: float=0.05, use_mala: bool=True, use_slice: bool=True, slice_width: float | None=None, chain_method: str | None=None) -> 'az.InferenceData':
+    _priors_cls = PanelSEMPriors
+    _jacobian_param: str | None = "lam"
+    _gibbs_class: str | None = "GaussianSEMGibbs"
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "jax",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
         """Sample posterior via 3-block Gaussian Gibbs.
 
         Parameters
@@ -409,12 +496,52 @@ class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         az.InferenceData
         """
         if self.robust:
-            raise NotImplementedError("Gibbs sampling is not yet supported for robust (Student-t) models. Use sampler='nuts' (the default).")
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) models. Use sampler='nuts' (the default)."
+            )
         from ...samplers.gaussian import GaussianGibbsPriors, GaussianSEMGibbs
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(self._X, list(self._feature_names))
-        priors = GaussianGibbsPriors(beta_mu=self.priors.get('beta_mu', default_beta_mu), beta_sigma=self.priors.get('beta_sigma', default_beta_sigma), sigma2_alpha=self.priors.get('sigma2_alpha', 2.0), sigma2_beta=self.priors.get('sigma2_beta', float(np.var(self._y))), rho_lower=self._logdet_bounds.rho_min, rho_upper=self._logdet_bounds.rho_max)
-        gibbs = GaussianSEMGibbs(y=self._y, X=self._X, W_sparse=self._W_sparse_NT, priors=priors, logdet_fn=self._logdet_numpy_fn, logdet_vec_fn=self._logdet_numpy_vec_fn, feature_names=list(self._feature_names), model_type='sem', W_eigs=self._W_eigs if self._resolved_logdet_method == 'eigenvalue' else None, logdet_method=self.logdet_method, T=self._T)
-        self._idata = gibbs.fit(draws=draws, tune=tune, chains=chains, random_seed=random_seed, thin=thin, n_jobs=n_jobs, progressbar=progressbar, gibbs_method=gibbs_method, mala_step_size=mala_step_size, use_mala=use_mala, use_slice=use_slice, slice_width=slice_width, chain_method=chain_method)
+
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            self._X, list(self._feature_names)
+        )
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+        gibbs = GaussianSEMGibbs(
+            y=self._y,
+            X=self._X,
+            W_sparse=self._W_sparse_NT,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=list(self._feature_names),
+            model_type="sem",
+            W_eigs=self._W_eigs
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            use_slice=use_slice,
+            slice_width=slice_width,
+            chain_method=chain_method,
+        )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -425,11 +552,12 @@ class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         np.ndarray
             Posterior-mean fitted values.
         """
-        beta = self._posterior_mean('beta')
+        beta = self._posterior_mean("beta")
         if self._intercept_dropped:
             ni = self._beta_nonintercept_indices
             return self._X[:, ni] @ beta
         return self._X @ beta
+
 
 class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial Durbin panel regression.
@@ -520,15 +648,32 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
     _has_wx_in_beta: bool = True
-    _jacobian_param: str | None = 'rho'
-    _gibbs_class: str | None = 'GaussianSARGibbs'
+    _jacobian_param: str | None = "rho"
+    _gibbs_class: str | None = "GaussianSARGibbs"
 
     def _beta_names(self) -> list[str]:
-        return self._feature_names + [f'W*{name}' for name in self._wx_feature_names]
+        return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
     _priors_cls = PanelSDMPriors
 
-    def _fit_gibbs(self, draws: int=2000, tune: int=1000, chains: int=4, random_seed: int | None=None, thin: int=1, n_jobs: int=-1, progressbar: bool=True, gibbs_method: str='jax', mala_step_size: float=0.05, use_mala: bool=True, use_slice: bool=True, slice_width: float | None=None, chain_method: str | None=None) -> 'az.InferenceData':
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "jax",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
         """Sample posterior via 3-block Gaussian Gibbs.
 
         The SDM panel model is equivalent to SAR panel with Z = [X, WX]
@@ -574,14 +719,57 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         az.InferenceData
         """
         if self.robust:
-            raise NotImplementedError("Gibbs sampling is not yet supported for robust (Student-t) models. Use sampler='nuts' (the default).")
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) models. Use sampler='nuts' (the default)."
+            )
         from ...samplers.gaussian import GaussianGibbsPriors, GaussianSARGibbs
+
         Z = np.hstack([self._X, self._WX])
-        feature_names = list(self._feature_names) + [f'W*{name}' for name in self._wx_feature_names]
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(Z, feature_names)
-        priors = GaussianGibbsPriors(beta_mu=self.priors.get('beta_mu', default_beta_mu), beta_sigma=self.priors.get('beta_sigma', default_beta_sigma), sigma2_alpha=self.priors.get('sigma2_alpha', 2.0), sigma2_beta=self.priors.get('sigma2_beta', float(np.var(self._y))), rho_lower=self._logdet_bounds.rho_min, rho_upper=self._logdet_bounds.rho_max)
-        gibbs = GaussianSARGibbs(y=self._y, X=Z, W_sparse=self._W_sparse_NT, Wy=self._Wy, priors=priors, logdet_fn=self._logdet_numpy_fn, logdet_vec_fn=self._logdet_numpy_vec_fn, feature_names=feature_names, model_type='sdm', W_eigs=self._W_eigs if self._resolved_logdet_method == 'eigenvalue' else None, logdet_method=self.logdet_method, T=self._T)
-        self._idata = gibbs.fit(draws=draws, tune=tune, chains=chains, random_seed=random_seed, thin=thin, n_jobs=n_jobs, progressbar=progressbar, gibbs_method=gibbs_method, mala_step_size=mala_step_size, use_mala=use_mala, use_slice=use_slice, slice_width=slice_width, chain_method=chain_method)
+        feature_names = list(self._feature_names) + [
+            f"W*{name}" for name in self._wx_feature_names
+        ]
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            Z, feature_names
+        )
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+        gibbs = GaussianSARGibbs(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse_NT,
+            Wy=self._Wy,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type="sdm",
+            W_eigs=self._W_eigs
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            use_slice=use_slice,
+            slice_width=slice_width,
+            chain_method=chain_method,
+        )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -592,14 +780,15 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         np.ndarray
             Posterior-mean fitted values.
         """
-        rho = float(self._posterior_mean('rho'))
-        beta = self._posterior_mean('beta')
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
         if self._intercept_dropped:
             ni = self._beta_nonintercept_indices
             Z = np.hstack([self._X[:, ni], self._WX])
         else:
             Z = np.hstack([self._X, self._WX])
         return rho * self._Wy + Z @ beta
+
 
 class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian spatial Durbin error panel regression.
@@ -690,15 +879,32 @@ class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
     _has_wx_in_beta: bool = True
-    _jacobian_param: str | None = 'lam'
-    _gibbs_class: str | None = 'GaussianSEMGibbs'
+    _jacobian_param: str | None = "lam"
+    _gibbs_class: str | None = "GaussianSEMGibbs"
 
     def _beta_names(self) -> list[str]:
-        return self._feature_names + [f'W*{name}' for name in self._wx_feature_names]
+        return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
     _priors_cls = PanelSDEMPriors
 
-    def _fit_gibbs(self, draws: int=2000, tune: int=1000, chains: int=4, random_seed: int | None=None, thin: int=1, n_jobs: int=-1, progressbar: bool=True, gibbs_method: str='jax', mala_step_size: float=0.05, use_mala: bool=True, use_slice: bool=True, slice_width: float | None=None, chain_method: str | None=None) -> 'az.InferenceData':
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: int | None = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "jax",
+        mala_step_size: float = 0.05,
+        use_mala: bool = True,
+        use_slice: bool = True,
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> "az.InferenceData":
         """Sample posterior via 3-block Gaussian Gibbs.
 
         The SDEM panel model is equivalent to SEM panel with Z = [X, WX]
@@ -744,14 +950,56 @@ class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         az.InferenceData
         """
         if self.robust:
-            raise NotImplementedError("Gibbs sampling is not yet supported for robust (Student-t) models. Use sampler='nuts' (the default).")
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) models. Use sampler='nuts' (the default)."
+            )
         from ...samplers.gaussian import GaussianGibbsPriors, GaussianSEMGibbs
+
         Z = np.hstack([self._X, self._WX])
-        feature_names = list(self._feature_names) + [f'W*{name}' for name in self._wx_feature_names]
-        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(Z, feature_names)
-        priors = GaussianGibbsPriors(beta_mu=self.priors.get('beta_mu', default_beta_mu), beta_sigma=self.priors.get('beta_sigma', default_beta_sigma), sigma2_alpha=self.priors.get('sigma2_alpha', 2.0), sigma2_beta=self.priors.get('sigma2_beta', float(np.var(self._y))), rho_lower=self._logdet_bounds.rho_min, rho_upper=self._logdet_bounds.rho_max)
-        gibbs = GaussianSEMGibbs(y=self._y, X=Z, W_sparse=self._W_sparse_NT, priors=priors, logdet_fn=self._logdet_numpy_fn, logdet_vec_fn=self._logdet_numpy_vec_fn, feature_names=feature_names, model_type='sdem', W_eigs=self._W_eigs if self._resolved_logdet_method == 'eigenvalue' else None, logdet_method=self.logdet_method, T=self._T)
-        self._idata = gibbs.fit(draws=draws, tune=tune, chains=chains, random_seed=random_seed, thin=thin, n_jobs=n_jobs, progressbar=progressbar, gibbs_method=gibbs_method, mala_step_size=mala_step_size, use_mala=use_mala, use_slice=use_slice, slice_width=slice_width, chain_method=chain_method)
+        feature_names = list(self._feature_names) + [
+            f"W*{name}" for name in self._wx_feature_names
+        ]
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            Z, feature_names
+        )
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+        gibbs = GaussianSEMGibbs(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse_NT,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type="sdem",
+            W_eigs=self._W_eigs
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            mala_step_size=mala_step_size,
+            use_mala=use_mala,
+            use_slice=use_slice,
+            slice_width=slice_width,
+            chain_method=chain_method,
+        )
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -762,13 +1010,14 @@ class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         np.ndarray
             Posterior-mean fitted values.
         """
-        beta = self._posterior_mean('beta')
+        beta = self._posterior_mean("beta")
         if self._intercept_dropped:
             ni = self._beta_nonintercept_indices
             Z = np.hstack([self._X[:, ni], self._WX])
         else:
             Z = np.hstack([self._X, self._WX])
         return Z @ beta
+
 
 class SLXPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     """Bayesian SLX panel regression.
@@ -854,12 +1103,14 @@ class SLXPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
     favouring near-Normal tails. The lower bound of 2 ensures the
     variance exists.
     """
+
     _has_wx_in_beta: bool = True
     _jacobian_param: str | None = None
     _gibbs_class: str | None = None
 
     def _beta_names(self) -> list[str]:
-        return self._feature_names + [f'W*{name}' for name in self._wx_feature_names]
+        return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
+
     _priors_cls = PanelSLXPriors
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -870,7 +1121,7 @@ class SLXPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         np.ndarray
             Posterior-mean fitted values.
         """
-        beta = self._posterior_mean('beta')
+        beta = self._posterior_mean("beta")
         if self._intercept_dropped:
             ni = self._beta_nonintercept_indices
             Z = np.hstack([self._X[:, ni], self._WX])

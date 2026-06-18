@@ -112,6 +112,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
+from .._utils._base import GibbsBasePriors, GibbsBaseState
 from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d_adaptive,
@@ -123,7 +124,7 @@ from .._utils._slice import (
 
 
 @dataclass
-class REGibbsState:
+class REGibbsState(GibbsBaseState):
     """Mutable state for the RE panel Gibbs sampler.
 
     Parameters
@@ -140,15 +141,13 @@ class REGibbsState:
         Spatial autoregressive parameter (ρ for SAR, λ for SEM).
     """
 
-    beta: np.ndarray
-    sigma2: float
-    alpha: np.ndarray
-    sigma_alpha2: float
-    rho: float
+    sigma2: float = 1.0
+    alpha: np.ndarray = None
+    sigma_alpha2: float = 1.0
 
 
 @dataclass
-class REGibbsPriors:
+class REGibbsPriors(GibbsBasePriors):
     """Prior hyperparameters for RE panel Gibbs sampler.
 
     Parameters
@@ -171,12 +170,8 @@ class REGibbsPriors:
         Upper bound for ρ/λ (from spectral stability).
     """
 
-    beta_mu: float | np.ndarray = 0.0
-    beta_sigma: float | np.ndarray = 1e6
     sigma_sigma: float = 10.0
     sigma_alpha_sigma: float = 10.0
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
 
 
 @dataclass

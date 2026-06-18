@@ -25,13 +25,11 @@ from .._logdet import (
 )
 from .._logdet._config import _auto_logdet_method
 from ._base._shared import (
-    _is_row_standardized_csr,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
     resolve_W,
 )
 from .base import SpatialModel
-
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
@@ -844,6 +842,7 @@ class SpatialPanelModel(SpatialModel):
         :func:`get_panel_spec` instead of :func:`get_spec`.
         """
         from ..diagnostics import _decision_trees as _dt
+
         return _dt.get_panel_spec(model_type)
 
     def _reconstruct_log_likelihood(self, *, nuts_sampler: str) -> None:
