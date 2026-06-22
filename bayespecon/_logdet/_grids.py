@@ -5,12 +5,34 @@ compute Chebyshev polynomial coefficients.  These are NumPy/SciPy-only — no
 PyTensor or JAX dependencies.
 """
 
+import weakref
+from collections import OrderedDict
+
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from scipy.interpolate import CubicSpline
 
 from ._config import _LOGDET_GRID_EIG_MAX
+
+# ---------------------------------------------------------------------------
+# Chebyshev coefficient cache
+# ---------------------------------------------------------------------------
+#
+# Two models with the same W and same order/bounds recompute identical
+# Chebyshev coefficients.  We cache them keyed by (id(W), order, rmin, rmax)
+# using a WeakValueDictionary so cache entries are GC'd when the sparse
+# matrix is freed.
+
+_CHEBYSHEV_COEFF_CACHE: "weakref.WeakValueDictionary[int, OrderedDict]" = (
+    weakref.WeakValueDictionary()
+)
+_CHEBYSHEV_CACHE_MAXSIZE = 32
+
+
+def clear_chebyshev_cache() -> None:
+    """Clear the Chebyshev coefficient cache (useful for tests)."""
+    _CHEBYSHEV_COEFF_CACHE.clear()
 
 
 def _stable_rho_grid(
@@ -398,6 +420,18 @@ def chebyshev(
     if rmax <= rmin:
         raise ValueError("rmax must be greater than rmin.")
 
+    # --- Cache lookup ---
+    # Key by (id(W_or_eigs), order, rmin, rmax).  When W is a sparse matrix,
+    # id() is stable for its lifetime.  When eigs are supplied, we use their
+    # id.  The weakref cache auto-expires when the matrix/array is GC'd.
+    cache_obj = eigs if eigs is not None else W
+    cache_key = (id(cache_obj), order, rmin, rmax)
+    bucket = _CHEBYSHEV_COEFF_CACHE.get(id(cache_obj))
+    if bucket is not None:
+        cached = bucket.get(cache_key)
+        if cached is not None:
+            return dict(cached)
+
     # Allow caller to skip dense materialisation when only eigs are needed.
     if eigs is not None:
         # Keep complex eigenvalues — np.abs computes the complex modulus
@@ -467,13 +501,30 @@ def chebyshev(
             logdet_at_nodes * np.cos(j * (2 * k - 1) * np.pi / (2 * order))
         )
 
-    return {
+    result = {
         "coeffs": coeffs,
         "rmin": rmin,
         "rmax": rmax,
         "order": order,
         "method": method_used,
     }
+
+    # --- Cache store ---
+    obj_id = id(cache_obj)
+    bucket = _CHEBYSHEV_COEFF_CACHE.get(obj_id)
+    if bucket is None:
+        bucket = OrderedDict()
+        try:
+            _CHEBYSHEV_COEFF_CACHE[obj_id] = bucket
+        except TypeError:
+            # cache_obj is not weakref-able (e.g. a plain list) — skip caching
+            return result
+    bucket[cache_key] = result
+    # Evict oldest entries if over capacity
+    while len(bucket) > _CHEBYSHEV_CACHE_MAXSIZE:
+        bucket.popitem(last=False)
+
+    return result
 
 
 def _barry_pace_traces(

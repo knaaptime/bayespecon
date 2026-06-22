@@ -527,7 +527,6 @@ class FlowModel(SpatialModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
@@ -544,8 +543,6 @@ class FlowModel(SpatialModel):
             Number of tuning (warm-up) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         store_lambda : bool, default False
@@ -563,6 +560,7 @@ class FlowModel(SpatialModel):
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``.
+            Pass ``target_accept=0.95`` to adjust the NUTS acceptance rate.
 
         Returns
         -------
@@ -572,6 +570,7 @@ class FlowModel(SpatialModel):
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        target_accept = sample_kwargs.pop("target_accept", 0.9)
         nuts_sampler = enforce_c_backend(
             nuts_sampler,
             requires_c_backend=getattr(self, "_requires_c_backend", False),
@@ -1887,7 +1886,6 @@ class NegativeBinomialSARFlow(SARFlow):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         sampler: str = "nuts",
         gibbs_method: str = "numpy",
@@ -1906,8 +1904,6 @@ class NegativeBinomialSARFlow(SARFlow):
             Number of tuning (warm-up) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         sampler : str, default "nuts"
@@ -1925,7 +1921,8 @@ class NegativeBinomialSARFlow(SARFlow):
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).
+            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
+            acceptance rate.
 
         Returns
         -------
@@ -1946,7 +1943,6 @@ class NegativeBinomialSARFlow(SARFlow):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             store_lambda=store_lambda,
             idata_kwargs=idata_kwargs,
@@ -2191,7 +2187,6 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         sampler: str = "nuts",
         gibbs_method: str = "numpy",
@@ -2210,8 +2205,6 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             Number of tuning (warm-up) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         sampler : str, default "nuts"
@@ -2229,7 +2222,8 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).
+            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
+            acceptance rate.
 
         Returns
         -------
@@ -2249,7 +2243,6 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             store_lambda=store_lambda,
             idata_kwargs=idata_kwargs,
@@ -2460,7 +2453,6 @@ class NegativeBinomialFlow(OLSFlow):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         sampler: str = "nuts",
         gibbs_method: str = "numpy",
@@ -2479,8 +2471,6 @@ class NegativeBinomialFlow(OLSFlow):
             Number of tuning (warm-up) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         sampler : str, default "nuts"
@@ -2498,7 +2488,8 @@ class NegativeBinomialFlow(OLSFlow):
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).
+            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
+            acceptance rate.
 
         Returns
         -------
@@ -2518,7 +2509,6 @@ class NegativeBinomialFlow(OLSFlow):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             store_lambda=store_lambda,
             idata_kwargs=idata_kwargs,

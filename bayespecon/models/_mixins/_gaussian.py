@@ -72,7 +72,6 @@ class GaussianLikelihoodMixin:
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed=None,
         idata_kwargs=None,
         sampler: str | None = None,
@@ -102,8 +101,6 @@ class GaussianLikelihoodMixin:
             Number of tuning (burn-in) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         idata_kwargs : dict, optional
@@ -125,7 +122,8 @@ class GaussianLikelihoodMixin:
             Show per-chain progress bars.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).  Pass ``nuts_sampler="blackjax"`` etc. to select
+            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
+            acceptance rate, ``nuts_sampler="blackjax"`` etc. to select
             an alternative NUTS backend.
         """
         # Auto-select: Gibbs when available, NUTS otherwise.
@@ -158,7 +156,6 @@ class GaussianLikelihoodMixin:
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,

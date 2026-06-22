@@ -331,7 +331,6 @@ class FlowPanelModel(SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
@@ -347,6 +346,9 @@ class FlowPanelModel(SpatialPanelModel):
             Sampling backend: ``"nuts"`` for PyMC NUTS (default) or
             ``"gibbs"`` for the custom Gaussian panel flow Gibbs sampler
             (only available for separable SAR models).
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample``.
+            Pass ``target_accept=0.95`` to adjust the NUTS acceptance rate.
         """
         if sampler == "gibbs":
             return self.fit_gibbs(
@@ -364,6 +366,7 @@ class FlowPanelModel(SpatialPanelModel):
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        target_accept = sample_kwargs.pop("target_accept", 0.9)
         nuts_sampler = enforce_c_backend(
             nuts_sampler,
             requires_c_backend=getattr(self, "_requires_c_backend", False),

@@ -681,7 +681,6 @@ class SpatialModel(ABC):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
         **sample_kwargs,
@@ -696,14 +695,13 @@ class SpatialModel(ABC):
             Number of tuning (burn-in) steps per chain.
         chains : int
             Number of parallel chains.
-        target_accept : float
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         progressbar : bool, default True
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``.  Pass
+            ``target_accept=0.95`` to adjust the NUTS acceptance rate,
             ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
             select an alternative NUTS backend; defaults to PyMC's built-in
             sampler.
@@ -718,7 +716,6 @@ class SpatialModel(ABC):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -776,7 +773,6 @@ class SpatialModel(ABC):
         draws: int,
         tune: int,
         chains: int,
-        target_accept: float,
         random_seed: Optional[int],
         progressbar: bool,
         nuts_sampler: str = "pymc",
@@ -786,6 +782,9 @@ class SpatialModel(ABC):
     ) -> tuple[az.InferenceData, bool]:
         """Shared NUTS sampling path used by model-specific ``fit`` methods.
 
+        ``target_accept`` is popped from ``sample_kwargs`` (default 0.9)
+        so that ``fit()`` signatures don't need to declare it explicitly.
+
         Returns
         -------
         tuple[arviz.InferenceData, bool]
@@ -793,6 +792,7 @@ class SpatialModel(ABC):
             post-policy value after :func:`prepare_idata_kwargs`.
         """
         sample_kwargs = dict(sample_kwargs or {})
+        target_accept = sample_kwargs.pop("target_accept", 0.9)
         idata_kwargs = dict(idata_kwargs or {})
 
         build_kwargs: dict[str, Any] = {}
