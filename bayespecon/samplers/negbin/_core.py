@@ -50,7 +50,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from ..._jax_dispatch import _eqx_available
+from .._utils._base import GibbsBasePriors, GibbsBaseState
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (
     SliceWidthState,
@@ -74,7 +74,7 @@ from .._utils._spatial_normal import (
 
 
 @dataclass
-class GibbsState:
+class GibbsState(GibbsBaseState):
     """Mutable state carried through one Gibbs sweep (Python-loop path).
 
     All arrays are numpy arrays; scalars are Python floats.
@@ -82,9 +82,7 @@ class GibbsState:
     """
 
     eta: np.ndarray  # (n,) latent field
-    beta: np.ndarray  # (k,) regression coefficients
     sigma2: float  # residual variance σ²
-    rho: float  # spatial autoregressive parameter
     alpha: float  # NB dispersion parameter
     omega: np.ndarray  # (n,) PG auxiliary variables
 
@@ -102,66 +100,28 @@ class GibbsState:
         )
 
 
-if _eqx_available():
-    import equinox as eqx
-    import jax
+# JAX-compatible state class (equinox.Module when available, stub otherwise).
+from .._utils._jax_base import make_jax_state_class
 
-    class JAXGibbsState(eqx.Module):
-        """JAX-compatible Gibbs sampler state (used by the JAX-dense path).
-
-        An ``equinox.Module`` that holds JAX arrays and is automatically
-        registered as a PyTree, so it can be passed through ``@jax.jit``
-        and ``@eqx.filter_jit`` boundaries without manual registration.
-
-        For the Python-loop path, use :class:`GibbsState` instead.
-        """
-
-        eta: jax.Array
-        beta: jax.Array
-        sigma2: jax.Array
-        rho: jax.Array
-        alpha: jax.Array
-        omega: jax.Array
-
-        def to_numpy(self) -> GibbsState:
-            """Convert to a numpy-based :class:`GibbsState`."""
-            return GibbsState(
-                eta=np.asarray(self.eta),
-                beta=np.asarray(self.beta),
-                sigma2=float(self.sigma2),
-                rho=float(self.rho),
-                alpha=float(self.alpha),
-                omega=np.asarray(self.omega),
-            )
-
-else:
-
-    class JAXGibbsState:  # type: ignore[no-redef]
-        """Stub when equinox is not installed — should never be instantiated."""
-
-        def __init__(self, *args, **kwargs):
-            raise ImportError(
-                "equinox is required for the JAX-dense Gibbs sampler path. "
-                "Install with: pip install equinox"
-            )
+JAXGibbsState = make_jax_state_class(
+    "JAXGibbsState",
+    ("eta", "beta", "sigma2", "rho", "alpha", "omega"),
+    numpy_state_cls=GibbsState,
+)
 
 
 @dataclass
-class GibbsPriors:
+class GibbsPriors(GibbsBasePriors):
     """Prior hyperparameters for the SAR-NB Gibbs sampler.
 
     All priors are weakly informative by default, matching the
     ``GaussianGibbsPriors`` convention.
     """
 
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
     sigma2_alpha: float = 2.0  # InverseGamma shape for σ²
     sigma2_beta: float = 1.0  # InverseGamma scale for σ²
     alpha_sigma: float = 2.5  # Half-Student-t scale for α (NB dispersion)
     alpha_nu: float = 3.0  # Half-Student-t degrees of freedom for α
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
 
 
 class GibbsCache(NamedTuple):

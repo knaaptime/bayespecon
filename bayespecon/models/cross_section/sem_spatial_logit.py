@@ -34,7 +34,6 @@ import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
-from ..._logdet import make_logdet_numpy_fn
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
 from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
@@ -130,18 +129,7 @@ class SEMSpatialLogit(SpatialModel):
             raise ValueError("y must be binary with values in {0, 1}.")
 
         # Precompute logdet callable for the λ slice sampler.
-        self._logdet_fn = self._make_logdet_fn()
-
-    def _make_logdet_fn(self):
-        """Build a callable logdet(lam) -> float for the λ slice sampler."""
-        bounds = self._logdet_bounds
-        return make_logdet_numpy_fn(
-            self._W_sparse,
-            eigs=self._W_eigs,
-            method=bounds.method,
-            rho_min=bounds.rho_min,
-            rho_max=bounds.rho_max,
-        )
+        self._logdet_fn = self._logdet_numpy_fn
 
     # ------------------------------------------------------------------
     # Auto-selection for Gibbs path

@@ -1,10 +1,10 @@
-"""Mixin providing a unified ``_build_pymc_model`` for Gaussian cross-section models.
+"""Mixin providing a unified ``_build_pymc_model`` for Gaussian spatial models.
 
 The mixin is driven by declarative attributes already present on the model
 class (``_jacobian_param``, ``_has_wx_in_beta``, ``_spatial_params``).
 Subclasses only need to set those attributes and inherit from both
-``SpatialModel`` and ``GaussianLikelihoodMixin``; the mixin supplies the
-full ``_build_pymc_model`` implementation.
+``SpatialModel`` (or ``SpatialPanelModel``) and ``GaussianLikelihoodMixin``;
+the mixin supplies the full ``_build_pymc_model`` implementation.
 
 Three likelihood branches are dispatched based on ``_jacobian_param``:
 
@@ -13,6 +13,10 @@ Three likelihood branches are dispatched based on ``_jacobian_param``:
   ``pm.Potential("jacobian", logdet(ρ))``.
 * ``"lam"`` (SEM, SDEM):  spatially-filtered residual via ``pm.CustomDist``
   (JAX path) or ``pm.Potential`` (default path), plus Jacobian.
+
+The ``_spatial_lag(X)`` hook abstracts the W@X product so the same mixin
+works for both cross-section (``self._W_sparse @ X``) and panel
+(``self._sparse_panel_lag(X)``) models.
 """
 
 from __future__ import annotations
@@ -25,11 +29,12 @@ from ..._backends.sampler_helpers import use_jax_likelihood
 
 
 class GaussianLikelihoodMixin:
-    """Mixin that provides ``_build_pymc_model`` for Gaussian cross-section models.
+    """Mixin that provides ``_build_pymc_model`` for Gaussian spatial models.
 
     Expects the host class to also inherit from
-    :class:`~bayespecon.models.base.SpatialModel` and to define the following
-    declarative attributes:
+    :class:`~bayespecon.models.base.SpatialModel` (or
+    :class:`~bayespecon.models.panel_base.SpatialPanelModel`) and to define
+    the following declarative attributes:
 
     * ``_jacobian_param``: ``None``, ``"rho"``, or ``"lam"``
     * ``_has_wx_in_beta``: ``bool``
@@ -43,13 +48,132 @@ class GaussianLikelihoodMixin:
     * ``_model_coords()`` → dict of coordinate arrays
     * ``_add_nu_prior(model)`` → adds ``nu`` to a ``pm.Model``
     * ``_logdet_pytensor_fn``: pytensor log-determinant callable
+
+    The ``_spatial_lag(X)`` method defaults to ``self._W_sparse @ X``
+    (cross-section).  Panel models override it to use
+    ``self._sparse_panel_lag(X)``.
     """
+
+    # ------------------------------------------------------------------
+    # Spatial lag hook
+    # ------------------------------------------------------------------
+    # ``_spatial_lag(X)`` is defined on ``SpatialModel`` (cross-section:
+    # ``self._W_sparse @ X``) and overridden on ``SpatialPanelModel`` (panel:
+    # ``self._sparse_panel_lag(X)`` which applies W ⊗ I_T).  The mixin calls
+    # ``self._spatial_lag(X)`` so the correct implementation is dispatched
+    # via MRO regardless of which base class the model inherits from.
+
+    # ------------------------------------------------------------------
+    # Fitting
+    # ------------------------------------------------------------------
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed=None,
+        idata_kwargs=None,
+        sampler: str | None = None,
+        gibbs_method: str = "jax",
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        **sample_kwargs,
+    ):
+        """Draw samples from the posterior.
+
+        Dispatches to the Gibbs sampler (``sampler="gibbs"``) or NUTS
+        (``sampler="nuts"``).  When ``sampler`` is ``None`` (default),
+        Gibbs is used if the model has a Gibbs sampler
+        (``_gibbs_class is not None``), otherwise NUTS is used.
+
+        When NUTS is used and ``log_likelihood=True`` is requested via
+        ``idata_kwargs``, the complete pointwise log-likelihood (including
+        the Jacobian correction) is reconstructed post-sampling via
+        :meth:`_reconstruct_log_likelihood`.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of posterior samples per chain (after tuning).
+        tune : int, default 1000
+            Number of tuning (burn-in) steps per chain.
+        chains : int, default 4
+            Number of parallel chains.
+        random_seed : int, optional
+            Seed for reproducibility.
+        idata_kwargs : dict, optional
+            Passed to ``pm.sample`` for InferenceData creation. If contains
+            ``log_likelihood: True``, the complete pointwise log-likelihood
+            (including the Jacobian correction) is attached to the output.
+            Only used when ``sampler="nuts"``.
+        sampler : str, default None
+            ``"nuts"`` for NUTS via PyMC, ``"gibbs"`` for the custom
+            block Gibbs sampler, or ``None`` to auto-select (Gibbs when
+            available, NUTS otherwise).
+        gibbs_method : {"jax", "numpy"}, default "jax"
+            Execution backend for the Gibbs sampler.
+        thin : int, default 1
+            Keep every ``thin``-th draw after warmup (Gibbs only).
+        n_jobs : int, default -1
+            Number of parallel workers for Gibbs chains.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample``
+            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
+            acceptance rate, ``nuts_sampler="blackjax"`` etc. to select
+            an alternative NUTS backend.
+        """
+        # Auto-select: Gibbs when available, NUTS otherwise.
+        if sampler is None:
+            sampler = (
+                "gibbs" if getattr(self, "_gibbs_class", None) is not None else "nuts"
+            )
+
+        if sampler == "gibbs":
+            return self._fit_gibbs_dispatch(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                gibbs_method=gibbs_method,
+                sample_kwargs=sample_kwargs,
+            )
+        elif sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
+
+        # --- NUTS path ---
+        idata_kwargs = idata_kwargs or {}
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
+
+        if compute_log_likelihood:
+            self._reconstruct_log_likelihood(nuts_sampler=nuts_sampler)
+
+        return self._idata
 
     # ------------------------------------------------------------------
     # Design matrix
     # ------------------------------------------------------------------
 
-    def _gaussian_design_matrix(self) -> np.ndarray:
+    def _design_matrix(self) -> np.ndarray:
         """Return the effective design matrix for the Gaussian likelihood.
 
         For models with ``_has_wx_in_beta=True`` (SLX, SDM, SDEM), this
@@ -59,7 +183,7 @@ class GaussianLikelihoodMixin:
             return np.hstack([self._X, self._WX])
         return self._X
 
-    def _gaussian_design_names(self) -> list[str]:
+    def _design_names(self) -> list[str]:
         """Return feature names aligned with the design matrix columns."""
         if self._has_wx_in_beta:
             return list(self._feature_names) + [
@@ -103,7 +227,7 @@ class GaussianLikelihoodMixin:
         compute_log_likelihood: bool = False,
         nuts_sampler: str = "pymc",
     ) -> pm.Model:
-        """Build the PyMC model for a Gaussian cross-section spatial model.
+        """Build the PyMC model for a Gaussian spatial model.
 
         Dispatches to the appropriate branch based on ``_jacobian_param``:
 
@@ -166,8 +290,8 @@ class GaussianLikelihoodMixin:
     def _build_pymc_model_no_jacobian(self) -> pm.Model:
         """Build PyMC model for OLS or SLX (no spatial autoregressive term)."""
         self._validate_wx_columns()
-        Z = self._gaussian_design_matrix()
-        names = self._gaussian_design_names()
+        Z = self._design_matrix()
+        names = self._design_names()
         priors = self._gaussian_priors(Z, names)
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -204,8 +328,8 @@ class GaussianLikelihoodMixin:
     ) -> pm.Model:
         """Build PyMC model for SAR or SDM (spatial lag with ρ Jacobian)."""
         self._validate_wx_columns()
-        Z = self._gaussian_design_matrix()
-        names = self._gaussian_design_names()
+        Z = self._design_matrix()
+        names = self._design_names()
         priors = self._gaussian_priors(Z, names)
 
         with pm.Model(coords=self._model_coords()) as model:
@@ -248,8 +372,8 @@ class GaussianLikelihoodMixin:
     def _build_pymc_model_lam(self, *, nuts_sampler: str = "pymc") -> pm.Model:
         """Build PyMC model for SEM or SDEM (spatial error with λ Jacobian)."""
         self._validate_wx_columns()
-        Z = self._gaussian_design_matrix()
-        names = self._gaussian_design_names()
+        Z = self._design_matrix()
+        names = self._design_names()
         priors = self._gaussian_priors(Z, names)
 
         logdet_fn = self._logdet_pytensor_fn
@@ -257,9 +381,12 @@ class GaussianLikelihoodMixin:
         # Precompute W @ Z so the spatial filter can be expressed as
         #   eps = (y - lam*Wy) - (Z - lam*WZ) @ beta
         # avoiding any sparse matvec inside the NUTS gradient loop.
-        cache_attr = "_WZ_sem_cache"
+        # Uses _spatial_lag hook so panel models use _sparse_panel_lag.
+        cache_attr = "_WZ_cache"
         if not hasattr(self, cache_attr) or getattr(self, cache_attr) is None:
-            setattr(self, cache_attr, np.asarray(self._W_sparse @ Z, dtype=np.float64))
+            setattr(
+                self, cache_attr, np.asarray(self._spatial_lag(Z), dtype=np.float64)
+            )
         WZ = getattr(self, cache_attr)
 
         n_obs = int(self._y.shape[0])

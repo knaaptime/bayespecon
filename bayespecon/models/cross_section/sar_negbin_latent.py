@@ -29,7 +29,6 @@ import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
-from ..._logdet import make_logdet_numpy_fn
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
 from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
@@ -95,18 +94,7 @@ class SARNegBinLatent(SpatialModel):
         # Small n: eigenvalue method (one-time O(n³), then O(n) per eval).
         # Large n: Chebyshev approximation (one-time O(nnz * order), then
         # O(order) per eval via Clenshaw recurrence).
-        self._logdet_fn = self._make_logdet_fn()
-
-    def _make_logdet_fn(self):
-        """Build a callable logdet(rho) -> float for the ρ slice sampler."""
-        bounds = self._logdet_bounds
-        return make_logdet_numpy_fn(
-            self._W_sparse,
-            eigs=self._W_eigs,
-            method=bounds.method,
-            rho_min=bounds.rho_min,
-            rho_max=bounds.rho_max,
-        )
+        self._logdet_fn = self._logdet_numpy_fn
 
     # ------------------------------------------------------------------
     # Auto-selection for decoupled Gibbs path

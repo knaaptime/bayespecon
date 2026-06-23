@@ -33,10 +33,17 @@ class LogDetMethod(str, Enum):
 
     Each member is a string so the enum members can be used interchangeably
     with their string values (e.g. ``LogDetMethod.EIGENVALUE == "eigenvalue"``).
+
+    The five historical grid variants (``grid_dense``, ``grid_sparse``,
+    ``sparse_spline``, ``grid_mc``, ``grid_ilu``) are deprecated aliases
+    that map to ``"grid"`` with a ``grid_type`` sub-parameter.  They still
+    work but new code should use ``"grid"`` with ``grid_type=`` instead.
     """
 
     EXACT = "exact"
     EIGENVALUE = "eigenvalue"
+    GRID = "grid"
+    # Deprecated grid sub-types — still accepted, mapped to "grid" + grid_type
     GRID_DENSE = "grid_dense"
     GRID_SPARSE = "grid_sparse"
     SPARSE_SPLINE = "sparse_spline"
@@ -44,6 +51,18 @@ class LogDetMethod(str, Enum):
     GRID_ILU = "grid_ilu"
     CHEBYSHEV = "chebyshev"
 
+
+#: Mapping from deprecated grid method names to their ``grid_type`` sub-parameter.
+_GRID_TYPE_MAP: dict[str, str] = {
+    "grid_dense": "dense",
+    "grid_sparse": "sparse",
+    "sparse_spline": "spline",
+    "grid_mc": "mc",
+    "grid_ilu": "ilu",
+}
+
+#: Set of all grid-type method names (deprecated + canonical).
+_GRID_METHODS: frozenset[str] = frozenset(["grid", *_GRID_TYPE_MAP])
 
 VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
 
@@ -57,6 +76,7 @@ VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
 LogDetMethodName = Literal[
     "exact",
     "eigenvalue",
+    "grid",
     "grid_dense",
     "grid_sparse",
     "sparse_spline",
@@ -118,7 +138,24 @@ def resolve_logdet_method(method: str | None, *, n: int) -> str:
     # consistency across numpy / JAX / pytensor builders.
     if method == "exact":
         return "eigenvalue"
+    # "grid" is the canonical name for all grid/spline methods.
+    # It defaults to the "dense" sub-type.  The deprecated sub-type names
+    # (grid_dense, grid_sparse, sparse_spline, grid_mc, grid_ilu) are kept
+    # as-is so downstream code can distinguish them.
+    if method == "grid":
+        return "grid_dense"
     return method
+
+
+def _grid_type(method: str) -> str:
+    """Return the grid sub-type for a method name.
+
+    ``"grid"`` defaults to ``"dense"``.  Deprecated names like
+    ``"sparse_spline"`` map to their corresponding sub-type.
+    """
+    if method in _GRID_TYPE_MAP:
+        return _GRID_TYPE_MAP[method]
+    return "dense"
 
 
 def _auto_logdet_method(n: int) -> str:

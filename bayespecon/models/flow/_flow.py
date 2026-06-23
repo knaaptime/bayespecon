@@ -29,7 +29,7 @@ Two variants are provided:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Any, Optional, Union
 
 import arviz as az
@@ -54,7 +54,7 @@ from ..._logdet import (
 )
 from ..._logdet._flow import _flow_logdet_poly_coeffs
 from ..._ops import kron_solve_matrix, kron_solve_vec
-from ...graph import _validate_graph, flow_trace_blocks, flow_weight_matrices
+from ...graph import _graph_to_csr, flow_trace_blocks, flow_weight_matrices
 from ..base import SpatialModel
 
 
@@ -216,7 +216,7 @@ def _compute_flow_effects_lesage(
     return out
 
 
-class FlowModel(ABC):
+class FlowModel(SpatialModel):
     """Abstract base class for Bayesian spatial flow regression models.
 
     Unlike :class:`~bayespecon.models.base.SpatialModel`, this class works
@@ -236,7 +236,7 @@ class FlowModel(ABC):
         matrix or a flat vector of length :math:`N = n^2`.
     G : libpysal.graph.Graph
         Row-standardised spatial graph on *n* units.  Validated by
-        :func:`~bayespecon.graph._validate_graph`.
+        :func:`~bayespecon.graph._graph_to_csr`.
     X : np.ndarray or pandas.DataFrame, shape (N, p)
         Full origin-destination design matrix with :math:`N = n^2` rows.
         This is typically produced by
@@ -307,12 +307,14 @@ class FlowModel(ABC):
         self.restrict_positive = restrict_positive
         self.miter = miter
         self.titer = titer
+        self.robust = False
+        self._is_row_std = True  # Graph is assumed row-standardised
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._approximation = None
 
         # Validate and extract the n×n weight matrix
-        self._W_sparse: sp.csr_matrix = _validate_graph(G)
+        self._W_sparse: sp.csr_matrix = _graph_to_csr(G)
         self._n: int = self._W_sparse.shape[0]
         self._N: int = self._n * self._n
 
@@ -323,13 +325,13 @@ class FlowModel(ABC):
                 raise ValueError(
                     f"y matrix must be ({self._n}, {self._n}), got {y_arr.shape}."
                 )
-            self._y_vec = y_arr.ravel()
+            self._y = y_arr.ravel()
         elif y_arr.ndim == 1:
             if len(y_arr) != self._N:
                 raise ValueError(
                     f"y vector must have length N={self._N} (= n²), got {len(y_arr)}."
                 )
-            self._y_vec = y_arr
+            self._y = y_arr
         else:
             raise ValueError("y must be a 1-D or 2-D array.")
 
@@ -348,7 +350,7 @@ class FlowModel(ABC):
                 f"X must have {self._N} rows (= n² = {self._n}²), got {X_arr.shape[0]}."
             )
 
-        self._X_design: np.ndarray = X_arr  # (N, p)
+        self._X: np.ndarray = X_arr  # (N, p)
         if col_names is not None:
             self._feature_names: list[str] = list(col_names)
         elif X_arr.shape[1] == 0:
@@ -442,9 +444,9 @@ class FlowModel(ABC):
 
         # Pre-compute spatial lags: Wd_y, Wo_y, Ww_y
         wms = flow_weight_matrices(G)
-        self._Wd_y: np.ndarray = wms["destination"] @ self._y_vec
-        self._Wo_y: np.ndarray = wms["origin"] @ self._y_vec
-        self._Ww_y: np.ndarray = wms["network"] @ self._y_vec
+        self._Wd_y: np.ndarray = wms["destination"] @ self._y
+        self._Wo_y: np.ndarray = wms["origin"] @ self._y
+        self._Ww_y: np.ndarray = wms["network"] @ self._y
 
         # Keep N×N sparse weight matrices for effects computation
         self._Wd: sp.csr_matrix = wms["destination"]
@@ -492,6 +494,16 @@ class FlowModel(ABC):
     ) -> dict[str, np.ndarray]:
         """Compute posterior spatial effects.  Implemented by subclasses."""
 
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Compute fitted values at posterior mean parameters.
+
+        Flow models override this in subclasses when fitted values are
+        needed.  The base implementation raises ``NotImplementedError``.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement fitted_values()."
+        )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -515,7 +527,6 @@ class FlowModel(ABC):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
@@ -532,8 +543,6 @@ class FlowModel(ABC):
             Number of tuning (warm-up) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         store_lambda : bool, default False
@@ -551,6 +560,7 @@ class FlowModel(ABC):
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``.
+            Pass ``target_accept=0.95`` to adjust the NUTS acceptance rate.
 
         Returns
         -------
@@ -560,6 +570,7 @@ class FlowModel(ABC):
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        target_accept = sample_kwargs.pop("target_accept", 0.9)
         nuts_sampler = enforce_c_backend(
             nuts_sampler,
             requires_c_backend=getattr(self, "_requires_c_backend", False),
@@ -663,11 +674,6 @@ class FlowModel(ABC):
         return self._idata
 
     @property
-    def inference_data(self) -> Optional[az.InferenceData]:
-        """Return ArviZ InferenceData from the most recent fit, or None."""
-        return self._idata
-
-    @property
     def _W_eigs_complex(self) -> Optional[np.ndarray]:
         """Complex eigenvalues of W, or None when not pre-computed.
 
@@ -677,62 +683,9 @@ class FlowModel(ABC):
         return self._W_eigs
 
     @property
-    def pymc_model(self) -> Optional[pm.Model]:
-        """Return the PyMC model used for the most recent fit, or None."""
-        return self._pymc_model
-
-    @property
     def approximation(self):
         """Return the most recent PyMC variational approximation, if any."""
         return self._approximation
-
-    def summary(
-        self,
-        var_names: Optional[list] = None,
-        **kwargs,
-    ) -> pd.DataFrame:
-        """Return posterior summary table via ArviZ.
-
-        Parameters
-        ----------
-        var_names : list, optional
-            Variable names to include.  Defaults to all parameters.
-        **kwargs
-            Additional keyword arguments forwarded to ``az.summary``.
-
-        Returns
-        -------
-        pandas.DataFrame
-        """
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
-        return az.summary(self._idata, var_names=var_names, **kwargs)
-
-    def spatial_diagnostics(self) -> pd.DataFrame:
-        """Run Bayesian LM specification tests for flow models.
-
-        Looks up the diagnostic suite registered for this model class
-        and returns a tidy DataFrame with one row per test.  See
-        :meth:`bayespecon.models.base.SpatialModel.spatial_diagnostics` for
-        the column schema.
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been fit yet.
-        """
-
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet.  Call fit() first.")
-        from ...diagnostics.lmtests.registry import get_diagnostic_suite
-
-        suite = get_diagnostic_suite(self)
-        if suite is None:
-            raise ValueError(
-                f"No diagnostic suite registered for {type(self).__name__}. "
-                f"Register one in bayespecon.diagnostics.lmtests.registry."
-            )
-        return SpatialModel._run_lm_diagnostics(self, suite.tests)
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
@@ -788,6 +741,16 @@ class FlowModel(ABC):
             title=f"{model_type} decision tree (alpha={alpha})",
         )
 
+    def _get_decision_spec(self, model_type: str):
+        """Return the flow decision-tree spec for this model type.
+
+        Overrides :meth:`SpatialModel._get_decision_spec` to use
+        :func:`get_flow_spec` instead of :func:`get_spec`.
+        """
+        from ...diagnostics import _decision_trees as _dt
+
+        return _dt.get_flow_spec(model_type)
+
     def _model_coords(self, extra: Optional[dict] = None) -> dict:
         """Return PyMC coordinate labels for named dimensions."""
         coords: dict = {"coefficient": self._feature_names}
@@ -807,7 +770,7 @@ class FlowModel(ABC):
         list[int]
             Column indices of X that are not constant/intercept columns.
         """
-        X = self._X_design
+        X = self._X
         indices: list[int] = []
         for j, name in enumerate(self._feature_names):
             column = X[:, j]
@@ -1031,7 +994,7 @@ class FlowModel(ABC):
         Subclasses (NegativeBinomialSARFlow, NegativeBinomialSARFlowSeparable) override this.
         """
         A = self._assemble_A(rho_d, rho_o, rho_w)
-        Xb = self._X_design @ beta
+        Xb = self._X @ beta
         eps = rng.normal(scale=float(sigma), size=self._N) if sigma is not None else 0.0
         rhs = Xb + eps
         return sp.linalg.spsolve(A, rhs)
@@ -1173,8 +1136,8 @@ class SARFlow(FlowModel):
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
         Ww_y_t = pt.as_tensor_variable(self._Ww_y.astype(np.float64))
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
-        y_t = pt.as_tensor_variable(self._y_vec.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             if self.restrict_positive:
@@ -1453,8 +1416,8 @@ class SARFlowSeparable(FlowModel):
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
         Ww_y_t = pt.as_tensor_variable(self._Ww_y.astype(np.float64))
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
-        y_t = pt.as_tensor_variable(self._y_vec.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             rho_d = pm.Uniform("rho_d", lower=rho_lower, upper=rho_upper)
@@ -1649,8 +1612,8 @@ class OLSFlow(FlowModel):
         beta_sigma = self.priors.get("beta_sigma", 1e6)
         sigma_sigma = self.priors.get("sigma_sigma", 10.0)
 
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
-        y_t = pt.as_tensor_variable(self._y_vec.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
@@ -1669,7 +1632,7 @@ class OLSFlow(FlowModel):
         sigma: Optional[float],
         rng: np.random.Generator,
     ) -> np.ndarray:
-        Xb = self._X_design @ beta
+        Xb = self._X @ beta
         if sigma is None:
             return Xb
         return Xb + rng.normal(scale=float(sigma), size=self._N)
@@ -1831,7 +1794,7 @@ class NegativeBinomialSARFlow(SARFlow):
         alpha_sigma = self.priors.get("alpha_sigma", 2.5)
         alpha_nu = self.priors.get("alpha_nu", 3.0)
 
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             if self.restrict_positive:
@@ -1911,7 +1874,7 @@ class NegativeBinomialSARFlow(SARFlow):
         out = np.empty((total, self._N), dtype=np.float64)
         for g in range(total):
             A = self._assemble_A(rho_d_draws[g], rho_o_draws[g], rho_w_draws[g])
-            eta = sp.linalg.spsolve(A, self._X_design @ beta_draws[g])
+            eta = sp.linalg.spsolve(A, self._X @ beta_draws[g])
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
@@ -1923,7 +1886,6 @@ class NegativeBinomialSARFlow(SARFlow):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         sampler: str = "nuts",
         gibbs_method: str = "numpy",
@@ -1942,8 +1904,6 @@ class NegativeBinomialSARFlow(SARFlow):
             Number of tuning (warm-up) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         sampler : str, default "nuts"
@@ -1961,7 +1921,8 @@ class NegativeBinomialSARFlow(SARFlow):
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).
+            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
+            acceptance rate.
 
         Returns
         -------
@@ -1982,7 +1943,6 @@ class NegativeBinomialSARFlow(SARFlow):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             store_lambda=store_lambda,
             idata_kwargs=idata_kwargs,
@@ -2005,7 +1965,7 @@ class NegativeBinomialSARFlow(SARFlow):
         Builds the cache, priors, and initial state from model attributes,
         then dispatches to :func:`run_chain_unrestricted`.
         """
-        from ...models.base import gelman_default_beta_prior
+        from ...models._base._shared import gelman_default_beta_prior
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin_reduced._flow import (
@@ -2015,7 +1975,7 @@ class NegativeBinomialSARFlow(SARFlow):
             run_chain_unrestricted,
         )
 
-        X = self._X_design
+        X = self._X
         y = self._y_int_vec.astype(np.float64)
         k = X.shape[1]
 
@@ -2034,7 +1994,7 @@ class NegativeBinomialSARFlow(SARFlow):
 
         # --- Build priors ---
         default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
-            self._y_vec, X, list(self._feature_names)
+            self._y, X, list(self._feature_names)
         )
         priors = FlowReducedGibbsPriors(
             beta_mu=self.priors.get("beta_mu", default_beta_mu),
@@ -2161,7 +2121,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
                 "NegativeBinomialSARFlowSeparable requires precomputed logdet data; "
                 "initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             rho_d = pm.Uniform("rho_d", lower=rho_lower, upper=rho_upper)
@@ -2215,7 +2175,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         for g in range(total):
             Ld = I_n - float(rho_d_draws[g]) * self._W_sparse
             Lo = I_n - float(rho_o_draws[g]) * self._W_sparse
-            eta = kron_solve_vec(Lo, Ld, self._X_design @ beta_draws[g], n)
+            eta = kron_solve_vec(Lo, Ld, self._X @ beta_draws[g], n)
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
@@ -2227,7 +2187,6 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         sampler: str = "nuts",
         gibbs_method: str = "numpy",
@@ -2246,8 +2205,6 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             Number of tuning (warm-up) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         sampler : str, default "nuts"
@@ -2265,7 +2222,8 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).
+            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
+            acceptance rate.
 
         Returns
         -------
@@ -2285,7 +2243,6 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             store_lambda=store_lambda,
             idata_kwargs=idata_kwargs,
@@ -2308,7 +2265,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         Builds the cache, priors, and initial state from model attributes,
         then dispatches to :func:`run_chain_separable`.
         """
-        from ...models.base import gelman_default_beta_prior
+        from ...models._base._shared import gelman_default_beta_prior
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin_reduced._flow import (
@@ -2318,7 +2275,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             run_chain_separable,
         )
 
-        X = self._X_design
+        X = self._X
         y = self._y_int_vec.astype(np.float64)
         k = X.shape[1]
         W_csc = self._W_sparse.tocsc()
@@ -2337,7 +2294,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
 
         # --- Build priors ---
         default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
-            self._y_vec, X, list(self._feature_names)
+            self._y, X, list(self._feature_names)
         )
         priors = FlowReducedGibbsPriors(
             beta_mu=self.priors.get("beta_mu", default_beta_mu),
@@ -2451,7 +2408,7 @@ class NegativeBinomialFlow(OLSFlow):
         alpha_sigma = self.priors.get("alpha_sigma", 2.5)
         alpha_nu = self.priors.get("alpha_nu", 3.0)
 
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
@@ -2484,7 +2441,7 @@ class NegativeBinomialFlow(OLSFlow):
         rng = np.random.default_rng(random_seed)
         out = np.empty((total, self._N), dtype=np.float64)
         for g in range(total):
-            eta = self._X_design @ beta_draws[g]
+            eta = self._X @ beta_draws[g]
             lam = np.exp(np.clip(eta, -50.0, 50.0))
             alpha = float(alpha_draws[g])
             p = alpha / (alpha + lam)
@@ -2496,7 +2453,6 @@ class NegativeBinomialFlow(OLSFlow):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         sampler: str = "nuts",
         gibbs_method: str = "numpy",
@@ -2515,8 +2471,6 @@ class NegativeBinomialFlow(OLSFlow):
             Number of tuning (warm-up) steps per chain.
         chains : int, default 4
             Number of parallel chains.
-        target_accept : float, default 0.9
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         sampler : str, default "nuts"
@@ -2534,7 +2488,8 @@ class NegativeBinomialFlow(OLSFlow):
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).
+            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
+            acceptance rate.
 
         Returns
         -------
@@ -2554,7 +2509,6 @@ class NegativeBinomialFlow(OLSFlow):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             store_lambda=store_lambda,
             idata_kwargs=idata_kwargs,
@@ -2577,7 +2531,7 @@ class NegativeBinomialFlow(OLSFlow):
         Three blocks per sweep: ω (Pólya–Gamma), β (conjugate normal),
         α (slice on log(α)).
         """
-        from ...models.base import gelman_default_beta_prior
+        from ...models._base._shared import gelman_default_beta_prior
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin._core import GibbsState
@@ -2589,13 +2543,13 @@ class NegativeBinomialFlow(OLSFlow):
             _sample_omega,
         )
 
-        X = self._X_design
+        X = self._X
         y = self._y_int_vec.astype(np.float64)
         N, k = X.shape
 
         # --- Build priors ---
         default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
-            self._y_vec, X, list(self._feature_names)
+            self._y, X, list(self._feature_names)
         )
         priors = ReducedGibbsPriors(
             beta_mu=self.priors.get("beta_mu", default_beta_mu),
@@ -2802,7 +2756,7 @@ class SEMFlow(FlowModel):
     -----
     Implementation: PyMC body uses precomputed lags of both ``y`` and
     ``X`` (``self._Wd``, ``self._Wo``, ``self._Ww`` applied to
-    ``self._X_design``) so that the residual
+    ``self._X``) so that the residual
     :math:`B u = B y - B X \\beta` is expressible as a linear combination
     of fixed quantities — no symbolic sparse mat-vec is required. The
     Jacobian :math:`\\log|B|` reuses the same trace-based polynomial as
@@ -2812,9 +2766,9 @@ class SEMFlow(FlowModel):
     def __init__(self, y, G, X, **kwargs):
         super().__init__(y, G, X, **kwargs)
         # Precompute lags of the design matrix (constant — no parameter dependence).
-        self._Wd_X: np.ndarray = np.asarray(self._Wd @ self._X_design, dtype=np.float64)
-        self._Wo_X: np.ndarray = np.asarray(self._Wo @ self._X_design, dtype=np.float64)
-        self._Ww_X: np.ndarray = np.asarray(self._Ww @ self._X_design, dtype=np.float64)
+        self._Wd_X: np.ndarray = np.asarray(self._Wd @ self._X, dtype=np.float64)
+        self._Wo_X: np.ndarray = np.asarray(self._Wo @ self._X, dtype=np.float64)
+        self._Ww_X: np.ndarray = np.asarray(self._Ww @ self._X, dtype=np.float64)
 
     def _build_pymc_model(self) -> pm.Model:
         beta_mu = self.priors.get("beta_mu", 0.0)
@@ -2827,8 +2781,8 @@ class SEMFlow(FlowModel):
         Wd_X_t = pt.as_tensor_variable(self._Wd_X.astype(np.float64))
         Wo_X_t = pt.as_tensor_variable(self._Wo_X.astype(np.float64))
         Ww_X_t = pt.as_tensor_variable(self._Ww_X.astype(np.float64))
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
-        y_t = pt.as_tensor_variable(self._y_vec.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             if self.restrict_positive:
@@ -2916,7 +2870,7 @@ class SEMFlow(FlowModel):
         rng: np.random.Generator,
     ) -> np.ndarray:
         """SEM posterior-predictive: ``y_rep = X β + B^{-1} ε``."""
-        Xb = self._X_design @ beta
+        Xb = self._X @ beta
         if sigma is None:
             return Xb
         B = self._assemble_A(lam_d, lam_o, lam_w)
@@ -3086,8 +3040,8 @@ class SEMFlowSeparable(SEMFlow):
         Wd_X_t = pt.as_tensor_variable(self._Wd_X.astype(np.float64))
         Wo_X_t = pt.as_tensor_variable(self._Wo_X.astype(np.float64))
         Ww_X_t = pt.as_tensor_variable(self._Ww_X.astype(np.float64))
-        X_t = pt.as_tensor_variable(self._X_design.astype(np.float64))
-        y_t = pt.as_tensor_variable(self._y_vec.astype(np.float64))
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y.astype(np.float64))
 
         with pm.Model(coords=self._model_coords()) as model:
             lam_d = pm.Uniform("lam_d", lower=lam_lower, upper=lam_upper)

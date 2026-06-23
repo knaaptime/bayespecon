@@ -102,57 +102,12 @@ def _check_jax_available() -> None:
 # JAX Gaussian Gibbs state (equinox Module)
 # ---------------------------------------------------------------------------
 
-_JAX_GAUSSIAN_GIBBS_STATE_CLS = None
+from .._utils._jax_base import make_jax_state_class
 
-
-def _make_jax_gaussian_gibbs_state():
-    """Create (or return cached) JAXGaussianGibbsState equinox Module class.
-
-    Returns the class (not an instance) so that JAX/equinox imports
-    are deferred until first use.  The class is cached as a module-level
-    singleton to ensure that all callers share the **same** Python type,
-    which is required by ``jax.lax.scan`` (carry input and output must
-    have identical pytree structure).
-    """
-    global _JAX_GAUSSIAN_GIBBS_STATE_CLS
-
-    if _JAX_GAUSSIAN_GIBBS_STATE_CLS is not None:
-        return _JAX_GAUSSIAN_GIBBS_STATE_CLS
-
-    import equinox as eqx
-    import jax.numpy as jnp
-
-    class JAXGaussianGibbsState(eqx.Module):
-        """Immutable state for the JAX Gaussian Gibbs sampler.
-
-        Parameters
-        ----------
-        beta : jax.Array of shape (k,)
-            Regression coefficients.
-        sigma2 : jax.Array
-            Residual variance σ² (scalar).
-        rho : jax.Array
-            Spatial autoregressive parameter (ρ for SAR/SDM,
-            λ for SEM/SDEM) (scalar).
-        slice_w : jax.Array
-            Slice sampler step-out width (scalar).
-        slice_L : jax.Array
-            Left boundary of persistent slice interval (scalar).
-            Set to ``lower`` to signal "no persistent interval".
-        slice_R : jax.Array
-            Right boundary of persistent slice interval (scalar).
-            Set to ``upper`` to signal "no persistent interval".
-        """
-
-        beta: jnp.ndarray
-        sigma2: jnp.ndarray
-        rho: jnp.ndarray
-        slice_w: jnp.ndarray
-        slice_L: jnp.ndarray
-        slice_R: jnp.ndarray
-
-    _JAX_GAUSSIAN_GIBBS_STATE_CLS = JAXGaussianGibbsState
-    return JAXGaussianGibbsState
+JAXGaussianGibbsState = make_jax_state_class(
+    "JAXGaussianGibbsState",
+    ("beta", "sigma2", "rho", "slice_w", "slice_L", "slice_R"),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -323,8 +278,6 @@ def _make_gaussian_gibbs_step(
     import jax.numpy as jnp
 
     jax.config.update("jax_enable_x64", True)
-
-    JAXGaussianGibbsState = _make_jax_gaussian_gibbs_state()
 
     is_sar = model_type in ("sar", "sdm")
 
@@ -745,7 +698,7 @@ def run_chain_jax_gaussian(
     )
 
     # Initialize JAX state
-    JAXGaussianGibbsState = _make_jax_gaussian_gibbs_state()
+
     state = JAXGaussianGibbsState(
         beta=jnp.asarray(init.beta, dtype=jnp.float64),
         sigma2=jnp.float64(init.sigma2),
@@ -1030,8 +983,6 @@ def run_chains_jax_gibbs_vectorized(
         use_mala=use_mala,
         use_slice=use_slice,
     )
-
-    JAXGaussianGibbsState = _make_jax_gaussian_gibbs_state()
 
     # Convert NumPy initial states to JAX states, then batch into a
     # vmappable pytree by stacking each leaf.

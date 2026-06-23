@@ -43,7 +43,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from ..._jax_dispatch import _eqx_available
+from .._utils._base import GibbsBasePriors, GibbsBaseState
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (
     SliceWidthState,
@@ -63,7 +63,7 @@ from .._utils._spatial_normal import (
 
 
 @dataclass
-class LogitGibbsState:
+class LogitGibbsState(GibbsBaseState):
     """Mutable state carried through one Gibbs sweep (Python-loop path).
 
     All arrays are numpy arrays; scalars are Python floats.
@@ -71,8 +71,6 @@ class LogitGibbsState:
     """
 
     eta: np.ndarray  # (n,) latent log-odds
-    beta: np.ndarray  # (k,) regression coefficients
-    rho: float  # spatial autoregressive parameter
     omega: np.ndarray  # (n,) PG auxiliary variables
 
     def to_jax(self) -> "JAXLogitGibbsState":
@@ -87,57 +85,24 @@ class LogitGibbsState:
         )
 
 
-if _eqx_available():
-    import equinox as eqx
-    import jax
+# JAX-compatible state class (equinox.Module when available, stub otherwise).
+from .._utils._jax_base import make_jax_state_class
 
-    class JAXLogitGibbsState(eqx.Module):
-        """JAX-compatible Gibbs sampler state (used by the JAX-dense path).
-
-        An ``equinox.Module`` that holds JAX arrays and is automatically
-        registered as a PyTree, so it can be passed through ``@jax.jit``
-        and ``@eqx.filter_jit`` boundaries without manual registration.
-        """
-
-        eta: jax.Array
-        beta: jax.Array
-        rho: jax.Array
-        omega: jax.Array
-
-        def to_numpy(self) -> LogitGibbsState:
-            """Convert to a numpy-based :class:`LogitGibbsState`."""
-            return LogitGibbsState(
-                eta=np.asarray(self.eta),
-                beta=np.asarray(self.beta),
-                rho=float(self.rho),
-                omega=np.asarray(self.omega),
-            )
-
-else:
-
-    class JAXLogitGibbsState:  # type: ignore[no-redef]
-        """Stub when equinox is not installed — should never be instantiated."""
-
-        def __init__(self, *args, **kwargs):
-            raise ImportError(
-                "equinox is required for the JAX-dense Gibbs sampler path. "
-                "Install with: pip install equinox"
-            )
+JAXLogitGibbsState = make_jax_state_class(
+    "JAXLogitGibbsState",
+    ("eta", "beta", "rho", "omega"),
+    numpy_state_cls=LogitGibbsState,
+)
 
 
 @dataclass
-class LogitGibbsPriors:
+class LogitGibbsPriors(GibbsBasePriors):
     """Prior hyperparameters for the SAR-logit Gibbs sampler.
 
     All priors are weakly informative by default.  There is no σ²
     parameter (the logit link absorbs the error scale) and no α
     parameter (binary response is always Bernoulli).
     """
-
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
 
 
 class LogitGibbsCache(NamedTuple):
@@ -817,36 +782,11 @@ class SEMLogitGibbsState:
         )
 
 
-if _eqx_available():
-    import equinox as eqx
-    import jax
-
-    class JAXSEMLogitGibbsState(eqx.Module):
-        """JAX-compatible SEM-logit Gibbs sampler state."""
-
-        eta: jax.Array
-        beta: jax.Array
-        lam: jax.Array
-        omega: jax.Array
-
-        def to_numpy(self) -> SEMLogitGibbsState:
-            return SEMLogitGibbsState(
-                eta=np.asarray(self.eta),
-                beta=np.asarray(self.beta),
-                lam=float(self.lam),
-                omega=np.asarray(self.omega),
-            )
-
-else:
-
-    class JAXSEMLogitGibbsState:  # type: ignore[no-redef]
-        """Stub when equinox is not installed."""
-
-        def __init__(self, *args, **kwargs):
-            raise ImportError(
-                "equinox is required for the JAX-dense Gibbs sampler path. "
-                "Install with: pip install equinox"
-            )
+JAXSEMLogitGibbsState = make_jax_state_class(
+    "JAXSEMLogitGibbsState",
+    ("eta", "beta", "lam", "omega"),
+    numpy_state_cls=SEMLogitGibbsState,
+)
 
 
 @dataclass

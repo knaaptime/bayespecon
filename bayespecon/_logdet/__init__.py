@@ -31,6 +31,7 @@ from ._flow import (
 from ._grids import (
     _stable_rho_grid,
     chebyshev,
+    clear_chebyshev_cache,
     mc,
     spline,
 )
@@ -93,6 +94,7 @@ __all__ = [
     # Grid / polynomial primitives
     "_stable_rho_grid",
     "chebyshev",
+    "clear_chebyshev_cache",
     "mc",
     "spline",
 ]

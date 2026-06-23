@@ -444,7 +444,6 @@ class SARPanelRE(SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         sampler: str = "gibbs",
@@ -464,8 +463,6 @@ class SARPanelRE(SpatialPanelModel):
             (Gibbs).
         chains : int, default 4
             Number of independent chains.
-        target_accept : float, default 0.9
-            NUTS target acceptance probability. Ignored for Gibbs.
         random_seed : int or None
             Seed for reproducibility.
         idata_kwargs : dict or None
@@ -509,7 +506,6 @@ class SARPanelRE(SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -1031,7 +1027,6 @@ class SEMPanelRE(SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         sampler: str = "gibbs",
@@ -1051,8 +1046,6 @@ class SEMPanelRE(SpatialPanelModel):
             (Gibbs).
         chains : int, default 4
             Number of independent chains.
-        target_accept : float, default 0.9
-            NUTS target acceptance probability. Ignored for Gibbs.
         random_seed : int or None
             Seed for reproducibility.
         idata_kwargs : dict or None
@@ -1096,7 +1089,6 @@ class SEMPanelRE(SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -1381,7 +1373,6 @@ class SDEMPanelRE(SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         **sample_kwargs,
@@ -1396,7 +1387,6 @@ class SDEMPanelRE(SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,

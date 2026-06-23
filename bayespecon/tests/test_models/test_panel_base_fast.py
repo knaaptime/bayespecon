@@ -1,6 +1,6 @@
 """Fast unit tests for bayespecon.models.panel_base helpers and input validation.
 
-These tests exercise _demean_panel, _parse_panel_W, _as_dense_W,
+These tests exercise _demean_panel, resolve_W, _as_dense_W,
 SpatialPanelModel.__init__ (formula mode, error paths), and
 spatial_diagnostics_decision branches without running MCMC.
 """
@@ -13,10 +13,10 @@ import pytest
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
+from bayespecon.models._base._shared import resolve_W
 from bayespecon.models.panel_base import (
     _as_dense_W,
     _demean_panel,
-    _parse_panel_W,
 )
 
 # ---------------------------------------------------------------------------
@@ -128,32 +128,32 @@ class TestDemeanPanel:
 
 
 # ---------------------------------------------------------------------------
-# _parse_panel_W
+# resolve_W
 # ---------------------------------------------------------------------------
 
 
 class TestParsePanelW:
-    """Tests for _parse_panel_W validation."""
+    """Tests for resolve_W validation."""
 
     @pytest.fixture
     def W_graph(self):
         return _W_to_graph(_rook_W(4))
 
     def test_accepts_graph(self, W_graph):
-        W_csr, row_std = _parse_panel_W(W_graph, N=4, T=3)
+        W_csr, row_std = resolve_W(W_graph, n=4, T=3)
         assert W_csr.shape == (4, 4)
         assert row_std is True
 
     def test_accepts_sparse_matrix(self):
         W_dense = _rook_W(4)
         W_sp = sp.csr_matrix(W_dense)
-        W_csr, row_std = _parse_panel_W(W_sp, N=4, T=3)
+        W_csr, row_std = resolve_W(W_sp, n=4, T=3)
         assert W_csr.shape == (4, 4)
 
     def test_accepts_block_diagonal_sparse(self):
         W_dense = _rook_W(4)
         W_block = sp.kron(sp.eye(3, format="csr"), sp.csr_matrix(W_dense))
-        W_csr, row_std = _parse_panel_W(W_block, N=4, T=3)
+        W_csr, row_std = resolve_W(W_block, n=4, T=3)
         # Should accept N*T x N*T shape
         assert W_csr.shape[0] == 12
 
@@ -166,27 +166,27 @@ class TestParsePanelW:
             transform = "r"
 
         with pytest.raises(TypeError, match="legacy libpysal.weights.W"):
-            _parse_panel_W(FakeLegacyW(), N=4, T=3)
+            resolve_W(FakeLegacyW(), n=4, T=3)
 
     def test_rejects_wrong_type(self):
         with pytest.raises(TypeError, match="W must be a libpysal.graph.Graph"):
-            _parse_panel_W(np.ones((4, 4)), N=4, T=3)
+            resolve_W(np.ones((4, 4)), n=4, T=3)
 
     def test_rejects_non_square(self):
         W_rect = sp.csr_matrix(np.ones((3, 4)))
-        with pytest.raises(ValueError, match="W must be square"):
-            _parse_panel_W(W_rect, N=4, T=3)
+        with pytest.raises(ValueError, match="W must be a square"):
+            resolve_W(W_rect, n=4, T=3)
 
     def test_rejects_wrong_size(self):
         W_dense = _rook_W(4)
         W_sp = sp.csr_matrix(W_dense)
         with pytest.raises(ValueError, match="W has shape"):
-            _parse_panel_W(W_sp, N=5, T=3)
+            resolve_W(W_sp, n=5, T=3)
 
     def test_warns_non_row_standardized(self):
         W = sp.csr_matrix(np.ones((4, 4)))  # Not row-standardized
         with pytest.warns(UserWarning, match="row-standardised"):
-            _parse_panel_W(W, N=4, T=3)
+            resolve_W(W, n=4, T=3)
 
 
 # ---------------------------------------------------------------------------

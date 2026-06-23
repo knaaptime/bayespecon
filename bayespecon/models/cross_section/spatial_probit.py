@@ -312,13 +312,13 @@ class SpatialProbit:
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior."""
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        target_accept = sample_kwargs.pop("target_accept", 0.9)
         model = self._build_pymc_model()
         self._pymc_model = model
         if "idata_kwargs" in sample_kwargs:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import inspect
-import warnings
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Optional, Union
@@ -31,224 +30,12 @@ from .._logdet import (
     resolve_logdet_bounds,
 )
 from .._logdet._config import _auto_logdet_method
-
-
-def gelman_default_beta_prior(
-    y: np.ndarray,
-    design: np.ndarray,
-    feature_names: list[str],
-    scale: float = 2.5,
-) -> tuple[np.ndarray, np.ndarray]:
-    r"""Weakly-informative default prior on regression coefficients.
-
-    Follows Gelman, Jakulin, Pittau & Su (2008) by setting per-column
-    prior scales from ``sd(y)`` and ``sd(x_j)``.  For each column ``j``
-    of ``design``:
-
-    * **Intercept-like** (named ``"intercept"`` or numerically constant):
-      ``mu_j = mean(y)``, ``sigma_j = scale * sd(y)``.
-    * **Slope**:
-      ``mu_j = 0``, ``sigma_j = scale * sd(y) / sd(x_j)``.
-
-    Parameters
-    ----------
-    y : ndarray, shape (n,)
-        Response vector.
-    design : ndarray, shape (n, p)
-        Effective design matrix used by ``beta`` in the model
-        (i.e. ``X`` for SAR/SEM/OLS; ``[X, WX]`` for SDM/SDEM/SLX).
-    feature_names : list[str]
-        Column labels aligned with ``design``.  Used to detect
-        intercept-like columns named ``"intercept"``.
-    scale : float, default 2.5
-        Multiplier on the standardised prior scale.
-
-    Returns
-    -------
-    beta_mu : ndarray, shape (p,)
-    beta_sigma : ndarray, shape (p,)
-
-    References
-    ----------
-    Gelman, A., Jakulin, A., Pittau, M. G., & Su, Y.-S. (2008).
-    *A weakly informative default prior distribution for logistic and
-    other regression models.* Annals of Applied Statistics, 2(4),
-    1360-1383.
-    """
-    sd_y = float(np.std(y))
-    if sd_y <= 0.0:
-        sd_y = 1.0
-    mean_y = float(np.mean(y))
-    p = design.shape[1]
-    beta_mu = np.zeros(p, dtype=np.float64)
-    beta_sigma = np.empty(p, dtype=np.float64)
-    for j in range(p):
-        col = design[:, j]
-        name = feature_names[j] if j < len(feature_names) else ""
-        is_named_intercept = name.lower() == "intercept"
-        is_constant = np.allclose(col, col[0])
-        if is_named_intercept or is_constant:
-            beta_mu[j] = mean_y
-            beta_sigma[j] = scale * sd_y
-        else:
-            sd_col = float(np.std(col))
-            beta_sigma[j] = scale * sd_y / sd_col if sd_col > 0.0 else scale * sd_y
-    return beta_mu, beta_sigma
-
-
-def _is_row_standardized_csr(W_csr: sp.csr_matrix) -> bool:
-    """Return True when each row sum is numerically close to one."""
-    row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
-    return bool(np.allclose(row_sums, 1.0, atol=1e-6))
-
-
-def _parse_W(
-    W: Union[Graph, sp.spmatrix],
-    n: int,
-) -> sp.csr_matrix:
-    """Validate and normalise a spatial weights argument to CSR.
-
-    Parameters
-    ----------
-    W :
-        Either a :class:`libpysal.graph.Graph` or any :class:`scipy.sparse`
-        matrix.
-    n :
-        Expected number of spatial units (must match both dimensions of W).
-
-    Returns
-    -------
-    scipy.sparse.csr_matrix
-        Row-compressed version of W.
-
-    Raises
-    ------
-    TypeError
-        If *W* is not a Graph or scipy sparse matrix.
-    ValueError
-        If *W* is not square or its size does not match *n*.
-
-    Warns
-    -----
-    UserWarning
-        If *W* does not appear to be row-standardised.
-    """
-    if isinstance(W, Graph):
-        W_csr = W.sparse.tocsr().astype(np.float64)
-        transform = getattr(W, "transformation", None)
-        row_std = transform in ("r", "R") or _is_row_standardized_csr(W_csr)
-    elif sp.issparse(W):
-        W_csr = W.tocsr().astype(np.float64)
-        row_std = _is_row_standardized_csr(W_csr)
-    elif hasattr(W, "sparse") and hasattr(W, "transform"):
-        # Legacy libpysal.weights.W object — not accepted directly.
-        raise TypeError(
-            "W appears to be a legacy libpysal.weights.W object. "
-            "Convert it to a libpysal.graph.Graph first: "
-            "Graph.from_W(w), or pass w.sparse (the scipy sparse matrix) directly."
-        )
-    else:
-        raise TypeError(
-            f"W must be a libpysal.graph.Graph or a scipy sparse matrix, "
-            f"got {type(W).__name__}."
-        )
-
-    if W_csr.ndim != 2 or W_csr.shape[0] != W_csr.shape[1]:
-        raise ValueError(f"W must be a square matrix, got shape {W_csr.shape}.")
-    if W_csr.shape[0] != n:
-        raise ValueError(
-            f"W has shape {W_csr.shape} but data has {n} observations. "
-            "W must be an n\u00d7n matrix."
-        )
-    if not row_std:
-        warnings.warn(
-            "W does not appear to be row-standardised (row sums \u2260 1). "
-            "Most spatial models assume W is row-standardised; results may be "
-            "unreliable otherwise. For a scipy sparse matrix normalise rows "
-            "manually (divide each row by its sum). To use a libpysal.graph.Graph "
-            "set its transformation attribute: "
-            "graph = graph.transform('r').",
-            UserWarning,
-            stacklevel=3,
-        )
-    return W_csr, row_std
-
-
-def _pointwise_gaussian_loglik(
-    eps: np.ndarray,
-    sigma_draws: np.ndarray,
-    nu_draws: Optional[np.ndarray] = None,
-) -> np.ndarray:
-    """Compute pointwise Gaussian or Student-t log-likelihood.
-
-    Parameters
-    ----------
-    eps : np.ndarray
-        Residual matrix of shape ``(n_draws, n_obs)``.
-    sigma_draws : np.ndarray
-        Posterior scale draws of shape ``(n_draws,)``.
-    nu_draws : np.ndarray, optional
-        Student-t degrees-of-freedom draws of shape ``(n_draws,)``.
-        When ``None``, computes Gaussian log-likelihood.
-
-    Returns
-    -------
-    np.ndarray
-        Pointwise log-likelihood with shape ``(n_draws, n_obs)``.
-    """
-    eps = np.asarray(eps, dtype=np.float64)
-    sigma = np.asarray(sigma_draws, dtype=np.float64).reshape(-1)
-    if eps.ndim != 2:
-        raise ValueError(f"eps must be 2D (n_draws, n_obs), got shape {eps.shape}.")
-    if sigma.shape[0] != eps.shape[0]:
-        raise ValueError(
-            "sigma_draws length must equal eps first dimension; "
-            f"got {sigma.shape[0]} and {eps.shape[0]}."
-        )
-
-    sigma = np.maximum(sigma, np.finfo(np.float64).tiny)
-    sigma_2d = sigma[:, None]
-
-    if nu_draws is None:
-        return (
-            -0.5 * (eps / sigma_2d) ** 2 - np.log(sigma_2d) - 0.5 * np.log(2.0 * np.pi)
-        )
-
-    nu = np.asarray(nu_draws, dtype=np.float64).reshape(-1)
-    if nu.shape[0] != eps.shape[0]:
-        raise ValueError(
-            "nu_draws length must equal eps first dimension; "
-            f"got {nu.shape[0]} and {eps.shape[0]}."
-        )
-    nu = np.maximum(nu, np.finfo(np.float64).tiny)
-    from scipy import stats
-
-    return stats.t.logpdf(eps, df=nu[:, None], loc=0.0, scale=sigma_2d)
-
-
-def _write_log_likelihood_to_idata(
-    idata: az.InferenceData,
-    ll_array: np.ndarray,
-) -> None:
-    """Write a complete pointwise log-likelihood array to InferenceData.
-
-    Parameters
-    ----------
-    idata : az.InferenceData
-        Target inference data object to mutate in place.
-    ll_array : np.ndarray
-        Array with shape ``(chain, draw, obs)``.
-    """
-    import xarray as xr
-
-    ll = np.asarray(ll_array, dtype=np.float64)
-    if ll.ndim != 3:
-        raise ValueError(
-            f"ll_array must be 3D (chain, draw, obs), got shape {ll.shape}."
-        )
-
-    ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-    idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+from ._base._shared import (
+    _parse_W,
+    _pointwise_gaussian_loglik,
+    _write_log_likelihood_to_idata,
+    gelman_default_beta_prior,
+)
 
 
 class SpatialModel(ABC):
@@ -526,7 +313,9 @@ class SpatialModel(ABC):
             self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
                 self._W_sparse,
                 eigs,
-                method=self.logdet_method,
+                method=self._logdet_bounds.method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
             )
         return self._logdet_numpy_fn_cache
 
@@ -540,7 +329,9 @@ class SpatialModel(ABC):
             self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
                 self._W_sparse,
                 eigs,
-                method=self.logdet_method,
+                method=self._logdet_bounds.method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
             )
         return self._logdet_numpy_vec_fn_cache
 
@@ -550,7 +341,7 @@ class SpatialModel(ABC):
         if self._logdet_pytensor_fn_cache is None:
             self._logdet_pytensor_fn_cache = make_logdet_fn(
                 self._W_for_logdet,
-                method=self.logdet_method,
+                method=self._logdet_bounds.method,
                 rho_min=self._logdet_bounds.rho_min,
                 rho_max=self._logdet_bounds.rho_max,
             )
@@ -755,6 +546,15 @@ class SpatialModel(ABC):
             feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
         return y_arr, X_arr, feature_names
 
+    def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
+        """Compute W @ X for the spatial filter.
+
+        Cross-section models use ``self._W_sparse @ X`` directly.
+        Panel models (:class:`SpatialPanelModel`) override this to apply
+        the Kronecker structure ``W ⊗ I_T`` via :meth:`_sparse_panel_lag`.
+        """
+        return np.asarray(self._W_sparse @ X, dtype=np.float64)
+
     @staticmethod
     def _spatial_lag_column_indices(
         X: np.ndarray, feature_names: list[str]
@@ -881,7 +681,6 @@ class SpatialModel(ABC):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
         **sample_kwargs,
@@ -896,14 +695,13 @@ class SpatialModel(ABC):
             Number of tuning (burn-in) steps per chain.
         chains : int
             Number of parallel chains.
-        target_accept : float
-            Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         progressbar : bool, default True
             Show progress bar during sampling.
         **sample_kwargs
             Additional keyword arguments forwarded to ``pm.sample``.  Pass
+            ``target_accept=0.95`` to adjust the NUTS acceptance rate,
             ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
             select an alternative NUTS backend; defaults to PyMC's built-in
             sampler.
@@ -918,7 +716,6 @@ class SpatialModel(ABC):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -976,7 +773,6 @@ class SpatialModel(ABC):
         draws: int,
         tune: int,
         chains: int,
-        target_accept: float,
         random_seed: Optional[int],
         progressbar: bool,
         nuts_sampler: str = "pymc",
@@ -986,6 +782,9 @@ class SpatialModel(ABC):
     ) -> tuple[az.InferenceData, bool]:
         """Shared NUTS sampling path used by model-specific ``fit`` methods.
 
+        ``target_accept`` is popped from ``sample_kwargs`` (default 0.9)
+        so that ``fit()`` signatures don't need to declare it explicitly.
+
         Returns
         -------
         tuple[arviz.InferenceData, bool]
@@ -993,6 +792,7 @@ class SpatialModel(ABC):
             post-policy value after :func:`prepare_idata_kwargs`.
         """
         sample_kwargs = dict(sample_kwargs or {})
+        target_accept = sample_kwargs.pop("target_accept", 0.9)
         idata_kwargs = dict(idata_kwargs or {})
 
         build_kwargs: dict[str, Any] = {}
@@ -1022,6 +822,17 @@ class SpatialModel(ABC):
                 **sample_kwargs,
             )
         return self._idata, compute_log_likelihood
+
+    def _reconstruct_log_likelihood(self, *, nuts_sampler: str) -> None:
+        """Rebuild complete pointwise log-likelihood after NUTS sampling.
+
+        Cross-section models delegate to
+        :meth:`_reconstruct_cross_sectional_log_likelihood`.
+        Panel models (:class:`SpatialPanelModel`) override this to call
+        :meth:`_reconstruct_panel_log_likelihood` with the correct
+        ``spatial_param`` and ``T_eff``.
+        """
+        self._reconstruct_cross_sectional_log_likelihood(nuts_sampler=nuts_sampler)
 
     def _reconstruct_cross_sectional_log_likelihood(
         self,
@@ -1454,6 +1265,73 @@ class SpatialModel(ABC):
             )
         return self._run_lm_diagnostics(self, suite.tests)
 
+    def _get_decision_spec(self, model_type: str):
+        """Return the decision-tree spec for this model type.
+
+        Cross-section models use :func:`get_spec`.  Panel models override
+        this to use :func:`get_panel_spec`.
+        """
+        from ..diagnostics import _decision_trees as _dt
+
+        return _dt.get_spec(model_type)
+
+    def _decision_predicate_lookup(self, diag) -> dict:
+        """Return predicate callables for the decision-tree evaluation.
+
+        Includes both cross-section and panel-prefixed predicate IDs so
+        the same method works for both spec families.
+        """
+
+        def _lag_le_error() -> bool:
+            return diag.loc["LM-Lag", "p_value"] <= diag.loc["LM-Error", "p_value"]
+
+        def _robust_lag_le_error() -> bool:
+            return (
+                diag.loc["Robust-LM-Lag", "p_value"]
+                <= diag.loc["Robust-LM-Error", "p_value"]
+            )
+
+        def _lag_sdm_le_error_sdem() -> bool:
+            return (
+                diag.loc["Robust-LM-Lag-SDM", "p_value"]
+                <= diag.loc["Robust-LM-Error-SDEM", "p_value"]
+            )
+
+        def _lag_sem_le_wx_sem() -> bool:
+            return (
+                diag.loc["Robust-LM-Lag", "p_value"]
+                <= diag.loc["Robust-LM-WX", "p_value"]
+            )
+
+        # Panel variants use the same logic but with "Panel-" prefixed test names.
+        def _panel_lag_le_error() -> bool:
+            return (
+                diag.loc["Panel-LM-Lag", "p_value"]
+                <= diag.loc["Panel-LM-Error", "p_value"]
+            )
+
+        def _panel_robust_lag_le_error() -> bool:
+            return (
+                diag.loc["Panel-Robust-LM-Lag", "p_value"]
+                <= diag.loc["Panel-Robust-LM-Error", "p_value"]
+            )
+
+        def _panel_lag_sdm_le_error_sdem() -> bool:
+            return (
+                diag.loc["Panel-Robust-LM-Lag-SDM", "p_value"]
+                <= diag.loc["Panel-Robust-LM-Error-SDEM", "p_value"]
+            )
+
+        return {
+            "lag_pval_le_error_pval": _lag_le_error,
+            "robust_lag_pval_le_error_pval": _robust_lag_le_error,
+            "lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
+            "lag_sem_pval_le_wx_sem_pval": _lag_sem_le_wx_sem,
+            "panel_lag_pval_le_error_pval": _panel_lag_le_error,
+            "panel_robust_lag_pval_le_error_pval": _panel_robust_lag_le_error,
+            "panel_lag_sdm_pval_le_error_sdem_pval": _panel_lag_sdm_le_error_sdem,
+        }
+
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
     ) -> Any:
@@ -1568,16 +1446,11 @@ class SpatialModel(ABC):
                 <= diag.loc["Robust-LM-WX", "p_value"]
             )
 
-        spec = _dt.get_spec(model_type)
+        spec = self._get_decision_spec(model_type)
         decision, path = _dt.evaluate(
             spec,
             sig_lookup=_sig,
-            predicate_lookup={
-                "lag_pval_le_error_pval": _lag_le_error,
-                "robust_lag_pval_le_error_pval": _robust_lag_le_error,
-                "lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
-                "lag_sem_pval_le_wx_sem_pval": _lag_sem_le_wx_sem,
-            },
+            predicate_lookup=self._decision_predicate_lookup(diag),
         )
 
         # Build p-value lookup for renderers (only test rows present).
@@ -1679,30 +1552,222 @@ class SpatialModel(ABC):
             return df, posterior_samples
         return df
 
-    @abstractmethod
+    # ------------------------------------------------------------------
+    # Spatial effects dispatch
+    # ------------------------------------------------------------------
+    # Three patterns dispatched based on _jacobian_param and _has_wx_in_beta:
+    #
+    # 1. Trivial (OLS, SEM): direct=beta, indirect=0, total=beta
+    #    _jacobian_param is None and not _has_wx_in_beta  → OLS
+    #    _jacobian_param == "lam" and not _has_wx_in_beta → SEM
+    #
+    # 2. Linear (SLX, SDEM): S_k = beta1_k*I + beta2_k*W
+    #    _jacobian_param is None and _has_wx_in_beta  → SLX
+    #    _jacobian_param == "lam" and _has_wx_in_beta → SDEM
+    #
+    # 3. Rho multiplier (SAR, SDM): S_k = (I-rho*W)^{-1} * (beta1_k*I + beta2_k*W)
+    #    _jacobian_param == "rho" and not _has_wx_in_beta → SAR
+    #    _jacobian_param == "rho" and _has_wx_in_beta     → SDM
+
+    # Properties that abstract intercept-dropping for FE panel models.
+    # Cross-section models use _nonintercept_indices / _wx_column_indices / _X.shape[1].
+    # Panel FE models override these to account for dropped intercept columns.
+
+    @property
+    def _beta_ni(self) -> list[int]:
+        """Non-intercept indices into the posterior beta vector."""
+        return self._nonintercept_indices
+
+    @property
+    def _beta_wx_idx(self) -> list[int]:
+        """WX column indices into the posterior beta1 block."""
+        return self._wx_column_indices
+
+    @property
+    def _beta_k(self) -> int:
+        """Number of columns in the beta1 block (X part of beta)."""
+        return self._X.shape[1]
+
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         """Compute model-specific impact measures at posterior mean.
 
-        Returns
-        -------
-        dict
-            Dictionary with direct, indirect, and total effects.
+        Dispatches based on ``_jacobian_param`` and ``_has_wx_in_beta``.
+        Subclasses normally do not need to override this.
         """
+        jp = self._jacobian_param
+        if jp == "rho":
+            return self._effects_rho()
+        if self._has_wx_in_beta:
+            return self._effects_linear()
+        return self._effects_trivial()
 
-    @abstractmethod
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute direct, indirect, and total effects for each posterior draw.
 
-        Returns
-        -------
-        tuple of np.ndarray
-            ``(direct_samples, indirect_samples, total_samples)`` where each
-            array has shape ``(G, k)`` or ``(G, k_wx)``, with *G* being the
-            total number of posterior draws and *k* / *k_wx* being the
-            number of covariates for which effects are reported.
+        Dispatches based on ``_jacobian_param`` and ``_has_wx_in_beta``.
+        Subclasses normally do not need to override this.
         """
+        jp = self._jacobian_param
+        if jp == "rho":
+            return self._effects_rho_posterior()
+        if self._has_wx_in_beta:
+            return self._effects_linear_posterior()
+        return self._effects_trivial_posterior()
+
+    # ------------------------------------------------------------------
+    # Pattern 1: Trivial (OLS, SEM)
+    # ------------------------------------------------------------------
+
+    def _effects_trivial(self) -> dict[str, np.ndarray]:
+        """Direct=beta, indirect=0, total=beta (OLS, SEM)."""
+        beta = self._posterior_mean("beta")
+        ni = self._beta_ni
+        return {
+            "direct": beta[ni].copy(),
+            "indirect": np.zeros(len(ni)),
+            "total": beta[ni].copy(),
+            "feature_names": self._nonintercept_feature_names,
+        }
+
+    def _effects_trivial_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior draws: direct=beta, indirect=0, total=beta."""
+        from ..diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        beta_draws = _get_posterior_draws(idata, "beta")
+        ni = self._beta_ni
+        direct = beta_draws[:, ni].copy()
+        indirect = np.zeros_like(direct)
+        total = direct.copy()
+        return direct, indirect, total
+
+    # ------------------------------------------------------------------
+    # Pattern 2: Linear (SLX, SDEM)
+    # ------------------------------------------------------------------
+
+    def _effects_linear(self) -> dict[str, np.ndarray]:
+        """S_k = beta1_k*I + beta2_k*W (SLX, SDEM)."""
+        beta = self._posterior_mean("beta")
+        k = self._beta_k
+        kw = self._WX.shape[1]
+        beta1, beta2 = beta[:k], beta[k : k + kw]
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+        wx_idx = self._beta_wx_idx
+        direct = beta1[wx_idx] + beta2 * mean_diag_w
+        total = beta1[wx_idx] + beta2 * mean_row_sum_w
+        return {
+            "direct": direct,
+            "indirect": total - direct,
+            "total": total,
+            "feature_names": self._wx_feature_names,
+        }
+
+    def _effects_linear_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior draws: linear SLX/SDEM pattern."""
+        from ..diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        beta_draws = _get_posterior_draws(idata, "beta")
+        k = self._beta_k
+        kw = self._WX.shape[1]
+        beta1_draws = beta_draws[:, :k]
+        beta2_draws = beta_draws[:, k : k + kw]
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+        wx_idx = self._beta_wx_idx
+        direct = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws
+        total = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
+        return direct, total - direct, total
+
+    # ------------------------------------------------------------------
+    # Pattern 3: Rho multiplier (SAR, SDM)
+    # ------------------------------------------------------------------
+
+    def _effects_rho(self) -> dict[str, np.ndarray]:
+        """S_k = (I-rho*W)^{-1} * (beta1_k*I + beta2_k*W) (SAR, SDM)."""
+        rho = float(self._posterior_mean("rho"))
+        beta = self._posterior_mean("beta")
+        eigs = self._W_eigs
+        inv_eigs = 1.0 / (1.0 - rho * eigs)
+        mean_diag_M = float(np.mean(inv_eigs.real))
+        mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
+        rho_arr = np.array([rho])
+        mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
+        mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
+
+        if self._has_wx_in_beta:
+            # SDM: beta = [beta1, beta2]
+            k = self._beta_k
+            kw = self._WX.shape[1]
+            beta1, beta2 = beta[:k], beta[k : k + kw]
+            wx_idx = self._beta_wx_idx
+            direct = np.array(
+                [
+                    beta1[j] * mean_diag_M + b2 * mean_diag_MW
+                    for j, b2 in zip(wx_idx, beta2)
+                ]
+            )
+            total = np.array(
+                [
+                    beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
+                    for j, b2 in zip(wx_idx, beta2)
+                ]
+            )
+            feature_names = self._wx_feature_names
+        else:
+            # SAR: beta only
+            ni = self._beta_ni
+            direct = mean_diag_M * beta[ni]
+            total = mean_row_sum_M * beta[ni]
+            feature_names = self._nonintercept_feature_names
+
+        return {
+            "direct": direct,
+            "indirect": total - direct,
+            "total": total,
+            "feature_names": feature_names,
+        }
+
+    def _effects_rho_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior draws: SAR/SDM rho-multiplier pattern."""
+        from ..diagnostics.lmtests import _get_posterior_draws
+        from ..diagnostics.spatial_effects import _chunked_eig_means
+
+        idata = self.inference_data
+        rho_draws = _get_posterior_draws(idata, "rho")
+        beta_draws = _get_posterior_draws(idata, "beta")
+        eigs = self._W_eigs
+
+        mean_diag_M = _chunked_eig_means(rho_draws, eigs)
+        mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
+
+        if self._has_wx_in_beta:
+            # SDM
+            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
+            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
+            k = self._beta_k
+            kw = self._WX.shape[1]
+            beta1_draws = beta_draws[:, :k]
+            beta2_draws = beta_draws[:, k : k + kw]
+            wx_idx = self._beta_wx_idx
+            direct = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
+        else:
+            # SAR
+            ni = self._beta_ni
+            direct = mean_diag_M[:, None] * beta_draws[:, ni]
+            total = mean_row_sum_M[:, None] * beta_draws[:, ni]
+
+        return direct, total - direct, total
 
     @abstractmethod
     def _fitted_mean_from_posterior(self) -> np.ndarray:

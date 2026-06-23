@@ -487,7 +487,7 @@ class TestOptionalSparseBackends:
             return np.linalg.solve(A.toarray(), rhs)
 
         monkeypatch.setattr(
-            ops_mod, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
+            ops_mod._backend, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
         )
 
         A = sp.csr_matrix(np.array([[2.0, 1.0], [1.0, 2.0]], dtype=np.float64))
@@ -515,7 +515,7 @@ class TestOptionalSparseBackends:
             return np.linalg.solve(A.toarray(), rhs)
 
         monkeypatch.setattr(
-            ops_mod, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
+            ops_mod._backend, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
         )
 
         n = 3
@@ -551,7 +551,7 @@ class TestOptionalSparseBackends:
             return np.linalg.solve(A.toarray(), rhs)
 
         monkeypatch.setattr(
-            ops_mod, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
+            ops_mod._backend, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
         )
 
         n, T = 3, 2
@@ -594,7 +594,9 @@ class TestOptionalSparseBackends:
 
             return _Solver()
 
-        monkeypatch.setattr(ops_mod, "_make_cached_umfpack_solver", _fake_cached_solver)
+        monkeypatch.setattr(
+            ops_mod._sar, "_make_cached_umfpack_solver", _fake_cached_solver
+        )
 
         n = 8
         W = _ring_W(n)
@@ -630,7 +632,9 @@ class TestOptionalSparseBackends:
 
             return _Solver()
 
-        monkeypatch.setattr(ops_mod, "_make_cached_umfpack_solver", _fake_cached_solver)
+        monkeypatch.setattr(
+            ops_mod._sar, "_make_cached_umfpack_solver", _fake_cached_solver
+        )
 
         n = 8
         W = _ring_W(n)

@@ -89,49 +89,17 @@ def flow_trace_blocks(W: sp.spmatrix) -> np.ndarray:
     return T
 
 
-def _validate_graph(G: Graph) -> sp.csr_matrix:
-    """Validate a :class:`libpysal.graph.Graph` and return its CSR sparse matrix.
+def _graph_to_csr(G: Graph) -> sp.csr_matrix:
+    """Extract the CSR sparse matrix from a :class:`libpysal.graph.Graph`.
 
-    Parameters
-    ----------
-    G :
-        A :class:`libpysal.graph.Graph`. Must be row-standardised.
-
-    Returns
-    -------
-    scipy.sparse.csr_matrix
-        Row-compressed representation of *G*'s adjacency matrix.
-
-    Raises
-    ------
-    TypeError
-        If *G* is not a :class:`libpysal.graph.Graph`.
-
-    Warns
-    -----
-    UserWarning
-        If *G* does not appear to be row-standardised.
+    Raises ``TypeError`` if *G* is not a Graph.
     """
     if not isinstance(G, Graph):
         raise TypeError(
             f"G must be a libpysal.graph.Graph, got {type(G).__name__}. "
             "Convert a legacy libpysal.weights.W with Graph.from_W(w)."
         )
-    W_csr = G.sparse.tocsr().astype(np.float64)
-    transform = getattr(G, "transformation", None)
-    row_std = transform in ("r", "R")
-    if not row_std:
-        row_sums = np.asarray(W_csr.sum(axis=1)).ravel()
-        row_std = bool(np.allclose(row_sums, 1.0, atol=1e-6))
-    if not row_std:
-        warnings.warn(
-            "G does not appear to be row-standardised (row sums ≠ 1). "
-            "Flow weight matrices assume W is row-standardised. "
-            "Apply graph.transform('r') before calling flow utilities.",
-            UserWarning,
-            stacklevel=3,
-        )
-    return W_csr
+    return G.sparse.tocsr().astype(np.float64)
 
 
 def destination_weights(G: Graph) -> sp.csr_matrix:
@@ -151,7 +119,7 @@ def destination_weights(G: Graph) -> sp.csr_matrix:
     scipy.sparse.csr_matrix
         :math:`N \\times N` destination weight matrix (:math:`N = n^2`).
     """
-    W = _validate_graph(G)
+    W = _graph_to_csr(G)
     n = W.shape[0]
     return sp.kron(sp.eye(n, format="csr"), W, format="csr")
 
@@ -173,7 +141,7 @@ def origin_weights(G: Graph) -> sp.csr_matrix:
     scipy.sparse.csr_matrix
         :math:`N \\times N` origin weight matrix (:math:`N = n^2`).
     """
-    W = _validate_graph(G)
+    W = _graph_to_csr(G)
     n = W.shape[0]
     return sp.kron(W, sp.eye(n, format="csr"), format="csr")
 
@@ -195,7 +163,7 @@ def network_weights(G: Graph) -> sp.csr_matrix:
     scipy.sparse.csr_matrix
         :math:`N \\times N` network weight matrix (:math:`N = n^2`).
     """
-    W = _validate_graph(G)
+    W = _graph_to_csr(G)
     return sp.kron(W, W, format="csr")
 
 
@@ -212,7 +180,7 @@ def flow_weight_matrices(G: Graph) -> dict[str, sp.csr_matrix]:
     dict[str, scipy.sparse.csr_matrix]
         Dictionary with keys ``"destination"``, ``"origin"``, ``"network"``.
     """
-    W = _validate_graph(G)
+    W = _graph_to_csr(G)
     n = W.shape[0]
     eye = sp.eye(n, format="csr")
     return {

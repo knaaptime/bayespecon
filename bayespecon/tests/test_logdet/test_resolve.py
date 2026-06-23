@@ -11,6 +11,7 @@ from bayespecon._logdet import (
 CANONICAL_METHODS = {
     "exact",
     "eigenvalue",
+    "grid",
     "grid_dense",
     "grid_sparse",
     "sparse_spline",
@@ -38,8 +39,18 @@ def test_enum_str_equality():
 def test_resolve_accepts_canonical_names(name):
     # "exact" is an accepted public name but resolves to "eigenvalue"
     # (mathematically identical, but with O(n) per-call cost instead of O(n^3)).
-    expected = "eigenvalue" if name == "exact" else name
+    # "grid" is a convenience alias that defaults to "grid_dense".
+    if name == "exact":
+        expected = "eigenvalue"
+    elif name == "grid":
+        expected = "grid_dense"
+    else:
+        expected = name
     assert resolve_logdet_method(name, n=100) == expected
+
+
+def test_resolve_grid_aliases_to_grid_dense():
+    assert resolve_logdet_method("grid", n=100) == "grid_dense"
 
 
 def test_resolve_exact_aliases_to_eigenvalue():
