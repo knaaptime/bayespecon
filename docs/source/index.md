@@ -24,8 +24,9 @@ Supported Models <models>
 Quickstart <user-guide/quickstart>
 Cross Sectional Models <user-guide/pedagogical_spatial_models>
 Gibbs Sampler <user-guide/gibbs_sampler>
-Spatial Negative Binomial <user-guide/negbin-estimation>
+Spatial Negative Binomial <user-guide/negbin_estimation>
 Spatial Logit <user-guide/spatial_logit>
+Spatial ZINB <user-guide/zinb_estimation>
 Spatial Tobit/Probit Models <user-guide/nonlinear_models>
 Panel Models <user-guide/pedagogical_panel_models>
 Nonlinear Panel Models <user-guide/nonlinear_panel_models>
