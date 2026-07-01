@@ -19,7 +19,7 @@ from bayespecon.tests.helpers import SAMPLE_KWARGS
 
 class TestBarryPaceTraces:
     def test_shape(self):
-        from bayespecon._logdet._grids import _barry_pace_traces
+        from bayespecon._logdet._chebyshev import _barry_pace_traces
 
         n = 10
         W = sp.random(n, n, density=0.3, format="csr", random_state=0, dtype=np.float64)
@@ -33,7 +33,7 @@ class TestBarryPaceTraces:
 
     def test_exact_tr_W_override(self):
         """tr(W) = 0 for zero-diagonal W must be set in row 0."""
-        from bayespecon._logdet._grids import _barry_pace_traces
+        from bayespecon._logdet._chebyshev import _barry_pace_traces
 
         n = 8
         W = sp.random(n, n, density=0.4, format="csr", random_state=1, dtype=np.float64)
@@ -286,7 +286,7 @@ class TestFlowModelConstruction:
             titer=50,
             trace_seed=0,
         )
-        np.testing.assert_allclose(model._y, self.y_vec, atol=1e-12)
+        np.testing.assert_allclose(model._y_vec, self.y_vec, atol=1e-12)
 
     def test_sar_flow_separable_builds(self):
         from bayespecon.models.flow import SARFlowSeparable
@@ -403,7 +403,7 @@ class TestGenerateFlowData:
         assert out["y_vec"].shape == (self.n * self.n,)
         assert out["y_mat"].shape == (self.n, self.n)
 
-    def test_y_mat_consistency(self):
+    def test_y_vec_mat_consistency(self):
         from bayespecon.dgp.flows import generate_flow_data
 
         out = generate_flow_data(
@@ -763,6 +763,7 @@ class TestSparseFlowSolveOp:
         assert self.op._op_id != op2._op_id
 
 
+# ---------------------------------------------------------------------------
 # Parameter recovery tests (slow — deselected by default)
 # ---------------------------------------------------------------------------
 
@@ -783,11 +784,33 @@ RHO_O_SEP_TRUE = 0.30
 # harder posterior surface — more obs improves identification reliably
 FLOW_N_SEP = 12  # 144 O-D pairs (vs 64 for unrestricted model)
 
-# Tolerances
+# Poisson-specific true values
+POI_RHO_D_TRUE = 0.3
+POI_RHO_O_TRUE = 0.2
+POI_RHO_W_TRUE = 0.1
+
+# Separable Poisson — asymmetric for the same reason
+POI_RHO_D_SEP_TRUE = 0.40
+POI_RHO_O_SEP_TRUE = 0.30
+
+# Poisson models are more expensive per step (no conjugacy); use fewer samples
+POISSON_SAMPLE_KWARGS: dict = dict(
+    tune=400, draws=600, chains=2, random_seed=42, progressbar=False
+)
+# Separable Poisson: bilinear rho_w term makes the posterior harder to tune;
+# extra steps ensure the mass matrix adapts before drawing
+POISSON_SEP_SAMPLE_KWARGS: dict = dict(
+    tune=400, draws=400, chains=2, random_seed=42, progressbar=False
+)
+
+# Tolerances — wider than standard panel models because 3 spatial
+# parameters are harder to identify simultaneously
 ABS_TOL_RHO = 0.20
-ABS_TOL_RHO_SEP = 0.25
+ABS_TOL_RHO_SEP = 0.25  # separable model: slightly wider
+ABS_TOL_RHO_POI = 0.20  # Poisson: tighter after removing spurious Jacobian
 ABS_TOL_BETA = 0.35
 ABS_TOL_BETA_SEP = 0.40
+ABS_TOL_BETA_POI = 0.35  # Poisson beta: tighter after removing spurious Jacobian
 ABS_TOL_SIGMA = 0.35
 
 
@@ -973,6 +996,7 @@ class TestSARFlowSeparableRecovery:
         )
 
 
+# ---------------------------------------------------------------------------
 # kron_solve_vec / kron_solve_matrix utilities
 # ---------------------------------------------------------------------------
 
@@ -1575,6 +1599,7 @@ class TestOLSFlowEffects:
         assert np.all(np.isfinite(y_rep))
 
 
+# ---------------------------------------------------------------------------
 # Pointwise log-likelihood (with Jacobian correction)
 # ---------------------------------------------------------------------------
 
@@ -1584,7 +1609,10 @@ class TestFlowLogLikelihood:
     comparison via ``az.loo`` / ``az.waic`` / ``az.compare``."""
 
     def setup_method(self):
-        from bayespecon.dgp.flows import generate_flow_data
+        from bayespecon.dgp.flows import (
+            generate_flow_data,
+            generate_negbin_flow_data,
+        )
 
         self.n = 5
         self.gauss = generate_flow_data(
@@ -1598,6 +1626,7 @@ class TestFlowLogLikelihood:
             seed=0,
         )
         self.G = self.gauss["G"]
+        self.poi = generate_negbin_flow_data(n=self.n, k=2, seed=0)
 
     def _check_loo(self, idata):
         import arviz as az

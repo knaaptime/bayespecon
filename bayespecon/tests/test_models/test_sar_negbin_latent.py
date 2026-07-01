@@ -1,4 +1,4 @@
-"""Parameter recovery tests for SARNegBinLatent (Gibbs sampler).
+"""Parameter recovery tests for SARNegBinStructural (Gibbs sampler).
 
 These tests verify that the Pólya–Gamma Gibbs sampler recovers known
 parameters from simulated SAR-NB data. They are marked ``slow`` and
@@ -16,7 +16,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon import SARNegBinLatent, dgp
+from bayespecon import SARNegBinStructural, dgp
 from bayespecon.tests.helpers import W_to_graph, make_rook_W
 
 # ---------------------------------------------------------------------------
@@ -24,17 +24,17 @@ from bayespecon.tests.helpers import W_to_graph, make_rook_W
 # ---------------------------------------------------------------------------
 
 
-class TestSARNegBinLatentBuild:
+class TestSARNegBinStructuralBuild:
     """Construction and validation tests (no sampling)."""
 
     def test_build_model(self):
-        """SARNegBinLatent constructs without error."""
+        """SARNegBinStructural constructs without error."""
         n = 10
         W = W_to_graph(make_rook_W(3))  # 9 units
         rng = np.random.default_rng(42)
         X = np.column_stack([np.ones(n), rng.normal(size=n)])
         y = rng.poisson(2, size=n).astype(float)
-        model = SARNegBinLatent(y=y[:9], X=X[:9], W=W)
+        model = SARNegBinStructural(y=y[:9], X=X[:9], W=W)
         assert model is not None
 
     def test_rejects_noninteger_y(self):
@@ -44,7 +44,7 @@ class TestSARNegBinLatentBuild:
         y = np.array([0.5, 1.0, 2.0, 1.0, 0.0, 3.0, 1.0, 2.0, 0.0])
         X = np.column_stack([np.ones(9), np.random.randn(9)])
         with pytest.raises(ValueError, match="integer-valued"):
-            SARNegBinLatent(y=y, X=X, W=W)
+            SARNegBinStructural(y=y, X=X, W=W)
 
     def test_rejects_negative_y(self):
         """Negative y raises ValueError."""
@@ -52,7 +52,7 @@ class TestSARNegBinLatentBuild:
         y = np.array([0, 1, -1, 2, 0, 3, 1, 2, 0], dtype=float)
         X = np.column_stack([np.ones(9), np.random.randn(9)])
         with pytest.raises(ValueError, match="non-negative"):
-            SARNegBinLatent(y=y, X=X, W=W)
+            SARNegBinStructural(y=y, X=X, W=W)
 
     def test_rejects_robust(self):
         """robust=True raises NotImplementedError."""
@@ -60,14 +60,14 @@ class TestSARNegBinLatentBuild:
         y = np.ones(9)
         X = np.column_stack([np.ones(9), np.random.randn(9)])
         with pytest.raises(NotImplementedError, match="robust"):
-            SARNegBinLatent(y=y, X=X, W=W, robust=True)
+            SARNegBinStructural(y=y, X=X, W=W, robust=True)
 
     def test_rejects_nuts_kwargs(self):
         """NUTS-specific kwargs raise TypeError."""
         W = W_to_graph(make_rook_W(3))
         y = np.ones(9)
         X = np.column_stack([np.ones(9), np.random.randn(9)])
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         with pytest.raises(TypeError, match="nuts_sampler"):
             model.fit(draws=10, nuts_sampler="blackjax")
 
@@ -76,7 +76,7 @@ class TestSARNegBinLatentBuild:
         W = W_to_graph(make_rook_W(3))
         y = np.ones(9)
         X = np.column_stack([np.ones(9), np.random.randn(9)])
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         with pytest.raises(TypeError, match="target_accept"):
             model.fit(draws=10, target_accept=0.95)
 
@@ -118,7 +118,7 @@ def sar_nb_data():
 
 @pytest.mark.slow
 @pytest.mark.recovery
-class TestSARNegBinLatentRecovery:
+class TestSARNegBinStructuralRecovery:
     """Parameter recovery tests for the Gibbs sampler.
 
     Uses n=1024 (32×32 rook grid) with 1000 draws × 2 chains so that
@@ -131,7 +131,7 @@ class TestSARNegBinLatentRecovery:
         X = sar_nb_data["X"]
         W = sar_nb_data["W_graph"]
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         idata = model.fit(
             draws=DRAWS,
             tune=TUNE,
@@ -157,7 +157,7 @@ class TestSARNegBinLatentRecovery:
         n_chains = CHAINS
         n_draws = DRAWS
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         idata = model.fit(
             draws=n_draws,
             tune=TUNE,
@@ -178,7 +178,7 @@ class TestSARNegBinLatentRecovery:
         X = sar_nb_data["X"]
         W = sar_nb_data["W_graph"]
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         idata = model.fit(
             draws=DRAWS,
             tune=TUNE,
@@ -202,7 +202,7 @@ class TestSARNegBinLatentRecovery:
         X = sar_nb_data["X"]
         W = sar_nb_data["W_graph"]
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         idata = model.fit(
             draws=DRAWS,
             tune=TUNE,
@@ -224,7 +224,7 @@ class TestSARNegBinLatentRecovery:
         X = sar_nb_data["X"]
         W = sar_nb_data["W_graph"]
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         idata = model.fit(
             draws=DRAWS,
             tune=TUNE,
@@ -246,7 +246,7 @@ class TestSARNegBinLatentRecovery:
         X = sar_nb_data["X"]
         W = sar_nb_data["W_graph"]
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         model.fit(
             draws=200, tune=200, chains=1, random_seed=42, n_jobs=1, progressbar=False
         )
@@ -264,7 +264,7 @@ class TestSARNegBinLatentRecovery:
         W = sar_nb_data["W_graph"]
         n = len(y)
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         idata = model.fit(
             draws=50,
             tune=50,
@@ -284,7 +284,7 @@ class TestSARNegBinLatentRecovery:
         X = sar_nb_data["X"]
         W = sar_nb_data["W_graph"]
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         idata = model.fit(
             draws=100,
             tune=100,
@@ -308,7 +308,7 @@ jax = pytest.importorskip("jax")
 
 
 @pytest.mark.slow
-class TestSARNegBinLatentJaxVectorized:
+class TestSARNegBinStructuralJaxVectorized:
     """The jax_dense path should run all chains together via jax.vmap."""
 
     def test_jax_dense_runs_and_shapes(self, sar_nb_data):
@@ -316,7 +316,7 @@ class TestSARNegBinLatentJaxVectorized:
         X = sar_nb_data["X"]
         W = sar_nb_data["W_graph"]
 
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         idata = model.fit(
             draws=40,
             tune=20,
@@ -341,7 +341,7 @@ class TestSARNegBinLatentJaxVectorized:
         y = sar_nb_data["y"]
         X = sar_nb_data["X"]
         W = sar_nb_data["W_graph"]
-        model = SARNegBinLatent(y=y, X=X, W=W)
+        model = SARNegBinStructural(y=y, X=X, W=W)
         with pytest.raises(NotImplementedError, match="return_eta"):
             model.fit(
                 draws=4,

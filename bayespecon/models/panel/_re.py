@@ -123,7 +123,8 @@ class OLSPanelRE(SpatialPanelModel):
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)  # RE always uses raw (pooled) data
-        super().__init__(model=0, **kwargs)
+        kwargs["effects"] = 0  # pooled — no FE transform
+        super().__init__(**kwargs)
         # obs i → unit i % N  (time-first stacking)
         self._unit_idx = np.arange(self._N * self._T) % self._N
 
@@ -310,7 +311,8 @@ class SARPanelRE(SpatialPanelModel):
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
-        super().__init__(model=0, **kwargs)
+        kwargs["effects"] = 0  # pooled
+        super().__init__(**kwargs)
         self._unit_idx = np.arange(self._N * self._T) % self._N
 
     def _model_coords(self) -> dict:
@@ -444,6 +446,7 @@ class SARPanelRE(SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
+        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         sampler: str = "gibbs",
@@ -463,6 +466,8 @@ class SARPanelRE(SpatialPanelModel):
             (Gibbs).
         chains : int, default 4
             Number of independent chains.
+        target_accept : float, default 0.9
+            NUTS target acceptance probability. Ignored for Gibbs.
         random_seed : int or None
             Seed for reproducibility.
         idata_kwargs : dict or None
@@ -506,6 +511,7 @@ class SARPanelRE(SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -743,7 +749,8 @@ class SEMPanelRE(SpatialPanelModel):
 
     def __init__(self, mundlak: bool = False, **kwargs):
         kwargs.pop("model", None)
-        super().__init__(model=0, **kwargs)
+        kwargs["effects"] = 0  # pooled
+        super().__init__(**kwargs)
         self._unit_idx = np.arange(self._N * self._T) % self._N
         self._mundlak = mundlak
 
@@ -1027,6 +1034,7 @@ class SEMPanelRE(SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
+        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         sampler: str = "gibbs",
@@ -1046,6 +1054,8 @@ class SEMPanelRE(SpatialPanelModel):
             (Gibbs).
         chains : int, default 4
             Number of independent chains.
+        target_accept : float, default 0.9
+            NUTS target acceptance probability. Ignored for Gibbs.
         random_seed : int or None
             Seed for reproducibility.
         idata_kwargs : dict or None
@@ -1089,6 +1099,7 @@ class SEMPanelRE(SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -1248,7 +1259,8 @@ class SDEMPanelRE(SpatialPanelModel):
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
-        super().__init__(model=0, **kwargs)
+        kwargs["effects"] = 0  # pooled
+        super().__init__(**kwargs)
         if not self._wx_column_indices:
             raise ValueError(
                 "SDEMPanelRE requires at least one WX column. Pass "
@@ -1373,6 +1385,7 @@ class SDEMPanelRE(SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
+        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         **sample_kwargs,
@@ -1387,6 +1400,7 @@ class SDEMPanelRE(SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,

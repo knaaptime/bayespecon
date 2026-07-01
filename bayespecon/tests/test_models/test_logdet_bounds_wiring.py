@@ -1,8 +1,4 @@
-"""Tests verifying that ``_logdet_bounds`` is wired through model classes
-so that positive-only logdet methods (``sparse_spline``, ``grid_mc``)
-auto-restrict the rho/lambda support to ``[1e-5, 1.0]`` when no explicit
-override is supplied.
-"""
+"""Tests verifying that ``_logdet_bounds`` is wired through model classes."""
 
 from __future__ import annotations
 
@@ -28,42 +24,35 @@ def _toy_inputs(n: int = 25, seed: int = 0):
     return y, X, sp.csr_matrix(W)
 
 
-def test_sar_logdet_bounds_default_eigenvalue():
+def test_sar_logdet_bounds_default():
     y, X, W = _toy_inputs()
     m = SAR(y=y, X=X, W=W, logdet_method="eigenvalue")
     b = m._logdet_bounds
     assert isinstance(b, LogdetBounds)
-    # eigenvalue method preserves the prior range (-1, 1)
-    assert b.rho_min < 0.0
-    assert b.rho_max > 0.0
+    assert b.method == "eigenvalue"
+    assert b.rho_min == -1.0
+    assert b.rho_max == 1.0
 
 
-def test_sar_logdet_bounds_autoclamp_sparse_spline():
+def test_sem_logdet_bounds_default():
     y, X, W = _toy_inputs()
-    m = SAR(y=y, X=X, W=W, logdet_method="sparse_spline")
+    m = SEM(y=y, X=X, W=W, logdet_method="eigenvalue")
     b = m._logdet_bounds
-    # positive-only method must auto-clamp the lower bound.
-    assert b.rho_min >= 0.0
-    assert b.rho_max > b.rho_min
+    assert isinstance(b, LogdetBounds)
+    assert b.rho_min == -1.0
+    assert b.rho_max == 1.0
 
 
-def test_sem_logdet_bounds_autoclamp_grid_mc():
-    y, X, W = _toy_inputs()
-    m = SEM(y=y, X=X, W=W, logdet_method="grid_mc")
-    b = m._logdet_bounds
-    assert b.rho_min >= 0.0
-    assert b.rho_max > b.rho_min
-
-
-def test_sar_explicit_negative_bounds_with_spline_raises():
+def test_sar_logdet_bounds_from_priors():
     y, X, W = _toy_inputs()
     m = SAR(
         y=y,
         X=X,
         W=W,
-        logdet_method="sparse_spline",
+        logdet_method="eigenvalue",
         priors={"rho_lower": -0.5, "rho_upper": 0.8},
     )
-    # priors-source negative bounds are auto-clamped (silent), not raised.
     b = m._logdet_bounds
-    assert b.rho_min >= 0.0
+    assert b.rho_min == -0.5
+    assert b.rho_max == 0.8
+    assert b.source == "prior"

@@ -1,24 +1,40 @@
-"""Log-determinant utilities for spatial models.
+"""Log-determinant computation for spatial econometric models.
 
-Provides log|I - rho*W| as a pytensor expression or a pre-computed
-grid interpolation for large n, used as pm.Potential in spatial likelihoods.
+Five methods:
 
-This subpackage is private (``_logdet``) — it is only used internally by
-model classes and should not be imported directly by users.
+* ``"eigenvalue"`` — exact, O(n) per call after O(n³) setup.
+* ``"slq"`` — Stochastic Lanczos Quadrature; 300 matvecs, ρ-independent.
+* ``"chebyshev"`` — Barry-Pace MC traces → Chebyshev; O(m) per call.
+* ``"cheb_stochastic"`` — stochastic Chebyshev expansion (Han et al. 2015);
+  geometric convergence, same matvec cost as ``chebyshev``.
+* ``"traces"`` — multinomial trace expansion for unrestricted 3-parameter
+  flow models (the only option when the system matrix doesn't factor).
+
+Auto-selection: ``"eigenvalue"`` for n ≤ 500, ``"cheb_stochastic"`` otherwise.
 """
 
-# Configuration, enums, type aliases, resolution
+from ._cheb_stochastic import (
+    ChebStochasticPrecompute,
+    cheb_stochastic_logdet_eval,
+    cheb_stochastic_logdet_eval_vec,
+    cheb_stochastic_logdet_precompute,
+)
+from ._chebyshev import chebyshev, clear_chebyshev_cache
 from ._config import (
     VALID_LOGDET_METHODS,
     LogdetBounds,
     LogDetMethod,
     LogDetMethodName,
-    _auto_logdet_method,
     resolve_logdet_bounds,
     resolve_logdet_method,
 )
-
-# Flow-model logdet
+from ._factories import (
+    clear_logdet_fn_cache,
+    get_cached_logdet_fn,
+    make_logdet_fn,
+    make_logdet_numpy_fn,
+    make_logdet_numpy_vec_fn,
+)
 from ._flow import (
     compute_flow_traces,
     flow_logdet_numpy,
@@ -26,60 +42,31 @@ from ._flow import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-
-# Grid / polynomial primitives (used by edge-case tests and benchmarks)
-from ._grids import (
-    _stable_rho_grid,
-    chebyshev,
-    clear_chebyshev_cache,
-    mc,
-    spline,
-)
-
-# JAX-native evaluation
-from ._jax import (
-    jax_logdet_chebyshev,
-    jax_logdet_trace_poly,
-    make_logdet_jax_fn,
-)
-
-# NumPy factory functions and caching
-from ._numpy import (
-    clear_logdet_fn_cache,
-    get_cached_logdet_fn,
-    make_logdet_fn,
-    make_logdet_numpy_fn,
-    make_logdet_numpy_vec_fn,
-)
-
-# PyTensor symbolic evaluation
-from ._pytensor import (
-    logdet_chebyshev,
-    logdet_eigenvalue,
-    logdet_exact,
-    logdet_interpolated,
-    logdet_mc_poly_pytensor,
+from ._jax import jax_logdet_chebyshev, jax_slq_logdet_precompute, make_logdet_jax_fn
+from ._pytensor import logdet_chebyshev, logdet_eigenvalue
+from ._slq import (
+    SLQPrecompute,
+    slq_logdet_eval,
+    slq_logdet_eval_vec,
+    slq_logdet_precompute,
+    slq_to_chebyshev_coeffs,
 )
 
 __all__ = [
     # Config
     "LogDetMethod",
-    "LogdetBounds",
     "LogDetMethodName",
+    "LogdetBounds",
     "VALID_LOGDET_METHODS",
     "resolve_logdet_method",
     "resolve_logdet_bounds",
-    # PyTensor
+    # PyTensor primitives
     "logdet_eigenvalue",
-    "logdet_exact",
     "logdet_chebyshev",
-    "logdet_mc_poly_pytensor",
-    "logdet_interpolated",
     # JAX
     "jax_logdet_chebyshev",
-    "jax_logdet_trace_poly",
     "make_logdet_jax_fn",
-    # NumPy factories
+    # Factories
     "make_logdet_fn",
     "make_logdet_numpy_fn",
     "make_logdet_numpy_vec_fn",
@@ -91,10 +78,18 @@ __all__ = [
     "compute_flow_traces",
     "make_flow_separable_logdet",
     "make_flow_separable_logdet_numpy",
-    # Grid / polynomial primitives
-    "_stable_rho_grid",
+    # Chebyshev
     "chebyshev",
     "clear_chebyshev_cache",
-    "mc",
-    "spline",
+    # SLQ
+    "SLQPrecompute",
+    "slq_logdet_precompute",
+    "slq_logdet_eval",
+    "slq_logdet_eval_vec",
+    "slq_to_chebyshev_coeffs",
+    # Stochastic Chebyshev
+    "ChebStochasticPrecompute",
+    "cheb_stochastic_logdet_precompute",
+    "cheb_stochastic_logdet_eval",
+    "cheb_stochastic_logdet_eval_vec",
 ]

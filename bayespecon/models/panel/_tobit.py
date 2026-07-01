@@ -53,8 +53,9 @@ class _PanelTobitBase(SpatialPanelModel):
 
     def __init__(self, *args, censoring: float = 0.0, **kwargs):
         kwargs.pop("model", None)
+        kwargs["effects"] = 0  # pooled — Tobit uses no FE transform
         self.censoring = float(censoring)
-        super().__init__(*args, model=0, **kwargs)
+        super().__init__(*args, **kwargs)
         self._censored_mask = self._y <= self.censoring + 1e-12
         self._censored_idx = np.where(self._censored_mask)[0]
 
@@ -78,6 +79,20 @@ class _PanelTobitBase(SpatialPanelModel):
                 gap_hat, dtype=float
             )
         return y_lat
+
+    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
+        """Compute direct/indirect/total effects at posterior mean."""
+        raise NotImplementedError(
+            "Spatial effects not yet implemented for panel Tobit models."
+        )
+
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute direct, indirect, and total effects for each posterior draw."""
+        raise NotImplementedError(
+            "Spatial effects not yet implemented for panel Tobit models."
+        )
 
 
 class SARPanelTobit(_PanelTobitBase):

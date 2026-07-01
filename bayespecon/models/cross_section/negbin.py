@@ -32,7 +32,7 @@ class NegativeBinomial(SpatialModel):
     NB2 parameterisation: :math:`\mathrm{Var}(y_i) = \mu_i + \mu_i^2 / \alpha`.
     Sampled with NUTS.  ``W`` is optional and is used only by Bayesian
     LM diagnostics to assess whether a spatial count model
-    (e.g. :class:`bayespecon.models.SARNegBinLatent`) is warranted.
+    (e.g. :class:`bayespecon.models.SARNegBinStructural`) is warranted.
 
     Parameters
     ----------
@@ -115,7 +115,7 @@ class NegativeBinomial(SpatialModel):
         raise NotImplementedError(
             "NegativeBinomial has no spatial structure and therefore no "
             "spatial effects. Use Bayesian LM diagnostics to assess whether "
-            "a spatial count model (e.g. SARNegBinLatent) is appropriate."
+            "a spatial count model (e.g. SARNegBinStructural) is appropriate."
         )
 
     def _compute_spatial_effects_posterior(
@@ -124,7 +124,7 @@ class NegativeBinomial(SpatialModel):
         raise NotImplementedError(
             "NegativeBinomial has no spatial structure and therefore no "
             "spatial effects. Use Bayesian LM diagnostics to assess whether "
-            "a spatial count model (e.g. SARNegBinLatent) is appropriate."
+            "a spatial count model (e.g. SARNegBinStructural) is appropriate."
         )
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:

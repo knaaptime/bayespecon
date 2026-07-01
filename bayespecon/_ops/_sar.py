@@ -138,7 +138,7 @@ class SparseSARSolveOp(pt.Op):
 
     where :math:`W` is a row-standardised spatial weight matrix.
 
-    This Op is used by :class:`~bayespecon.models.sar_negbin.SARNegativeBinomial`
+    This Op is used by :class:`~bayespecon.models.sar_negbin.SARNegBin`
     to embed the SAR-in-mean reduced form on the **log-mean** of a
     Negative Binomial observation model:
 

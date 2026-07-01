@@ -49,12 +49,12 @@ def small_nb_problem():
 
 def test_krylov_vs_exact_same_posterior(small_nb_problem):
     """Krylov (degree=8) and exact-LU (degree=0) produce same posterior."""
-    from bayespecon.models.cross_section.sar_negbin import SARNegativeBinomial
+    from bayespecon.models.cross_section.sar_negbin import SARNegBin
 
     p = small_nb_problem
 
     # --- Exact-LU path (krylov_degree=0) ---
-    model_exact = SARNegativeBinomial(
+    model_exact = SARNegBin(
         y=p["y"],
         X=p["X"],
         W=p["W_sparse"],
@@ -69,7 +69,7 @@ def test_krylov_vs_exact_same_posterior(small_nb_problem):
     )
 
     # --- Krylov path (degree=8) ---
-    model_krylov = SARNegativeBinomial(
+    model_krylov = SARNegBin(
         y=p["y"],
         X=p["X"],
         W=p["W_sparse"],

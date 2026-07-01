@@ -3,11 +3,10 @@ from .cross_section.logit import Logit as Logit
 from .cross_section.negbin import NegativeBinomial as NegativeBinomial
 from .cross_section.ols import OLS as OLS
 from .cross_section.sar import SAR as SAR
-from .cross_section.sar_negbin import SARNegativeBinomial as SARNegativeBinomial
+from .cross_section.sar_negbin import SARNegBin as SARNegBin
 from .cross_section.sar_negbin_latent import (
-    SARNegativeBinomialLatent as SARNegativeBinomialLatent,
+    SARNegBinStructural as SARNegBinStructural,
 )
-from .cross_section.sar_negbin_latent import SARNegBinLatent as SARNegBinLatent
 from .cross_section.sdem import SDEM as SDEM
 from .cross_section.sdm import SDM as SDM
 from .cross_section.sem import SEM as SEM

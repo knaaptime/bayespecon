@@ -9,10 +9,10 @@ without coverage.
 
 **Design notes**
 
-Dynamic panel models with ``model=1`` (unit FE demeaning) suffer from
+Dynamic panel models with ``effects=1`` (unit FE demeaning) suffer from
 Nickell bias: the demeaned lagged dependent variable is correlated with
 the demeaned error, biasing φ toward zero.  To obtain clean parameter
-recovery, we use ``model=0`` (pooled) and generate data **without** unit
+recovery, we use ``effects=0`` (pooled) and generate data **without** unit
 effects (``sigma_alpha=0``), so the DGP matches the model specification
 exactly.
 
@@ -57,7 +57,7 @@ LAM_TRUE = 0.3
 THETA_TRUE = -0.1
 BETA_TRUE = np.array([1.0, 2.0])
 SIGMA_TRUE = 1.0
-# sigma_alpha=0 so DGP matches the pooled (model=0) specification exactly
+# sigma_alpha=0 so DGP matches the pooled (effects=0) specification exactly
 SIGMA_ALPHA_TRUE = 0.0
 
 # Tolerances — dynamic panels with pooled specification
@@ -68,7 +68,7 @@ ABS_TOL_THETA = 0.40
 
 
 def _fit(model_cls, y, X, W_panel_graph):
-    model = model_cls(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, model=0)
+    model = model_cls(y=y, X=X, W=W_panel_graph, N=PANEL_N, T=PANEL_T, effects=0)
     return model.fit(**SAMPLE_KWARGS)
 
 

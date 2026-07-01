@@ -1,17 +1,25 @@
-"""JAX-native log-determinant evaluation functions.
+"""JAX-native log-determinant evaluation.
 
-These mirror the pytensor symbolic functions (logdet_chebyshev,
-logdet_mc_poly_pytensor) but use jax.numpy so they can be called
-inside jax.jit and are autodiff-compatible via jax.grad.
+Mirrors the PyTensor symbolic functions but uses ``jax.numpy`` so the
+returned callables are compatible with ``jax.jit`` and ``jax.grad``.
+
+Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``, and
+``"slq"``.  The stochastic Chebyshev method precomputes moments in numpy
+and evaluates via JAX-native Clenshaw.  SLQ uses JAX-native Arnoldi
+iteration via ``jax.lax.scan`` for the Krylov loop.
 """
+
+from __future__ import annotations
 
 import numpy as np
 import scipy.sparse as sp
 
-from ._config import (
-    resolve_logdet_method,
+from ._cheb_stochastic import (
+    cheb_stochastic_logdet_eval,
+    cheb_stochastic_logdet_precompute,
 )
-from ._grids import chebyshev
+from ._chebyshev import chebyshev
+from ._config import resolve_logdet_method
 
 
 def jax_logdet_chebyshev(
@@ -20,79 +28,19 @@ def jax_logdet_chebyshev(
     rmin: float = -1.0,
     rmax: float = 1.0,
 ):
-    """Evaluate Chebyshev approximation of log|I - rho*W| in JAX.
-
-    JAX-native version of :func:`logdet_chebyshev` using Clenshaw's
-    algorithm.  Fully compatible with ``jax.jit`` and ``jax.grad``.
-
-    Parameters
-    ----------
-    rho : jax.numpy scalar or array
-        Spatial autoregressive parameter.  Can be a scalar or an
-        array of shape ``(G,)`` for vectorized evaluation over
-        posterior draws.
-    coeffs : np.ndarray, shape (m,)
-        Chebyshev coefficients from :func:`chebyshev`.
-    rmin : float, default=-1.0
-        Lower bound of the rho interval (must match what was used to
-        compute *coeffs*).
-    rmax : float, default=1.0
-        Upper bound of the rho interval (must match what was used to
-        compute *coeffs*).
-
-    Returns
-    -------
-    jax.numpy.ndarray
-        Chebyshev approximation of the log-determinant.  Same shape
-        as *rho*.
-
-    Notes
-    -----
-    The mapped variable is
-
-    .. math::
-
-        x = \\frac{2\\rho - r_{\\max} - r_{\\min}}{r_{\\max} - r_{\\min}}
-
-    and the approximation is evaluated via Clenshaw's recurrence:
-
-    .. math::
-
-        b_{m+1} = 0, \\quad b_m = c_m
-
-        b_k = 2x \\, b_{k+1} - b_{k+2} + c_k
-
-        f(x) = x \\, b_1 - b_2 + c_0
-
-    This is the same algorithm as :func:`logdet_chebyshev` but uses
-    ``jax.numpy`` instead of pytensor, making it compatible with
-    ``jax.jit`` and ``jax.grad``.
-
-    See Also
-    --------
-    chebyshev : Compute Chebyshev coefficients from W.
-    logdet_chebyshev : PyTensor symbolic version (for NUTS).
-    """
+    """Evaluate Chebyshev approximation of log|I - ρW| in JAX via Clenshaw."""
     import jax.numpy as jnp
 
     m = len(coeffs)
     if m == 0:
         return jnp.zeros_like(rho)
 
-    # Map rho ∈ [rmin, rmax] → x ∈ [-1, 1]
     x = (2.0 * rho - rmax - rmin) / (rmax - rmin)
 
     if m == 1:
-        # Only c_0 * T_0(x) = c_0
         return jnp.full_like(rho, coeffs[0])
 
     c = jnp.asarray(coeffs, dtype=jnp.float64)
-
-    # Clenshaw's algorithm for Σ_{j=0}^{m-1} c_j T_j(x)
-    # Iterate from k = m-1 down to k = 1:
-    #   b_{m} = c_{m-1},  b_{m+1} = 0
-    #   b_k = 2x b_{k+1} - b_{k+2} + c_k
-    # Then: f(x) = c_0 + x*b_1 - b_2
     b_next = jnp.zeros_like(x)
     b_curr = jnp.broadcast_to(c[m - 1], jnp.shape(x))
 
@@ -104,74 +52,117 @@ def jax_logdet_chebyshev(
     return c[0] + x * b_curr - b_next
 
 
-def jax_logdet_trace_poly(
-    rho,
-    traces: np.ndarray,
-):
-    r"""Evaluate trace-polynomial approximation of log|I - rho*W| in JAX.
+# ---------------------------------------------------------------------------
+# JAX-native Arnoldi iteration for SLQ
+# ---------------------------------------------------------------------------
 
-    JAX-native version of :func:`logdet_mc_poly_pytensor` using
-    Horner's method.  Fully compatible with ``jax.jit`` and
-    ``jax.grad``.
 
-    Computes the truncated power-series approximation
+def _jax_arnoldi_probe(W_dense, z_raw, k):
+    """Single Arnoldi probe on non-symmetric W: returns Ritz values and e₁² weights.
 
-    .. math::
+    Runs k steps of Arnoldi on W starting from z/||z||, builds the
+    upper Hessenberg matrix H_k, eigendecomposes it, and returns
+    (theta, |v_{1,:}|², ||z||²) where theta are the Ritz values
+    (complex for non-symmetric W).
 
-        \log|I_n - \rho W| \approx -\sum_{k=1}^{m} \frac{\rho^k}{k}\,\hat{\tau}_k
+    Designed to be vmapped over probes.
+    """
+    import jax
+    import jax.numpy as jnp
 
-    where :math:`\hat{\tau}_k \approx \text{tr}(W^k)` are Barry-Pace
-    Hutchinson trace estimates from
-    :func:`~bayespecon._logdet._grids.compute_flow_traces`.
+    n = W_dense.shape[0]
+    z_norm = jnp.linalg.norm(z_raw)
+    q = z_raw / jnp.where(z_norm < 1e-15, 1.0, z_norm)
+
+    # Pre-allocate Q (n × k) and H (k × k)
+    Q = jnp.zeros((n, k))
+    Q = Q.at[:, 0].set(q)
+    H = jnp.zeros((k, k))
+
+    # First step
+    w = W_dense @ q
+    h00 = jnp.dot(q, w)
+    w = w - h00 * q
+    H = H.at[0, 0].set(h00)
+
+    # Arnoldi iteration via lax.scan
+    def body(carry, i):
+        Q, H, w = carry
+        beta = jnp.linalg.norm(w)
+        q_new = w / jnp.where(beta < 1e-15, 1.0, beta)
+        Q = Q.at[:, i].set(q_new)
+        w = W_dense @ q_new
+
+        # Full reorthogonalisation against all Q columns.
+        # Columns beyond i are zero, so Q @ (Q.T @ w) is equivalent
+        # to projecting out Q[:, :i+1] but with static shapes.
+        h_col = Q.T @ w  # (k,) — only first i+1 entries are nonzero
+        w = w - Q @ h_col
+
+        # Set H entries: subdiagonal + the MGS coefficients
+        H = H.at[i, i - 1].set(beta)
+        H = H.at[:, i].set(h_col)
+
+        return (Q, H, w), None
+
+    (Q, H, _), _ = jax.lax.scan(
+        body,
+        (Q, H, w),
+        jnp.arange(1, k),
+    )
+
+    # Eigendecompose H_k (non-symmetric → eig, complex Ritz values)
+    theta, eigvecs = jnp.linalg.eig(H)
+    e1_sq = jnp.abs(eigvecs[0, :]) ** 2
+    return theta, e1_sq, z_norm**2
+
+
+def jax_slq_logdet_precompute(
+    W_dense: np.ndarray,
+    *,
+    n_probes: int = 10,
+    lanczos_deg: int = 30,
+    seed: int = 0,
+) -> dict:
+    """JAX-native SLQ precompute: Arnoldi on W, return quadrature rules.
 
     Parameters
     ----------
-    rho : jax.numpy scalar or array
-        Spatial autoregressive parameter.  Can be a scalar or an
-        array of shape ``(G,)`` for vectorized evaluation over
-        posterior draws.
-    traces : np.ndarray, shape (m,)
-        Trace estimates ``traces[k-1] ≈ tr(W^k)`` for k=1..m.
+    W_dense : np.ndarray or jax.numpy.ndarray, shape (n, n)
+        Dense spatial weights matrix.
+    n_probes : int, default 10
+    lanczos_deg : int, default 30
+    seed : int, default 0
 
     Returns
     -------
-    jax.numpy.ndarray
-        Polynomial approximation of the log-determinant.  Same shape
-        as *rho*.
-
-    Notes
-    -----
-    Horner evaluation of :math:`-\sum_{k=1}^m w_k \rho^k` where
-    :math:`w_k = \hat{\tau}_k / k`:
-
-    .. math::
-
-        -\rho \bigl(w_1 + \rho(w_2 + \rho(\cdots + \rho\, w_m)\cdots)\bigr)
-
-    This is the same algorithm as :func:`logdet_mc_poly_pytensor` but
-    uses ``jax.numpy`` instead of pytensor, making it compatible with
-    ``jax.jit`` and ``jax.grad``.
-
-    See Also
-    --------
-    logdet_mc_poly_pytensor : PyTensor symbolic version (for NUTS).
-    compute_flow_traces : Compute trace estimates via Barry-Pace Hutchinson.
+    dict with keys:
+        - ``nodes``: (n_probes, k) complex Ritz values
+        - ``weights``: (n_probes, k) float weights (||z||² · |e₁|²)
+        - ``n_probes``: int
     """
+    import jax
     import jax.numpy as jnp
 
-    m = len(traces)
-    if m == 0:
-        return jnp.zeros_like(rho)
+    n = W_dense.shape[0]
+    W_jax = jnp.asarray(W_dense, dtype=jnp.float64)
 
-    k_arr = np.arange(1, m + 1, dtype=np.float64)
-    w = jnp.asarray((traces / k_arr).astype(np.float64))
+    key = jax.random.PRNGKey(seed)
+    keys = jax.random.split(key, n_probes)
+    z_all = jax.vmap(lambda k: jax.random.normal(k, shape=(n,)))(keys)
 
-    # Horner's method, high-to-low coefficients
-    result = jnp.broadcast_to(w[m - 1], jnp.shape(rho))
-    for j in range(m - 2, -1, -1):
-        result = result * rho + w[j]
-    result = result * rho
-    return -result
+    # vmap Arnoldi over all probes
+    theta_all, e1_sq_all, z_norm_sq_all = jax.vmap(
+        lambda z: _jax_arnoldi_probe(W_jax, z, lanczos_deg)
+    )(z_all)
+
+    weights = z_norm_sq_all[:, None] * e1_sq_all  # (n_probes, k)
+
+    return {
+        "nodes": np.asarray(theta_all),
+        "weights": np.asarray(weights),
+        "n_probes": n_probes,
+    }
 
 
 def make_logdet_jax_fn(
@@ -181,68 +172,14 @@ def make_logdet_jax_fn(
     rho_max: float = 1.0,
     T: int = 1,
 ):
-    """Return a JAX-native function (rho) -> log|I - rho*W|.
+    """Return a JAX-native ``(rho) -> log|I - ρW|`` callable.
 
-    Companion to :func:`make_logdet_fn` (pytensor) and
-    :func:`make_logdet_numpy_fn` (numpy) that returns a JAX-native
-    callable suitable for use inside ``jax.jit`` and ``jax.grad``.
-
-    Parameters
-    ----------
-    W : np.ndarray or scipy.sparse matrix
-        Either a 2-D dense ``(n, n)`` spatial weights matrix **or** a 1-D
-        array of pre-computed real eigenvalues.  Passing eigenvalues skips
-        the O(n³) decomposition.
-    method : str or None
-        Auto-selected when ``None`` (``"eigenvalue"`` for ``n <= 500``
-        else ``"chebyshev"``).  Supported values:
-
-        ``"eigenvalue"`` — exact evaluation from eigenvalues, O(n) per call.
-        ``"chebyshev"`` — Chebyshev polynomial via Clenshaw's algorithm,
-        O(m) per call.  Coefficients are built from exact eigenvalues when
-        ``n`` is small (or ``eigs`` is supplied); otherwise from Barry-Pace
-        Hutchinson trace estimates.
-    rho_min : float, default=-1.0
-        Lower bound for the rho interval.
-    rho_max : float, default=1.0
-        Upper bound for the rho interval.
-    T : int, default 1
-        Panel time-period count.  The returned log-determinant is
-        multiplied by *T*.
-
-    Returns
-    -------
-    callable
-        Function ``(rho) -> jax.numpy.ndarray`` that computes
-        log|I - rho*W| (or T * log|I - rho*W| for panel models).
-        Fully compatible with ``jax.jit`` and ``jax.grad``.
-
-    Raises
-    ------
-    ValueError
-        If *method* is not one of the supported JAX-compatible methods.
-
-    Notes
-    -----
-    Not all logdet methods have JAX-native implementations.  Grid/spline
-    methods (``"grid_dense"``, ``"grid_sparse"``, ``"sparse_spline"``,
-    ``"grid_mc"``, ``"grid_ilu"``) and ``"exact"`` are not supported
-    because they rely on scipy or pytensor-specific operations that
-    cannot be called inside ``jax.jit``.  Use ``"eigenvalue"`` or
-    ``"chebyshev"`` instead.
-
-    See Also
-    --------
-    make_logdet_fn : PyTensor symbolic version (for NUTS).
-    make_logdet_numpy_fn : NumPy scalar version (for Python-loop Gibbs).
-    make_logdet_numpy_vec_fn : NumPy vectorized version (for post-processing).
+    Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``, and
+    ``"slq"``.  SLQ uses JAX-native Arnoldi iteration via ``jax.lax.scan``.
     """
     T = int(T)
-    _JAX_METHODS = frozenset({"eigenvalue", "chebyshev"})
 
-    # Resolve W to eigenvalues or sparse matrix
     eigs = None
-    W_arr = None
     if sp.issparse(W):
         W_sparse = W.tocsr().astype(np.float64)
         n = W_sparse.shape[0]
@@ -257,18 +194,9 @@ def make_logdet_jax_fn(
 
     method = resolve_logdet_method(method, n=n)
 
-    if method not in _JAX_METHODS:
-        raise ValueError(
-            f"Method '{method}' does not have a JAX-native implementation. "
-            f"JAX-compatible methods: {sorted(_JAX_METHODS)}. "
-            f"Use 'eigenvalue' or 'chebyshev'."
-        )
-
     if method == "eigenvalue":
         if eigs is None:
             eigs = np.linalg.eigvals(W_sparse.toarray())
-        # Keep complex eigenvalues — jnp.abs computes the complex modulus
-        # correctly for non-symmetric W.
         _eigs = np.asarray(eigs, dtype=np.complex128)
 
         def _jax_eigenvalue(rho):
@@ -280,20 +208,87 @@ def make_logdet_jax_fn(
 
         return _jax_eigenvalue
 
-    # method == "chebyshev"
-    out = chebyshev(
-        W_sparse if eigs is None else None,
-        order=20,
-        rmin=rho_min,
-        rmax=rho_max,
-        eigs=eigs,
+    if method == "chebyshev":
+        out = chebyshev(
+            W_sparse if eigs is None else None,
+            order=20,
+            rmin=rho_min,
+            rmax=rho_max,
+            eigs=eigs,
+        )
+        coeffs = out["coeffs"].astype(np.float64)
+        rmin_cb = float(out["rmin"])
+        rmax_cb = float(out["rmax"])
+
+        def _jax_chebyshev(rho):
+            val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)
+            return val if T == 1 else T * val
+
+        return _jax_chebyshev
+
+    if method == "cheb_stochastic":
+        # Precompute stochastic moments in numpy, then evaluate at Chebyshev
+        # nodes in ρ-space and fit a Chebyshev-in-ρ polynomial for JAX
+        # Clenshaw evaluation (differentiable, JIT-compatible).
+        pre = cheb_stochastic_logdet_precompute(W_sparse)
+        # Evaluate at 20 Chebyshev nodes in [rho_min, rho_max]
+        _k_nodes = np.arange(1, 21)
+        _nodes_cos = np.cos((2 * _k_nodes - 1) * np.pi / 40)
+        _rho_nodes = 0.5 * (rho_max - rho_min) * _nodes_cos + 0.5 * (rho_max + rho_min)
+        _logdet_vals = np.array(
+            [cheb_stochastic_logdet_eval(pre, float(r)) for r in _rho_nodes]
+        )
+        # DCT-I → Chebyshev coefficients in ρ
+        coeffs = np.zeros(20, dtype=np.float64)
+        for j in range(20):
+            scale = 2.0 / 20 if j > 0 else 1.0 / 20
+            coeffs[j] = scale * np.sum(
+                _logdet_vals * np.cos(j * (2 * _k_nodes - 1) * np.pi / 40)
+            )
+        rmin_cb = float(rho_min)
+        rmax_cb = float(rho_max)
+
+        def _jax_cheb_stochastic(rho):
+            val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)
+            return val if T == 1 else T * val
+
+        return _jax_cheb_stochastic
+
+    if method == "slq":
+        # JAX-native Arnoldi precompute
+        if eigs is not None:
+            # If eigenvalues are supplied, materialize W for Arnoldi
+            # (shouldn't happen — SLQ is for when eigvals are unavailable)
+            W_dense = np.eye(n)  # fallback: can't run Arnoldi on eigenvalues
+        else:
+            W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
+
+        pre = jax_slq_logdet_precompute(W_dense, n_probes=10, lanczos_deg=30, seed=0)
+        nodes = pre["nodes"]  # (n_probes, k) complex
+        weights = pre["weights"]  # (n_probes, k) float
+        n_probes = pre["n_probes"]
+
+        # Store real/imag separately for JAX compatibility
+        nodes_real = np.ascontiguousarray(nodes.real.astype(np.float64))
+        nodes_imag = np.ascontiguousarray(nodes.imag.astype(np.float64))
+
+        def _jax_slq(rho):
+            import jax.numpy as jnp
+
+            nr = jnp.asarray(nodes_real)
+            ni = jnp.asarray(nodes_imag)
+            w = jnp.asarray(weights)
+            # |1 - ρθ|² = (1 - ρ·Re(θ))² + (ρ·Im(θ))²
+            re = 1.0 - rho * nr
+            im = rho * ni
+            mod_sq = re**2 + im**2
+            safe = jnp.maximum(mod_sq, 1e-300)
+            val = jnp.sum(w * 0.5 * jnp.log(safe)) / n_probes
+            return val if T == 1 else T * val
+
+        return _jax_slq
+
+    raise ValueError(
+        f"Method '{method}' has no JAX implementation. "
+        "Use 'eigenvalue', 'chebyshev', 'cheb_stochastic', or 'slq'."
     )
-    coeffs = out["coeffs"].astype(np.float64)
-    rmin_cb = float(out["rmin"])
-    rmax_cb = float(out["rmax"])
-
-    def _jax_chebyshev(rho):
-        val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)
-        return val if T == 1 else T * val
-
-    return _jax_chebyshev

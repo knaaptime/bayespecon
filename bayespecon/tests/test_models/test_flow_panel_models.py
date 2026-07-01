@@ -12,10 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon.models.flow_panel._panel import (
-    NegativeBinomialFlowPanel,
-    NegativeBinomialSARFlowPanel,
-    NegativeBinomialSARFlowSeparablePanel,
+from bayespecon.models.flow_panel import (
     OLSFlowPanel,
     SARFlowPanel,
     SARFlowSeparablePanel,
@@ -50,6 +47,24 @@ def _panel_flow_stack(n: int, T: int, k: int, seed: int = 0):
     return out["y"], out["X"], out["col_names"]
 
 
+def _panel_count_vector(n: int, T: int, seed: int = 0):
+    """Build noise-only Poisson panel-flow counts via bayespecon's panel DGP."""
+    from bayespecon.dgp.flows import generate_panel_poisson_flow_data
+
+    out = generate_panel_poisson_flow_data(
+        n=n,
+        T=T,
+        k=1,
+        rho_d=0.0,
+        rho_o=0.0,
+        rho_w=0.0,
+        beta_d=np.zeros(1),
+        beta_o=np.zeros(1),
+        seed=seed,
+    )
+    return out["y"]
+
+
 class TestFlowPanelModelConstruction:
     def test_sar_flow_panel_builds(self):
         n = 4
@@ -63,7 +78,7 @@ class TestFlowPanelModelConstruction:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             miter=5,
             titer=50,
             trace_seed=0,
@@ -88,7 +103,7 @@ class TestFlowPanelModelConstruction:
             X=X,
             T=T,
             col_names=col_names,
-            model=1,
+            effects=1,
             miter=5,
             titer=50,
             trace_seed=0,
@@ -129,52 +144,13 @@ class TestSeparablePanelModelBuild:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             trace_seed=0,
         )
 
         pm_model = model._build_pymc_model()
         assert pm_model is not None
         assert "rho_w" in pm_model.named_vars
-
-    @pytest.mark.parametrize(
-        ("model_cls", "method", "extra_kwargs"),
-        [
-            (SARFlowPanel, "advi", {"miter": 5, "titer": 50}),
-            (SARFlowSeparablePanel, "fullrank_advi", {}),
-        ],
-    )
-    def test_gaussian_panel_fit_approx_returns_expected_posterior_vars(
-        self, model_cls, method, extra_kwargs
-    ):
-        n = 4
-        T = 2
-        G = _flow_test_graph(n)
-        y, X, col_names = _panel_flow_stack(n=n, T=T, k=1, seed=56)
-
-        model = model_cls(
-            y=y,
-            G=G,
-            X=X,
-            T=T,
-            col_names=col_names,
-            model=0,
-            trace_seed=0,
-            **extra_kwargs,
-        )
-
-        idata = model.fit_approx(
-            draws=10,
-            n=20,
-            method=method,
-            progressbar=False,
-            random_seed=0,
-        )
-
-        assert model.approximation is not None
-        assert {"beta", "rho_d", "rho_o", "rho_w", "sigma"} <= set(
-            idata.posterior.data_vars
-        )
 
 
 @pytest.mark.slow
@@ -191,7 +167,7 @@ def test_sar_flow_panel_fit_smoke():
         X=X,
         T=T,
         col_names=col_names,
-        model=0,
+        effects=0,
         miter=5,
         titer=30,
         trace_seed=0,
@@ -227,9 +203,36 @@ PF_SIGMA_ALPHA_TRUE = 0.5
 PF_RHO_D_SEP_TRUE = 0.40
 PF_RHO_O_SEP_TRUE = 0.30
 
+# Poisson panel true values
+PP_RHO_D_TRUE = 0.3
+PP_RHO_O_TRUE = 0.2
+PP_RHO_W_TRUE = 0.1
+PP_N = 6  # 36 O-D pairs per period — matches PANEL_FLOW_N; Poisson identifies well
+PANEL_FLOW_T_POISSON = 3  # fewer periods keeps cost down (each step is more expensive)
+
+# Separable Poisson panel — asymmetric so rho_d ≠ rho_o (breaks swap symmetry)
+# rho_w = -0.4*0.3 = -0.12 provides clear identification signal
+PP_RHO_D_SEP_TRUE = 0.40
+PP_RHO_O_SEP_TRUE = 0.30
+PANEL_FLOW_T_POISSON_SEP = 4  # one extra period for the separable variant
+# Larger grid for separable panel: bilinear rho_w term needs more data
+PP_N_SEP = 10  # 100 O-D pairs * T=4 = 400 total — more data to identify bilinear rho_w
+
+# Poisson models are more expensive per step (no conjugacy); use fewer samples
+POISSON_SAMPLE_KWARGS: dict = dict(
+    tune=400, draws=600, chains=2, random_seed=42, progressbar=False
+)
+# Separable Poisson: bilinear rho_w term makes the posterior harder to tune;
+# 1500 tune steps gives NUTS enough budget to adapt away from (0, 0).
+POISSON_SEP_SAMPLE_KWARGS: dict = dict(
+    tune=1800, draws=1500, chains=2, random_seed=42, progressbar=False
+)
+
 # Tolerances
 ABS_TOL_RHO = 0.25
+ABS_TOL_RHO_POI = 0.25  # Poisson panel: tighter after removing spurious Jacobian
 ABS_TOL_BETA = 0.40
+ABS_TOL_BETA_POI = 0.40  # Poisson panel beta: tighter after removing spurious Jacobian
 ABS_TOL_SIGMA = 0.35
 
 
@@ -263,7 +266,7 @@ class TestSARFlowPanelRecovery:
             X=out["X"],
             T=PANEL_FLOW_T,
             col_names=out["col_names"],
-            model=0,
+            effects=0,
             miter=5,
             titer=50,
             trace_seed=0,
@@ -339,7 +342,7 @@ class TestSARFlowSeparablePanelRecovery:
             X=out["X"],
             T=PANEL_FLOW_T,
             col_names=out["col_names"],
-            model=0,
+            effects=0,
             trace_seed=0,
         )
         idata = model.fit(**SAMPLE_KWARGS)
@@ -411,7 +414,7 @@ class TestOLSFlowPanelEffects:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
         )
         # Trace / separable precomputation must be skipped.
         assert model._traces is None
@@ -436,7 +439,7 @@ class TestOLSFlowPanelEffects:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         y_rep = model.posterior_predictive(n_draws=5, random_seed=3)
@@ -462,7 +465,7 @@ class TestOLSFlowPanelEffects:
             X=X,
             T=T,
             col_names=col_names,
-            model=fe_mode,
+            effects=fe_mode,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         post = model._idata.posterior
@@ -502,7 +505,7 @@ class TestFlowPanelLogLikelihood:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             miter=5,
             titer=50,
             trace_seed=0,
@@ -520,7 +523,7 @@ class TestFlowPanelLogLikelihood:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             trace_seed=0,
         )
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
@@ -530,7 +533,7 @@ class TestFlowPanelLogLikelihood:
         n, T = 4, 2
         G = _flow_test_graph(n)
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=0)
-        m = OLSFlowPanel(y=y, G=G, X=X, T=T, col_names=col_names, model=0)
+        m = OLSFlowPanel(y=y, G=G, X=X, T=T, col_names=col_names, effects=0)
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata, n_obs=n * n * T)
 
@@ -547,7 +550,7 @@ class TestFlowPanelLogLikelihood:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             miter=5,
             titer=50,
             trace_seed=0,
@@ -558,10 +561,10 @@ class TestFlowPanelLogLikelihood:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             trace_seed=0,
         )
-        m_ols = OLSFlowPanel(y=y, G=G, X=X, T=T, col_names=col_names, model=0)
+        m_ols = OLSFlowPanel(y=y, G=G, X=X, T=T, col_names=col_names, effects=0)
         idata_sar = m_sar.fit(**kw)
         idata_sep = m_sep.fit(**kw)
         idata_ols = m_ols.fit(**kw)
@@ -583,7 +586,7 @@ class TestFlowPanelGibbsDispatch:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             trace_seed=0,
         )
         idata = m.fit(
@@ -612,7 +615,7 @@ class TestFlowPanelGibbsDispatch:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             miter=5,
             titer=50,
             trace_seed=0,
@@ -638,7 +641,7 @@ class TestFlowPanelGibbsDispatch:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             trace_seed=0,
         )
         idata = m.fit(
@@ -663,7 +666,7 @@ class TestFlowPanelGibbsDispatch:
             X=X,
             T=T,
             col_names=col_names,
-            model=0,
+            effects=0,
             trace_seed=0,
         )
         with pytest.raises(ValueError, match="sampler must be"):

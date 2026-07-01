@@ -88,12 +88,10 @@ _register("bayespecon.models.cross_section.tobit.SEMTobit", SEM_SUITE)
 _register("bayespecon.models.cross_section.tobit.SDMTobit", SDM_TOBIT_SUITE)
 
 # NegBin
-_register(
-    "bayespecon.models.cross_section.sar_negbin.SARNegativeBinomial", SAR_NEGBIN_SUITE
-)
+_register("bayespecon.models.cross_section.sar_negbin.SARNegBin", NEGBIN_SUITE)
 
 _register(
-    "bayespecon.models.cross_section.sar_negbin_latent.SARNegBinLatent",
+    "bayespecon.models.cross_section.sar_negbin_latent.SARNegBinStructural",
     SAR_NEGBIN_SUITE,
 )
 

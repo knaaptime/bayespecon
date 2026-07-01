@@ -448,6 +448,10 @@ class FlowModel(SpatialModel):
         self._Wo_y: np.ndarray = wms["origin"] @ self._y
         self._Ww_y: np.ndarray = wms["network"] @ self._y
 
+        # Aliases used by some downstream code and tests
+        self._y_vec = self._y
+        self._spatial_lag = self._Wd_y
+
         # Keep N×N sparse weight matrices for effects computation
         self._Wd: sp.csr_matrix = wms["destination"]
         self._Wo: sp.csr_matrix = wms["origin"]

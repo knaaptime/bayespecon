@@ -16,7 +16,7 @@ import pymc as pm
 import pytensor.tensor as pt
 
 from ..base import SpatialModel
-from ..priors import LogitPriors
+from ..priors import SpatialLogitPriors
 
 
 class Logit(SpatialModel):
@@ -43,7 +43,7 @@ class Logit(SpatialModel):
     W : libpysal.graph.Graph or scipy.sparse matrix, optional
         Spatial weights matrix.  Not used during estimation; required for
         post-hoc Bayesian LM spatial diagnostics.
-    priors : dict or LogitPriors, optional
+    priors : dict or SpatialLogitPriors, optional
         Override default priors.  Supported keys:
 
         - ``beta_mu`` (array or float, optional): Prior mean for
@@ -55,7 +55,7 @@ class Logit(SpatialModel):
           weakly-informative scale.
     """
 
-    _priors_cls = LogitPriors
+    _priors_cls = SpatialLogitPriors
     _spatial_params: tuple[str, ...] = ()
     _lag_terms: tuple[str, ...] = ()
     _jacobian_param: str | None = None

@@ -30,7 +30,7 @@ def test_panel_re_build_pymc_models_and_force_model_zero():
     y, X, W, N, T = _panel_data()
 
     for cls in [OLSPanelRE, SARPanelRE, SEMPanelRE]:
-        model = cls(y=y, X=X, W=W, N=N, T=T, model=1)
+        model = cls(y=y, X=X, W=W, N=N, T=T, effects=1)
         assert model.model == 0
         assert model._unit_idx.shape[0] == N * T
 
@@ -95,7 +95,7 @@ def test_panel_re_fitted_values_and_effects_with_mock_posteriors():
 def test_sdem_panel_re_builds_and_computes_effects():
     y, X, W, N, T = _panel_data(seed=72)
 
-    sdem = SDEMPanelRE(y=y, X=X, W=W, N=N, T=T, model=2)
+    sdem = SDEMPanelRE(y=y, X=X, W=W, N=N, T=T, effects=2)
     assert sdem.model == 0
     pymc_model = sdem._build_pymc_model()
     assert isinstance(pymc_model, pm.Model)

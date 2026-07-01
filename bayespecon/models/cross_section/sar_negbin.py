@@ -35,9 +35,9 @@ Two samplers are available:
 
 See also
 --------
-SARNegBinLatent
+SARNegBinStructural
     P\u00f3lya-Gamma Gibbs sampler for the structural form (with
-    :math:`\sigma`).  Also exported as ``SARNegativeBinomialLatent``.
+    :math:`\sigma`).
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ from ..base import SpatialModel
 from ..priors import SARNegBinPriors
 
 
-class SARNegativeBinomial(SpatialModel):
+class SARNegBin(SpatialModel):
     _priors_cls = SARNegBinPriors
 
     #: Maximum n for which the JAX dense backend is used automatically.
@@ -71,19 +71,13 @@ class SARNegativeBinomial(SpatialModel):
         super().__init__(*args, **kwargs)
 
         if self.robust:
-            raise NotImplementedError(
-                "robust=True is not supported for SARNegativeBinomial."
-            )
+            raise NotImplementedError("robust=True is not supported for SARNegBin.")
 
         y_round = np.round(self._y).astype(np.int64)
         if not np.allclose(self._y, y_round):
-            raise ValueError(
-                "SARNegativeBinomial requires integer-valued observations."
-            )
+            raise ValueError("SARNegBin requires integer-valued observations.")
         if np.any(y_round < 0):
-            raise ValueError(
-                "SARNegativeBinomial requires non-negative integer observations."
-            )
+            raise ValueError("SARNegBin requires non-negative integer observations.")
 
         self._y_int = y_round
         self._y = y_round.astype(np.float64)

@@ -6,7 +6,7 @@ r"""Structural-form SAR Negative Binomial with Pólya–Gamma Gibbs sampler.
     \eta = \rho W \eta + X\beta + \nu, \quad
     \nu \sim N(0, \sigma^2 I)
 
-Same observable likelihood as :class:`SARNegativeBinomial` (reduced form)
+Same observable likelihood as :class:`SARNegBin` (reduced form)
 but sampled via Pólya–Gamma data augmentation and block Gibbs on the
 structural form, yielding substantially higher ESS/s for n > ~1000.
 
@@ -15,8 +15,8 @@ Use this model when:
 - You need reliable ρ and α posteriors without long tuning.
 - You want to compare with the NUTS path for validation.
 
-Use :class:`SARNegativeBinomial` (canonical reduced form, PG-Gibbs) for
-most spatial-econometric work, and :class:`SARNegativeBinomial` when
+Use :class:`SARNegBin` (canonical reduced form, PG-Gibbs) for
+most spatial-econometric work, and :class:`SARNegBin` when
 you need the full PyMC model graph for custom inference (NUTS).
 """
 
@@ -39,13 +39,13 @@ from ..base import SpatialModel
 from ..priors import SARNegBinPriors
 
 
-class SARNegBinLatent(SpatialModel):
+class SARNegBinStructural(SpatialModel):
     """Bayesian structural-form SAR-NB with Pólya–Gamma Gibbs sampler.
 
     Parameters
     ----------
     formula, data, y, X, W, priors, logdet_method
-        Same interface as :class:`SARNegativeBinomial`.
+        Same interface as :class:`SARNegBin`.
     robust : bool, default False
         Not supported. Raises ``NotImplementedError`` if True.
 
@@ -76,16 +76,18 @@ class SARNegBinLatent(SpatialModel):
 
         if self.robust:
             raise NotImplementedError(
-                "robust=True is not supported for SARNegBinLatent."
+                "robust=True is not supported for SARNegBinStructural."
             )
 
         # Validate y is integer and non-negative
         y_round = np.round(self._y).astype(np.int64)
         if not np.allclose(self._y, y_round):
-            raise ValueError("SARNegBinLatent requires integer-valued observations.")
+            raise ValueError(
+                "SARNegBinStructural requires integer-valued observations."
+            )
         if np.any(y_round < 0):
             raise ValueError(
-                "SARNegBinLatent requires non-negative integer observations."
+                "SARNegBinStructural requires non-negative integer observations."
             )
         self._y_int = y_round
         self._y = y_round.astype(np.float64)
@@ -251,9 +253,9 @@ class SARNegBinLatent(SpatialModel):
         for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
             if bad_kwarg in kwargs:
                 raise TypeError(
-                    f"SARNegBinLatent.fit() does not accept '{bad_kwarg}'. "
+                    f"SARNegBinStructural.fit() does not accept '{bad_kwarg}'. "
                     f"This model uses a Gibbs sampler, not NUTS. "
-                    f"Use SARNegativeBinomial for NUTS-based sampling."
+                    f"Use SARNegBin for NUTS-based sampling."
                 )
 
         y = self._y
@@ -459,7 +461,6 @@ class SARNegBinLatent(SpatialModel):
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
                 use_mala=use_mala,
-                mala_eps=mala_eps,
                 progressbar=progressbar,
             )
         else:
@@ -558,11 +559,11 @@ class SARNegBinLatent(SpatialModel):
         return idata
 
     def _build_pymc_model(self):
-        """Not supported — SARNegBinLatent uses a Gibbs sampler, not NUTS."""
+        """Not supported — SARNegBinStructural uses a Gibbs sampler, not NUTS."""
         raise NotImplementedError(
-            "SARNegBinLatent does not build a PyMC model. "
+            "SARNegBinStructural does not build a PyMC model. "
             "Use the fit() method for Gibbs sampling, or use "
-            "SARNegativeBinomial for NUTS-based inference."
+            "SARNegBin for NUTS-based inference."
         )
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -621,7 +622,3 @@ class SARNegBinLatent(SpatialModel):
         indirect_samples = total_samples - direct_samples
 
         return direct_samples, indirect_samples, total_samples
-
-
-# Public alias — keep in sync with the .pyi stub re-export.
-SARNegativeBinomialLatent = SARNegBinLatent

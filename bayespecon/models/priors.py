@@ -131,31 +131,10 @@ class SDEMPriors(SEMPriors):
 
 
 @dataclass(frozen=True)
-class LogitPriors(BasePriors):
-    """Priors for :class:`bayespecon.models.Logit` (non-spatial NUTS).
-
-    Inherits ``beta_mu``/``beta_sigma`` from :class:`BasePriors`.  The
-    logit link absorbs the noise scale, so the ``sigma2_*`` / ``sigma_sigma``
-    fields are unused.
-    """
-
-
-@dataclass(frozen=True)
 class NegBinPriors(BasePriors):
-    """Priors for :class:`bayespecon.models.NegativeBinomial` (non-spatial NUTS).
+    """Priors for :class:`bayespecon.models.NegativeBinomial`.
 
-    Adds a Half-Student-t prior on the NB dispersion parameter
-    :math:`\\alpha` (NB2 parameterisation, ``Var(y) = mu + mu^2 / alpha``):
-
-    .. math::
-
-        \\alpha \\sim \\mathrm{Half\\text{-}Student\\text{-}t}(\\nu_\\alpha, \\sigma_\\alpha)
-
-    The Half-Student-t (default ``nu=3``, ``sigma=2.5``) follows the
-    Gelman/rstanarm recommendation for scale parameters: heavier tails
-    than a Half-Normal place less penalty on small ``alpha`` (the
-    strong-overdispersion regime that motivates choosing NB over
-    Poisson in the first place).  The ``sigma2_*`` fields are unused.
+    Adds overdispersion parameters for the NB2 likelihood.
     """
 
     alpha_sigma: float = 2.5
@@ -163,28 +142,11 @@ class NegBinPriors(BasePriors):
 
 
 @dataclass(frozen=True)
-class SARNegBinPriors(SARPriors):
-    """Priors for the SAR Negative Binomial models.
+class SARNegBinPriors(SARPriors, NegBinPriors):
+    """Priors for :class:`bayespecon.models.SARNegBin`.
 
-    Used by both :class:`bayespecon.models.SARNegativeBinomial` (NUTS,
-    reduced form) and :class:`bayespecon.models.SARNegBinLatent`
-    (Pólya–Gamma Gibbs, structural form).
-
-    Adds a Half-Student-t prior on the NB dispersion parameter ``alpha``:
-
-    .. math::
-
-        \\alpha \\sim \\mathrm{Half\\text{-}Student\\text{-}t}(\\nu_\\alpha, \\sigma_\\alpha)
-
-    The Half-Student-t (default ``nu=3``, ``sigma=2.5``) is the
-    Gelman/rstanarm recommendation for scale parameters: heavier tails
-    than the Half-Normal place less penalty on small ``alpha`` (the
-    strong-overdispersion regime that motivates choosing NB over
-    Poisson in the first place).
+    Combines SAR spatial bounds with NB overdispersion parameters.
     """
-
-    alpha_sigma: float = 2.5
-    alpha_nu: float = 3.0
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +208,10 @@ class SpatialLogitPriors:
     rho_upper: float = 0.999
     beta_mu: float = 0.0
     beta_sigma: float = 10.0
+
+
+# Alias — the non-spatial Logit model uses the same prior structure.
+LogitPriors = SpatialLogitPriors
 
 
 @dataclass
@@ -524,6 +490,8 @@ __all__ = [
     "SEMPriors",
     "SDMPriors",
     "SDEMPriors",
+    "NegBinPriors",
+    "SARNegBinPriors",
     "SARTobitPriors",
     "SEMTobitPriors",
     "SDMTobitPriors",

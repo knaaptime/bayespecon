@@ -134,7 +134,7 @@ class TestGibbsPriorsSigma2Beta:
 # ---------------------------------------------------------------------------
 
 
-class TestSARNegBinLatentRhoMixing:
+class TestSARNegBinStructuralRhoMixing:
     """Verify that the collapsed rho slice sampler mixes (not stuck).
 
     Regression test for the bug where log_density_rho was cached across
@@ -144,7 +144,7 @@ class TestSARNegBinLatentRhoMixing:
 
     def test_rho_not_stuck(self):
         """Rho should have more than 1 unique value after 200 draws."""
-        from bayespecon import SARNegBinLatent, dgp
+        from bayespecon import SARNegBinStructural, dgp
         from bayespecon.tests.helpers import W_to_graph, make_rook_W
 
         rng = np.random.default_rng(42)
@@ -156,7 +156,7 @@ class TestSARNegBinLatentRhoMixing:
             sigma2=0.5,
             rng=rng,
         )
-        model = SARNegBinLatent(y=data["y"], X=data["X"], W=data["W_graph"])
+        model = SARNegBinStructural(y=data["y"], X=data["X"], W=data["W_graph"])
         idata = model.fit(
             draws=200, tune=200, chains=1, random_seed=42, n_jobs=1, progressbar=False
         )

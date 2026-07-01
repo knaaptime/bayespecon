@@ -1,0 +1,553 @@
+"""Stochastic Lanczos Quadrature (SLQ) for log|I - ρW|.
+
+For row-standardised W from an **undirected graph** (rook, queen, distance-band),
+W = D⁻¹A where A is symmetric and D = diag(degrees).  W is diagonally similar
+to the symmetric matrix W_sym = D^{1/2} W D^{-1/2}, which has the **same
+eigenvalues** but real — enabling valid Gauss quadrature via Lanczos.
+
+For directed W (non-symmetric sparsity pattern), falls back to Arnoldi with
+complex Ritz values.
+
+Algorithm (D-symmetrised Lanczos)
+---------------------------------
+1. Recover D from W's sparsity pattern (O(nnz) BFS).
+2. Form W_sym = D^{1/2} W D^{-1/2} as a LinearOperator (two O(n) scalings
+   + one O(nnz) sparse matvec — never materialised).
+3. For each probe z: run k steps of Lanczos on W_sym, build tridiagonal T_k,
+   eigendecompose → (θ_i, v_i).  Gauss weights: w_i = ||z||² · v_{1,i}².
+4. Evaluate: log|I - ρW| ≈ (1/n_probes) Σ_j ||z_j||² Σ_i v_{1,j,i}² · log(1 - ρθ_{j,i})
+
+Gauss quadrature from k Lanczos steps is exact for polynomials of degree ≤ 2k-1,
+giving 3× more spectral information per Krylov step than the Barry-Pace Taylor
+series (degree k from k trace moments).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
+
+
+@dataclass(frozen=True)
+class SLQPrecompute:
+    """Precomputed SLQ quadrature rules for log|I - ρW|.
+
+    Attributes
+    ----------
+    nodes : np.ndarray, shape (n_probes, k)
+        Gauss quadrature nodes (real for D-symmetrised, complex for Arnoldi).
+    weights : np.ndarray, shape (n_probes, k)
+        Quadrature weights (||z||² · |e₁ᵢ|² per probe).
+    n : int
+        Matrix dimension.
+    method : str
+        "lanczos" (D-symmetrised) or "arnoldi" (non-symmetric fallback).
+    """
+
+    nodes: np.ndarray
+    weights: np.ndarray
+    n: int
+    method: str = "lanczos"
+
+    @property
+    def n_probes(self) -> int:
+        return self.nodes.shape[0]
+
+    @property
+    def lanczos_deg(self) -> int:
+        return self.nodes.shape[1]
+
+
+# ---------------------------------------------------------------------------
+# D-recovery: find diagonal D such that D^{1/2} W D^{-1/2} is symmetric
+# ---------------------------------------------------------------------------
+
+
+def _recover_symmetrizing_diagonal(W: sp.csr_matrix) -> np.ndarray | None:
+    """Recover D such that D^{1/2} W D^{-1/2} is symmetric.
+
+    For W = D⁻¹A (row-standardised, A symmetric), D[i]/D[j] = W[j,i]/W[i,j]
+    for each edge (i,j).  We propagate via BFS from node 0.
+
+    Returns
+    -------
+    np.ndarray or None
+        D (up to scalar multiple), or None if W has asymmetric sparsity
+        (directed graph — D-symmetrisation not applicable).
+    """
+    n = W.shape[0]
+    W.tocsc()
+
+    # Check symmetric sparsity pattern
+    pattern_sym = (W != 0).toarray() == (W.T != 0).toarray()
+    if not pattern_sym.all():
+        return None
+
+    # BFS to propagate D[i]/D[j] = W[j,i] / W[i,j]
+    D = np.empty(n, dtype=np.float64)
+    D[:] = np.nan
+    D[0] = 1.0
+
+    # Build adjacency list for BFS
+    W_coo = W.tocoo()
+    adj: list[list[int]] = [[] for _ in range(n)]
+    for i, j in zip(W_coo.row, W_coo.col):
+        if i != j:
+            adj[i].append(j)
+
+    queue = [0]
+    while queue:
+        i = queue.pop(0)
+        for j in adj[i]:
+            if np.isnan(D[j]):
+                # D[i] / D[j] = W[j,i] / W[i,j]
+                wij = W[i, j]
+                wji = W[j, i]
+                if abs(wij) < 1e-300 or abs(wji) < 1e-300:
+                    continue
+                D[j] = D[i] * wij / wji
+                queue.append(j)
+
+    # Check all nodes reached (connected graph)
+    if np.any(np.isnan(D)):
+        # Disconnected graph — set unreached nodes to 1
+        D[np.isnan(D)] = 1.0
+
+    return D
+
+
+# ---------------------------------------------------------------------------
+# W_sym LinearOperator
+# ---------------------------------------------------------------------------
+
+
+def _make_sym_operator(W: sp.csr_matrix, D: np.ndarray) -> spla.LinearOperator:
+    """Create a LinearOperator for W_sym = D^{1/2} W D^{-1/2}.
+
+    Matvec: q → D^{1/2} (W (D^{-1/2} q)) — two O(n) scalings + O(nnz) sparse.
+    Handles both 1D vectors and 2D blocks (n, n_probes).
+    """
+    n = W.shape[0]
+    sqrt_D = np.sqrt(D)
+    inv_sqrt_D = 1.0 / sqrt_D
+
+    def _matvec(q):
+        return sqrt_D * (W @ (inv_sqrt_D * q))
+
+    def _rmatvec(q):
+        return inv_sqrt_D * (W.T @ (sqrt_D * q))
+
+    return spla.LinearOperator(
+        shape=(n, n),
+        matvec=_matvec,
+        rmatvec=_rmatvec,
+        dtype=np.float64,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Batched Lanczos (all probes simultaneously — one block matvec per step)
+# ---------------------------------------------------------------------------
+
+
+def _batched_lanczos(
+    matvec_fn,  # callable: (n, n_probes) -> (n, n_probes)
+    n: int,
+    k: int,
+    Z: np.ndarray,
+    n_probes: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Run k steps of **batched** Lanczos on W_sym for all probes at once.
+
+    Fully vectorized: stores Lanczos vectors as (n, k, n_probes) and uses
+    einsum for batched reorthogonalization.  One batched sparse matvec per
+    Lanczos step; all probe operations are vectorized.
+
+    Parameters
+    ----------
+    matvec_fn : callable
+        Function that computes W_sym @ Q for a (n, n_probes) block.
+    n : int
+        Matrix dimension.
+    k : int
+        Lanczos steps per probe.
+    Z : np.ndarray, shape (n, n_probes)
+        Probe vectors (columns).
+    n_probes : int
+
+    Returns
+    -------
+    (nodes, weights, z_norms_sq) : tuple
+    """
+    # Normalize each probe column
+    z_norms = np.linalg.norm(Z, axis=0)  # (n_probes,)
+    Q0 = Z / np.where(z_norms < 1e-15, 1.0, z_norms)  # (n, n_probes)
+
+    # 3D storage: Q_all[:, step, probe] — (n, k, n_probes)
+    Q_all = np.zeros((n, k, n_probes), dtype=np.float64)
+    Q_all[:, 0, :] = Q0
+
+    alphas = np.zeros((n_probes, k), dtype=np.float64)
+    betas = np.zeros((n_probes, k - 1), dtype=np.float64)
+    active = np.ones(n_probes, dtype=bool)  # which probes haven't broken down
+
+    # First matvec (batched)
+    R = matvec_fn(Q0)  # (n, n_probes) — ONE batched matvec
+
+    # alpha_0 = Q0' R (per-probe dot products)
+    alphas[:, 0] = np.sum(Q0 * R, axis=0)  # (n_probes,)
+    R = R - alphas[:, 0] * Q0  # broadcast: (n, n_probes)
+
+    # Lanczos steps 1..k-1
+    for i in range(1, k):
+        # Compute beta and new q (vectorized)
+        beta = np.linalg.norm(R, axis=0)  # (n_probes,)
+        betas[:, i - 1] = beta
+
+        # Mark inactive probes
+        active & (beta < 1e-15)
+        active &= beta >= 1e-15
+        if not active.any():
+            break
+
+        # Normalize R → q_new (vectorized, with safe division)
+        safe_beta = np.where(beta < 1e-15, 1.0, beta)
+        q_new = R / safe_beta  # (n, n_probes) — zeros for inactive
+        Q_all[:, i, :] = q_new
+
+        # Batched matvec
+        R_new = matvec_fn(q_new)  # (n, n_probes) — ONE batched matvec
+
+        # alpha_i = q_new' R_new (vectorized)
+        alphas[:, i] = np.sum(q_new * R_new, axis=0)
+
+        # Three-term recurrence: R = R_new - alpha * q_new - beta_prev * Q_prev
+        R = R_new - alphas[:, i] * q_new - betas[:, i - 1] * Q_all[:, i - 1, :]
+
+        # Full reorthogonalization (vectorized via einsum)
+        # For each probe j, project R[:, j] against Q_all[:, :i+1, j]
+        # Q_slice: (n, i+1, n_probes), R: (n, n_probes)
+        # coeffs = einsum('nsj,nj->sj', Q_slice, R)  → (i+1, n_probes)
+        Q_slice = Q_all[:, : i + 1, :]  # (n, i+1, n_probes)
+        proj_coeffs = np.einsum("nsj,nj->sj", Q_slice, R)  # (i+1, n_probes)
+        # R -= Q_slice @ proj_coeffs (per-probe)
+        R = R - np.einsum("nsj,sj->nj", Q_slice, proj_coeffs)
+
+    # Eigendecompose each probe's tridiagonal (vectorized loop — k×k is tiny)
+    nodes = np.zeros((n_probes, k), dtype=np.float64)
+    weights = np.zeros((n_probes, k), dtype=np.float64)
+    z_norms_sq = z_norms**2
+
+    for j in range(n_probes):
+        # Find actual k for this probe (count active steps)
+        m = k
+        # Check if beta values went to zero
+        for step in range(k - 1):
+            if not active[j] and step >= i:
+                m = step
+                break
+        # Build tridiagonal
+        T = np.diag(alphas[j, :m])
+        if m > 1:
+            T += np.diag(betas[j, : m - 1], 1) + np.diag(betas[j, : m - 1], -1)
+        theta, eigvecs = np.linalg.eigh(T)
+        nodes[j, :m] = theta
+        weights[j, :m] = z_norms_sq[j] * eigvecs[0, :] ** 2
+
+    return nodes, weights, z_norms_sq
+
+
+def _lanczos_iteration(
+    W_op: spla.LinearOperator,
+    n: int,
+    k: int,
+    z: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Run k steps of Lanczos on a symmetric operator starting from z.
+
+    Returns (theta, e1_sq, z_norm) where theta are real eigenvalues of T_k.
+    """
+    z_norm = np.linalg.norm(z)
+    if z_norm == 0:
+        return np.empty(0), np.empty(0), 0.0
+
+    q = z / z_norm
+
+    alpha_vals = np.empty(k)
+    beta_vals = np.empty(k - 1)
+    Q = np.empty((n, k))
+
+    Q[:, 0] = q
+    r = W_op @ q
+    alpha_vals[0] = float(q @ r)
+    r = r - alpha_vals[0] * q
+
+    for i in range(1, k):
+        beta_vals[i - 1] = np.linalg.norm(r)
+        if beta_vals[i - 1] < 1e-15:
+            alpha_vals = alpha_vals[:i]
+            beta_vals = beta_vals[: i - 1] if i > 1 else beta_vals[:0]
+            Q = Q[:, :i]
+            break
+        q_new = r / beta_vals[i - 1]
+        Q[:, i] = q_new
+        r = W_op @ q_new
+        alpha_vals[i] = float(q_new @ r)
+        r = r - alpha_vals[i] * q_new - beta_vals[i - 1] * Q[:, i - 1]
+        # Full reorthogonalization
+        for j in range(i):
+            r = r - float(Q[:, j] @ r) * Q[:, j]
+
+    m = len(alpha_vals)
+    T = np.diag(alpha_vals[:m])
+    if m > 1:
+        T += np.diag(beta_vals[: m - 1], 1) + np.diag(beta_vals[: m - 1], -1)
+
+    # Symmetric → eigh (real eigenvalues, valid Gauss quadrature)
+    theta, eigvecs = np.linalg.eigh(T)
+    e1_sq = eigvecs[0, :] ** 2
+
+    return theta, e1_sq, z_norm
+
+
+# ---------------------------------------------------------------------------
+# Arnoldi iteration (non-symmetric fallback, complex Ritz values)
+# ---------------------------------------------------------------------------
+
+
+def _arnoldi_iteration(
+    W_op: spla.LinearOperator | sp.csr_matrix,
+    n: int,
+    k: int,
+    z: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Run k steps of Arnoldi on a non-symmetric operator starting from z.
+
+    Returns (theta, e1_sq, z_norm) where theta are complex Ritz values.
+    """
+    z_norm = np.linalg.norm(z)
+    if z_norm == 0:
+        return np.empty(0, dtype=np.complex128), np.empty(0), 0.0
+
+    q = z / z_norm
+
+    Q = np.zeros((n, k), dtype=np.float64)
+    H = np.zeros((k, k), dtype=np.float64)
+    Q[:, 0] = q
+
+    for i in range(k - 1):
+        w = W_op @ Q[:, i]
+        for j in range(i + 1):
+            H[j, i] = float(Q[:, j] @ w)
+            w = w - H[j, i] * Q[:, j]
+        H[i + 1, i] = np.linalg.norm(w)
+        if H[i + 1, i] < 1e-15:
+            H = H[: i + 1, : i + 1]
+            break
+        Q[:, i + 1] = w / H[i + 1, i]
+
+    theta, eigvecs = np.linalg.eig(H)
+    e1_sq = np.abs(eigvecs[0, :]) ** 2
+
+    return theta, e1_sq, z_norm
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def slq_logdet_precompute(
+    W,
+    n_probes: int = 50,
+    lanczos_deg: int = 30,
+    rng: np.random.Generator | None = None,
+) -> SLQPrecompute:
+    """Precompute SLQ quadrature rules for log|I - ρW|.
+
+    For undirected-graph W (symmetric sparsity), uses D-symmetrised Lanczos
+    with real eigenvalues and valid Gauss quadrature.  For directed W,
+    falls back to Arnoldi with complex Ritz values.
+
+    Parameters
+    ----------
+    W : array-like or scipy.sparse matrix
+        Spatial weights matrix (dense or sparse).
+    n_probes : int, default 10
+    lanczos_deg : int, default 30
+    rng : np.random.Generator, optional
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if sp.issparse(W) or hasattr(W, "format"):
+        W_sp = sp.csr_matrix(W)
+        n = W_sp.shape[0]
+    else:
+        W_arr = np.asarray(W, dtype=np.float64)
+        n = W_arr.shape[0]
+        W_sp = sp.csr_matrix(W_arr)
+
+    # Try D-symmetrisation
+    D = _recover_symmetrizing_diagonal(W_sp)
+
+    if D is not None:
+        # D-symmetrised batched Lanczos (real eigenvalues, valid Gauss quadrature)
+        # Use the sparse matrix directly for batched matvec (LinearOperator doesn't
+        # support matmat efficiently).
+        sqrt_D = np.sqrt(D)
+        inv_sqrt_D = 1.0 / sqrt_D
+        W_sp_for_lanczos = W_sp  # original sparse W
+
+        def batch_matvec(Q_block):
+            """W_sym @ Q = sqrt_D * (W @ (inv_sqrt_D * Q)) — handles 2D."""
+            return sqrt_D[:, None] * (
+                W_sp_for_lanczos @ (inv_sqrt_D[:, None] * Q_block)
+            )
+
+        method = "lanczos"
+        Z = rng.standard_normal((n, n_probes))
+        all_nodes, all_weights, _ = _batched_lanczos(
+            batch_matvec, n, lanczos_deg, Z, n_probes
+        )
+        return SLQPrecompute(nodes=all_nodes, weights=all_weights, n=n, method=method)
+    else:
+        # Arnoldi fallback (complex Ritz values) — per-probe loop
+        W_op = W_sp
+        method = "arnoldi"
+        all_nodes = np.zeros((n_probes, lanczos_deg), dtype=np.complex128)
+        all_weights = np.zeros((n_probes, lanczos_deg), dtype=np.float64)
+
+        for j in range(n_probes):
+            z = rng.standard_normal(n)
+            theta, e1_sq, z_norm = _arnoldi_iteration(W_op, n, lanczos_deg, z)
+            m = len(theta)
+            all_nodes[j, :m] = theta
+            all_weights[j, :m] = z_norm**2 * e1_sq
+
+        return SLQPrecompute(nodes=all_nodes, weights=all_weights, n=n, method=method)
+
+
+def slq_logdet_eval(pre: SLQPrecompute, rho: float) -> float:
+    """Evaluate log|I - ρW| from precomputed SLQ quadrature rules."""
+    vals = 1.0 - rho * pre.nodes
+    safe = np.maximum(np.abs(vals), 1e-300)
+    log_vals = np.log(safe)
+    return float(np.real(np.sum(pre.weights * log_vals) / pre.n_probes))
+
+
+def slq_logdet_eval_vec(pre: SLQPrecompute, rho_arr: np.ndarray) -> np.ndarray:
+    """Vectorized SLQ logdet evaluation over an array of ρ values."""
+    rho_arr = np.asarray(rho_arr, dtype=np.float64)
+    vals = 1.0 - rho_arr[:, None, None] * pre.nodes[None, :, :]
+    safe = np.maximum(np.abs(vals), 1e-300)
+    log_vals = np.log(safe)
+    return (
+        np.real(np.sum(pre.weights[None, :, :] * log_vals, axis=(1, 2))) / pre.n_probes
+    )
+
+
+# ---------------------------------------------------------------------------
+# SLQ → Chebyshev coefficient conversion (fast O(m) evaluation per ρ)
+# ---------------------------------------------------------------------------
+
+
+def slq_to_chebyshev_coeffs(
+    pre: SLQPrecompute,
+    W: sp.csr_matrix | None = None,
+    order: int = 20,
+    rho_min: float = -1.0,
+    rho_max: float = 1.0,
+) -> dict:
+    """Convert SLQ quadrature rules into Chebyshev polynomial coefficients.
+
+    Uses SLQ's Gauss quadrature to estimate ``tr(W^k)`` for ``k=1..order``,
+    then feeds into the same Taylor series + DCT-I pipeline as Barry-Pace.
+    Gauss quadrature from *m* Lanczos steps is exact for polynomials of degree
+    ``≤ 2m-1``, so ``m=30`` Lanczos steps give exact traces up to ``tr(W^59)``
+    — far beyond the 20 traces needed.
+
+    The first two traces (``tr(W)``, ``tr(W²)``) are overridden with exact
+    values when ``W`` is provided, matching Barry-Pace's variance reduction.
+
+    Parameters
+    ----------
+    pre : SLQPrecompute
+        Quadrature rules from :func:`slq_logdet_precompute`.
+    W : scipy.sparse.csr_matrix, optional
+        Spatial weights matrix for exact trace overrides.
+    order : int, default 20
+        Chebyshev polynomial degree.
+    rho_min, rho_max : float
+        Interval bounds for the Chebyshev approximation.
+
+    Returns
+    -------
+    dict
+        ``{"coeffs", "rmin", "rmax", "order", "method"}`` — same format as
+        :func:`chebyshev`, compatible with :func:`logdet_chebyshev`.
+    """
+    n = pre.n
+
+    # Normalize weights: remove ||z||² scaling, use n scaling (E[||z||²]=n)
+    # weights = ||z||² · e1², so e1² = weights / ||z||²
+    # tr(W^k) ≈ (n / n_probes) Σ_j Σ_i e1_{j,i}² θ_{j,i}^k
+    if pre.method == "lanczos":
+        # For lanczos, nodes/weights are real; recover e1² from weights
+        # We need z_norms_sq — but SLQPrecompute doesn't store it.
+        # Instead, use the direct SLQ eval approach: weights already contain
+        # ||z||², and we normalize by dividing by ||z||² and multiplying by n.
+        # Since we don't have z_norms_sq, we compute it from weight sums:
+        # Σ_i e1_{i}² = 1 for each probe (eigenvector of T_k is unit-norm),
+        # so Σ_i weights_{j,i} / ||z_j||² = 1 → ||z_j||² = Σ_i weights_{j,i}
+        z_norms_sq = np.sum(pre.weights, axis=1)  # (n_probes,)
+        e1_sq = pre.weights / z_norms_sq[:, None]  # (n_probes, k)
+        nodes = pre.nodes  # (n_probes, k)
+    else:
+        # Arnoldi fallback — complex nodes
+        z_norms_sq = np.sum(pre.weights, axis=1)
+        e1_sq = pre.weights / z_norms_sq[:, None]
+        nodes = pre.nodes
+
+    # Estimate traces via Gauss quadrature: tr(W^k) = (n/n_probes) Σ_j Σ_i e1² θ^k
+    traces = np.zeros(order, dtype=np.float64)
+    for p in range(1, order + 1):
+        traces[p - 1] = n * np.mean(np.sum(e1_sq * nodes**p, axis=1))
+
+    # Override first two traces with exact values (major variance reduction)
+    if W is not None:
+        W_csr = sp.csr_matrix(W) if not sp.issparse(W) else W
+        traces[0] = float(W_csr.diagonal().sum())
+        if order >= 2:
+            traces[1] = float(W_csr.multiply(W_csr.T).sum())
+
+    # Taylor series: log|I - ρW| = -Σ_k tr(W^k) ρ^k / k
+    # Evaluate at Chebyshev nodes, then DCT-I → Chebyshev coefficients
+    k_arr = np.arange(1, order + 1)
+    nodes_cos = np.cos((2 * k_arr - 1) * np.pi / (2 * order))
+    rho_nodes = 0.5 * (rho_max - rho_min) * nodes_cos + 0.5 * (rho_max + rho_min)
+
+    td = traces / np.arange(1, order + 1, dtype=np.float64)
+    logdet_at_nodes = np.zeros(order, dtype=np.float64)
+    for idx, r in enumerate(rho_nodes):
+        powers = np.power(r, np.arange(1, order + 1, dtype=np.float64))
+        logdet_at_nodes[idx] = -powers @ td
+
+    # DCT-I → Chebyshev coefficients
+    coeffs = np.zeros(order, dtype=np.float64)
+    for j in range(order):
+        scale = 2.0 / order if j > 0 else 1.0 / order
+        coeffs[j] = scale * np.sum(
+            logdet_at_nodes * np.cos(j * (2 * k_arr - 1) * np.pi / (2 * order))
+        )
+
+    return {
+        "coeffs": coeffs,
+        "rmin": rho_min,
+        "rmax": rho_max,
+        "order": order,
+        "method": "slq",
+    }
