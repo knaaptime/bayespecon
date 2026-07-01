@@ -22,6 +22,8 @@ dependencies:
   - lazy_loader
   - fastprogress
   - nutpie
+  - blackjax
+  - numpyro
   - polyagamma
   - scikit-umfpack
   - scikit-sparse
