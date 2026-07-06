@@ -14,6 +14,7 @@ CANONICAL_METHODS = {
     "chebyshev",
     "cheb_stochastic",
     "cheb_cholesky",
+    "aaa",
     "traces",
 }
 

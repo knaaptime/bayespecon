@@ -153,6 +153,20 @@ def make_logdet_numpy_fn(
 
         return _cheb_chol_numpy
 
+    if method == "aaa":
+        from ._aaa import aaa_logdet_eval, aaa_logdet_precompute
+
+        # AAA rational approximation: exact logdet via sparse LU at
+        # adaptively-selected support points, then barycentric evaluation.
+        # For non-symmetric W where Cholesky is unavailable.
+        pre = aaa_logdet_precompute(W_sparse, rho_min=rho_min, rho_max=rho_max)
+
+        def _aaa_numpy(r):
+            val = aaa_logdet_eval(pre, float(r))
+            return val if T == 1 else T * val
+
+        return _aaa_numpy
+
     if method == "slq":
         # SLQ precompute → Chebyshev coefficients → Clenshaw evaluation
         pre = slq_logdet_precompute(W_sparse)
@@ -290,6 +304,17 @@ def make_logdet_numpy_vec_fn(
 
         return _vec_cheb_chol
 
+    if method == "aaa":
+        from ._aaa import aaa_logdet_eval_vec, aaa_logdet_precompute
+
+        pre = aaa_logdet_precompute(W_sparse, rho_min=rho_min, rho_max=rho_max)
+
+        def _vec_aaa(rho_arr: np.ndarray) -> np.ndarray:
+            vals = aaa_logdet_eval_vec(pre, np.asarray(rho_arr, dtype=np.float64))
+            return vals if T == 1 else T * vals
+
+        return _vec_aaa
+
     if method == "slq":
         # SLQ precompute → Chebyshev coefficients → vectorized Clenshaw
         pre = slq_logdet_precompute(W_sparse)
@@ -386,6 +411,28 @@ def make_logdet_fn(
                 return val if T == 1 else T * val
 
             return _cheb_chol_sparse
+        if method == "aaa":
+            from ._aaa import aaa_logdet_precompute
+
+            # AAA rational approximation for non-symmetric W.
+            # PyTensor-differentiable via barycentric evaluation on
+            # precomputed support points and weights.
+            pre = aaa_logdet_precompute(W_sparse, rho_min=rho_min, rho_max=rho_max)
+            sp_z = pre.support_points.astype(np.float64)
+            sp_f = pre.support_values.astype(np.float64)
+            w = pre.weights.astype(np.float64)
+
+            def _aaa_sparse(rho):
+                # Barycentric formula using PyTensor operations
+                import pytensor.tensor as pt
+
+                diff = rho - sp_z  # (m,)
+                n_val = pt.sum(w * sp_f / diff)
+                d_val = pt.sum(w / diff)
+                val = n_val / d_val
+                return val if T == 1 else T * val
+
+            return _aaa_sparse
         if method == "slq":
             # SLQ precompute → Chebyshev coefficients → differentiable Clenshaw
             pre = slq_logdet_precompute(W_sparse)
@@ -475,6 +522,26 @@ def make_logdet_fn(
             return val if T == 1 else T * val
 
         return _cheb_chol_dense
+    if method == "aaa":
+        from ._aaa import aaa_logdet_precompute
+
+        pre = aaa_logdet_precompute(
+            sp.csc_matrix(W_dense), rho_min=rho_min, rho_max=rho_max
+        )
+        sp_z = pre.support_points.astype(np.float64)
+        sp_f = pre.support_values.astype(np.float64)
+        w = pre.weights.astype(np.float64)
+
+        def _aaa_dense(rho):
+            import pytensor.tensor as pt
+
+            diff = rho - sp_z
+            n_val = pt.sum(w * sp_f / diff)
+            d_val = pt.sum(w / diff)
+            val = n_val / d_val
+            return val if T == 1 else T * val
+
+        return _aaa_dense
     if method == "slq":
         # SLQ precompute → Chebyshev coefficients → differentiable Clenshaw
         pre = slq_logdet_precompute(W_dense)

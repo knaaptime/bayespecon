@@ -3,10 +3,14 @@
 Mirrors the PyTensor symbolic functions but uses ``jax.numpy`` so the
 returned callables are compatible with ``jax.jit`` and ``jax.grad``.
 
-Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``, and
-``"slq"``.  The stochastic Chebyshev method precomputes moments in numpy
-and evaluates via JAX-native Clenshaw.  SLQ uses JAX-native Arnoldi
-iteration via ``jax.lax.scan`` for the Krylov loop.
+Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``,
+``"cheb_cholesky"``, ``"aaa"``, and ``"slq"``.  The stochastic Chebyshev
+method precomputes moments in numpy and evaluates via JAX-native Clenshaw.
+SLQ uses JAX-native Arnoldi iteration via ``jax.lax.scan`` for the Krylov
+loop.  ``cheb_cholesky`` precomputes Chebyshev coefficients via sparse
+Cholesky in numpy and evaluates via JAX-native Clenshaw.  ``aaa``
+precomputes support points and barycentric weights via sparse LU in numpy
+and evaluates via JAX-native barycentric formula.
 """
 
 from __future__ import annotations
@@ -288,7 +292,52 @@ def make_logdet_jax_fn(
 
         return _jax_slq
 
+    if method == "cheb_cholesky":
+        from ._chol_cheb import chol_cheb_logdet_precompute
+
+        # Precompute Chebyshev coefficients via sparse Cholesky in numpy,
+        # then evaluate via JAX-native Clenshaw (differentiable, JIT-compatible).
+        pre = chol_cheb_logdet_precompute(
+            W_sparse, order=None, rho_min=rho_min, rho_max=rho_max
+        )
+        coeffs = pre.coeffs.astype(np.float64)
+        rmin_cb = float(pre.rho_min)
+        rmax_cb = float(pre.rho_max)
+
+        def _jax_cheb_chol(rho):
+            val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)
+            return val if T == 1 else T * val
+
+        return _jax_cheb_chol
+
+    if method == "aaa":
+        from ._aaa import aaa_logdet_precompute
+
+        # Precompute support points and barycentric weights via sparse LU
+        # in numpy, then evaluate via JAX-native barycentric formula
+        # (differentiable, JIT-compatible).
+        pre = aaa_logdet_precompute(W_sparse, rho_min=rho_min, rho_max=rho_max)
+        sp_z = pre.support_points.astype(np.float64)
+        sp_f = pre.support_values.astype(np.float64)
+        w = pre.weights.astype(np.float64)
+
+        def _jax_aaa(rho):
+            import jax.numpy as jnp
+
+            z_j = jnp.asarray(sp_z)
+            f_j = jnp.asarray(sp_f)
+            w_j = jnp.asarray(w)
+
+            diff = rho - z_j
+            n_val = jnp.sum(w_j * f_j / diff)
+            d_val = jnp.sum(w_j / diff)
+            val = n_val / d_val
+            return val if T == 1 else T * val
+
+        return _jax_aaa
+
     raise ValueError(
         f"Method '{method}' has no JAX implementation. "
-        "Use 'eigenvalue', 'chebyshev', 'cheb_stochastic', or 'slq'."
+        "Use 'eigenvalue', 'chebyshev', 'cheb_stochastic', "
+        "'cheb_cholesky', 'aaa', or 'slq'."
     )

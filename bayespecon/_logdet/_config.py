@@ -47,13 +47,20 @@ class LogDetMethod(str, Enum):
     CHEBYSHEV = "chebyshev"
     CHEB_STOCHASTIC = "cheb_stochastic"
     CHEB_CHOLESKY = "cheb_cholesky"
+    AAA = "aaa"
     TRACES = "traces"
 
 
 VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
 
 LogDetMethodName = Literal[
-    "eigenvalue", "slq", "chebyshev", "cheb_stochastic", "traces"
+    "eigenvalue",
+    "slq",
+    "chebyshev",
+    "cheb_stochastic",
+    "cheb_cholesky",
+    "aaa",
+    "traces",
 ]
 
 

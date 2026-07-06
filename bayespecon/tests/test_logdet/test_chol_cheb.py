@@ -107,8 +107,8 @@ class TestAdaptiveOrder:
         assert _adaptive_order(-0.95, 0.95) == 50
 
     def test_extreme_range(self):
-        """[-0.99, 0.99] should use order=100."""
-        assert _adaptive_order(-0.99, 0.99) == 100
+        """[-0.99, 0.99] should use order=50 (capped)."""
+        assert _adaptive_order(-0.99, 0.99) == 50
 
     def test_auto_order_used_when_none(self, small_W):
         """When order=None, the precompute should auto-select based on interval."""
@@ -119,6 +119,15 @@ class TestAdaptiveOrder:
 
         pre = chol_cheb_logdet_precompute(small_W, order=None, rho_min=0.1, rho_max=0.8)
         assert pre.order == 15
+
+    def test_interval_clamped(self, small_W):
+        """Interval [-1, 1] should be clamped to [-0.99, 0.99]."""
+        pre = chol_cheb_logdet_precompute(
+            small_W, order=None, rho_min=-1.0, rho_max=1.0
+        )
+        assert pre.rho_min == -0.99
+        assert pre.rho_max == 0.99
+        assert pre.order == 50
 
     def test_explicit_order_overrides_auto(self, small_W):
         """Explicit order should override auto-selection."""

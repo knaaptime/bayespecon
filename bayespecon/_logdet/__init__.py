@@ -13,6 +13,12 @@ Five methods:
 Auto-selection: ``"eigenvalue"`` for n ≤ 500, ``"cheb_stochastic"`` otherwise.
 """
 
+from ._aaa import (
+    AAAPrecompute,
+    aaa_logdet_eval,
+    aaa_logdet_eval_vec,
+    aaa_logdet_precompute,
+)
 from ._cheb_stochastic import (
     ChebStochasticPrecompute,
     cheb_stochastic_logdet_eval,

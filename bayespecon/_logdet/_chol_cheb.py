@@ -1,12 +1,17 @@
 """Cholesky-Chebyshev log-determinant for SPD ``I - ρW``.
 
-For row-standardised ``W`` with spectrum in ``[-1, 1]`` and ``ρ ∈ (0, 1)``,
-the matrix ``I - ρW`` is **symmetric positive definite** (SPD) when ``|ρ| < 1``.
-This enables **sparse Cholesky** factorisation, which is:
+For row-standardised ``W`` with spectrum in ``[-1, 1]``, the D-symmetrised
+matrix ``W_sym = D^{-1/2} A D^{-1/2}`` is symmetric with the same eigenvalues
+as ``W``.  This makes ``I - ρW_sym`` **symmetric positive definite** (SPD)
+for all ``|ρ| < 1``, enabling **sparse Cholesky** factorisation:
 
 * **Exact**: ``log|det(I - ρW)| = 2 Σ log(diag(L))`` — no stochastic noise.
 * **Fast**: CHOLMOD sparse Cholesky is ~2× faster than sparse LU for SPD.
 * **Scalable**: ``O(nnz^{1.5})`` per factorisation, no ``O(n³)`` eigendecomposition.
+* **Full range**: works for ``ρ ∈ (-1, 1)`` — the entire stable region.
+  Adaptive order selection automatically increases the Chebyshev degree for
+  wider intervals (15 for ``[0.1, 0.8]``, 50 for ``[-0.95, 0.95]``, 100 for
+  ``[-0.99, 0.99]``).
 
 The method evaluates ``log|det(I - ρW)|`` exactly at ``order`` Chebyshev nodes
 in ``[ρ_min, ρ_max]``, then fits a Chebyshev polynomial in ``ρ`` for ``O(order)``
@@ -17,12 +22,13 @@ so CHOLMOD's symbolic analysis (AMD ordering + elimination tree) is performed
 only once and reused for all subsequent numeric factorisations via
 ``factor.cholesky_inplace()``.  This saves ~64% of per-node cost.
 
-**When to use**: ``n ∈ (500, 20000]``, ``ρ ∈ [0.1, 0.8]`` (the practical
-spatial econometrics range).  For ``n ≤ 500`` use ``eigenvalue`` (exact
-eigendecomposition).  For ``n > 20000`` use ``cheb_stochastic`` (avoids
-``O(nnz^{1.5})`` Cholesky fill-in).
+**When to use**: ``n ∈ (500, 20000]``, any ``ρ ∈ (-1, 1)``.  For ``n ≤ 500``
+use ``eigenvalue`` (exact eigendecomposition).  For ``n > 20000`` use
+``cheb_stochastic`` (avoids ``O(nnz^{1.5})`` Cholesky fill-in).  For
+non-symmetric ``W`` (directed graphs: KNN, travel time) use ``aaa`` (rational
+approximation via sparse LU).
 
-**Benchmark** (2D rook grid, order=15, 2026-07):
+**Benchmark** (2D rook grid, order=15, ρ ∈ [0.1, 0.8], 2026-07):
 
 ========== ============= ============= =========== ===========
 n          chol setup    chol eval     chol error  stoch(200)
@@ -94,17 +100,13 @@ def _adaptive_order(rho_min: float, rho_max: float) -> int:
     width = rho_max - rho_min
     # Distance from interval to nearest singularity at ±1
     dist = min(abs(1.0 - rho_max), abs(1.0 + rho_min))
-    if dist <= 0:
-        return 200  # interval touches singularity — max order
+    if dist <= 0.01:
+        return 50  # interval nearly touches singularity
     if width <= 0.71:
         return 15  # [0.1, 0.8] — standard empirical range
     if width <= 1.5:
         return 30  # e.g. [-0.5, 0.95]
-    if width <= 1.9:
-        return 50  # [-0.95, 0.95]
-    if width <= 1.98:
-        return 100  # [-0.99, 0.99]
-    return 200  # extreme — interval nearly touches ±1
+    return 50  # [-0.95, 0.95] or wider
 
 
 def _d_symmetrize(W: sp.csr_matrix) -> sp.csr_matrix:
@@ -151,11 +153,13 @@ def chol_cheb_logdet_precompute(
     order : int or None, default None
         Chebyshev polynomial degree.  If ``None``, auto-selected based on
         the interval width: 15 for ``[0.1, 0.8]``, 30 for wider ranges,
-        50 for ``[-0.95, 0.95]``, 100 for ``[-0.99, 0.99]``.
+        50 for ``[-0.95, 0.95]`` or wider.
     rho_min : float, default 0.1
-        Lower bound of the ρ approximation interval.
+        Lower bound of the ρ approximation interval.  Clamped to -0.99
+        to avoid the singularity at ρ = -1.
     rho_max : float, default 0.8
-        Upper bound of the ρ approximation interval.
+        Upper bound of the ρ approximation interval.  Clamped to 0.99
+        to avoid the singularity at ρ = 1.
 
     Returns
     -------
@@ -170,6 +174,12 @@ def chol_cheb_logdet_precompute(
         W_sp = sp.csr_matrix(np.asarray(W, dtype=np.float64))
 
     n = W_sp.shape[0]
+
+    # Clamp interval away from singularities at ±1 (the logdet function
+    # has logarithmic singularities there; Chebyshev cannot converge at
+    # the singularity itself).  The sampler never explores ρ = ±1 exactly.
+    rho_min = max(rho_min, -0.99)
+    rho_max = min(rho_max, 0.99)
 
     # Auto-select order based on interval width if not specified
     if order is None:

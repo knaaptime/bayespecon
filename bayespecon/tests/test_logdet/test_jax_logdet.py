@@ -270,3 +270,127 @@ class TestMakeLogdetJaxFn:
 
         # Chebyshev gradient should be close to exact eigenvalue gradient
         np.testing.assert_allclose(float(grad_cheb), float(grad_eig), rtol=0.05)
+
+    # --- cheb_cholesky ---
+
+    def test_cheb_cholesky_method(self):
+        """cheb_cholesky method matches exact logdet."""
+        W = _toy_w()
+
+        fn = make_logdet_jax_fn(W, method="cheb_cholesky", rho_min=0.1, rho_max=0.8)
+
+        for rho in [0.2, 0.3, 0.5, 0.7]:
+            approx = float(fn(jnp.float64(rho)))
+            exact = _exact_logdet(rho, W)
+            assert abs(approx - exact) < 1e-6, (
+                f"rho={rho}: cheb_chol={approx:.6f}, exact={exact:.6f}"
+            )
+
+    def test_cheb_cholesky_jit(self):
+        """cheb_cholesky works inside jax.jit."""
+        W = _toy_w()
+        fn = make_logdet_jax_fn(W, method="cheb_cholesky", rho_min=0.1, rho_max=0.8)
+
+        @jax.jit
+        def compiled(rho):
+            return fn(rho)
+
+        result = float(compiled(jnp.float64(0.5)))
+        exact = _exact_logdet(0.5, W)
+        np.testing.assert_allclose(result, exact, atol=1e-6)
+
+    def test_cheb_cholesky_autodiff(self):
+        """JAX grad works through cheb_cholesky method."""
+        W = _toy_w()
+        fn = make_logdet_jax_fn(W, method="cheb_cholesky", rho_min=0.1, rho_max=0.8)
+
+        grad_fn = jax.grad(fn)
+        g = grad_fn(jnp.float64(0.5))
+        assert jnp.isfinite(g)
+
+    def test_cheb_cholesky_sparse_input(self):
+        """cheb_cholesky works with sparse W input."""
+        W = _toy_w()
+        W_sp = sp.csr_matrix(W)
+
+        fn = make_logdet_jax_fn(W_sp, method="cheb_cholesky", rho_min=0.1, rho_max=0.8)
+
+        for rho in [0.2, 0.5, 0.7]:
+            approx = float(fn(jnp.float64(rho)))
+            exact = _exact_logdet(rho, W)
+            assert abs(approx - exact) < 1e-6
+
+    def test_cheb_cholesky_panel_multiplier(self):
+        """T > 1 multiplies cheb_cholesky logdet by T."""
+        W = _toy_w()
+        fn_t1 = make_logdet_jax_fn(
+            W, method="cheb_cholesky", rho_min=0.1, rho_max=0.8, T=1
+        )
+        fn_t3 = make_logdet_jax_fn(
+            W, method="cheb_cholesky", rho_min=0.1, rho_max=0.8, T=3
+        )
+
+        rho = jnp.float64(0.5)
+        np.testing.assert_allclose(
+            float(fn_t3(rho)), 3.0 * float(fn_t1(rho)), rtol=1e-6
+        )
+
+    # --- aaa ---
+
+    def test_aaa_method(self):
+        """aaa method matches exact logdet."""
+        W = _toy_w()
+
+        fn = make_logdet_jax_fn(W, method="aaa", rho_min=0.1, rho_max=0.8)
+
+        for rho in [0.2, 0.3, 0.5, 0.7]:
+            approx = float(fn(jnp.float64(rho)))
+            exact = _exact_logdet(rho, W)
+            assert abs(approx - exact) < 1e-6, (
+                f"rho={rho}: aaa={approx:.6f}, exact={exact:.6f}"
+            )
+
+    def test_aaa_jit(self):
+        """aaa works inside jax.jit."""
+        W = _toy_w()
+        fn = make_logdet_jax_fn(W, method="aaa", rho_min=0.1, rho_max=0.8)
+
+        @jax.jit
+        def compiled(rho):
+            return fn(rho)
+
+        result = float(compiled(jnp.float64(0.5)))
+        exact = _exact_logdet(0.5, W)
+        np.testing.assert_allclose(result, exact, atol=1e-6)
+
+    def test_aaa_autodiff(self):
+        """JAX grad works through aaa method."""
+        W = _toy_w()
+        fn = make_logdet_jax_fn(W, method="aaa", rho_min=0.1, rho_max=0.8)
+
+        grad_fn = jax.grad(fn)
+        g = grad_fn(jnp.float64(0.5))
+        assert jnp.isfinite(g)
+
+    def test_aaa_sparse_input(self):
+        """aaa works with sparse W input."""
+        W = _toy_w()
+        W_sp = sp.csr_matrix(W)
+
+        fn = make_logdet_jax_fn(W_sp, method="aaa", rho_min=0.1, rho_max=0.8)
+
+        for rho in [0.2, 0.5, 0.7]:
+            approx = float(fn(jnp.float64(rho)))
+            exact = _exact_logdet(rho, W)
+            assert abs(approx - exact) < 1e-6
+
+    def test_aaa_panel_multiplier(self):
+        """T > 1 multiplies aaa logdet by T."""
+        W = _toy_w()
+        fn_t1 = make_logdet_jax_fn(W, method="aaa", rho_min=0.1, rho_max=0.8, T=1)
+        fn_t3 = make_logdet_jax_fn(W, method="aaa", rho_min=0.1, rho_max=0.8, T=3)
+
+        rho = jnp.float64(0.5)
+        np.testing.assert_allclose(
+            float(fn_t3(rho)), 3.0 * float(fn_t1(rho)), rtol=1e-6
+        )
