@@ -123,6 +123,36 @@ def make_logdet_numpy_fn(
 
         return _cheb_stoch_numpy
 
+    if method == "cheb_cholesky":
+        from ._chol_cheb import chol_cheb_logdet_precompute
+
+        # Cholesky-Chebyshev: exact logdet via sparse Cholesky at Chebyshev nodes.
+        # No stochastic noise, no O(n³) eigendecomposition.  SPD for |ρ| < 1.
+        pre = chol_cheb_logdet_precompute(
+            W_sparse, order=None, rho_min=rho_min, rho_max=rho_max
+        )
+        coeffs = pre.coeffs
+        rmin_cb, rmax_cb = pre.rho_min, pre.rho_max
+        m = len(coeffs)
+
+        def _cheb_chol_numpy(r):
+            r = float(r)
+            x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
+            if m == 0:
+                return 0.0
+            if m == 1:
+                return float(coeffs[0])
+            b_next = 0.0
+            b_curr = float(coeffs[m - 1])
+            for k in range(m - 2, 0, -1):
+                b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
+                b_next = b_curr
+                b_curr = b_new
+            val = float(coeffs[0]) + x * b_curr - b_next
+            return val if T == 1 else T * val
+
+        return _cheb_chol_numpy
+
     if method == "slq":
         # SLQ precompute → Chebyshev coefficients → Clenshaw evaluation
         pre = slq_logdet_precompute(W_sparse)
@@ -246,6 +276,20 @@ def make_logdet_numpy_vec_fn(
 
         return _vec_cheb_stochastic
 
+    if method == "cheb_cholesky":
+        from ._chol_cheb import chol_cheb_logdet_eval_vec, chol_cheb_logdet_precompute
+
+        # Cholesky-Chebyshev: exact logdet via sparse Cholesky at Chebyshev nodes.
+        pre = chol_cheb_logdet_precompute(
+            W_sparse, order=None, rho_min=rho_min, rho_max=rho_max
+        )
+
+        def _vec_cheb_chol(rho_arr: np.ndarray) -> np.ndarray:
+            vals = chol_cheb_logdet_eval_vec(pre, np.asarray(rho_arr, dtype=np.float64))
+            return vals if T == 1 else T * vals
+
+        return _vec_cheb_chol
+
     if method == "slq":
         # SLQ precompute → Chebyshev coefficients → vectorized Clenshaw
         pre = slq_logdet_precompute(W_sparse)
@@ -327,6 +371,21 @@ def make_logdet_fn(
                 return val if T == 1 else T * val
 
             return _cheb_stoch_sparse
+        if method == "cheb_cholesky":
+            from ._chol_cheb import chol_cheb_logdet_precompute
+
+            # Cholesky-Chebyshev: exact logdet via sparse Cholesky at Chebyshev nodes.
+            pre = chol_cheb_logdet_precompute(
+                W_sparse, order=None, rho_min=rho_min, rho_max=rho_max
+            )
+            coeffs_np = pre.coeffs.astype(np.float64)
+            rmin_cb, rmax_cb = pre.rho_min, pre.rho_max
+
+            def _cheb_chol_sparse(rho):
+                val = logdet_chebyshev(rho, coeffs_np, rmin=rmin_cb, rmax=rmax_cb)
+                return val if T == 1 else T * val
+
+            return _cheb_chol_sparse
         if method == "slq":
             # SLQ precompute → Chebyshev coefficients → differentiable Clenshaw
             pre = slq_logdet_precompute(W_sparse)
@@ -401,6 +460,21 @@ def make_logdet_fn(
             return val if T == 1 else T * val
 
         return _cheb_stoch_dense
+    if method == "cheb_cholesky":
+        from ._chol_cheb import chol_cheb_logdet_precompute
+
+        # Cholesky-Chebyshev: exact logdet via sparse Cholesky at Chebyshev nodes.
+        pre = chol_cheb_logdet_precompute(
+            sp.csr_matrix(W_dense), order=None, rho_min=rho_min, rho_max=rho_max
+        )
+        coeffs_np = pre.coeffs.astype(np.float64)
+        rmin_cb, rmax_cb = pre.rho_min, pre.rho_max
+
+        def _cheb_chol_dense(rho):
+            val = logdet_chebyshev(rho, coeffs_np, rmin=rmin_cb, rmax=rmax_cb)
+            return val if T == 1 else T * val
+
+        return _cheb_chol_dense
     if method == "slq":
         # SLQ precompute → Chebyshev coefficients → differentiable Clenshaw
         pre = slq_logdet_precompute(W_dense)

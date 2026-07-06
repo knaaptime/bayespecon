@@ -111,5 +111,5 @@ class TestSLQFactoryIntegration:
         from bayespecon._logdet import resolve_logdet_method
 
         # SLQ is opt-in, not auto-selected
-        assert resolve_logdet_method(None, n=10000) == "cheb_stochastic"
+        assert resolve_logdet_method(None, n=50000) == "cheb_stochastic"
         assert resolve_logdet_method("slq", n=10000) == "slq"

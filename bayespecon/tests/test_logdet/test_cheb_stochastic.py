@@ -197,7 +197,7 @@ class TestFactoryIntegration:
         """For large n, auto-select should pick cheb_stochastic."""
         from bayespecon._logdet import resolve_logdet_method
 
-        assert resolve_logdet_method(None, n=10000) == "cheb_stochastic"
+        assert resolve_logdet_method(None, n=50000) == "cheb_stochastic"
 
     def test_eval_speed(self, small_W):
         """Eval should be O(20) Clenshaw, ~2μs per call."""

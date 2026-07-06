@@ -20,6 +20,12 @@ from ._cheb_stochastic import (
     cheb_stochastic_logdet_precompute,
 )
 from ._chebyshev import chebyshev, clear_chebyshev_cache
+from ._chol_cheb import (
+    CholChebPrecompute,
+    chol_cheb_logdet_eval,
+    chol_cheb_logdet_eval_vec,
+    chol_cheb_logdet_precompute,
+)
 from ._config import (
     VALID_LOGDET_METHODS,
     LogdetBounds,
