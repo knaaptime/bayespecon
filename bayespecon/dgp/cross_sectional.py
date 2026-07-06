@@ -264,9 +264,9 @@ def simulate_sar_negbin(
 
     When ``sigma2 = 0`` (the default), the DGP reduces to the
     deterministic reduced form :math:`\eta = (I - \rho W)^{-1} X\beta`,
-    matching the :class:`SARNegativeBinomial` model specification.
+    matching the :class:`SARNegBin` model specification.
     When ``sigma2 > 0``, the structural-form noise is included,
-    matching the :class:`SARNegBinLatent` model specification.
+    matching the :class:`SARNegBinStructural` model specification.
 
     Counts are sampled as NB2:
 

@@ -70,13 +70,13 @@ class TestDemeanPanel:
 
     def test_model_0_pooled(self, panel_data):
         y, X, N, T = panel_data
-        y_d, X_d = _demean_panel(y, X, N, T, model=0)
+        y_d, X_d = _demean_panel(y, X, N, T, effects=0)
         np.testing.assert_array_equal(y_d, y)
         np.testing.assert_array_equal(X_d, X)
 
     def test_model_1_unit_fe(self, panel_data):
         y, X, N, T = panel_data
-        y_d, X_d = _demean_panel(y, X, N, T, model=1)
+        y_d, X_d = _demean_panel(y, X, N, T, effects=1)
         # Demeaned data should have zero within-unit mean
         y_d_2d = y_d.reshape(T, N)
         for i in range(N):
@@ -84,7 +84,7 @@ class TestDemeanPanel:
 
     def test_model_2_time_fe(self, panel_data):
         y, X, N, T = panel_data
-        y_d, X_d = _demean_panel(y, X, N, T, model=2)
+        y_d, X_d = _demean_panel(y, X, N, T, effects=2)
         # Demeaned data should have zero within-period mean
         y_d_2d = y_d.reshape(T, N)
         for t in range(T):
@@ -92,7 +92,7 @@ class TestDemeanPanel:
 
     def test_model_3_two_way_fe(self, panel_data):
         y, X, N, T = panel_data
-        y_d, X_d = _demean_panel(y, X, N, T, model=3)
+        y_d, X_d = _demean_panel(y, X, N, T, effects=3)
         # Two-way demeaned: subtract unit mean, time mean, add grand mean
         y2 = y.reshape(T, N)
         y_i = y2.mean(axis=0, keepdims=True)
@@ -103,26 +103,26 @@ class TestDemeanPanel:
 
     def test_invalid_model_raises(self, panel_data):
         y, X, N, T = panel_data
-        with pytest.raises(ValueError, match="model must be one of"):
-            _demean_panel(y, X, N, T, model=5)
+        with pytest.raises(ValueError, match="effects must be one of"):
+            _demean_panel(y, X, N, T, effects=5)
 
     def test_unit_fe_with_T1_raises(self):
         y = np.ones(5)
         X = np.ones((5, 2))
         with pytest.raises(ValueError, match="Unit fixed effects"):
-            _demean_panel(y, X, N=5, T=1, model=1)
+            _demean_panel(y, X, N=5, T=1, effects=1)
 
     def test_two_way_fe_with_T1_raises(self):
         y = np.ones(5)
         X = np.ones((5, 2))
         with pytest.raises(ValueError, match="Unit fixed effects"):
-            _demean_panel(y, X, N=5, T=1, model=3)
+            _demean_panel(y, X, N=5, T=1, effects=3)
 
     def test_time_fe_with_T1_ok(self):
-        """model=2 (time FE) should work with T=1 (degenerate but valid)."""
+        """effects=2 (time FE) should work with T=1 (degenerate but valid)."""
         y = np.arange(5, dtype=float)
         X = np.arange(10, dtype=float).reshape(5, 2)
-        y_d, X_d = _demean_panel(y, X, N=5, T=1, model=2)
+        y_d, X_d = _demean_panel(y, X, N=5, T=1, effects=2)
         # With T=1, time demeaning subtracts the single period mean
         np.testing.assert_allclose(y_d, y - y.mean(), atol=1e-12)
 
@@ -286,7 +286,7 @@ class TestSpatialPanelModelInit:
             W=W_graph,
             N=4,
             T=3,
-            logdet_method="grid_sparse",
+            logdet_method="eigenvalue",
         )
         assert "_W_eigs" not in model.__dict__
 

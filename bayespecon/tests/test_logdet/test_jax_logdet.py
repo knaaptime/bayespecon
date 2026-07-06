@@ -28,10 +28,9 @@ import jax.numpy as jnp
 from bayespecon._logdet import (
     compute_flow_traces,
     jax_logdet_chebyshev,
-    jax_logdet_trace_poly,
     make_logdet_jax_fn,
 )
-from bayespecon._logdet._grids import chebyshev
+from bayespecon._logdet._chebyshev import chebyshev
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -141,78 +140,6 @@ class TestJaxLogdetChebyshev:
 # ---------------------------------------------------------------------------
 
 
-class TestJaxLogdetTracePoly:
-    """Tests for jax_logdet_trace_poly()."""
-
-    @pytest.fixture()
-    def trace_data(self):
-        """Compute trace estimates for a small test matrix."""
-        rng = np.random.default_rng(42)
-        n = 10
-        W_dense = rng.random((n, n))
-        W_dense /= W_dense.sum(axis=1, keepdims=True)
-        W_sp = sp.csr_matrix(W_dense)
-        traces = compute_flow_traces(W_sp, miter=30, riter=50, random_state=0)
-        eigs = np.linalg.eigvals(W_dense).real
-        return W_dense, traces, eigs
-
-    def test_matches_eigenvalue_within_tolerance(self, trace_data):
-        """Trace polynomial matches exact eigenvalue log-det within 5%."""
-        W_dense, traces, eigs = trace_data
-
-        for rho in [0.05, 0.2, 0.4, 0.6]:
-            approx = float(jax_logdet_trace_poly(jnp.float64(rho), traces))
-            exact = _exact_logdet_eigenvalue(rho, eigs)
-            rel_err = abs(approx - exact) / (abs(exact) + 1e-12)
-            assert rel_err < 0.05, (
-                f"rho={rho}: trace_poly={approx:.6f}, exact={exact:.6f}, "
-                f"rel_err={rel_err:.4f}"
-            )
-
-    def test_vectorized_matches_scalar(self, trace_data):
-        """Vectorized evaluation matches element-wise scalar evaluation."""
-        _, traces, _ = trace_data
-
-        rho_arr = jnp.array([0.05, 0.2, 0.4, 0.6])
-        vec_result = jax_logdet_trace_poly(rho_arr, traces)
-
-        for i, rho in enumerate(rho_arr):
-            scalar_result = jax_logdet_trace_poly(rho, traces)
-            np.testing.assert_allclose(vec_result[i], scalar_result, rtol=1e-12)
-
-    def test_jit_compilable(self, trace_data):
-        """Function compiles inside jax.jit without errors."""
-        _, traces, eigs = trace_data
-
-        @jax.jit
-        def compiled(rho):
-            return jax_logdet_trace_poly(rho, traces)
-
-        result = float(compiled(jnp.float64(0.3)))
-        exact = _exact_logdet_eigenvalue(0.3, eigs)
-        rel_err = abs(result - exact) / (abs(exact) + 1e-12)
-        assert rel_err < 0.02
-
-    def test_autodiff_works(self, trace_data):
-        """JAX grad produces finite gradients."""
-        _, traces, _ = trace_data
-
-        grad_fn = jax.grad(lambda rho: jax_logdet_trace_poly(rho, traces))
-        g = grad_fn(jnp.float64(0.3))
-        assert jnp.isfinite(g)
-
-    def test_empty_traces(self):
-        """Empty trace array returns zero."""
-        traces = np.array([])
-        result = jax_logdet_trace_poly(jnp.float64(0.3), traces)
-        np.testing.assert_allclose(float(result), 0.0, rtol=1e-12)
-
-
-# ---------------------------------------------------------------------------
-# make_logdet_jax_fn
-# ---------------------------------------------------------------------------
-
-
 class TestMakeLogdetJaxFn:
     """Tests for make_logdet_jax_fn()."""
 
@@ -314,10 +241,10 @@ class TestMakeLogdetJaxFn:
         assert jnp.isfinite(g)
 
     def test_unsupported_method_raises(self):
-        """Grid/spline methods raise ValueError."""
+        """Non-JAX methods raise ValueError."""
         W = _toy_w()
-        with pytest.raises(ValueError, match="does not have a JAX-native"):
-            make_logdet_jax_fn(W, method="grid_dense")
+        with pytest.raises(ValueError, match="no JAX implementation"):
+            make_logdet_jax_fn(W, method="traces")
 
     def test_sparse_input(self):
         """Sparse W input works for eigenvalue method."""

@@ -244,16 +244,9 @@ class TestSEMCollapsedLogDensity:
         cache = _build_cache(W_dense, X, model_type="sem", y=y)
         result = _sem_collapsed_log_density(
             0.3,
-            cache.XtX,
-            cache.XtWX,
-            cache.WXtWX,
-            cache.yty,
-            cache.yTWy,
-            cache.WyTWy,
-            cache.XTy,
-            cache.XTWy,
-            cache.WXTy,
-            cache.WXTWy,
+            y,
+            X,
+            cache.W_sparse,
             cache.logdet_fn,
             n,
             X.shape[1],
@@ -270,16 +263,9 @@ class TestSEMCollapsedLogDensity:
         log_dens = [
             _sem_collapsed_log_density(
                 l,
-                cache.XtX,
-                cache.XtWX,
-                cache.WXtWX,
-                cache.yty,
-                cache.yTWy,
-                cache.WyTWy,
-                cache.XTy,
-                cache.XTWy,
-                cache.WXTy,
-                cache.WXTWy,
+                y,
+                X,
+                cache.W_sparse,
                 cache.logdet_fn,
                 n,
                 X.shape[1],
@@ -310,11 +296,9 @@ class TestBetaBlock:
     def test_sample_beta_sem_shape(self):
         y, X, W_dense, n = _make_sem_data()
         W_sparse = sp.csr_matrix(W_dense)
-        Wy = W_dense @ y
-        WX = W_sparse @ X
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
-        beta = _sample_beta_sem(0.3, 1.0, y, X, Wy, WX, priors, rng)
+        beta = _sample_beta_sem(0.3, 1.0, y, X, W_sparse, priors, rng)
         assert beta.shape == (X.shape[1],)
 
     def test_conjugate_normal_matches_analytical(self):
@@ -368,11 +352,10 @@ class TestSigma2Block:
         y, X, W_dense, n = _make_sem_data()
         W_sparse = sp.csr_matrix(W_dense)
         Wy = W_dense @ y
-        WX = W_sparse @ X
         priors = GaussianGibbsPriors()
         rng = np.random.default_rng(42)
         beta = np.array([1.0, 2.0])
-        sigma2 = _sample_sigma2(0.3, beta, y, Wy, WX, X, priors, "sem", rng)
+        sigma2 = _sample_sigma2(0.3, beta, y, Wy, W_sparse, X, priors, "sem", rng)
         assert sigma2 > 0
         assert isinstance(sigma2, float)
 

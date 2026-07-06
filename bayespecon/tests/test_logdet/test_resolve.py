@@ -9,15 +9,11 @@ from bayespecon._logdet import (
 )
 
 CANONICAL_METHODS = {
-    "exact",
     "eigenvalue",
-    "grid",
-    "grid_dense",
-    "grid_sparse",
-    "sparse_spline",
-    "grid_mc",
-    "grid_ilu",
+    "slq",
     "chebyshev",
+    "cheb_stochastic",
+    "traces",
 }
 
 
@@ -30,61 +26,23 @@ def test_valid_logdet_methods_constant():
 
 
 def test_enum_str_equality():
-    # str-Enum mixin: members are equal to their string values.
     assert LogDetMethod.EIGENVALUE == "eigenvalue"
+    assert LogDetMethod.SLQ == "slq"
     assert LogDetMethod.CHEBYSHEV == "chebyshev"
+    assert LogDetMethod.TRACES == "traces"
 
 
 @pytest.mark.parametrize("name", sorted(CANONICAL_METHODS))
 def test_resolve_accepts_canonical_names(name):
-    # "exact" is an accepted public name but resolves to "eigenvalue"
-    # (mathematically identical, but with O(n) per-call cost instead of O(n^3)).
-    # "grid" is a convenience alias that defaults to "grid_dense".
-    if name == "exact":
-        expected = "eigenvalue"
-    elif name == "grid":
-        expected = "grid_dense"
-    else:
-        expected = name
-    assert resolve_logdet_method(name, n=100) == expected
+    assert resolve_logdet_method(name, n=100) == name
 
 
-def test_resolve_grid_aliases_to_grid_dense():
-    assert resolve_logdet_method("grid", n=100) == "grid_dense"
+def test_resolve_none_auto_selects():
+    assert resolve_logdet_method(None, n=100) == "eigenvalue"
+    assert resolve_logdet_method(None, n=1000) == "chebyshev"
+    assert resolve_logdet_method(None, n=10000) == "cheb_stochastic"
 
 
-def test_resolve_exact_aliases_to_eigenvalue():
-    assert resolve_logdet_method("exact", n=100) == "eigenvalue"
-    assert resolve_logdet_method("exact", n=10_000) == "eigenvalue"
-
-
-def test_resolve_unknown_method_raises_with_list():
+def test_resolve_unknown_method_raises():
     with pytest.raises(ValueError, match="Unknown logdet method"):
         resolve_logdet_method("bogus", n=100)
-
-
-def test_resolve_unknown_method_error_lists_valid_options():
-    try:
-        resolve_logdet_method("bogus", n=100)
-    except ValueError as exc:
-        msg = str(exc)
-        for name in CANONICAL_METHODS:
-            assert name in msg
-    else:
-        pytest.fail("Expected ValueError")
-
-
-def test_resolve_none_small_n_auto_selects_eigenvalue():
-    # Default cutoff is 500 — small n picks eigenvalue.
-    assert resolve_logdet_method(None, n=100) == "eigenvalue"
-
-
-def test_resolve_none_large_n_auto_selects_chebyshev():
-    # Above the default cutoff, auto-selection switches to chebyshev.
-    assert resolve_logdet_method(None, n=10_000) == "chebyshev"
-
-
-def test_resolve_none_cutoff_env(monkeypatch):
-    monkeypatch.setenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "50")
-    assert resolve_logdet_method(None, n=100) == "chebyshev"
-    assert resolve_logdet_method(None, n=10) == "eigenvalue"

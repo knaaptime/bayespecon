@@ -4,8 +4,8 @@ from .logit import Logit
 from .negbin import NegativeBinomial
 from .ols import OLS
 from .sar import SAR
-from .sar_negbin import SARNegativeBinomial
-from .sar_negbin_latent import SARNegativeBinomialLatent, SARNegBinLatent
+from .sar_negbin import SARNegBin
+from .sar_negbin_latent import SARNegBinStructural
 from .sdem import SDEM
 from .sdm import SDM
 from .sem import SEM
@@ -25,9 +25,9 @@ __all__ = [
     "SDM",
     "SEM",
     "SLX",
-    "SARNegativeBinomial",
-    "SARNegativeBinomialLatent",
-    "SARNegBinLatent",
+    "SARNegBin",
+    "SARNegBinStructural",
+    "SARNegBinStructural",
     "SEMSpatialLogit",
     "SARSpatialLogit",
     "SpatialProbit",

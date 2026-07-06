@@ -48,12 +48,12 @@ def test_panel_fe_build_pymc_models():
     y, X, W, N, T = _panel_data()
 
     models = [
-        OLSPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
-        SARPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
-        SEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
-        SDMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
-        SDEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
-        SLXPanelFE(y=y, X=X, W=W, N=N, T=T, model=1),
+        OLSPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1),
+        SARPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1),
+        SEMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1),
+        SDMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1),
+        SDEMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1),
+        SLXPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1),
     ]
 
     for model in models:
@@ -69,10 +69,10 @@ def test_panel_fe_fitted_values_and_effects_with_mock_posteriors():
     beta_1 = np.array([0.9])  # slope only (intercept dropped)
     beta_2_fe = np.array([0.9, 0.15])  # slope + WX (intercept dropped)
 
-    ols = OLSPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    ols = OLSPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
     ols._idata = _idata({"beta": np.stack([beta_1, beta_1 + 1e-3])})
 
-    sar = SARPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    sar = SARPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
     sar._idata = _idata(
         {
             "beta": np.stack([beta_1, beta_1 + 1e-3]),
@@ -80,7 +80,7 @@ def test_panel_fe_fitted_values_and_effects_with_mock_posteriors():
         }
     )
 
-    sem = SEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    sem = SEMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
     sem._idata = _idata(
         {
             "beta": np.stack([beta_1, beta_1 + 1e-3]),
@@ -88,7 +88,7 @@ def test_panel_fe_fitted_values_and_effects_with_mock_posteriors():
         }
     )
 
-    sdm = SDMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    sdm = SDMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
     sdm._idata = _idata(
         {
             "beta": np.stack([beta_2_fe, beta_2_fe + 1e-3]),
@@ -96,7 +96,7 @@ def test_panel_fe_fitted_values_and_effects_with_mock_posteriors():
         }
     )
 
-    sdem = SDEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    sdem = SDEMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
     sdem._idata = _idata(
         {
             "beta": np.stack([beta_2_fe, beta_2_fe + 1e-3]),
@@ -104,7 +104,7 @@ def test_panel_fe_fitted_values_and_effects_with_mock_posteriors():
         }
     )
 
-    slx = SLXPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    slx = SLXPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
     slx._idata = _idata(
         {
             "beta": np.stack([beta_2_fe, beta_2_fe + 1e-3]),
@@ -143,7 +143,7 @@ def test_panel_fe_spatial_effects_accept_numeric_row_standardized_graph_without_
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        model = SDMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+        model = SDMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
 
     model._idata = _idata(
         {
@@ -175,14 +175,14 @@ def test_panel_fe_warns_on_non_row_standardized_graph_without_transform():
     assert getattr(W, "transformation", None) == "O"
 
     with pytest.warns(UserWarning, match="row-standardised"):
-        model = OLSPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+        model = OLSPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
 
     assert model._is_row_std is False
 
 
 def test_sem_panel_fe_fit_adds_log_likelihood_when_missing(monkeypatch):
     y, X, W, N, T = _panel_data(seed=62)
-    model = SEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    model = SEMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
 
     posterior = {
         "lam": np.array([[0.1, 0.11]]),
@@ -208,7 +208,7 @@ def test_sem_panel_fe_fit_adds_log_likelihood_when_missing(monkeypatch):
 
 def test_sem_panel_fe_fit_returns_early_when_log_likelihood_exists(monkeypatch):
     y, X, W, N, T = _panel_data(seed=63)
-    model = SEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    model = SEMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
 
     n = y.shape[0]
     fake_idata = az.from_dict(
@@ -237,7 +237,7 @@ def test_sem_panel_fe_fit_returns_early_when_log_likelihood_exists(monkeypatch):
 
 def test_sdem_panel_fe_fit_adds_log_likelihood_when_missing(monkeypatch):
     y, X, W, N, T = _panel_data(seed=64)
-    model = SDEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    model = SDEMPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
 
     posterior = {
         "lam": np.array([[0.1, 0.11]]),
@@ -264,7 +264,7 @@ def test_sdem_panel_fe_fit_adds_log_likelihood_when_missing(monkeypatch):
 def test_sar_panel_fe_fit_applies_jacobian_when_loglik_requested(monkeypatch):
     """Jacobian correction should run when log_likelihood is requested."""
     y, X, W, N, T = _panel_data(seed=67)
-    model = SARPanelFE(y=y, X=X, W=W, N=N, T=T, model=1)
+    model = SARPanelFE(y=y, X=X, W=W, N=N, T=T, effects=1)
 
     n = y.shape[0]
     fake_idata = az.from_dict(

@@ -1456,7 +1456,7 @@ def fitted_olsflow_panel(_flow_ring_graph):
         X_panel,
         T=T_periods,
         col_names=col_names,
-        model=0,
+        effects=0,
     )
     model.fit(draws=150, tune=150, chains=2, progressbar=False, random_seed=0)
     return model

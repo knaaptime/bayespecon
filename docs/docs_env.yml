@@ -21,6 +21,8 @@ dependencies:
   - lazy_loader
   - fastprogress
   - nutpie
+  - blackjax
+  - numpyro
   - polyagamma
   - scikit-umfpack
   - scikit-sparse
@@ -30,7 +32,6 @@ dependencies:
   - pip
   - pip:
     - klujax
-    - git+https://github.com/ljwolf/geovalidate/
   
   # docs
   - numpydoc

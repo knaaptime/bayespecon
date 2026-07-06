@@ -1,9 +1,24 @@
-"""Log-determinant configuration, type aliases, and resolution functions.
+"""Log-determinant configuration: method enum, resolution, and bounds.
 
-This module contains enums, dataclasses, constants, and resolution functions
-used across all logdet submodules.  It has no internal (intra-package)
-imports so it sits at the bottom of the dependency graph.
+Five methods are supported:
+
+* ``"eigenvalue"`` — exact O(n) per-call after one-time O(n³) eigendecomposition.
+* ``"slq"`` — stochastic Lanczos quadrature; D-symmetrised batched Lanczos
+  with Gauss quadrature trace estimation → Chebyshev coefficients.
+* ``"chebyshev"`` — Barry-Pace Monte Carlo traces → Chebyshev approximation; O(m) per call.
+* ``"cheb_stochastic"`` — stochastic Chebyshev expansion (Han et al. 2015);
+  operator-valued Chebyshev polynomials with geometric convergence via
+  Bernstein ellipse.  Same matvec cost as ``chebyshev`` but better accuracy at high |ρ|.
+* ``"traces"`` — multinomial trace expansion for unrestricted 3-parameter
+  flow models (the only option when the system matrix doesn't factor).
+
+When ``logdet_method`` is ``None`` the method is auto-selected:
+``"eigenvalue"`` for n ≤ ``BAYESPECON_LOGDET_EIGEN_MAX_N`` (default 500),
+otherwise ``"cheb_stochastic"`` (geometric convergence, same cost as Barry-Pace).
+``"slq"`` and ``"chebyshev"`` are available as explicit opt-ins.
 """
+
+from __future__ import annotations
 
 import os
 from collections import OrderedDict
@@ -12,88 +27,42 @@ from enum import Enum
 from typing import Any, Literal, Mapping
 
 # ---------------------------------------------------------------------------
-# Constants
+# Cache constants
 # ---------------------------------------------------------------------------
 
-# Largest n for which `_build_logdet_grid` uses a single eigendecomposition
-# rather than a per-rho slogdet loop.  Above this threshold the O(n^3) eigvals
-# cost dominates and the iterative slogdet path is more memory-friendly.
-_LOGDET_GRID_EIG_MAX = 4000
 _LOGDET_FN_CACHE_MAXSIZE = 64
 _LOGDET_FN_CACHE: OrderedDict[tuple, Any] = OrderedDict()
 
-
 # ---------------------------------------------------------------------------
-# Enums and type aliases
+# Enum and type alias
 # ---------------------------------------------------------------------------
 
 
 class LogDetMethod(str, Enum):
-    """Canonical names for the log-determinant approximation methods.
+    """Canonical log-determinant computation methods."""
 
-    Each member is a string so the enum members can be used interchangeably
-    with their string values (e.g. ``LogDetMethod.EIGENVALUE == "eigenvalue"``).
-
-    The five historical grid variants (``grid_dense``, ``grid_sparse``,
-    ``sparse_spline``, ``grid_mc``, ``grid_ilu``) are deprecated aliases
-    that map to ``"grid"`` with a ``grid_type`` sub-parameter.  They still
-    work but new code should use ``"grid"`` with ``grid_type=`` instead.
-    """
-
-    EXACT = "exact"
     EIGENVALUE = "eigenvalue"
-    GRID = "grid"
-    # Deprecated grid sub-types — still accepted, mapped to "grid" + grid_type
-    GRID_DENSE = "grid_dense"
-    GRID_SPARSE = "grid_sparse"
-    SPARSE_SPLINE = "sparse_spline"
-    GRID_MC = "grid_mc"
-    GRID_ILU = "grid_ilu"
+    SLQ = "slq"
     CHEBYSHEV = "chebyshev"
+    CHEB_STOCHASTIC = "cheb_stochastic"
+    TRACES = "traces"
 
-
-#: Mapping from deprecated grid method names to their ``grid_type`` sub-parameter.
-_GRID_TYPE_MAP: dict[str, str] = {
-    "grid_dense": "dense",
-    "grid_sparse": "sparse",
-    "sparse_spline": "spline",
-    "grid_mc": "mc",
-    "grid_ilu": "ilu",
-}
-
-#: Set of all grid-type method names (deprecated + canonical).
-_GRID_METHODS: frozenset[str] = frozenset(["grid", *_GRID_TYPE_MAP])
 
 VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)
 
-#: Public type alias for user-facing ``logdet_method`` parameters.  Use in
-#: constructor signatures to enable IDE autocomplete and static checking:
-#:
-#: .. code-block:: python
-#:
-#:     def __init__(self, ..., logdet_method: LogDetMethodName | None = None):
-#:         ...
 LogDetMethodName = Literal[
-    "exact",
-    "eigenvalue",
-    "grid",
-    "grid_dense",
-    "grid_sparse",
-    "sparse_spline",
-    "grid_mc",
-    "grid_ilu",
-    "chebyshev",
+    "eigenvalue", "slq", "chebyshev", "cheb_stochastic", "traces"
 ]
 
 
 # ---------------------------------------------------------------------------
-# Dataclasses
+# Dataclass
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class LogdetBounds:
-    """Resolved logdet method and rho interval used for approximation."""
+    """Resolved logdet method and rho interval."""
 
     method: str
     rho_min: float
@@ -112,87 +81,44 @@ def resolve_logdet_method(method: str | None, *, n: int) -> str:
     Parameters
     ----------
     method
-        User-supplied method name, or ``None`` for auto-selection.
+        One of ``"eigenvalue"``, ``"chebyshev"``, ``"traces"``, or ``None``
+        for auto-selection.
     n
-        Spatial dimension; used by auto-selection.
+        Spatial dimension; used for auto-selection.
 
     Returns
     -------
     str
-        Canonical method name (always one of :data:`VALID_LOGDET_METHODS`).
-
-    Raises
-    ------
-    ValueError
-        If ``method`` is not a recognised method name.
+        Canonical method name.
     """
     if method is None:
         return _auto_logdet_method(int(n))
     if method not in VALID_LOGDET_METHODS:
         valid = ", ".join(sorted(VALID_LOGDET_METHODS))
         raise ValueError(f"Unknown logdet method: {method!r}. Valid options: {valid}.")
-    # "exact" is mathematically identical to "eigenvalue" (both compute
-    # log|det(I - rho*W)| without approximation) but the eigenvalue path
-    # is O(n) per call after a one-time O(n^3) decomposition, whereas the
-    # pytensor "exact" path recomputes O(n^3) every call.  Alias for
-    # consistency across numpy / JAX / pytensor builders.
-    if method == "exact":
-        return "eigenvalue"
-    # "grid" is the canonical name for all grid/spline methods.
-    # It defaults to the "dense" sub-type.  The deprecated sub-type names
-    # (grid_dense, grid_sparse, sparse_spline, grid_mc, grid_ilu) are kept
-    # as-is so downstream code can distinguish them.
-    if method == "grid":
-        return "grid_dense"
     return method
 
 
-def _grid_type(method: str) -> str:
-    """Return the grid sub-type for a method name.
-
-    ``"grid"`` defaults to ``"dense"``.  Deprecated names like
-    ``"sparse_spline"`` map to their corresponding sub-type.
-    """
-    if method in _GRID_TYPE_MAP:
-        return _GRID_TYPE_MAP[method]
-    return "dense"
-
-
 def _auto_logdet_method(n: int) -> str:
-    """Choose the recommended logdet method based on matrix size.
-
-    Parameters
-    ----------
-    n : int
-        Number of spatial units.
-
-    Returns
-    -------
-    str
-        ``'eigenvalue'`` for n less than or equal to the configured cutoff,
-        otherwise ``'chebyshev'``.
-
-    Notes
-    -----
-    The cutoff is configurable via environment variable
-    ``BAYESPECON_LOGDET_EIGEN_MAX_N`` (default: ``500``). Lowering the
-    cutoff avoids expensive dense eigendecompositions for larger empirical
-    datasets while keeping exact evaluation on small to medium test cases.
-
-    For ``n`` above the cutoff this returns ``"chebyshev"``; whether the
-    Chebyshev coefficients are built from the exact eigenvalues or from a
-    Barry-Pace Hutchinson trace estimator is decided downstream by
-    :func:`chebyshev` based on the matrix size (eigvals for ``n <= 2000``,
-    Monte Carlo trace estimation otherwise).
-    """
-    cutoff_raw = os.getenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "500")
+    """Auto-select: ``eigenvalue`` for small n, ``chebyshev`` for medium, ``cheb_stochastic`` for large n."""
+    eigen_cutoff_raw = os.getenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "500")
+    cheb_cutoff_raw = os.getenv("BAYESPECON_LOGDET_CHEB_MAX_N", "2000")
     try:
-        cutoff = max(1, int(cutoff_raw))
+        eigen_cutoff = max(1, int(eigen_cutoff_raw))
     except ValueError:
-        cutoff = 500
-    if n <= cutoff:
+        eigen_cutoff = 500
+    try:
+        cheb_cutoff = max(eigen_cutoff + 1, int(cheb_cutoff_raw))
+    except ValueError:
+        cheb_cutoff = 2000
+    if n <= eigen_cutoff:
         return "eigenvalue"
-    return "chebyshev"
+    if n <= cheb_cutoff:
+        # Deterministic Chebyshev from exact eigenvalues — no stochastic noise.
+        return "chebyshev"
+    # Stochastic Chebyshev (Han et al. 2015): geometric convergence via
+    # Bernstein ellipse, avoids O(n³) eigendecomposition.
+    return "cheb_stochastic"
 
 
 def resolve_logdet_bounds(
@@ -203,15 +129,9 @@ def resolve_logdet_bounds(
     rho_min: float | None = None,
     rho_max: float | None = None,
 ) -> LogdetBounds:
-    """Resolve method-specific rho bounds from defaults, priors, or overrides.
+    """Resolve rho bounds from explicit overrides, priors, or defaults.
 
-    Resolution precedence is: explicit overrides, prior-derived bounds,
-    method defaults.
-
-    For row-standardised W the spectral stability interval is always
-    approximately (-1, 1), so the default bounds are sufficient without
-    computing eigenvalues.  Pass explicit ``rho_min``/``rho_max`` when
-    using non-row-standardised W.
+    For row-standardised W the stability interval is approximately (-1, 1).
     """
     resolved_method = method if method is not None else _auto_logdet_method(int(n))
     source = "default"
@@ -236,32 +156,12 @@ def resolve_logdet_bounds(
             lo = lo_prior
             hi = hi_prior
             source = "prior"
-        elif resolved_method in {"sparse_spline", "grid_mc"}:
-            lo = 1e-5
-            hi = 1.0
         else:
             lo = -1.0
             hi = 1.0
 
-    if resolved_method in {"sparse_spline", "grid_mc"} and lo < 0.0:
-        if source == "override":
-            raise ValueError(
-                f"method='{resolved_method}' requires a nonnegative rho range; "
-                "use rho_min >= 0, or choose a different method."
-            )
-        # Auto-restrict to the supported positive sub-interval. Methods that
-        # only handle nonnegative rho (sparse_spline, grid_mc) silently
-        # clamp the lower bound when the prior/default would otherwise be
-        # negative; explicit overrides still raise above.
-        lo = 1e-5
-        if hi <= lo:
-            hi = 1.0
-
     if hi <= lo:
-        raise ValueError(
-            f"Invalid rho interval after resolution for method='{resolved_method}': "
-            f"rho_min={lo}, rho_max={hi}."
-        )
+        raise ValueError(f"Invalid rho interval: rho_min={lo}, rho_max={hi}.")
 
     return LogdetBounds(
         method=resolved_method,

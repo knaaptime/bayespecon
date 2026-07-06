@@ -99,9 +99,17 @@ Non-Linear Spatial Models
    SARTobit
    SEMTobit
    SDMTobit
-   SARNegativeBinomial
-   SARNegBinLatent
+   SARNegBin
+   SARNegBinStructural
    ZINBSAR
+   Logit
+   NegativeBinomial
+   SARSpatialLogit
+   SEMSpatialLogit
+   Logit
+   NegativeBinomial
+   SARSpatialLogit
+   SEMSpatialLogit
 
 
 Panel Spatial Models (Tobit)
@@ -181,6 +189,18 @@ Bayesian Diagnostics
    bayesian_robust_lm_lag_sem_test
    bayesian_robust_lm_wx_sem_test
 
+GLM Bayesian LM Tests
+^^^^^^^^^^^^^^^^^^^^^
+
+Pólya–Gamma augmented LM tests for non-Gaussian models (Logit, NegBin).
+
+.. autosummary::
+   :toctree: generated/
+
+   bayesian_glm_lm_lag_test
+   bayesian_glm_lm_error_test
+   bayesian_glm_lm_wx_test
+
 
 Panel Bayesian LM Tests
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -255,6 +275,10 @@ and the decision-tree renderers.
    FLOW_SUITE
    FLOW_INTRA_SUITE
    FLOW_PANEL_SUITE
+   LOGIT_SUITE
+   NEGBIN_SUITE
+   LOGIT_SUITE
+   NEGBIN_SUITE
 
 
 Bayesian Model Comparison
@@ -381,6 +405,7 @@ Binomial DGPs are unchanged.
    generate_panel_sem_flow_data_separable
 
 
+
 Graph Utilities
 ---------------
 
@@ -461,10 +486,13 @@ Log-Determinant Methods (``bayespecon._logdet``)
 
 .. currentmodule:: bayespecon._logdet
 
-Positive-only methods (``sparse_spline``, ``grid_mc``) auto-restrict
-the rho/lambda support to ``[1e-5, 1.0]`` when the prior or method
-default would otherwise admit negative values.  Explicit
-``rho_min``/``rho_max`` overrides still raise.
+Five methods are supported:
+
+* ``eigenvalue`` — exact, O(n) per call after O(n³) setup.  Auto-selected for n ≤ 500.
+* ``chebyshev`` — deterministic Chebyshev from exact eigenvalues; O(m) per call.  Auto-selected for 500 < n ≤ 2000.
+* ``cheb_stochastic`` — stochastic Chebyshev expansion (Han et al. 2015); geometric convergence via Bernstein ellipse, avoids O(n³).  Auto-selected for n > 2000.
+* ``slq`` — Stochastic Lanczos Quadrature; D-symmetrised batched Lanczos with Gauss quadrature.
+* ``traces`` — multinomial trace expansion for unrestricted 3-parameter flow models.
 
 Method resolution and bound handling
 """"""""""""""""""""""""""""""""""""
@@ -497,10 +525,39 @@ PyTensor kernels
    :toctree: generated/
 
    logdet_eigenvalue
-   logdet_exact
    logdet_chebyshev
-   logdet_interpolated
-   logdet_mc_poly_pytensor
+
+Stochastic Chebyshev (Han et al. 2015)
+""""""""""""""""""""""""""""""""""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   ChebStochasticPrecompute
+   cheb_stochastic_logdet_precompute
+   cheb_stochastic_logdet_eval
+   cheb_stochastic_logdet_eval_vec
+
+Stochastic Lanczos Quadrature
+""""""""""""""""""""""""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   SLQPrecompute
+   slq_logdet_precompute
+   slq_logdet_eval
+   slq_logdet_eval_vec
+   slq_to_chebyshev_coeffs
+
+Chebyshev coefficient builder
+""""""""""""""""""""""""""""""
+
+.. autosummary::
+   :toctree: generated/
+
+   chebyshev
+   clear_chebyshev_cache
 
 JAX kernels
 """""""""""
@@ -509,17 +566,7 @@ JAX kernels
    :toctree: generated/
 
    jax_logdet_chebyshev
-   jax_logdet_trace_poly
-
-Grid / polynomial primitives
-""""""""""""""""""""""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   mc
-   chebyshev
-   spline
+   jax_slq_logdet_precompute
 
 Flow log-determinants
 """""""""""""""""""""

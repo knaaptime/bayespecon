@@ -165,7 +165,11 @@ class GaussianLikelihoodMixin:
         )
 
         if compute_log_likelihood:
-            self._reconstruct_log_likelihood(nuts_sampler=nuts_sampler)
+            # Panel models call _reconstruct_panel_log_likelihood themselves
+            # in their own fit() method with the correct spatial_param.
+            # Cross-section models use _reconstruct_log_likelihood.
+            if not hasattr(self, "_reconstruct_panel_log_likelihood"):
+                self._reconstruct_log_likelihood(nuts_sampler=nuts_sampler)
 
         return self._idata
 

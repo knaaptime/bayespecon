@@ -593,7 +593,7 @@ class SARSpatialLogit(SpatialModel):
 
     #: Threshold above which probability-scale spatial effects use the
     #: sparse Hutchinson path instead of the eigendecomposition path.
-    #: See :attr:`SARNegativeBinomial._COUNT_EFFECTS_EIGEN_MAX_N` for the
+    #: See :attr:`SARNegBin._COUNT_EFFECTS_EIGEN_MAX_N` for the
     #: cost model — the logit case is identical structurally.
     _PROBABILITY_EFFECTS_EIGEN_MAX_N: int = 2000
 
@@ -714,7 +714,7 @@ class SARSpatialLogit(SpatialModel):
         r"""Probability-scale spatial effects via sparse solves + Hutchinson.
 
         Direct port of
-        :meth:`SARNegativeBinomial._compute_count_scale_spatial_effects_posterior_sparse`
+        :meth:`SARNegBin._compute_count_scale_spatial_effects_posterior_sparse`
         with the count-mean weight :math:`\mu` replaced by the Bernoulli
         variance :math:`p(1-p)`.
         """

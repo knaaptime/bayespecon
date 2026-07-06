@@ -9,10 +9,8 @@ import numpy as np
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
-from ._config import (
-    _auto_logdet_method,
-)
-from ._grids import _barry_pace_traces, chebyshev
+from ._chebyshev import _barry_pace_traces, chebyshev
+from ._config import _auto_logdet_method
 from ._pytensor import logdet_chebyshev, logdet_eigenvalue
 
 
@@ -338,7 +336,7 @@ def make_flow_separable_logdet(
     rho_max: float = 1.0,
     cheb_order: int = 20,
 ):
-    r"""Pre-compute logdet data for separable flow models and return a logdet callable.
+    r"""Pre-compute logdet data for separable flow models and return a pytensor callable.
 
     For the separable constraint :math:`\rho_w = -\rho_d \rho_o` the full
     system log-determinant factors exactly as
@@ -348,9 +346,8 @@ def make_flow_separable_logdet(
         \log|L_o \otimes L_d|
         = n\,\log|I_n - \rho_d W| + n\,\log|I_n - \rho_o W|
 
-    This function pre-computes the required data once at model initialisation
-    and returns a closure that evaluates the expression as a symbolic
-    :mod:`pytensor` scalar, suitable for ``pm.Potential``.
+    Returns a closure ``fn(rho_d, rho_o) -> pt.TensorVariable`` suitable for
+    ``pm.Potential``.
 
     Parameters
     ----------
@@ -359,25 +356,11 @@ def make_flow_separable_logdet(
     n : int
         Number of spatial units.
     method : str, default ``"eigenvalue"``
-        ``"eigenvalue"`` — exact O(n) per-step evaluation after O(n³)
-        eigendecomposition.  Exact for any rho.
-        ``"chebyshev"`` — near-minimax Chebyshev polynomial; O(m) per step
-        after O(n³) or O(R·n·m) precomputation via :func:`chebyshev`.
-        Coefficients use exact eigenvalues when ``n`` is small, otherwise
-        Barry-Pace Hutchinson trace estimates.
-    rho_min : float, default -1.0
-        Lower bound of the rho domain (``"chebyshev"`` only).
-    rho_max : float, default 1.0
-        Upper bound of the rho domain (``"chebyshev"`` only).
+        ``"eigenvalue"`` or ``"chebyshev"``.
+    rho_min, rho_max : float
+        Bounds for the Chebyshev interval.
     cheb_order : int, default 20
-        Chebyshev polynomial order (``"chebyshev"`` only).
-
-    Returns
-    -------
-    callable
-        Function ``fn(rho_d, rho_o) -> pt.TensorVariable`` evaluating
-        :math:`n\,f(\rho_d) + n\,f(\rho_o)` where
-        :math:`f(\rho) = \log|I_n - \rho W|`.
+        Chebyshev polynomial order.
     """
     if sp.issparse(W_sparse):
         W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
@@ -393,12 +376,7 @@ def make_flow_separable_logdet(
             n * logdet_eigenvalue(rho_d, eigs) + n * logdet_eigenvalue(rho_o, eigs)
         )
     elif method == "chebyshev":
-        out = chebyshev(
-            W_dense,
-            order=cheb_order,
-            rmin=rho_min,
-            rmax=rho_max,
-        )
+        out = chebyshev(W_dense, order=cheb_order, rmin=rho_min, rmax=rho_max)
         coeffs = out["coeffs"]
         rmin_cb = out["rmin"]
         rmax_cb = out["rmax"]
@@ -428,11 +406,8 @@ def make_flow_separable_logdet_numpy(
     .. math::
 
         n\,\log|I_n - \rho_d W| + n\,\log|I_n - \rho_o W|
-
-    Parameters are aligned with :func:`make_flow_separable_logdet` for API
-    symmetry.
     """
-    from ._numpy import make_logdet_numpy_vec_fn
+    from ._factories import make_logdet_numpy_vec_fn
 
     if sp.issparse(W_sparse):
         W_sp = W_sparse.tocsr().astype(np.float64)
@@ -452,11 +427,7 @@ def make_flow_separable_logdet_numpy(
         eigs = np.linalg.eigvals(np.asarray(W_sp.toarray(), dtype=np.float64))
 
     logdet_vec = make_logdet_numpy_vec_fn(
-        W_sp,
-        eigs,
-        method=method,
-        rho_min=rho_min,
-        rho_max=rho_max,
+        W_sp, eigs, method=method, rho_min=rho_min, rho_max=rho_max
     )
 
     def _eval(rho_d, rho_o) -> np.ndarray:

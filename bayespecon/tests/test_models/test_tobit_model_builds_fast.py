@@ -62,8 +62,8 @@ def test_cross_section_tobit_models_build_and_handle_no_censoring():
 def test_panel_tobit_models_build_force_model_zero_and_handle_no_censoring():
     y, X, W, N, T = _panel_data()
 
-    sar = SARPanelTobit(y=y, X=X, W=W, N=N, T=T, model=1)
-    sem = SEMPanelTobit(y=y, X=X, W=W, N=N, T=T, model=1)
+    sar = SARPanelTobit(y=y, X=X, W=W, N=N, T=T, effects=1)
+    sem = SEMPanelTobit(y=y, X=X, W=W, N=N, T=T, effects=1)
 
     assert sar.model == 0
     assert sem.model == 0

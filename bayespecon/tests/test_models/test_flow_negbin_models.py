@@ -76,7 +76,7 @@ class TestNegativeBinomialPanelFlowConstruction:
             X=data["X"],
             T=3,
             col_names=data["col_names"],
-            model=0,
+            effects=0,
             miter=5,
             titer=50,
             trace_seed=0,
@@ -92,7 +92,7 @@ class TestNegativeBinomialPanelFlowConstruction:
             X=data["X"],
             T=3,
             col_names=data["col_names"],
-            model=0,
+            effects=0,
             trace_seed=0,
         )
         pm_model = model._build_pymc_model()
@@ -106,21 +106,21 @@ class TestNegativeBinomialPanelFlowConstruction:
             X=data["X"],
             T=3,
             col_names=data["col_names"],
-            model=0,
+            effects=0,
         )
         pm_model = model._build_pymc_model()
         assert "alpha" in pm_model.named_vars
 
     def test_negbin_panel_requires_model_zero(self):
         data = _small_panel_negbin_flow(seed=7)
-        with pytest.raises(ValueError, match="model=0 only"):
+        with pytest.raises(ValueError, match="effects=0 only"):
             NegativeBinomialSARFlowPanel(
                 y=data["y"],
                 G=data["G"],
                 X=data["X"],
                 T=3,
                 col_names=data["col_names"],
-                model=1,
+                effects=1,
             )
 
 
@@ -298,7 +298,7 @@ class TestNegativeBinomialPanelFlowRecovery:
             X=out["X"],
             T=5,
             col_names=out["col_names"],
-            model=0,
+            effects=0,
             miter=5,
             titer=50,
             trace_seed=0,
@@ -356,7 +356,7 @@ class TestNegativeBinomialPanelFlowRecovery:
             X=out["X"],
             T=4,
             col_names=out["col_names"],
-            model=0,
+            effects=0,
             trace_seed=0,
         )
         idata = model.fit_approx(

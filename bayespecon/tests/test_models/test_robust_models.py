@@ -146,7 +146,7 @@ class TestRobustPanelFE:
     def test_ols_panel_fe_robust(self, panel_data):
         y, X, W_graph = panel_data
         model = OLSPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True
+            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, effects=1, robust=True
         )
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior
@@ -154,7 +154,7 @@ class TestRobustPanelFE:
     def test_sar_panel_fe_robust(self, panel_data):
         y, X, W_graph = panel_data
         model = SARPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True
+            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, effects=1, robust=True
         )
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior
@@ -162,7 +162,7 @@ class TestRobustPanelFE:
     def test_sem_panel_fe_robust(self, panel_data):
         y, X, W_graph = panel_data
         model = SEMPanelFE(
-            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, model=1, robust=True
+            y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, effects=1, robust=True
         )
         idata = model.fit(**QUICK_KWARGS)
         assert "nu" in idata.posterior

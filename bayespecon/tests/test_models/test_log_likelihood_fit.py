@@ -263,7 +263,7 @@ class TestPanelFELogLikelihood:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def test_ols_panel_fe_log_likelihood(self):
-        model = OLSPanelFE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1)
+        model = OLSPanelFE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, effects=1)
         idata = model.fit(
             draws=10,
             tune=5,
@@ -281,7 +281,7 @@ class TestPanelFELogLikelihood:
             W=self.W,
             N=self.N,
             T=self.T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -301,7 +301,7 @@ class TestPanelFELogLikelihood:
             W=self.W,
             N=self.N,
             T=self.T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -321,7 +321,7 @@ class TestPanelFELogLikelihood:
             W=self.W,
             N=self.N,
             T=self.T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -341,7 +341,7 @@ class TestPanelFELogLikelihood:
             W=self.W,
             N=self.N,
             T=self.T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -368,7 +368,7 @@ class TestPanelRELogLikelihood:
         self.y, self.X, self.W, self.W_dense, self.N, self.T, self.n = _panel_data()
 
     def test_ols_panel_re_log_likelihood(self):
-        model = OLSPanelRE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, model=1)
+        model = OLSPanelRE(y=self.y, X=self.X, W=self.W, N=self.N, T=self.T, effects=1)
         idata = model.fit(
             draws=10,
             tune=5,
@@ -386,7 +386,7 @@ class TestPanelRELogLikelihood:
             W=self.W,
             N=self.N,
             T=self.T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -406,7 +406,7 @@ class TestPanelRELogLikelihood:
             W=self.W,
             N=self.N,
             T=self.T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -439,7 +439,7 @@ class TestPanelTobitLogLikelihood:
             W=self.W,
             N=self.N,
             T=self.T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -459,7 +459,7 @@ class TestPanelTobitLogLikelihood:
             W=self.W,
             N=self.N,
             T=self.T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -593,7 +593,9 @@ class TestLogLikelihoodStructureFast:
     def test_sem_panel_fe_fit_adds_log_likelihood(self, monkeypatch):
         """SEMPanelFE fit() should add log_likelihood computed from Potential."""
         y, X, W, W_dense, N, T, n = _panel_data()
-        model = SEMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue")
+        model = SEMPanelFE(
+            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
+        )
 
         posterior = {
             "lam": np.array([[0.1, 0.11]]),
@@ -614,7 +616,7 @@ class TestLogLikelihoodStructureFast:
         """SDEMPanelFE fit() should add log_likelihood computed from Potential."""
         y, X, W, W_dense, N, T, n = _panel_data()
         model = SDEMPanelFE(
-            y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue"
+            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
         )
 
         posterior = {
@@ -635,7 +637,9 @@ class TestLogLikelihoodStructureFast:
     def test_sar_panel_fe_fit_adds_log_likelihood(self, monkeypatch):
         """SARPanelFE fit() should add Jacobian-corrected log_likelihood."""
         y, X, W, W_dense, N, T, n = _panel_data()
-        model = SARPanelFE(y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue")
+        model = SARPanelFE(
+            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
+        )
 
         # SARPanelFE uses pm.Normal("obs") which auto-captures, so we need
         # a fake idata with log_likelihood already present (simulating PyMC auto-capture)
@@ -669,7 +673,9 @@ class TestLogLikelihoodStructureFast:
     def test_sdm_panel_fe_fit_adds_log_likelihood(self, monkeypatch):
         """SDMPanelFE fit() should add Jacobian-corrected log_likelihood."""
         y, X, W, W_dense, N, T, n = _panel_data()
-        model = SDMPanelFE(y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue")
+        model = SDMPanelFE(
+            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
+        )
 
         n_obs = n
         posterior = {
@@ -823,7 +829,7 @@ class TestJaxLogLikelihoodCapture:
             W=W,
             N=N,
             T=T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -846,7 +852,7 @@ class TestJaxLogLikelihoodCapture:
             W=W,
             N=N,
             T=T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(
@@ -863,7 +869,9 @@ class TestJaxLogLikelihoodCapture:
     def test_sem_panel_re_jax(self):
         pytest.importorskip("numpyro")
         y, X, W, _, N, T, n = _panel_data()
-        model = SEMPanelRE(y=y, X=X, W=W, N=N, T=T, model=1, logdet_method="eigenvalue")
+        model = SEMPanelRE(
+            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
+        )
         idata = model.fit(
             draws=20,
             tune=20,
@@ -886,7 +894,7 @@ class TestJaxLogLikelihoodCapture:
             W=W,
             N=N,
             T=T,
-            model=1,
+            effects=1,
             logdet_method="eigenvalue",
         )
         idata = model.fit(

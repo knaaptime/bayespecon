@@ -27,6 +27,8 @@ Nickell, S. (1981). Biases in dynamic models with fixed effects.
 
 from __future__ import annotations
 
+from typing import Union
+
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
@@ -34,7 +36,7 @@ from pytensor import sparse as pts
 
 from ..._logdet import get_cached_logdet_fn
 from .._base._shared import _pointwise_gaussian_loglik, _write_log_likelihood_to_idata
-from ..panel_base import SpatialPanelModel
+from ..panel_base import SpatialPanelModel, _resolve_effects
 from ..priors import (
     PanelOLSDynamicPriors,
     PanelSARDynamicPriors,
@@ -143,10 +145,11 @@ class _DynamicPanelMixin:
 
         return direct_samples, indirect_samples, total_samples
 
-    def __init__(self, *args, model: int = 0, **kwargs):
-        if model == 1:
+    def __init__(self, *args, effects: Union[str, int] = 0, **kwargs):
+        effects_int = _resolve_effects(effects) if isinstance(effects, str) else effects
+        if effects_int == 1:
             raise ValueError(
-                "model=1 (unit fixed effects) is not supported for dynamic "
+                "effects='unit' (unit fixed effects) is not supported for dynamic "
                 "panel models due to the Nickell bias (Nickell, 1981).  "
                 "When unit fixed effects are removed via within-demeaning, "
                 "the demeaned lagged dependent variable (y_{i,t-1} - ȳ_{i}) "
@@ -155,13 +158,13 @@ class _DynamicPanelMixin:
                 "This correlation biases the autoregressive coefficient φ "
                 "toward zero, and the bias only vanishes as T → ∞.  "
                 "For short panels (small T), the bias is severe and renders "
-                "the estimator inconsistent.  Use model=0 (pooled), "
-                "model=2 (time FE), or model=3 (two-way FE) instead.  "
+                "the estimator inconsistent.  Use effects='pooled', "
+                "effects='time', or effects='two_way' instead.  "
                 "For unit-specific heterogeneity with a lagged dependent "
                 "variable, consider the Arellano-Bond GMM estimator or "
-                "a random-effects specification (model=0 with unit priors)."
+                "a random-effects specification (effects='pooled' with unit priors)."
             )
-        super().__init__(*args, model=model, **kwargs)
+        super().__init__(*args, effects=effects, **kwargs)
 
     def _prepare_dynamic_design(self) -> None:
         if hasattr(self, "_Z_dyn"):
@@ -584,6 +587,7 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
+        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         **sample_kwargs,
@@ -604,6 +608,7 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -814,6 +819,7 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
+        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         **sample_kwargs,
@@ -834,6 +840,7 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -1034,6 +1041,7 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
+        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         **sample_kwargs,
@@ -1048,6 +1056,7 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -1277,6 +1286,7 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
+        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         **sample_kwargs,
@@ -1291,6 +1301,7 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
@@ -1519,6 +1530,7 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
+        target_accept: float = 0.9,
         random_seed: int | None = None,
         idata_kwargs: dict | None = None,
         **sample_kwargs,
@@ -1533,6 +1545,7 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             draws=draws,
             tune=tune,
             chains=chains,
+            target_accept=target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,

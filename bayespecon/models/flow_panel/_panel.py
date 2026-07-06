@@ -87,7 +87,6 @@ class FlowPanelModel(SpatialPanelModel):
         T: int,
         col_names: Optional[list[str]] = None,
         k: Optional[int] = None,
-        model: int = 0,
         priors: Optional[dict] = None,
         logdet_method: str = "traces",
         restrict_positive: bool = True,
@@ -97,14 +96,15 @@ class FlowPanelModel(SpatialPanelModel):
         trace_riter: int = 50,
         trace_seed: Optional[int] = None,
         symmetric_xo_xd: Optional[bool] = None,
+        effects: int = 0,
     ):
         self.priors = priors or {}
         self.logdet_method = logdet_method
         self.restrict_positive = restrict_positive
         self.robust = robust
-        self.model = int(model)
-        if self.model not in (0, 1, 2, 3):
-            raise ValueError("model must be one of {0,1,2,3}.")
+        self.effects = int(effects)
+        if self.effects not in (0, 1, 2, 3):
+            raise ValueError("effects must be one of {0,1,2,3}.")
 
         self.miter = miter
         self.titer = titer
@@ -230,7 +230,7 @@ class FlowPanelModel(SpatialPanelModel):
             self._X_raw,
             self._N_flow,
             self._T,
-            self.model,
+            self.effects,
         )
 
         # Keep aliases matching flow model naming
@@ -311,6 +311,18 @@ class FlowPanelModel(SpatialPanelModel):
         draws: Optional[int] = None,
     ) -> dict[str, np.ndarray]:
         """Compute posterior effects per draw."""
+
+    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
+        """Compute direct/indirect/total effects at posterior mean."""
+        raise NotImplementedError(
+            "Spatial effects not yet implemented for flow panel models."
+        )
+
+    def _fitted_mean_from_posterior(self) -> np.ndarray:
+        """Posterior-mean fitted values on transformed scale."""
+        raise NotImplementedError(
+            "Fitted values not yet implemented for flow panel models."
+        )
 
     def _posterior_var_names(
         self,
@@ -1673,10 +1685,10 @@ class NegativeBinomialSARFlowPanel(SARFlowPanel):
     """Panel NB2 SAR flow model with unrestricted dependence parameters."""
 
     def __init__(self, y, G, X, **kwargs):
-        model_mode = int(kwargs.get("model", 0))
-        if model_mode != 0:
+        effects_mode = int(kwargs.get("effects", kwargs.get("model", 0)))
+        if effects_mode != 0:
             raise ValueError(
-                "NegativeBinomialSARFlowPanel currently supports model=0 only. "
+                "NegativeBinomialSARFlowPanel currently supports effects=0 only. "
                 "Within-transformed FE panels are not valid for count models."
             )
 
@@ -1855,10 +1867,10 @@ class NegativeBinomialSARFlowSeparablePanel(SARFlowSeparablePanel):
     """Panel separable NB2 SAR flow model."""
 
     def __init__(self, y, G, X, **kwargs):
-        model_mode = int(kwargs.get("model", 0))
-        if model_mode != 0:
+        effects_mode = int(kwargs.get("effects", kwargs.get("model", 0)))
+        if effects_mode != 0:
             raise ValueError(
-                "NegativeBinomialSARFlowSeparablePanel currently supports model=0 only. "
+                "NegativeBinomialSARFlowSeparablePanel currently supports effects=0 only. "
                 "Within-transformed FE panels are not valid for count models."
             )
 
@@ -2021,10 +2033,10 @@ class NegativeBinomialFlowPanel(OLSFlowPanel):
     """Aspatial panel OD-flow NB2 gravity baseline."""
 
     def __init__(self, y, G, X, T, **kwargs):
-        model_mode = int(kwargs.get("model", 0))
-        if model_mode != 0:
+        effects_mode = int(kwargs.get("effects", kwargs.get("model", 0)))
+        if effects_mode != 0:
             raise ValueError(
-                "NegativeBinomialFlowPanel currently supports model=0 only. "
+                "NegativeBinomialFlowPanel currently supports effects=0 only. "
                 "Within-transformed FE panels are not valid for count models."
             )
 
