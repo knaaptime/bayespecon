@@ -372,7 +372,7 @@ def make_spatial_probit_data(
     sigma_a: float = 0.8,
     n_per_region: int = 25,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Generate SpatialProbit data in matrix mode.
+    """Generate SARProbit data in matrix mode.
 
     Returns
     -------

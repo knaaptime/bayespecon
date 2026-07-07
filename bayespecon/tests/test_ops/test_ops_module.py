@@ -348,7 +348,7 @@ class TestKroneckerFlowSolveMatrixOpVJP:
 
 
 # ---------------------------------------------------------------------------
-# Smoke test: logp compiles for NegativeBinomialSARFlowSeparable at moderate n
+# Smoke test: logp compiles for SARNegBinFlowSeparable at moderate n
 # ---------------------------------------------------------------------------
 
 
@@ -357,7 +357,7 @@ class TestSeparableNegBinLogpCompiles:
     def test_logp_compiles_n20(self):
         """Check that the Kronecker op compiles inside PyMC at n=20."""
         from bayespecon.graph import flow_weight_matrices
-        from bayespecon.models.flow._flow import NegativeBinomialSARFlowSeparable
+        from bayespecon.models.flow._flow import SARNegBinFlowSeparable
 
         n = 20
         rng = np.random.default_rng(6)
@@ -372,7 +372,7 @@ class TestSeparableNegBinLogpCompiles:
         y = rng.poisson(5.0, size=(n, n)).astype(np.int64)
         X = rng.normal(size=(n * n, 2))
 
-        model_obj = NegativeBinomialSARFlowSeparable(y, graph, X)
+        model_obj = SARNegBinFlowSeparable(y, graph, X)
         pm_model = model_obj._build_pymc_model()
 
         # Just test that logp can be evaluated at the initial point

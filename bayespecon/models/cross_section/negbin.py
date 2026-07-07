@@ -21,7 +21,7 @@ from ..base import SpatialModel
 from ..priors import NegBinPriors
 
 
-class NegativeBinomial(SpatialModel):
+class NegBin(SpatialModel):
     r"""Bayesian (non-spatial) Negative Binomial regression.
 
     .. math::
@@ -77,17 +77,13 @@ class NegativeBinomial(SpatialModel):
         super().__init__(*args, **kwargs)
 
         if self.robust:
-            raise NotImplementedError(
-                "robust=True is not supported for NegativeBinomial."
-            )
+            raise NotImplementedError("robust=True is not supported for NegBin.")
 
         y_round = np.round(self._y).astype(np.int64)
         if not np.allclose(self._y, y_round):
-            raise ValueError("NegativeBinomial requires integer-valued observations.")
+            raise ValueError("NegBin requires integer-valued observations.")
         if np.any(y_round < 0):
-            raise ValueError(
-                "NegativeBinomial requires non-negative integer observations."
-            )
+            raise ValueError("NegBin requires non-negative integer observations.")
         self._y_int = y_round
         self._y = y_round.astype(np.float64)
 
@@ -113,7 +109,7 @@ class NegativeBinomial(SpatialModel):
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         raise NotImplementedError(
-            "NegativeBinomial has no spatial structure and therefore no "
+            "NegBin has no spatial structure and therefore no "
             "spatial effects. Use Bayesian LM diagnostics to assess whether "
             "a spatial count model (e.g. SARNegBinStructural) is appropriate."
         )
@@ -122,7 +118,7 @@ class NegativeBinomial(SpatialModel):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError(
-            "NegativeBinomial has no spatial structure and therefore no "
+            "NegBin has no spatial structure and therefore no "
             "spatial effects. Use Bayesian LM diagnostics to assess whether "
             "a spatial count model (e.g. SARNegBinStructural) is appropriate."
         )

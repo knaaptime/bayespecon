@@ -70,7 +70,7 @@ from .._base._shared import _parse_W
 from ..base import SpatialModel
 
 
-class ZINBSAR(SpatialModel):
+class SARZINB(SpatialModel):
     """Bayesian zero-inflated SAR Negative Binomial with PG-Gibbs sampler.
 
     Parameters
@@ -143,7 +143,7 @@ class ZINBSAR(SpatialModel):
         **kwargs,
     ):
         if robust:
-            raise NotImplementedError("robust=True is not supported for ZINBSAR.")
+            raise NotImplementedError("robust=True is not supported for SARZINB.")
 
         # Initialize base class with count equation data
         super().__init__(
@@ -418,7 +418,7 @@ class ZINBSAR(SpatialModel):
         for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
             if bad_kwarg in _unused:
                 raise TypeError(
-                    f"ZINBSAR.fit() does not accept '{bad_kwarg}'. "
+                    f"SARZINB.fit() does not accept '{bad_kwarg}'. "
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
@@ -618,9 +618,9 @@ class ZINBSAR(SpatialModel):
         return idata
 
     def _build_pymc_model(self):
-        """Not supported — ZINBSAR uses a Gibbs sampler, not NUTS."""
+        """Not supported — SARZINB uses a Gibbs sampler, not NUTS."""
         raise NotImplementedError(
-            "ZINBSAR does not build a PyMC model. "
+            "SARZINB does not build a PyMC model. "
             "Use the fit() method for Gibbs sampling."
         )
 

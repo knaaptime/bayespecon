@@ -995,7 +995,7 @@ class FlowModel(SpatialModel):
 
         Default implementation: Gaussian SAR flow,
         ``y_rep = A^{-1} (X β + σ ε)`` with ``ε ~ N(0, I_N)``.
-        Subclasses (NegativeBinomialSARFlow, NegativeBinomialSARFlowSeparable) override this.
+        Subclasses (SARNegBinFlow, SARNegBinFlowSeparable) override this.
         """
         A = self._assemble_A(rho_d, rho_o, rho_w)
         Xb = self._X @ beta
@@ -1752,11 +1752,11 @@ class OLSFlow(FlowModel):
 
 
 # ---------------------------------------------------------------------------
-# Model 4: NegativeBinomial SAR/OLS flow variants
+# Model 4: NegBin SAR/OLS flow variants
 # ---------------------------------------------------------------------------
 
 
-class NegativeBinomialSARFlow(SARFlow):
+class SARNegBinFlow(SARFlow):
     r"""Bayesian SAR flow model with NB2 observation noise.
 
     This class extends :class:`SARFlow` with a Negative Binomial likelihood:
@@ -1775,14 +1775,14 @@ class NegativeBinomialSARFlow(SARFlow):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialSARFlow requires integer-valued "
+                    "SARNegBinFlow requires integer-valued "
                     f"observations; got dtype {y_arr.dtype} with non-integer "
                     "values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "NegativeBinomialSARFlow requires non-negative integer observations."
+                "SARNegBinFlow requires non-negative integer observations."
             )
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
@@ -2084,7 +2084,7 @@ class NegativeBinomialSARFlow(SARFlow):
         return self._idata
 
 
-class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
+class SARNegBinFlowSeparable(SARFlowSeparable):
     """Separable SAR flow model with NB2 observation noise."""
 
     def __init__(self, y, G, X, **kwargs):
@@ -2093,15 +2093,14 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialSARFlowSeparable requires integer-valued "
+                    "SARNegBinFlowSeparable requires integer-valued "
                     f"observations; got dtype {y_arr.dtype} with non-integer "
                     "values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "NegativeBinomialSARFlowSeparable requires non-negative integer "
-                "observations."
+                "SARNegBinFlowSeparable requires non-negative integer observations."
             )
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
@@ -2122,7 +2121,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         n = self._n
         if self._separable_logdet_fn is None:
             raise RuntimeError(
-                "NegativeBinomialSARFlowSeparable requires precomputed logdet data; "
+                "SARNegBinFlowSeparable requires precomputed logdet data; "
                 "initialize with logdet_method='eigenvalue' or 'chebyshev'"
             )
         X_t = pt.as_tensor_variable(self._X.astype(np.float64))
@@ -2382,7 +2381,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         return self._idata
 
 
-class NegativeBinomialFlow(OLSFlow):
+class NegBinFlow(OLSFlow):
     """Aspatial OD-flow Negative Binomial gravity baseline."""
 
     def __init__(self, y, G, X, **kwargs):
@@ -2391,15 +2390,13 @@ class NegativeBinomialFlow(OLSFlow):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialFlow requires integer-valued "
+                    "NegBinFlow requires integer-valued "
                     f"observations; got dtype {y_arr.dtype} with non-integer "
                     "values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
-            raise ValueError(
-                "NegativeBinomialFlow requires non-negative integer observations."
-            )
+            raise ValueError("NegBinFlow requires non-negative integer observations.")
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
 

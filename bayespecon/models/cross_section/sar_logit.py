@@ -43,10 +43,10 @@ from ...samplers.logit import (
 )
 from ...samplers.logit._jax import run_chains_jax_vectorized
 from ..base import SpatialModel
-from ..priors import SpatialLogitPriors, resolve_priors
+from ..priors import SARLogitPriors, resolve_priors
 
 
-class SARSpatialLogit(SpatialModel):
+class SARLogit(SpatialModel):
     """Bayesian structural-form SAR-logit with Pólya–Gamma Gibbs sampler.
 
     Parameters
@@ -64,7 +64,7 @@ class SARSpatialLogit(SpatialModel):
         Design matrix. Required in matrix mode.
     W : libpysal.graph.Graph or scipy.sparse matrix
         Spatial weights of shape ``(n, n)``.
-    priors : dict or SpatialLogitPriors, optional
+    priors : dict or SARLogitPriors, optional
         Override default priors. Supported keys:
 
         - ``rho_lower`` (float, default -0.999): Lower bound of the
@@ -109,15 +109,13 @@ class SARSpatialLogit(SpatialModel):
     _jacobian_param: str | None = "rho"
     _gibbs_class: str | None = None  # Gibbs-only, no NUTS
     _model_type: str = "sar_logit"
-    _priors_cls = SpatialLogitPriors
+    _priors_cls = SARLogitPriors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         if self.robust:
-            raise NotImplementedError(
-                "robust=True is not supported for SARSpatialLogit."
-            )
+            raise NotImplementedError("robust=True is not supported for SARLogit.")
 
         # Validate y is binary
         if not np.isin(self._y, [0.0, 1.0]).all():
@@ -277,7 +275,7 @@ class SARSpatialLogit(SpatialModel):
         for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
             if bad_kwarg in kwargs:
                 raise TypeError(
-                    f"SARSpatialLogit.fit() does not accept '{bad_kwarg}'. "
+                    f"SARLogit.fit() does not accept '{bad_kwarg}'. "
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
@@ -289,9 +287,9 @@ class SARSpatialLogit(SpatialModel):
         # Build priors from the typed priors object
         priors_obj = resolve_priors(
             self.priors if isinstance(self.priors, dict) else None,
-            SpatialLogitPriors,
+            SARLogitPriors,
         )
-        if isinstance(self.priors, SpatialLogitPriors):
+        if isinstance(self.priors, SARLogitPriors):
             priors_obj = self.priors
 
         priors = LogitGibbsPriors(
@@ -516,9 +514,9 @@ class SARSpatialLogit(SpatialModel):
         return idata
 
     def _build_pymc_model(self):
-        """Not supported — SARSpatialLogit uses a Gibbs sampler, not NUTS."""
+        """Not supported — SARLogit uses a Gibbs sampler, not NUTS."""
         raise NotImplementedError(
-            "SARSpatialLogit does not build a PyMC model. "
+            "SARLogit does not build a PyMC model. "
             "Use the fit() method for Gibbs sampling."
         )
 

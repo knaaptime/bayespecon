@@ -17,7 +17,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon import (
+from bayespecon import dgp
+from bayespecon.models import (
     OLS,
     SAR,
     SDEM,
@@ -27,12 +28,11 @@ from bayespecon import (
     OLSPanelRE,
     SARPanelRE,
     SEMPanelRE,
-    dgp,
 )
 from bayespecon.models.flow._flow import (
-    NegativeBinomialFlow,
-    NegativeBinomialSARFlow,
-    NegativeBinomialSARFlowSeparable,
+    NegBinFlow,
+    SARNegBinFlow,
+    SARNegBinFlowSeparable,
 )
 from bayespecon.tests.helpers import (
     PANEL_N,
@@ -121,7 +121,7 @@ def _flow_data() -> dict:
 
 @pytest.mark.parametrize(
     "model_cls",
-    [NegativeBinomialFlow, NegativeBinomialSARFlowSeparable, NegativeBinomialSARFlow],
+    [NegBinFlow, SARNegBinFlowSeparable, SARNegBinFlow],
 )
 def test_negbin_flow_samples_with_nutpie(model_cls, _flow_data: dict) -> None:
     model = model_cls(

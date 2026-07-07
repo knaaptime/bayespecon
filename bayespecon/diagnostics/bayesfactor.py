@@ -1101,14 +1101,14 @@ def bayes_factor_compare_models(
     **Posterior model probabilities.**  After computing Bayes factors,
     posterior model probabilities can be obtained via :func:`post_prob`::
 
-        from bayespecon import post_prob
+        from bayespecon.diagnostics import post_prob
         probs = post_prob(logml_list, model_names=model_labels)
 
     Examples
     --------
     Compare fitted spatial models using bridge sampling (recommended)::
 
-        from bayespecon import bayes_factor_compare_models
+        from bayespecon.diagnostics import bayes_factor_compare_models
 
         # Pass fitted model objects directly — log-posterior is compiled
         # automatically from each model's PyMC model.

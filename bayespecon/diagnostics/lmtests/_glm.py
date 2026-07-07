@@ -126,7 +126,7 @@ def _negbin_working_response(
 
     Parameters
     ----------
-    model : NegativeBinomial-like
+    model : NegBin-like
         Must expose ``_X``, ``_y`` (raw counts).
     beta_draws : (draws, k) array
     alpha_draws : (draws,) array

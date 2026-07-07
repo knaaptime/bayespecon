@@ -132,7 +132,7 @@ class SDEMPriors(SEMPriors):
 
 @dataclass(frozen=True)
 class NegBinPriors(BasePriors):
-    """Priors for :class:`bayespecon.models.NegativeBinomial`.
+    """Priors for :class:`bayespecon.models.NegBin`.
 
     Adds overdispersion parameters for the NB2 likelihood.
     """
@@ -180,8 +180,8 @@ class SDMTobitPriors(SDMPriors):
 
 
 @dataclass(frozen=True)
-class SpatialProbitPriors:
-    """Priors for :class:`bayespecon.models.SpatialProbit`.
+class SARProbitPriors:
+    """Priors for :class:`bayespecon.models.SARProbit`.
 
     Differs from :class:`SARPriors`: there is no ``sigma`` parameter (the
     probit link absorbs the noise scale) and the regional random-effect
@@ -196,10 +196,10 @@ class SpatialProbitPriors:
 
 
 @dataclass(frozen=True)
-class SpatialLogitPriors:
-    """Priors for :class:`bayespecon.models.SARSpatialLogit`.
+class SARLogitPriors:
+    """Priors for :class:`bayespecon.models.SARLogit`.
 
-    Like :class:`SpatialProbitPriors` but without ``sigma_a_sigma``
+    Like :class:`SARProbitPriors` but without ``sigma_a_sigma``
     (the logit model has no regional random effect).  There is no
     ``sigma`` parameter because the logit link absorbs the noise scale.
     """
@@ -211,14 +211,14 @@ class SpatialLogitPriors:
 
 
 # Alias — the non-spatial Logit model uses the same prior structure.
-LogitPriors = SpatialLogitPriors
+LogitPriors = SARLogitPriors
 
 
 @dataclass
-class SEMSpatialLogitPriors:
-    """Priors for :class:`bayespecon.models.SEMSpatialLogit`.
+class SEMLogitPriors:
+    """Priors for :class:`bayespecon.models.SEMLogit`.
 
-    Like :class:`SpatialLogitPriors` but with ``lam_lower``/``lam_upper``
+    Like :class:`SARLogitPriors` but with ``lam_lower``/``lam_upper``
     instead of ``rho_lower``/``rho_upper``.
     """
 
@@ -236,9 +236,9 @@ class SEMSpatialLogitPriors:
 PriorsLike = Union[
     Mapping[str, Any],
     BasePriors,
-    "SpatialProbitPriors",
-    "SpatialLogitPriors",
-    "SEMSpatialLogitPriors",
+    "SARProbitPriors",
+    "SARLogitPriors",
+    "SEMLogitPriors",
     None,
 ]
 
@@ -495,9 +495,9 @@ __all__ = [
     "SARTobitPriors",
     "SEMTobitPriors",
     "SDMTobitPriors",
-    "SpatialProbitPriors",
-    "SpatialLogitPriors",
-    "SEMSpatialLogitPriors",
+    "SARProbitPriors",
+    "SARLogitPriors",
+    "SEMLogitPriors",
     "PanelBasePriors",
     "PanelOLSPriors",
     "PanelSLXPriors",

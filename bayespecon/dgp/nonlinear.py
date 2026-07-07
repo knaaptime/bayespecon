@@ -123,7 +123,7 @@ def simulate_spatial_probit(
     seed: int | None = None,
     contiguity: str = "queen",
 ) -> dict:
-    """Simulate SpatialProbit-style binary outcome data.
+    """Simulate SARProbit-style binary outcome data.
 
     DGP
     ---

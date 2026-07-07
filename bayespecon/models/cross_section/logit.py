@@ -16,7 +16,7 @@ import pymc as pm
 import pytensor.tensor as pt
 
 from ..base import SpatialModel
-from ..priors import SpatialLogitPriors
+from ..priors import SARLogitPriors
 
 
 class Logit(SpatialModel):
@@ -27,7 +27,7 @@ class Logit(SpatialModel):
 
     Sampled with NUTS.  ``W`` is optional and is used only by Bayesian
     LM diagnostics to assess whether a spatial binary-response model
-    (e.g. :class:`bayespecon.models.SARSpatialLogit`) is warranted.
+    (e.g. :class:`bayespecon.models.SARLogit`) is warranted.
 
     Parameters
     ----------
@@ -43,7 +43,7 @@ class Logit(SpatialModel):
     W : libpysal.graph.Graph or scipy.sparse matrix, optional
         Spatial weights matrix.  Not used during estimation; required for
         post-hoc Bayesian LM spatial diagnostics.
-    priors : dict or SpatialLogitPriors, optional
+    priors : dict or SARLogitPriors, optional
         Override default priors.  Supported keys:
 
         - ``beta_mu`` (array or float, optional): Prior mean for
@@ -55,7 +55,7 @@ class Logit(SpatialModel):
           weakly-informative scale.
     """
 
-    _priors_cls = SpatialLogitPriors
+    _priors_cls = SARLogitPriors
     _spatial_params: tuple[str, ...] = ()
     _lag_terms: tuple[str, ...] = ()
     _jacobian_param: str | None = None
@@ -93,7 +93,7 @@ class Logit(SpatialModel):
         raise NotImplementedError(
             "Logit has no spatial structure and therefore no spatial effects. "
             "Use Bayesian LM diagnostics to assess whether a spatial binary "
-            "model (e.g. SARSpatialLogit) is appropriate."
+            "model (e.g. SARLogit) is appropriate."
         )
 
     def _compute_spatial_effects_posterior(
@@ -102,7 +102,7 @@ class Logit(SpatialModel):
         raise NotImplementedError(
             "Logit has no spatial structure and therefore no spatial effects. "
             "Use Bayesian LM diagnostics to assess whether a spatial binary "
-            "model (e.g. SARSpatialLogit) is appropriate."
+            "model (e.g. SARLogit) is appropriate."
         )
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:

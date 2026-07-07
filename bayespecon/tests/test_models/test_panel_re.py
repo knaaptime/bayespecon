@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon import OLSPanelRE, SARPanelRE, SEMPanelRE
+from bayespecon.models import OLSPanelRE, SARPanelRE, SEMPanelRE
 from bayespecon.tests.helpers import (
     PANEL_N,
     PANEL_T,

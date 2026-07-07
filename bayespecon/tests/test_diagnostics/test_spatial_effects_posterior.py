@@ -14,12 +14,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bayespecon import SAR, SDEM, SDM, SEM, SLX
 from bayespecon.diagnostics.spatial_effects import (
     _build_effects_dataframe,
     _compute_bayesian_pvalue,
     _compute_ci,
 )
+from bayespecon.models import SAR, SDEM, SDM, SEM, SLX
 
 # ------------------------------------------------------------------
 # Helpers

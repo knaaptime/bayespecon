@@ -7,7 +7,7 @@ have been removed in favor of the Bayesian LM tests in ``diagnostics.bayesian_di
 
 from __future__ import annotations
 
-from bayespecon import (
+from bayespecon.models import (
     OLS,
     SAR,
     SDEM,

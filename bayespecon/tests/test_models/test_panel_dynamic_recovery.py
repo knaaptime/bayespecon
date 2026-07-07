@@ -26,7 +26,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon import (
+from bayespecon.models import (
     OLSPanelDynamic,
     SARPanelDynamic,
     SDEMPanelDynamic,

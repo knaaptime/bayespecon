@@ -13,7 +13,7 @@ import arviz as az
 import numpy as np
 import pytest
 
-from bayespecon import SpatialMCMCReport, spatial_mcmc_diagnostic
+from bayespecon.diagnostics import SpatialMCMCReport, spatial_mcmc_diagnostic
 from bayespecon.tests.helpers import make_idata as _make_idata
 
 

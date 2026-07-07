@@ -625,7 +625,7 @@ class TestModelComparison:
         return m
 
     def test_dict_input_and_repr(self):
-        from bayespecon import ModelComparison
+        from bayespecon.diagnostics import ModelComparison
 
         idata = _make_simple_linear_idata()
         m = self._make_fake_model(idata)
@@ -634,7 +634,7 @@ class TestModelComparison:
         assert "n_models=2" in repr(cmp)
 
     def test_list_with_labels(self):
-        from bayespecon import ModelComparison
+        from bayespecon.diagnostics import ModelComparison
 
         idata = _make_simple_linear_idata()
         m = self._make_fake_model(idata)
@@ -642,7 +642,7 @@ class TestModelComparison:
         assert cmp.labels == ["A", "B"]
 
     def test_list_without_labels_autogen(self):
-        from bayespecon import ModelComparison
+        from bayespecon.diagnostics import ModelComparison
 
         idata = _make_simple_linear_idata()
         m = self._make_fake_model(idata)
@@ -650,7 +650,7 @@ class TestModelComparison:
         assert cmp.labels == ["model_0"]
 
     def test_dict_with_labels_raises(self):
-        from bayespecon import ModelComparison
+        from bayespecon.diagnostics import ModelComparison
 
         idata = _make_simple_linear_idata()
         m = self._make_fake_model(idata)
@@ -658,7 +658,7 @@ class TestModelComparison:
             ModelComparison({"A": m}, labels=["B"])
 
     def test_label_length_mismatch_raises(self):
-        from bayespecon import ModelComparison
+        from bayespecon.diagnostics import ModelComparison
 
         idata = _make_simple_linear_idata()
         m = self._make_fake_model(idata)
@@ -666,13 +666,13 @@ class TestModelComparison:
             ModelComparison([m, m], labels=["only_one"])
 
     def test_bad_type_raises(self):
-        from bayespecon import ModelComparison
+        from bayespecon.diagnostics import ModelComparison
 
         with pytest.raises(TypeError, match="must be a list"):
             ModelComparison(42)
 
     def test_bic_workflow(self):
-        from bayespecon import ModelComparison
+        from bayespecon.diagnostics import ModelComparison
 
         idata = _make_simple_linear_idata()
         m1 = self._make_fake_model(idata)
@@ -695,7 +695,7 @@ class TestModelComparison:
         np.testing.assert_allclose(probs.to_numpy(), [0.5, 0.5], atol=1e-6)
 
     def test_compute_is_cached(self):
-        from bayespecon import ModelComparison
+        from bayespecon.diagnostics import ModelComparison
 
         idata = _make_simple_linear_idata()
         m = self._make_fake_model(idata)

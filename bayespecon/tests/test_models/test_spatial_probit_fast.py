@@ -1,4 +1,4 @@
-"""Fast branch and utility tests for SpatialProbit."""
+"""Fast branch and utility tests for SARProbit."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pymc as pm
 import pytest
 import scipy.sparse as sp
 
-from bayespecon import SpatialProbit
+from bayespecon.models import SARProbit
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 
@@ -21,7 +21,7 @@ class _LegacyW:
         return self
 
 
-def _idata_for_model(m: SpatialProbit) -> az.InferenceData:
+def _idata_for_model(m: SARProbit) -> az.InferenceData:
     n = m._X.shape[0]
     r = m._m
     posterior = {
@@ -39,16 +39,16 @@ def _idata_for_model(m: SpatialProbit) -> az.InferenceData:
 def test_as_dense_region_W_warns_for_non_row_standardized_sparse():
     W = sp.csr_matrix(np.array([[0.0, 2.0], [1.0, 0.0]], dtype=float))
     with pytest.warns(UserWarning, match="row-standardised"):
-        dense = SpatialProbit._as_dense_region_W(W)
+        dense = SARProbit._as_dense_region_W(W)
     assert dense.shape == (2, 2)
 
 
 def test_as_dense_region_W_rejects_legacy_and_dense_types():
     with pytest.raises(TypeError, match="legacy libpysal.weights.W"):
-        SpatialProbit._as_dense_region_W(_LegacyW())
+        SARProbit._as_dense_region_W(_LegacyW())
 
     with pytest.raises(TypeError, match="Graph or a scipy sparse"):
-        SpatialProbit._as_dense_region_W(np.eye(2))
+        SARProbit._as_dense_region_W(np.eye(2))
 
 
 def test_matrix_mode_region_parsing_with_ids_and_mobs():
@@ -56,11 +56,11 @@ def test_matrix_mode_region_parsing_with_ids_and_mobs():
     X = np.column_stack([np.ones(4), np.arange(4, dtype=float)])
     W = W_to_graph(make_line_W(2))
 
-    m_ids = SpatialProbit(y=y, X=X, W=W, region_ids=np.array([10, 10, 20, 20]))
+    m_ids = SARProbit(y=y, X=X, W=W, region_ids=np.array([10, 10, 20, 20]))
     assert m_ids._region_codes.tolist() == [0, 0, 1, 1]
     assert m_ids._region_names == ["10", "20"]
 
-    m_mobs = SpatialProbit(y=y, X=X, W=W, mobs=[2, 2])
+    m_mobs = SARProbit(y=y, X=X, W=W, mobs=[2, 2])
     assert m_mobs._region_codes.tolist() == [0, 0, 1, 1]
     assert m_mobs._region_names == ["region_0", "region_1"]
 
@@ -71,19 +71,19 @@ def test_spatial_probit_constructor_validation_errors():
     W = W_to_graph(make_line_W(2))
 
     with pytest.raises(ValueError, match="Provide either region_ids or mobs"):
-        SpatialProbit(y=y, X=X, W=W)
+        SARProbit(y=y, X=X, W=W)
 
     with pytest.raises(ValueError, match="region_ids must have one entry"):
-        SpatialProbit(y=y, X=X, W=W, region_ids=np.array([0, 1, 0]))
+        SARProbit(y=y, X=X, W=W, region_ids=np.array([0, 1, 0]))
 
     with pytest.raises(ValueError, match=r"sum\(mobs\) must equal"):
-        SpatialProbit(y=y, X=X, W=W, mobs=[1, 1])
+        SARProbit(y=y, X=X, W=W, mobs=[1, 1])
 
     with pytest.raises(ValueError, match="y must be binary"):
-        SpatialProbit(y=np.array([0, 2, 0, 1], dtype=float), X=X, W=W, mobs=[2, 2])
+        SARProbit(y=np.array([0, 2, 0, 1], dtype=float), X=X, W=W, mobs=[2, 2])
 
     with pytest.raises(ValueError, match="must match W dimension"):
-        SpatialProbit(y=y, X=X, W=W, mobs=[1, 1, 2])
+        SARProbit(y=y, X=X, W=W, mobs=[1, 1, 2])
 
 
 def test_formula_mode_validation_and_parsing():
@@ -97,12 +97,12 @@ def test_formula_mode_validation_and_parsing():
     W = W_to_graph(make_line_W(2))
 
     with pytest.raises(ValueError, match="data is required"):
-        SpatialProbit(formula="y ~ x", W=W, region_col="region")
+        SARProbit(formula="y ~ x", W=W, region_col="region")
 
     with pytest.raises(ValueError, match="region_col is required"):
-        SpatialProbit(formula="y ~ x", data=df, W=W)
+        SARProbit(formula="y ~ x", data=df, W=W)
 
-    model = SpatialProbit(formula="y ~ x", data=df, W=W, region_col="region")
+    model = SARProbit(formula="y ~ x", data=df, W=W, region_col="region")
     assert model._X.shape[0] == 4
     assert model._y.shape[0] == 4
     assert model._region_names == ["a", "b"]
@@ -112,7 +112,7 @@ def test_build_model_requires_predictor_columns():
     y = np.array([0, 1, 0, 1], dtype=float)
     X = np.empty((4, 0), dtype=float)
     W = W_to_graph(make_line_W(2))
-    model = SpatialProbit(y=y, X=X, W=W, mobs=[2, 2])
+    model = SARProbit(y=y, X=X, W=W, mobs=[2, 2])
 
     with pytest.raises(ValueError, match="at least one predictor"):
         model._build_pymc_model()
@@ -122,7 +122,7 @@ def test_post_fit_accessors_and_rename_helper_and_pymc_property(monkeypatch):
     y = np.array([0, 1, 0, 1], dtype=float)
     X = np.column_stack([np.ones(4), np.arange(4, dtype=float)])
     W = W_to_graph(make_line_W(2))
-    model = SpatialProbit(y=y, X=X, W=W, mobs=[2, 2])
+    model = SARProbit(y=y, X=X, W=W, mobs=[2, 2])
 
     # pre-fit guard coverage
     with pytest.raises(RuntimeError, match="Model has not been fit yet"):

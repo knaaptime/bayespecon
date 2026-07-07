@@ -48,10 +48,10 @@ from ...samplers.logit._jax import (
     run_chains_jax_sem_vectorized,
 )
 from ..base import SpatialModel
-from ..priors import SEMSpatialLogitPriors, resolve_priors
+from ..priors import SEMLogitPriors, resolve_priors
 
 
-class SEMSpatialLogit(SpatialModel):
+class SEMLogit(SpatialModel):
     """Bayesian structural-form SEM-logit with Pólya–Gamma Gibbs sampler.
 
     Parameters
@@ -69,7 +69,7 @@ class SEMSpatialLogit(SpatialModel):
         Design matrix. Required in matrix mode.
     W : libpysal.graph.Graph or scipy.sparse matrix
         Spatial weights of shape ``(n, n)``.
-    priors : dict or SEMSpatialLogitPriors, optional
+    priors : dict or SEMLogitPriors, optional
         Override default priors. Supported keys:
 
         - ``lam_lower`` (float, default -0.999): Lower bound of the
@@ -114,15 +114,13 @@ class SEMSpatialLogit(SpatialModel):
     _jacobian_param: str | None = "lam"
     _gibbs_class: str | None = None  # Gibbs-only, no NUTS
     _model_type: str = "sem_logit"
-    _priors_cls = SEMSpatialLogitPriors
+    _priors_cls = SEMLogitPriors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         if self.robust:
-            raise NotImplementedError(
-                "robust=True is not supported for SEMSpatialLogit."
-            )
+            raise NotImplementedError("robust=True is not supported for SEMLogit.")
 
         # Validate y is binary
         if not np.isin(self._y, [0.0, 1.0]).all():
@@ -245,7 +243,7 @@ class SEMSpatialLogit(SpatialModel):
         for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
             if bad_kwarg in kwargs:
                 raise TypeError(
-                    f"SEMSpatialLogit.fit() does not accept '{bad_kwarg}'. "
+                    f"SEMLogit.fit() does not accept '{bad_kwarg}'. "
                     f"This model uses a Gibbs sampler, not NUTS."
                 )
 
@@ -257,9 +255,9 @@ class SEMSpatialLogit(SpatialModel):
         # Build priors from the typed priors object
         priors_obj = resolve_priors(
             self.priors if isinstance(self.priors, dict) else None,
-            SEMSpatialLogitPriors,
+            SEMLogitPriors,
         )
-        if isinstance(self.priors, SEMSpatialLogitPriors):
+        if isinstance(self.priors, SEMLogitPriors):
             priors_obj = self.priors
 
         priors = SEMLogitGibbsPriors(
@@ -482,9 +480,9 @@ class SEMSpatialLogit(SpatialModel):
         return idata
 
     def _build_pymc_model(self):
-        """Not supported — SEMSpatialLogit uses a Gibbs sampler, not NUTS."""
+        """Not supported — SEMLogit uses a Gibbs sampler, not NUTS."""
         raise NotImplementedError(
-            "SEMSpatialLogit does not build a PyMC model. "
+            "SEMLogit does not build a PyMC model. "
             "Use the fit() method for Gibbs sampling."
         )
 

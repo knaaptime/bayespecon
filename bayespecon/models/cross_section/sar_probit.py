@@ -27,10 +27,10 @@ from libpysal.graph import Graph
 
 from ..._backends import resolve_backend
 from ..._backends.sampler_helpers import prepare_compile_kwargs, prepare_idata_kwargs
-from ..priors import SpatialProbitPriors, priors_as_dict, resolve_priors
+from ..priors import SARProbitPriors, priors_as_dict, resolve_priors
 
 
-class SpatialProbit:
+class SARProbit:
     """Bayesian spatial probit with regional random effects.
 
     A binary-response model in which the latent utility includes a
@@ -106,7 +106,7 @@ class SpatialProbit:
 
     **Robust regression**
 
-    ``robust=True`` is not supported for SpatialProbit. The probit link
+    ``robust=True`` is not supported for SARProbit. The probit link
     function uses a Normal CDF; a robust version would require a Student-t
     CDF link, which is not yet implemented. Use ``robust=True`` with
     Gaussian models (OLS, SAR, SEM, etc.) instead.
@@ -129,7 +129,7 @@ class SpatialProbit:
             raise ValueError("W is required.")
 
         # Resolve typed priors and backend.
-        self.priors_obj = resolve_priors(priors, SpatialProbitPriors)
+        self.priors_obj = resolve_priors(priors, SARProbitPriors)
         self.priors = priors_as_dict(self.priors_obj)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
@@ -280,7 +280,7 @@ class SpatialProbit:
         if self.robust:
             raise NotImplementedError(
                 "Robust (Student-t) error distribution is not supported for "
-                "SpatialProbit. The probit link function uses a Normal CDF; "
+                "SARProbit. The probit link function uses a Normal CDF; "
                 "a robust version would require a t-link (Student-t CDF) which "
                 "is not yet implemented. Use robust=True with Gaussian models "
                 "(OLS, SAR, SEM, etc.) instead."

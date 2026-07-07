@@ -16,7 +16,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon import SARNegBinStructural, dgp
+from bayespecon import dgp
+from bayespecon.models import SARNegBinStructural
 from bayespecon.tests.helpers import W_to_graph, make_rook_W
 
 # ---------------------------------------------------------------------------

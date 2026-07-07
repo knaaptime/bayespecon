@@ -20,7 +20,7 @@ import arviz as az
 import numpy as np
 import pytest
 
-from bayespecon import (
+from bayespecon.models import (
     OLS,
     SAR,
     SDEM,

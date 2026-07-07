@@ -11,7 +11,8 @@ import numpy as np
 import pymc as pm
 import pytest
 
-from bayespecon import SARNegBin, dgp
+from bayespecon import dgp
+from bayespecon.models import SARNegBin
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 

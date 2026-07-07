@@ -144,7 +144,7 @@ class SparseFlowSolveOp(pt.Op):
     :math:`W_w = W \otimes W` are the Kronecker-product flow weight matrices
     and :math:`N = n^2`.
 
-    This Op is used by :class:`~bayespecon.models.flow.NegativeBinomialSARFlow` to embed
+    This Op is used by :class:`~bayespecon.models.flow.SARNegBinFlow` to embed
     the implicit spatial filter on the **log-mean** of a count observation
     model:
 
