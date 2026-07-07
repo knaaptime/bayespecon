@@ -68,21 +68,18 @@ class SpatialModel(ABC):
         Override default priors. Keys depend on the model subclass; see
         each model's docstring for supported keys.
     logdet_method : str
-        How to compute ``log|I - rho*W|``. ``"eigenvalue"`` (default for
-        ``n <= 500``) pre-computes W's eigenvalues once and evaluates
-        O(n) per step; ``"exact"`` uses symbolic pytensor det (slow for
-        ``n > 500``); ``"grid_dense"`` uses dense eigenvalue grid +
-        cubic-spline interpolation (MATLAB-style ``lndetfull`` for dense
-        W); ``"grid_sparse"`` uses sparse-LU grid + cubic-spline
-        interpolation (``lndetfull`` style for large sparse W);
-        ``"sparse_spline"`` uses sparse-LU + spline on
-        ``[max(rho_min, 0), rho_max]`` (``lndetint`` style); ``"grid_mc"``
-        uses Monte Carlo trace approximation (``lndetmc``); ``"grid_ilu"``
-        uses ILU-based approximation (``lndetichol`` analog);
-        ``"chebyshev"`` (default for ``n > 500``) uses a Chebyshev
-        polynomial approximation evaluated via Clenshaw's algorithm.
-        For large ``n`` the Chebyshev coefficients are built from
-        Barry-Pace Hutchinson stochastic trace estimates.
+        How to compute ``log|I - rho*W|``. ``None`` (default) auto-selects
+        by size: ``"eigenvalue"`` for ``n <= 500`` (pre-computes W's
+        eigenvalues once, then O(n) per evaluation); for
+        ``500 < n <= 20000``, ``"cheb_cholesky"`` (exact log-determinant
+        via sparse Cholesky at Chebyshev nodes) when ``W`` is symmetric
+        else ``"aaa"`` (AAA rational approximation, for non-symmetric W);
+        ``"cheb_stochastic"`` (stochastic Chebyshev expansion) for
+        ``n > 20000``. Explicit opt-ins: ``"chebyshev"`` (Barry-Pace
+        polynomial via Clenshaw) and ``"slq"`` (stochastic Lanczos
+        quadrature). Thresholds are configurable via the
+        ``BAYESPECON_LOGDET_EIGEN_MAX_N`` and ``BAYESPECON_LOGDET_CHEB_MAX_N``
+        environment variables.
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal,
         yielding a model that is robust to heavy-tailed outliers. When

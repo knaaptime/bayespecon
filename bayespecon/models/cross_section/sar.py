@@ -67,10 +67,12 @@ class SAR(GaussianLikelihoodMixin, SpatialModel):
 
     logdet_method : str, optional
         How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
-        auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
-        ``"chebyshev"``. Other options: ``"exact"`` (symbolic det,
-        slow for ``n > 500``), ``"dense_grid"``, ``"sparse_grid"``,
-        ``"spline"``, ``"mc"``, ``"ilu"``.
+        auto-selects by size: ``"eigenvalue"`` for ``n <= 500``; for
+        ``500 < n <= 20000``, ``"cheb_cholesky"`` (exact, sparse Cholesky
+        at Chebyshev nodes) when ``W`` is symmetric else ``"aaa"`` (AAA
+        rational approximation); ``"cheb_stochastic"`` for ``n > 20000``.
+        Explicit opt-ins: ``"chebyshev"`` (Barry-Pace) and ``"slq"``
+        (stochastic Lanczos quadrature).
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
         to heavy-tailed outliers. See *Robust regression* below.

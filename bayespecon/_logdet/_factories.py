@@ -35,6 +35,73 @@ from ._slq import (
 )
 
 # ---------------------------------------------------------------------------
+# Shared Chebyshev / Clenshaw evaluation helpers
+# ---------------------------------------------------------------------------
+
+
+def _clenshaw_scalar(coeffs, r, rmin_cb, rmax_cb, T):
+    """Evaluate a Chebyshev series at scalar ``r`` via Clenshaw recurrence."""
+    r = float(r)
+    x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
+    m = len(coeffs)
+    if m == 0:
+        return 0.0
+    if m == 1:
+        return float(coeffs[0])
+    b_next = 0.0
+    b_curr = float(coeffs[m - 1])
+    for k in range(m - 2, 0, -1):
+        b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
+        b_next = b_curr
+        b_curr = b_new
+    val = float(coeffs[0]) + x * b_curr - b_next
+    return val if T == 1 else T * val
+
+
+def _clenshaw_vec(coeffs, rho_arr, rmin_cb, rmax_cb, T):
+    """Evaluate a Chebyshev series at an array of ρ via Clenshaw recurrence."""
+    rho_arr = np.asarray(rho_arr, dtype=np.float64)
+    x = (2.0 * rho_arr - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
+    m = len(coeffs)
+    if m == 0:
+        return np.zeros_like(rho_arr, dtype=np.float64)
+    if m == 1:
+        return np.full_like(rho_arr, coeffs[0], dtype=np.float64)
+    b_next = np.zeros_like(x, dtype=np.float64)
+    b_curr = np.full_like(x, coeffs[m - 1], dtype=np.float64)
+    for k in range(m - 2, 0, -1):
+        b_new = 2.0 * x * b_curr - b_next + coeffs[k]
+        b_next = b_curr
+        b_curr = b_new
+    val = coeffs[0] + x * b_curr - b_next
+    return val if T == 1 else T * val
+
+
+def _cheb_stochastic_coeffs(W_sparse, rho_min, rho_max):
+    """Stochastic-Chebyshev logdet → Chebyshev-in-ρ coefficients (order 20).
+
+    Precomputes stochastic moments, evaluates the logdet at order-20
+    Chebyshev nodes in ``[rho_min, rho_max]``, then fits a Chebyshev-in-ρ
+    polynomial via DCT-I so it can be evaluated with an O(m) Clenshaw
+    recurrence.
+    """
+    pre = cheb_stochastic_logdet_precompute(W_sparse)
+    k_nodes = np.arange(1, 21)
+    nodes_cos = np.cos((2 * k_nodes - 1) * np.pi / 40)
+    rho_nodes = 0.5 * (rho_max - rho_min) * nodes_cos + 0.5 * (rho_max + rho_min)
+    logdet_vals = np.array(
+        [cheb_stochastic_logdet_eval(pre, float(r)) for r in rho_nodes]
+    )
+    coeffs = np.zeros(20, dtype=np.float64)
+    for j in range(20):
+        scale = 2.0 / 20 if j > 0 else 1.0 / 20
+        coeffs[j] = scale * np.sum(
+            logdet_vals * np.cos(j * (2 * k_nodes - 1) * np.pi / 40)
+        )
+    return coeffs, float(rho_min), float(rho_max)
+
+
+# ---------------------------------------------------------------------------
 # NumPy scalar factory
 # ---------------------------------------------------------------------------
 
@@ -64,64 +131,11 @@ def make_logdet_numpy_fn(
         out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
         coeffs = out["coeffs"]
         rmin_cb, rmax_cb = out["rmin"], out["rmax"]
-        m = len(coeffs)
-
-        def _cheb_numpy(r):
-            r = float(r)
-            x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return 0.0
-            if m == 1:
-                return float(coeffs[0])
-            b_next = 0.0
-            b_curr = float(coeffs[m - 1])
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
-                b_next = b_curr
-                b_curr = b_new
-            val = float(coeffs[0]) + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _cheb_numpy
+        return lambda r: _clenshaw_scalar(coeffs, r, rmin_cb, rmax_cb, T)
 
     if method == "cheb_stochastic":
-        # Precompute stochastic moments, then evaluate at Chebyshev nodes in ρ
-        # and fit a Chebyshev-in-ρ polynomial for O(m) Clenshaw evaluation.
-        pre = cheb_stochastic_logdet_precompute(W_sparse)
-        # Evaluate logdet at order-20 Chebyshev nodes in [rho_min, rho_max]
-        _k_nodes = np.arange(1, 21)
-        _nodes_cos = np.cos((2 * _k_nodes - 1) * np.pi / 40)
-        _rho_nodes = 0.5 * (rho_max - rho_min) * _nodes_cos + 0.5 * (rho_max + rho_min)
-        _logdet_vals = np.array(
-            [cheb_stochastic_logdet_eval(pre, float(r)) for r in _rho_nodes]
-        )
-        # DCT-I → Chebyshev coefficients in ρ
-        coeffs = np.zeros(20, dtype=np.float64)
-        for j in range(20):
-            scale = 2.0 / 20 if j > 0 else 1.0 / 20
-            coeffs[j] = scale * np.sum(
-                _logdet_vals * np.cos(j * (2 * _k_nodes - 1) * np.pi / 40)
-            )
-        rmin_cb, rmax_cb = rho_min, rho_max
-        m = len(coeffs)
-
-        def _cheb_stoch_numpy(r):
-            r = float(r)
-            x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return 0.0
-            if m == 1:
-                return float(coeffs[0])
-            b_next = 0.0
-            b_curr = float(coeffs[m - 1])
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
-                b_next = b_curr
-                b_curr = b_new
-            val = float(coeffs[0]) + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _cheb_stoch_numpy
+        coeffs, rmin_cb, rmax_cb = _cheb_stochastic_coeffs(W_sparse, rho_min, rho_max)
+        return lambda r: _clenshaw_scalar(coeffs, r, rmin_cb, rmax_cb, T)
 
     if method == "cheb_cholesky":
         from ._chol_cheb import chol_cheb_logdet_precompute
@@ -133,25 +147,7 @@ def make_logdet_numpy_fn(
         )
         coeffs = pre.coeffs
         rmin_cb, rmax_cb = pre.rho_min, pre.rho_max
-        m = len(coeffs)
-
-        def _cheb_chol_numpy(r):
-            r = float(r)
-            x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return 0.0
-            if m == 1:
-                return float(coeffs[0])
-            b_next = 0.0
-            b_curr = float(coeffs[m - 1])
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
-                b_next = b_curr
-                b_curr = b_new
-            val = float(coeffs[0]) + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _cheb_chol_numpy
+        return lambda r: _clenshaw_scalar(coeffs, r, rmin_cb, rmax_cb, T)
 
     if method == "aaa":
         from ._aaa import aaa_logdet_eval, aaa_logdet_precompute
@@ -175,25 +171,7 @@ def make_logdet_numpy_fn(
         )
         coeffs = cheb["coeffs"]
         rmin_cb, rmax_cb = cheb["rmin"], cheb["rmax"]
-        m = len(coeffs)
-
-        def _slq_cheb_numpy(r):
-            r = float(r)
-            x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return 0.0
-            if m == 1:
-                return float(coeffs[0])
-            b_next = 0.0
-            b_curr = float(coeffs[m - 1])
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
-                b_next = b_curr
-                b_curr = b_new
-            val = float(coeffs[0]) + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _slq_cheb_numpy
+        return lambda r: _clenshaw_scalar(coeffs, r, rmin_cb, rmax_cb, T)
 
     raise ValueError(f"Unsupported logdet method: {method!r}")
 
@@ -234,61 +212,11 @@ def make_logdet_numpy_vec_fn(
         out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
         coeffs = out["coeffs"].astype(np.float64)
         rmin_cb, rmax_cb = float(out["rmin"]), float(out["rmax"])
-        m = len(coeffs)
-
-        def _vec_chebyshev(rho_arr: np.ndarray) -> np.ndarray:
-            rho_arr = np.asarray(rho_arr, dtype=np.float64)
-            x = (2.0 * rho_arr - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return np.zeros_like(rho_arr, dtype=np.float64)
-            if m == 1:
-                return np.full_like(rho_arr, coeffs[0], dtype=np.float64)
-            b_next = np.zeros_like(x, dtype=np.float64)
-            b_curr = np.full_like(x, coeffs[m - 1], dtype=np.float64)
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + coeffs[k]
-                b_next = b_curr
-                b_curr = b_new
-            val = coeffs[0] + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _vec_chebyshev
+        return lambda rho_arr: _clenshaw_vec(coeffs, rho_arr, rmin_cb, rmax_cb, T)
 
     if method == "cheb_stochastic":
-        # Precompute stochastic moments → Chebyshev-in-ρ coefficients → vectorized Clenshaw
-        pre = cheb_stochastic_logdet_precompute(W_sparse)
-        _k_nodes = np.arange(1, 21)
-        _nodes_cos = np.cos((2 * _k_nodes - 1) * np.pi / 40)
-        _rho_nodes = 0.5 * (rho_max - rho_min) * _nodes_cos + 0.5 * (rho_max + rho_min)
-        _logdet_vals = np.array(
-            [cheb_stochastic_logdet_eval(pre, float(r)) for r in _rho_nodes]
-        )
-        coeffs = np.zeros(20, dtype=np.float64)
-        for j in range(20):
-            scale = 2.0 / 20 if j > 0 else 1.0 / 20
-            coeffs[j] = scale * np.sum(
-                _logdet_vals * np.cos(j * (2 * _k_nodes - 1) * np.pi / 40)
-            )
-        rmin_cb, rmax_cb = float(rho_min), float(rho_max)
-        m = len(coeffs)
-
-        def _vec_cheb_stochastic(rho_arr: np.ndarray) -> np.ndarray:
-            rho_arr = np.asarray(rho_arr, dtype=np.float64)
-            x = (2.0 * rho_arr - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return np.zeros_like(rho_arr, dtype=np.float64)
-            if m == 1:
-                return np.full_like(rho_arr, coeffs[0], dtype=np.float64)
-            b_next = np.zeros_like(x, dtype=np.float64)
-            b_curr = np.full_like(x, coeffs[m - 1], dtype=np.float64)
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + coeffs[k]
-                b_next = b_curr
-                b_curr = b_new
-            val = coeffs[0] + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _vec_cheb_stochastic
+        coeffs, rmin_cb, rmax_cb = _cheb_stochastic_coeffs(W_sparse, rho_min, rho_max)
+        return lambda rho_arr: _clenshaw_vec(coeffs, rho_arr, rmin_cb, rmax_cb, T)
 
     if method == "cheb_cholesky":
         from ._chol_cheb import chol_cheb_logdet_eval_vec, chol_cheb_logdet_precompute
@@ -323,25 +251,7 @@ def make_logdet_numpy_vec_fn(
         )
         coeffs = cheb["coeffs"].astype(np.float64)
         rmin_cb, rmax_cb = float(cheb["rmin"]), float(cheb["rmax"])
-        m = len(coeffs)
-
-        def _vec_slq_chebyshev(rho_arr: np.ndarray) -> np.ndarray:
-            rho_arr = np.asarray(rho_arr, dtype=np.float64)
-            x = (2.0 * rho_arr - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-            if m == 0:
-                return np.zeros_like(rho_arr, dtype=np.float64)
-            if m == 1:
-                return np.full_like(rho_arr, coeffs[0], dtype=np.float64)
-            b_next = np.zeros_like(x, dtype=np.float64)
-            b_curr = np.full_like(x, coeffs[m - 1], dtype=np.float64)
-            for k in range(m - 2, 0, -1):
-                b_new = 2.0 * x * b_curr - b_next + coeffs[k]
-                b_next = b_curr
-                b_curr = b_new
-            val = coeffs[0] + x * b_curr - b_next
-            return val if T == 1 else T * val
-
-        return _vec_slq_chebyshev
+        return lambda rho_arr: _clenshaw_vec(coeffs, rho_arr, rmin_cb, rmax_cb, T)
 
     raise ValueError(f"Unsupported logdet method: {method!r}")
 
