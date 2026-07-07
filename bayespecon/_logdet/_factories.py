@@ -50,7 +50,7 @@ def make_logdet_numpy_fn(
     """Return a pure-numpy ``(rho: float) -> float`` logdet evaluator."""
     T = int(T)
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
-    method = resolve_logdet_method(method, n=n)
+    method = resolve_logdet_method(method, n=n, W=W_sparse)
 
     if method == "eigenvalue":
         if eigs is None:
@@ -214,7 +214,7 @@ def make_logdet_numpy_vec_fn(
     """Return a vectorized numpy ``(rho_arr: np.ndarray) -> np.ndarray`` logdet evaluator."""
     T = int(T)
     n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
-    method = resolve_logdet_method(method, n=n)
+    method = resolve_logdet_method(method, n=n, W=W_sparse)
 
     if method == "eigenvalue":
         if eigs is None:
@@ -366,7 +366,7 @@ def make_logdet_fn(
 
     if sp.issparse(W):
         W_sparse = W.tocsr().astype(np.float64)
-        method = resolve_logdet_method(method, n=W_sparse.shape[0])
+        method = resolve_logdet_method(method, n=W_sparse.shape[0], W=W_sparse)
         if method == "cheb_stochastic":
             # Stochastic Chebyshev → Clenshaw-like eval (PyTensor-differentiable)
             # Build Cheb coeffs at Chebyshev nodes in ρ-space, then use logdet_chebyshev
@@ -484,7 +484,7 @@ def make_logdet_fn(
 
     # 2-D dense matrix
     W_dense = W
-    method = resolve_logdet_method(method, n=W_dense.shape[0])
+    method = resolve_logdet_method(method, n=W_dense.shape[0], W=W_dense)
     if method == "cheb_stochastic":
         # Stochastic Chebyshev → Clenshaw (PyTensor-differentiable via ρ-space coeffs)
         pre = cheb_stochastic_logdet_precompute(W_dense)
@@ -624,7 +624,7 @@ def get_cached_logdet_fn(
         n_w = int(W.shape[0])
     else:
         n_w = int(np.asarray(W).shape[0])
-    resolved_method = resolve_logdet_method(method, n=n_w)
+    resolved_method = resolve_logdet_method(method, n=n_w, W=W)
 
     key = (
         _logdet_w_signature(W),

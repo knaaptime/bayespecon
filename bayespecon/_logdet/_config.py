@@ -14,8 +14,10 @@ Five methods are supported:
 
 When ``logdet_method`` is ``None`` the method is auto-selected:
 ``"eigenvalue"`` for n ≤ ``BAYESPECON_LOGDET_EIGEN_MAX_N`` (default 500),
-``"cheb_cholesky"`` for n ≤ ``BAYESPECON_LOGDET_CHEB_MAX_N`` (default 20000),
-otherwise ``"cheb_stochastic"`` (geometric convergence, same cost as Barry-Pace).
+``"cheb_cholesky"`` for n ≤ ``BAYESPECON_LOGDET_CHEB_MAX_N`` (default 20000)
+when ``W`` is symmetric (undirected graph), ``"aaa"`` when ``W`` is
+non-symmetric (directed graph), otherwise ``"cheb_stochastic"``
+(geometric convergence, same cost as Barry-Pace).
 ``"slq"`` and ``"chebyshev"`` are available as explicit opt-ins.
 """
 
@@ -84,16 +86,26 @@ class LogdetBounds:
 # ---------------------------------------------------------------------------
 
 
-def resolve_logdet_method(method: str | None, *, n: int) -> str:
+def resolve_logdet_method(
+    method: str | None,
+    *,
+    n: int,
+    W=None,
+) -> str:
     """Validate ``method`` and auto-select when ``None``.
 
     Parameters
     ----------
     method
-        One of ``"eigenvalue"``, ``"chebyshev"``, ``"traces"``, or ``None``
-        for auto-selection.
+        One of the valid method names, or ``None`` for auto-selection.
     n
         Spatial dimension; used for auto-selection.
+    W
+        Optional spatial weights matrix.  When ``method`` is ``None``
+        and ``n`` is in the medium range, the auto-selector checks
+        whether ``W`` is symmetric (undirected graph) to choose between
+        ``"cheb_cholesky"`` (symmetric) and ``"aaa"`` (non-symmetric).
+        If ``W`` is not provided, defaults to ``"cheb_cholesky"``.
 
     Returns
     -------
@@ -101,24 +113,60 @@ def resolve_logdet_method(method: str | None, *, n: int) -> str:
         Canonical method name.
     """
     if method is None:
-        return _auto_logdet_method(int(n))
+        return _auto_logdet_method(int(n), W=W)
     if method not in VALID_LOGDET_METHODS:
         valid = ", ".join(sorted(VALID_LOGDET_METHODS))
         raise ValueError(f"Unknown logdet method: {method!r}. Valid options: {valid}.")
     return method
 
 
-def _auto_logdet_method(n: int) -> str:
-    """Auto-select based on matrix dimension n.
+def _is_symmetric_W(W) -> bool:
+    """Check whether ``W`` is symmetric (undirected graph).
+
+    Uses ``libpysal.graph.Graph.asymmetry(intrinsic=False)`` when ``W`` is a
+    Graph object, falling back to sparse/dense matrix comparison otherwise.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    if W is None:
+        return True  # default: assume symmetric
+
+    # libpysal Graph: use built-in asymmetry check
+    if hasattr(W, "asymmetry"):
+        try:
+            asym = W.asymmetry(intrinsic=False)
+            return asym.empty
+        except Exception:
+            pass
+
+    if sp.issparse(W):
+        W = W.tocsr()
+        WT = W.T.tocsr()
+        diff = (W - WT).toarray()
+        return np.allclose(diff, 0, atol=1e-10)
+    else:
+        W_arr = np.asarray(W)
+        if W_arr.ndim != 2:
+            return True  # 1-D eigenvalue array — not applicable
+        return np.allclose(W_arr, W_arr.T, atol=1e-10)
+
+
+def _auto_logdet_method(n: int, W=None) -> str:
+    """Auto-select based on matrix dimension n and W symmetry.
 
     - ``eigenvalue`` for n ≤ eigen_cutoff (default 500): exact O(n³) eigendecomposition.
-    - ``cheb_cholesky`` for n ≤ cheb_cutoff (default 20000): exact logdet via
-      sparse Cholesky at Chebyshev nodes with symbolic reuse.  Measured setup:
-      ~55ms at n=10k, ~240ms at n=40k, ~370ms at n=60k for 2D grids.
+    - ``cheb_cholesky`` for n ≤ cheb_cutoff (default 20000) when W is symmetric:
+      exact logdet via sparse Cholesky at Chebyshev nodes with symbolic reuse.
+      Measured setup: ~55ms at n=10k, ~240ms at n=40k, ~370ms at n=60k for 2D grids.
       Accuracy: machine precision (~1e-6).  Eval: ~1.4μs/ρ via Clenshaw.
+    - ``aaa`` for n ≤ cheb_cutoff when W is non-symmetric (directed graph):
+      exact logdet via sparse LU at adaptively-selected AAA support points.
+      Rational approximation converges exponentially near singularities.
+      Needs only ~30 LU factorisations (vs 50 Cholesky for cheb_cholesky).
     - ``cheb_stochastic`` for n > cheb_cutoff: stochastic Chebyshev expansion.
       Lower setup cost but ~0.1-0.6 error with 50 probes, ~0.07-0.7 with 200.
-      Eval: ~58μs/ρ.  Use when Cholesky fill-in makes setup too expensive.
+      Eval: ~58μs/ρ.  Use when factorisation fill-in makes setup too expensive.
     """
     eigen_cutoff_raw = os.getenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "500")
     cheb_cutoff_raw = os.getenv("BAYESPECON_LOGDET_CHEB_MAX_N", "20000")
@@ -133,10 +181,12 @@ def _auto_logdet_method(n: int) -> str:
     if n <= eigen_cutoff:
         return "eigenvalue"
     if n <= cheb_cutoff:
-        # Cholesky-Chebyshev: exact logdet via sparse Cholesky at Chebyshev nodes.
-        # No stochastic noise, no O(n³) eigendecomposition.  SPD for |ρ| < 1.
-        # Symbolic analysis reused across all nodes (~64% setup speedup).
-        return "cheb_cholesky"
+        # Check W symmetry: cheb_cholesky for symmetric (undirected graph),
+        # aaa for non-symmetric (directed graph: KNN, travel time, migration).
+        if _is_symmetric_W(W):
+            return "cheb_cholesky"
+        else:
+            return "aaa"
     # Stochastic Chebyshev (Han et al. 2015): geometric convergence via
     # Bernstein ellipse, avoids O(n³) eigendecomposition.
     return "cheb_stochastic"

@@ -196,7 +196,9 @@ def make_logdet_jax_fn(
             n = W_arr.shape[0]
             W_sparse = sp.csr_matrix(W_arr)
 
-    method = resolve_logdet_method(method, n=n)
+    method = resolve_logdet_method(
+        method, n=n, W=W_sparse if "W_sparse" in dir() else W_arr
+    )
 
     if method == "eigenvalue":
         if eigs is None:

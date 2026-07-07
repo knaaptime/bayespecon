@@ -185,7 +185,7 @@ class SpatialModel(ABC):
             self._resolved_logdet_method = (
                 self.logdet_method
                 if self.logdet_method is not None
-                else _auto_logdet_method(self._W_sparse.shape[0])
+                else _auto_logdet_method(self._W_sparse.shape[0], W=self._W_sparse)
             )
             # Resolve rho/lambda bounds from method and priors.
             # For row-standardised W the spectral stability interval is
