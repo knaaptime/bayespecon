@@ -52,7 +52,6 @@ import pytensor.tensor as pt
 import scipy.sparse as sp
 
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import has_cholmod
 from ..base import SpatialModel
 from ..priors import SARNegBinPriors
 
@@ -450,11 +449,8 @@ class SARNegBin(SpatialModel):
         # CholmodFactor from the pattern matrix on its side.
         from ...samplers.negbin_reduced._core import _make_cholmod_pattern
 
-        if has_cholmod():
-            W_sym, WtW, pattern = _make_cholmod_pattern(W_csc, n)
-            cholmod_pattern = pattern
-        else:
-            W_sym, WtW, cholmod_pattern = None, None, None
+        W_sym, WtW, pattern = _make_cholmod_pattern(W_csc, n)
+        cholmod_pattern = pattern
 
         rng = np.random.default_rng(random_seed)
         chain_seeds = [int(s) for s in rng.integers(0, 2**31, size=chains)]
@@ -878,7 +874,7 @@ class SARNegBin(SpatialModel):
         indirect_samples : np.ndarray, shape (G, n_effects)
         total_samples : np.ndarray, shape (G, n_effects)
         """
-        from ..._ops import _make_cached_umfpack_solver
+        from ..._ops import _make_cached_sparse_solver
 
         W = self._W_sparse
         I_n = sp.eye(n, format="csr", dtype=np.float64)
@@ -903,7 +899,7 @@ class SARNegBin(SpatialModel):
             A = (I_n - rho_f * W).tocsc()
 
             # Factorise A once and reuse for all per-draw RHSes.
-            solver = _make_cached_umfpack_solver(A)
+            solver = _make_cached_sparse_solver(A)
             if solver is None:
                 solver = sp.linalg.splu(A)
 

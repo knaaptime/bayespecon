@@ -49,7 +49,7 @@ import scipy.sparse as sp
 
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers._utils._spatial_normal import CholmodFactor
 from ...samplers.gaussian._chain_runner import run_chains
 from ...samplers.logit import (
     LogitGibbsCache,
@@ -476,11 +476,8 @@ class SARZINB(SpatialModel):
         W_sel_sym = W_sel_csr + W_sel_csr.T
         W_sel_tW = W_sel_csr.T @ W_sel_csr
 
-        if has_cholmod():
-            _P0_sel = sp.eye(n, format="csr") + 0.5 * W_sel_sym + 0.25 * W_sel_tW
-            sel_cholmod_factor = CholmodFactor(_P0_sel)
-        else:
-            sel_cholmod_factor = None
+        _P0_sel = sp.eye(n, format="csr") + 0.5 * W_sel_sym + 0.25 * W_sel_tW
+        sel_cholmod_factor = CholmodFactor(_P0_sel)
 
         sel_cache = LogitGibbsCache(
             W_sparse=W_sel_csr,
@@ -491,9 +488,9 @@ class SARZINB(SpatialModel):
             cholmod_factor=sel_cholmod_factor,
             W_sym=W_sel_sym,
             WtW=W_sel_tW,
-            solve_method="cholmod" if sel_cholmod_factor is not None else "splu",
+            solve_method="cholmod",
             logdet_P_method="cholmod",
-            sample_method="cholmod" if sel_cholmod_factor is not None else "splu",
+            sample_method="cholmod",
             rho_adaptive_width=True,
             rho_slice_width_state=SliceWidthState(w=0.2),
         )
@@ -509,11 +506,8 @@ class SARZINB(SpatialModel):
             W_eig_max = 1.0
             W_eig_min = -1.0
 
-        if has_cholmod():
-            W_cnt_sym, W_cnt_tW, cnt_pattern = _make_cholmod_pattern(W_cnt_csc, n)
-            cnt_cholmod_pattern = cnt_pattern
-        else:
-            W_cnt_sym, W_cnt_tW, cnt_cholmod_pattern = None, None, None
+        W_cnt_sym, W_cnt_tW, cnt_pattern = _make_cholmod_pattern(W_cnt_csc, n)
+        cnt_cholmod_pattern = cnt_pattern
 
         cnt_cache = ReducedGibbsCache(
             W_sparse=W_cnt_csr,

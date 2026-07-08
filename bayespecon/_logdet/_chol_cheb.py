@@ -20,7 +20,7 @@ per-``ρ`` evaluation via Clenshaw recurrence.
 **Symbolic reuse**: all ``I - ρW`` matrices share the same sparsity pattern,
 so CHOLMOD's symbolic analysis (AMD ordering + elimination tree) is performed
 only once and reused for all subsequent numeric factorisations via
-``factor.cholesky_inplace()``.  This saves ~64% of per-node cost.
+``factor.factorize()``.  This saves ~64% of per-node cost.
 
 **When to use**: ``n ∈ (500, 20000]``, any ``ρ ∈ (-1, 1)``.  For ``n ≤ 500``
 use ``eigenvalue`` (exact eigendecomposition).  For ``n > 20000`` use
@@ -166,7 +166,7 @@ def chol_cheb_logdet_precompute(
     CholChebPrecompute
         Precomputed Chebyshev coefficients.
     """
-    from sksparse.cholmod import cholesky as cholmod_cholesky
+    from sksparse.cholmod import cho_factor as cholmod_cho_factor
 
     if sp.issparse(W) or hasattr(W, "format"):
         W_sp = sp.csr_matrix(W, dtype=np.float64)
@@ -204,10 +204,10 @@ def chol_cheb_logdet_precompute(
         A = sp.eye(n, format="csc") - rho * W_sym
         if factor is None:
             # First node: symbolic analysis + numeric factorisation
-            factor = cholmod_cholesky(A)
+            factor = cholmod_cho_factor(A)
         else:
             # Subsequent nodes: numeric factorisation only (reuse symbolic)
-            factor.cholesky_inplace(A)
+            factor.factorize(A)
         logdet_vals[i] = factor.logdet()
 
     # DCT-I → Chebyshev coefficients

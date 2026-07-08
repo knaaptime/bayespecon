@@ -8,7 +8,6 @@ import scipy.sparse as sp
 
 from bayespecon.samplers._utils._spatial_normal import (
     CholmodFactor,
-    has_cholmod,
     iterative_solve,
     sample_spatial_normal,
 )
@@ -114,7 +113,6 @@ class TestSampleSpatialNormal:
         )
         np.testing.assert_allclose(draws.mean(axis=0), expected_mean, atol=0.1)
 
-    @pytest.mark.skipif(not has_cholmod(), reason="CHOLMOD not available")
     def test_cholmod_factor(self, rng):
         """CholmodFactor produces correct samples and log-determinant."""
         n = 30
@@ -139,7 +137,6 @@ class TestSampleSpatialNormal:
         x_splu = lu.solve(mean_term)
         np.testing.assert_allclose(x_cholmod, x_splu, atol=1e-12)
 
-    @pytest.mark.skipif(not has_cholmod(), reason="CHOLMOD not available")
     def test_cholmod_refactorize(self, rng):
         """CholmodFactor can re-factorize with same sparsity pattern."""
         n = 30
@@ -158,35 +155,58 @@ class TestSampleSpatialNormal:
         assert np.all(np.isfinite(x))
 
         # Verify solve matches fresh factorization
-        from sksparse.cholmod import cholesky
+        from sksparse.cholmod import cho_factor
 
-        f2 = cholesky(P2)
+        f2 = cho_factor(P2)
         np.testing.assert_allclose(
-            factor.solve(mean_term), f2.solve_A(mean_term), atol=1e-12
+            factor.solve(mean_term), f2.solve(mean_term), atol=1e-12
         )
 
-    def test_splu_fallback(self, rng):
-        """splu fallback produces correct samples."""
-        n = 20
-        v = rng.uniform(0.5, 2.0, size=n)
-        P = sp.diags(v, format="csc")
+    def test_permutation_covariance(self, rng):
+        """Sampling honours CHOLMOD's fill-reducing permutation.
+
+        Regression test for the permutation.  CHOLMOD factors a permuted
+        matrix ``P_perm P P_perm^T = L L^T``; a naive ``L^{-T} z`` draw
+        that ignores ``P_perm`` yields the *permuted* covariance instead
+        of ``P^-1``.  Diagonal/tridiagonal precisions have trivial AMD
+        orderings, so this uses a structured SPD matrix that forces a
+        nontrivial reordering.
+        """
+        n = 60
+        # Structured sparse SPD precision that induces a nontrivial AMD perm.
+        G = sp.random(n, n, density=0.06, random_state=1)
+        P = G + G.T
+        P = sp.csc_matrix(P @ P.T + sp.eye(n) * n)
+
+        factor = CholmodFactor(P)
+        perm = factor._factor.get_perm()
+        assert not np.array_equal(perm, np.arange(n))  # fixture must permute
+
+        P_inv = np.linalg.inv(P.toarray())
+
+        # Exact check: sample() draws x = m + P_perm^T L^{-T} z, so the
+        # stochastic map M = P_perm^T L^{-T} must satisfy M M^T = P^-1
+        # exactly.  Build M with the same two operations sample() uses.
+        Linv_T = factor._factor.solve(np.eye(n), system="Lt")  # L^{-T}
+        M = np.empty_like(Linv_T)
+        M[perm, :] = Linv_T  # apply P_perm^T (row scatter), as in sample()
+        np.testing.assert_allclose(M @ M.T, P_inv, atol=1e-10)
+
+        # Monte Carlo check on the real sampler: the empirical covariance
+        # must be closer to P^-1 than to the permuted P^-1 (the bug's
+        # signature).  Relative comparison → robust to MC noise.
         mean_term = rng.standard_normal(n)
-
-        draw = sample_spatial_normal(P, mean_term, rng=rng, use_cholmod=False)
-        assert draw.x.shape == (n,)
-        assert np.all(np.isfinite(draw.x))
-
-        # Check empirical mean
-        expected_mean = mean_term / v
         draws = np.array(
-            [
-                sample_spatial_normal(P, mean_term, rng=rng, use_cholmod=False).x
-                for _ in range(2000)
-            ]
+            [sample_spatial_normal(P, mean_term, rng=rng).x for _ in range(10000)]
         )
-        np.testing.assert_allclose(draws.mean(axis=0), expected_mean, atol=0.1)
+        expected_mean = P_inv @ mean_term
+        np.testing.assert_allclose(draws.mean(axis=0), expected_mean, atol=0.08)
+        cov = np.cov(draws.T)
+        P_inv_perm = P_inv[np.ix_(perm, perm)]
+        err_correct = np.linalg.norm(cov - P_inv)
+        err_permuted = np.linalg.norm(cov - P_inv_perm)
+        assert err_correct < err_permuted
 
-    @pytest.mark.skipif(not has_cholmod(), reason="scikit-sparse not installed")
     def test_cholmod_pickle_roundtrip(self, rng):
         """CholmodFactor survives pickle round-trip."""
         import pickle

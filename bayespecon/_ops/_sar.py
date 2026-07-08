@@ -10,7 +10,7 @@ from pytensor.graph.basic import Apply
 from ._backend import (
     _DenseLU,
     _kron_dense_max,
-    _make_cached_umfpack_solver,
+    _make_cached_sparse_solver,
     _select_sparse_backend,
     _solve_sparse_vector,
 )
@@ -79,17 +79,17 @@ class _SparseSARVJPOp(pt.Op):
             return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
 
         if (
-            self._cached_backend == "umfpack"
+            self._cached_backend == backend
             and self._cached_rho == rho_f
             and self._cached_solver is not None
         ):
             return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
 
         A_T = self._I - rho_f * self._W.transpose()
-        cached_solver = _make_cached_umfpack_solver(A_T)
+        cached_solver = _make_cached_sparse_solver(A_T, backend)
         if cached_solver is not None:
             self._cached_solver = cached_solver
-            self._cached_backend = "umfpack"
+            self._cached_backend = backend
             self._cached_rho = rho_f
             return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
 
@@ -241,17 +241,17 @@ class SparseSARSolveOp(pt.Op):
             return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
 
         if (
-            self._cached_backend == "umfpack"
+            self._cached_backend == backend
             and self._cached_rho == rho_f
             and self._cached_solver is not None
         ):
             return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
 
         A = self._I - rho_f * self._W
-        cached_solver = _make_cached_umfpack_solver(A)
+        cached_solver = _make_cached_sparse_solver(A, backend)
         if cached_solver is not None:
             self._cached_solver = cached_solver
-            self._cached_backend = "umfpack"
+            self._cached_backend = backend
             self._cached_rho = rho_f
             return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
 

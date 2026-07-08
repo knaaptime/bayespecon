@@ -120,9 +120,9 @@ class LogitGibbsCache(NamedTuple):
     cholmod_factor: CholmodFactor | None = None
     W_sym: sp.csr_matrix | None = None  # W + W^T (not divided by σ²)
     WtW: sp.csr_matrix | None = None  # W^T W (not divided by σ²)
-    solve_method: str = "cholmod"  # "cholmod" | "splu" | "cg" | "jax_dense"
+    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense"
     logdet_P_method: str = "cholmod"  # "cholmod" | "lanczos" | "jax_dense"
-    sample_method: str = "cholmod"  # "cholmod" | "splu" | "jax_dense"
+    sample_method: str = "cholmod"  # "cholmod" | "jax_dense"
     lanczos_n_probes: int = 10
     lanczos_deg: int = 30
     # JAX dense backend fields
@@ -174,7 +174,7 @@ def _sample_eta(
     *,
     rng: np.random.Generator,
     cache: LogitGibbsCache | None = None,
-) -> tuple[np.ndarray, CholmodFactor | spla.SuperLU]:
+) -> tuple[np.ndarray, CholmodFactor]:
     """Block 2: Draw η | ω, ρ, β — spatial-normal draw (σ² = 1).
 
     The conditional posterior is
@@ -203,7 +203,7 @@ def _sample_eta(
     -------
     eta_new : ndarray of shape (n,)
         New draw of the latent log-odds.
-    factor : CholmodFactor or SuperLU
+    factor : CholmodFactor
         Factorisation (for potential reuse within the sweep).
     """
     n = X.shape[0]
@@ -257,7 +257,6 @@ def _sample_eta(
         rhs,
         rng=rng,
         cached_factor=cholmod_factor,
-        use_cholmod=(sample_method == "cholmod"),
     )
     return draw.x, draw.factor
 
@@ -490,30 +489,15 @@ def _sample_rho(
                 lanczos_deg=cache.lanczos_deg,
                 rng=_lanczos_rng,
             )
-        elif cholmod_factor is not None:
+        else:
             cholmod_factor.factorize(P)
             log_det_P = cholmod_factor.logdet()
-        else:
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            log_det_P = float(np.sum(np.log(np.abs(lu.U.diagonal()))))
 
         # --- Multi-RHS solve: P [z | M] = [κ | u] ---
         if solve_method == "cg":
             sol = np.column_stack([cg_solve(P, rhs_stack[:, j]) for j in range(k + 1)])
-        elif cholmod_factor is not None and solve_method == "cholmod":
-            sol = cholmod_factor.solve(rhs_stack)
-        elif solve_method == "splu":
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            sol = lu.solve(rhs_stack)
         else:
-            if logdet_P_method != "lanczos" and cholmod_factor is not None:
-                sol = cholmod_factor.solve(rhs_stack)
-            else:
-                P_csc = sp.csc_matrix(P)
-                lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-                sol = lu.solve(rhs_stack)
+            sol = cholmod_factor.solve(rhs_stack)
         z = sol[:, 0]
         M = sol[:, 1:]
 
@@ -843,7 +827,7 @@ def _sample_eta_sem(
     *,
     rng: np.random.Generator,
     cache: SEMLogitGibbsCache | None = None,
-) -> tuple[np.ndarray, CholmodFactor | spla.SuperLU]:
+) -> tuple[np.ndarray, CholmodFactor]:
     """Block 2 (SEM): Draw η | ω, β, λ — spatial-normal draw (σ² = 1).
 
     The conditional posterior is
@@ -875,7 +859,7 @@ def _sample_eta_sem(
     -------
     eta_new : ndarray of shape (n,)
         New draw of the latent log-odds.
-    factor : CholmodFactor or SuperLU
+    factor : CholmodFactor
         Factorisation (for potential reuse within the sweep).
     """
     n = X.shape[0]
@@ -934,7 +918,6 @@ def _sample_eta_sem(
         rhs,
         rng=rng,
         cached_factor=cholmod_factor,
-        use_cholmod=(sample_method == "cholmod"),
     )
     return draw.x, draw.factor
 
@@ -1160,30 +1143,15 @@ def _sample_lam(
                 lanczos_deg=cache.lanczos_deg,
                 rng=_lanczos_rng,
             )
-        elif cholmod_factor is not None:
+        else:
             cholmod_factor.factorize(P)
             log_det_P = cholmod_factor.logdet()
-        else:
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            log_det_P = np.sum(np.log(np.abs(lu.U.diagonal())))
 
         # --- Solve P m = rhs ---
         if solve_method == "cg":
             m = cg_solve(P, rhs)
-        elif cholmod_factor is not None and solve_method == "cholmod":
-            m = cholmod_factor.solve(rhs)
-        elif solve_method == "splu":
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            m = lu.solve(rhs)
         else:
-            if logdet_P_method != "lanczos" and cholmod_factor is not None:
-                m = cholmod_factor.solve(rhs)
-            else:
-                P_csc = sp.csc_matrix(P)
-                lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-                m = lu.solve(rhs)
+            m = cholmod_factor.solve(rhs)
 
         quad = float(rhs @ m)
 

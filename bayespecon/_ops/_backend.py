@@ -35,9 +35,18 @@ def _kron_dense_max() -> int:
 
 @lru_cache(maxsize=1)
 def _umfpack_available() -> bool:
-    """Return ``True`` when optional ``scikits.umfpack`` is importable."""
+    """Return ``True`` when ``sksparse.umfpack`` (scikit-sparse) is importable."""
     try:
-        return importlib.util.find_spec("scikits.umfpack") is not None
+        return importlib.util.find_spec("sksparse.umfpack") is not None
+    except ModuleNotFoundError:
+        return False
+
+
+@lru_cache(maxsize=1)
+def _klu_available() -> bool:
+    """Return ``True`` when ``sksparse.klu`` (scikit-sparse) is importable."""
+    try:
+        return importlib.util.find_spec("sksparse.klu") is not None
     except ModuleNotFoundError:
         return False
 
@@ -46,9 +55,9 @@ def _umfpack_available() -> bool:
 def _warn_sparse_auto_scipy_fallback_once() -> None:
     """Emit a one-time advisory warning for auto fallback to scipy sparse solve."""
     warnings.warn(
-        "BAYESPECON_SPARSE_BACKEND=auto selected scipy sparse solves because optional "
-        "dependency 'scikits.umfpack' is not installed. Estimation is likely faster "
-        "with the 'scikit-umfpack' package installed.",
+        "BAYESPECON_SPARSE_BACKEND=auto selected scipy sparse solves because neither "
+        "KLU nor UMFPACK (from 'scikit-sparse') is available. Estimation is typically "
+        "faster with 'scikit-sparse' installed.",
         RuntimeWarning,
         stacklevel=3,
     )
@@ -60,8 +69,10 @@ def _select_sparse_backend() -> str:
 
     Environment
     -----------
-    BAYESPECON_SPARSE_BACKEND : {"auto", "scipy", "umfpack"}
-        Default ``auto``. ``auto`` prefers ``umfpack`` when available.
+    BAYESPECON_SPARSE_BACKEND : {"auto", "scipy", "klu", "umfpack"}
+        Default ``auto``. ``auto`` prefers ``klu`` (fastest for the
+        structured ``I - rho W`` systems), then falls back to scipy's
+        SuperLU.  ``klu`` and ``umfpack`` are provided by ``scikit-sparse``.
     BAYESPECON_SPARSE_STRICT : {"0", "1", "false", "true"}
         If truthy, missing requested optional backends raise ImportError.
     """
@@ -74,6 +85,8 @@ def _select_sparse_backend() -> str:
     }
 
     if requested in {"", "auto"}:
+        if _klu_available():
+            return "klu"
         if _umfpack_available():
             return "umfpack"
         _warn_sparse_auto_scipy_fallback_once()
@@ -82,13 +95,26 @@ def _select_sparse_backend() -> str:
     if requested in {"scipy", "superlu"}:
         return "scipy"
 
-    if requested in {"umfpack", "scikits.umfpack"}:
+    if requested == "klu":
+        if _klu_available():
+            return "klu"
+        msg = (
+            "BAYESPECON_SPARSE_BACKEND=klu requested, but 'sksparse.klu' is not "
+            "available. Install 'scikit-sparse' for this backend. Falling back to "
+            "scipy backend."
+        )
+        if strict:
+            raise ImportError(msg)
+        warnings.warn(msg, RuntimeWarning)
+        return "scipy"
+
+    if requested in {"umfpack", "sksparse.umfpack", "scikits.umfpack"}:
         if _umfpack_available():
             return "umfpack"
         msg = (
-            "BAYESPECON_SPARSE_BACKEND=umfpack requested, but optional dependency "
-            "'scikits.umfpack' is not installed. Install 'scikit-umfpack' "
-            "for this backend. Falling back to scipy backend."
+            "BAYESPECON_SPARSE_BACKEND=umfpack requested, but 'sksparse.umfpack' is "
+            "not available. Install 'scikit-sparse' for this backend. Falling back to "
+            "scipy backend."
         )
         if strict:
             raise ImportError(msg)
@@ -97,28 +123,42 @@ def _select_sparse_backend() -> str:
 
     msg = (
         f"Unknown BAYESPECON_SPARSE_BACKEND='{requested}'. "
-        "Valid values are: auto, scipy, umfpack. Falling back to auto."
+        "Valid values are: auto, scipy, klu, umfpack. Falling back to auto."
     )
     if strict:
         raise ValueError(msg)
     warnings.warn(msg, RuntimeWarning)
+    if _klu_available():
+        return "klu"
     return "umfpack" if _umfpack_available() else "scipy"
 
 
 @lru_cache(maxsize=1)
-def _get_umfpack_spsolve():
-    """Import and return UMFPACK's sparse direct solver."""
-    umfpack_mod = importlib.import_module("scikits.umfpack")
-    return umfpack_mod.spsolve
+def _get_klu_factor():
+    """Import and return ``sksparse.klu.klu_factor``."""
+    return importlib.import_module("sksparse.klu").klu_factor
+
+
+@lru_cache(maxsize=1)
+def _get_umf_factor():
+    """Import and return ``sksparse.umfpack.umf_factor``."""
+    return importlib.import_module("sksparse.umfpack").umf_factor
+
+
+def _sparse_factor(A_csc, backend: str):
+    """Factorise ``A_csc`` with the requested KLU/UMFPACK backend."""
+    if backend == "klu":
+        return _get_klu_factor()(A_csc)
+    return _get_umf_factor()(A_csc)
 
 
 def _solve_sparse_vector(A: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
     """Solve ``A x = rhs`` for vector RHS using configured sparse backend."""
     backend = _select_sparse_backend()
     rhs64 = np.asarray(rhs, dtype=np.float64)
-    if backend == "umfpack":
-        umfpack_spsolve = _get_umfpack_spsolve()
-        return np.asarray(umfpack_spsolve(A.tocsc(), rhs64), dtype=np.float64)
+    if backend in ("klu", "umfpack"):
+        factor = _sparse_factor(A.tocsc(), backend)
+        return np.asarray(factor.solve(rhs64), dtype=np.float64)
     lu = sp.linalg.splu(A.tocsc())
     return np.asarray(lu.solve(rhs64), dtype=np.float64)
 
@@ -127,69 +167,60 @@ def _solve_sparse_matrix(A: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
     """Solve ``A X = rhs`` for matrix RHS using configured sparse backend."""
     backend = _select_sparse_backend()
     rhs64 = np.asarray(rhs, dtype=np.float64)
-    if backend == "umfpack":
-        # Use factorized() for a single LU + batched solve, rather than
-        # solving column-by-column which factors A once per column.
-        try:
-            solve_fn = sp.linalg.factorized(A.tocsc())
-            return np.asarray(solve_fn(rhs64), dtype=np.float64)
-        except Exception:
-            # Fallback: column-by-column if factorized() is unavailable
-            # (e.g. UMFPACK not linked).  This is slower but correct.
-            umfpack_spsolve = _get_umfpack_spsolve()
-            cols = [
-                np.asarray(umfpack_spsolve(A.tocsc(), rhs64[:, j]), dtype=np.float64)
-                for j in range(rhs64.shape[1])
-            ]
-            return np.column_stack(cols)
+    if backend in ("klu", "umfpack"):
+        # KLU/UMFPACK factors accept a 2-D RHS directly (single
+        # factorisation, batched solve).
+        factor = _sparse_factor(A.tocsc(), backend)
+        return np.asarray(factor.solve(rhs64), dtype=np.float64)
     lu = sp.linalg.splu(A.tocsc())
     return np.asarray(lu.solve(rhs64), dtype=np.float64)
 
 
-class _FactorizedCallableSolver:
-    """Adapter exposing ``solve`` for callables returned by ``factorized``.
+class _SparseFactorSolver:
+    """Adapter exposing a ``SuperLU``-like ``solve`` over a KLU/UMFPACK factor.
 
-    Wraps UMFPACK's ``factorized()`` callable to handle both 1-D vectors
-    and 2-D matrix right-hand sides, matching the API of
-    :class:`scipy.sparse.linalg.SuperLU`.
+    ``sksparse`` KLU/UMFPACK factors solve ``A x = rhs`` for both 1-D and
+    2-D right-hand sides but do not accept a ``trans`` argument.  Callers
+    that need the adjoint build ``A^T`` explicitly and solve with
+    ``trans="N"``.
     """
 
-    __slots__ = ("_solve_fn",)
+    __slots__ = ("_factor",)
 
-    def __init__(self, solve_fn) -> None:
-        self._solve_fn = solve_fn
+    def __init__(self, factor) -> None:
+        self._factor = factor
 
     def solve(self, rhs: np.ndarray, trans: str = "N") -> np.ndarray:
         if trans != "N":
-            raise ValueError("factorized solver adapter supports trans='N' only")
+            raise ValueError("sparse factor solver supports trans='N' only")
         rhs = np.asarray(rhs, dtype=np.float64)
-        if rhs.ndim == 1:
-            return np.asarray(self._solve_fn(rhs), dtype=np.float64)
-        # 2-D matrix RHS: solve column-by-column since UMFPACK's factorized()
-        # callable does not accept 2-D arrays.
-        cols = [
-            np.asarray(self._solve_fn(rhs[:, j]), dtype=np.float64)
-            for j in range(rhs.shape[1])
-        ]
-        return np.column_stack(cols)
+        return np.asarray(self._factor.solve(rhs), dtype=np.float64)
 
 
-def _make_cached_umfpack_solver(A: sp.spmatrix) -> _FactorizedCallableSolver | None:
-    """Build reusable UMFPACK factorized solver when available.
+def _make_cached_sparse_solver(
+    A: sp.spmatrix, backend: str | None = None
+) -> _SparseFactorSolver | None:
+    """Build a reusable KLU/UMFPACK factor solver for repeated solves.
+
+    Parameters
+    ----------
+    A : scipy.sparse matrix
+        Matrix to factorise.
+    backend : {"klu", "umfpack", "scipy"} or None, optional
+        Backend to use.  When ``None`` the configured backend is resolved.
 
     Returns
     -------
-    _FactorizedCallableSolver | None
-        Reusable solver for repeated solves with the same matrix, or ``None``
-        when a reusable UMFPACK factorization path is unavailable.
+    _SparseFactorSolver | None
+        Reusable solver, or ``None`` when the resolved backend is scipy
+        (no reusable KLU/UMFPACK factor) or factorisation fails.
     """
+    if backend is None:
+        backend = _select_sparse_backend()
+    if backend not in ("klu", "umfpack"):
+        return None
     try:
-        # Prefer UMFPACK path when scipy exposes the selector.
-        use_solver = getattr(sp.linalg, "use_solver", None)
-        if callable(use_solver):
-            use_solver(useUmfpack=True, assumeSortedIndices=True)
-        solve_fn = sp.linalg.factorized(A.tocsc())
-        return _FactorizedCallableSolver(solve_fn)
+        return _SparseFactorSolver(_sparse_factor(A.tocsc(), backend))
     except Exception:
         return None
 

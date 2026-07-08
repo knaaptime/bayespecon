@@ -36,7 +36,7 @@ import scipy.sparse as sp
 
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers._utils._spatial_normal import CholmodFactor
 from ...samplers.gaussian._chain_runner import run_chains
 from ...samplers.logit import (
     SEMLogitGibbsCache,
@@ -276,11 +276,8 @@ class SEMLogit(SpatialModel):
         WtW = W_sparse.T @ W_sparse
 
         # Create CHOLMOD factor for the precision matrix sparsity pattern.
-        if has_cholmod():
-            _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
-            cholmod_factor = CholmodFactor(_P0)
-        else:
-            cholmod_factor = None
+        _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
+        cholmod_factor = CholmodFactor(_P0)
 
         # Resolve Gibbs method
         _valid_methods = {"auto", "factorize", "jax_dense"}
@@ -299,26 +296,17 @@ class SEMLogit(SpatialModel):
             )
 
         if gibbs_method == "factorize":
-            solve_method = "cholmod" if cholmod_factor is not None else "splu"
+            solve_method = "cholmod"
             logdet_P_method = "cholmod"
-            sample_method = "cholmod" if cholmod_factor is not None else "splu"
+            sample_method = "cholmod"
         elif gibbs_method == "jax_dense":
             solve_method = "jax_dense"
             logdet_P_method = "jax_dense"
             sample_method = "jax_dense"
         else:  # "auto"
-            if cholmod_factor is not None:
-                solve_method = "cholmod"
-                logdet_P_method = "cholmod"
-                sample_method = "cholmod"
-            elif _jax_available and n <= self._JAX_DENSE_THRESHOLD:
-                solve_method = "jax_dense"
-                logdet_P_method = "jax_dense"
-                sample_method = "jax_dense"
-            else:
-                solve_method = "splu"
-                logdet_P_method = "cholmod"
-                sample_method = "splu"
+            solve_method = "cholmod"
+            logdet_P_method = "cholmod"
+            sample_method = "cholmod"
 
         # Precompute JAX dense components if using jax_dense path
         W_sym_dense = None

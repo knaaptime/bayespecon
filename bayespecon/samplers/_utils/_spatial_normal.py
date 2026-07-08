@@ -5,13 +5,17 @@ factorisation, conjugate gradient (CG) iterative solve, or Chebyshev
 polynomial approximation.
 
 **Factorisation path** (default for moderate n):
-    When ``scikit-sparse`` (CHOLMOD) is available, uses CHOLMOD's
-    ``cholesky`` which is 5–9× faster than ``scipy.sparse.linalg.splu``
-    for SPD matrices.  Falls back to ``splu`` when CHOLMOD is not installed.
+    Uses CHOLMOD (``scikit-sparse``), which is 5–9× faster than
+    ``scipy.sparse.linalg.splu`` for SPD matrices.  CHOLMOD applies a
+    fill-reducing permutation P_perm such that
 
-    The sampling formula uses the Cholesky factor L where P = L Lᵀ:
+        P_perm P P_permᵀ = L Lᵀ.
 
-        x = m + L⁻ᵀ z,  z ~ N(0, I)
+    Sampling from N(0, P⁻¹) therefore requires undoing that permutation:
+
+        x = m + P_permᵀ L⁻ᵀ z,  z ~ N(0, I)
+
+    which gives Cov(x) = P_permᵀ (L Lᵀ)⁻¹ P_perm = P⁻¹.
 
 **Iterative path** (for large n with high fill-in):
     Uses preconditioned CG for the mean solve and Lanczos-based
@@ -22,40 +26,16 @@ polynomial approximation.
     Uses JAX dense matvec + vmap over Lanczos probes and Chebyshev
     draws.  3–4× faster for single draws, 20–27× per-draw when
     batching Chebyshev draws.  Requires ``jax_enable_x64=True``.
-
-    The sampling formula uses the Cholesky factor L where P = L Lᵀ:
-
-        x = m + L⁻ᵀ z,  z ~ N(0, I)
-
-which gives Cov(x) = L⁻ᵀ L⁻¹ = (L Lᵀ)⁻¹ = P⁻¹.
-
-When using the ``splu`` fallback, the LDLᵀ form is used instead:
-P = L D Lᵀ, and x = m + L⁻ᵀ D⁻¹ᐟ² z.
 """
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple, Union
+from typing import NamedTuple
 
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-
-# ---------------------------------------------------------------------------
-# CHOLMOD availability
-# ---------------------------------------------------------------------------
-try:
-    from sksparse.cholmod import cholesky as _cholmod_cholesky
-
-    _HAS_CHOLMOD = True
-except ImportError:  # pragma: no cover
-    _HAS_CHOLMOD = False
-
-
-def has_cholmod() -> bool:
-    """Return True if CHOLMOD (scikit-sparse) is available."""
-    return _HAS_CHOLMOD
-
+from sksparse.cholmod import cho_factor as _cholmod_cho_factor
 
 # ---------------------------------------------------------------------------
 # CHOLMOD factorisation wrapper
@@ -65,9 +45,9 @@ def has_cholmod() -> bool:
 class CholmodFactor:
     """Wrapper around a CHOLMOD factorisation for a fixed sparsity pattern.
 
-    Stores the symbolic analysis so that ``cholesky_inplace`` only
-    does the numeric factorisation when the matrix values change but
-    the sparsity pattern stays the same.  This is the key optimisation
+    Stores the symbolic analysis so that ``factorize`` only does the
+    numeric factorisation when the matrix values change but the
+    sparsity pattern stays the same.  This is the key optimisation
     for the ρ block in the Gibbs sampler, where P_η changes with each
     candidate ρ but always has the same non-zero structure.
 
@@ -79,13 +59,8 @@ class CholmodFactor:
     """
 
     def __init__(self, pattern_matrix: sp.spmatrix) -> None:
-        if not _HAS_CHOLMOD:
-            raise RuntimeError(
-                "scikit-sparse (CHOLMOD) is not installed. "
-                "Install with: conda install scikit-sparse"
-            )
         self._pattern_matrix = sp.csc_matrix(pattern_matrix)
-        self._factor = _cholmod_cholesky(self._pattern_matrix)
+        self._factor = _cholmod_cho_factor(self._pattern_matrix)
 
     def __getstate__(self) -> dict:
         """Support pickling: store pattern matrix, drop C factor."""
@@ -94,7 +69,7 @@ class CholmodFactor:
     def __setstate__(self, state: dict) -> None:
         """Reconstruct CHOLMOD factor from pattern matrix on unpickle."""
         self._pattern_matrix = state["_pattern_matrix"]
-        self._factor = _cholmod_cholesky(self._pattern_matrix)
+        self._factor = _cholmod_cho_factor(self._pattern_matrix)
 
     def factorize(self, matrix: sp.spmatrix) -> None:
         """Re-factorize with new values (same sparsity pattern).
@@ -105,11 +80,11 @@ class CholmodFactor:
             New SPD matrix with the same sparsity pattern as the
             pattern matrix passed at construction.
         """
-        self._factor.cholesky_inplace(sp.csc_matrix(matrix))
+        self._factor.factorize(sp.csc_matrix(matrix))
 
     def solve(self, rhs: np.ndarray) -> np.ndarray:
         """Solve P x = rhs."""
-        return self._factor.solve_A(rhs)
+        return self._factor.solve(rhs)
 
     def logdet(self) -> float:
         """Return log|P|."""
@@ -123,9 +98,15 @@ class CholmodFactor:
     ) -> np.ndarray:
         """Draw from N(m, P⁻¹) where m = P⁻¹ @ mean_term.
 
-        Uses the Cholesky factor L (P = L Lᵀ) to compute:
-            m = P⁻¹ @ mean_term   (via CHOLMOD solve)
-            x = m + L⁻ᵀ z        (z ~ N(0, I)
+        CHOLMOD factors a *permuted* matrix, P_perm P P_permᵀ = L Lᵀ,
+        where P_perm is a fill-reducing permutation.  A correct draw
+        must undo that permutation:
+
+            m = P⁻¹ @ mean_term            (CHOLMOD solve)
+            w = L⁻ᵀ z,  z ~ N(0, I)        (solve in permuted order)
+            x = m + P_permᵀ w              (undo permutation)
+
+        which gives Cov(x - m) = P_permᵀ (L Lᵀ)⁻¹ P_perm = P⁻¹.
 
         Parameters
         ----------
@@ -139,14 +120,16 @@ class CholmodFactor:
         x : ndarray of shape (n,)
             Draw from N(m, P⁻¹).
         """
-        from scipy.sparse.linalg import spsolve_triangular
-
-        m = self._factor.solve_A(mean_term)
-        L = self._factor.L().tocsc()
-        z = rng.standard_normal(L.shape[0])
-        # Solve L^T v = z  →  v = L^{-T} z
-        v = spsolve_triangular(L.T.tocsr(), z, lower=False)
-        return m + v
+        m = self._factor.solve(mean_term)
+        n = self._pattern_matrix.shape[0]
+        z = rng.standard_normal(n)
+        # w = L^{-T} z in the permuted ordering.
+        w = self._factor.solve(z, system="Lt")
+        # Undo the fill-reducing permutation: draw[perm] = w  ==  P_permᵀ w.
+        perm = self._factor.get_perm()
+        draw = np.empty_like(w)
+        draw[perm] = w
+        return m + draw
 
 
 # ---------------------------------------------------------------------------
@@ -161,13 +144,13 @@ class SpatialNormalDraw(NamedTuple):
     ----------
     x : ndarray of shape (n,)
         The drawn sample.
-    factor : CholmodFactor or SuperLU
+    factor : CholmodFactor
         The factorisation of the precision matrix.  Can be reused
         for subsequent solves when the precision matrix has not changed.
     """
 
     x: np.ndarray
-    factor: Any  # CholmodFactor or spla.SuperLU
+    factor: CholmodFactor
 
 
 # ---------------------------------------------------------------------------
@@ -180,15 +163,12 @@ def sample_spatial_normal(
     mean_term: np.ndarray,
     *,
     rng: np.random.Generator | None = None,
-    cached_factor: Union[CholmodFactor, spla.SuperLU, None] = None,
-    use_cholmod: bool = _HAS_CHOLMOD,
+    cached_factor: CholmodFactor | None = None,
 ) -> SpatialNormalDraw:
     """Draw from N(m, P⁻¹) where P is sparse SPD.
 
-    When CHOLMOD is available (default), uses ``sksparse.cholmod.cholesky``
-    which is 5–9× faster than ``scipy.sparse.linalg.splu`` for SPD
-    matrices.  Falls back to ``splu`` when CHOLMOD is not installed or
-    when ``use_cholmod=False``.
+    Uses CHOLMOD (``scikit-sparse``), which is 5–9× faster than
+    ``scipy.sparse.linalg.splu`` for SPD matrices.
 
     Parameters
     ----------
@@ -200,13 +180,10 @@ def sample_spatial_normal(
         m = P⁻¹ @ mean_term, computed via the sparse solve.
     rng : numpy.random.Generator, optional
         Random state. If None, a fresh generator is created.
-    cached_factor : CholmodFactor or SuperLU, optional
+    cached_factor : CholmodFactor, optional
         Pre-computed factorisation of precision. If None, computed
         fresh. Passing a cached factorisation saves the factorisation
         cost when P has not changed between calls.
-    use_cholmod : bool, default True if available
-        If True and CHOLMOD is installed, use CHOLMOD. Otherwise
-        fall back to ``splu``.
 
     Returns
     -------
@@ -216,132 +193,29 @@ def sample_spatial_normal(
 
     Notes
     -----
-    **CHOLMOD path** (default when available):
-
-    Uses ``sksparse.cholmod.cholesky`` to compute P = L Lᵀ, then
-
-    .. math::
-
-        x = m + L^{-T} z, \\quad z \\sim N(0, I)
-
-    which gives Cov(x) = L^{-T} L^{-1} = (L L^T)^{-1} = P^{-1}.
-
-    **splu fallback path**:
-
-    Uses ``scipy.sparse.linalg.splu`` with ``permc_spec="MMD_AT_PLUS_A"``
-    for symmetric ordering. For SPD matrices with this ordering, the
-    factorisation gives P_perm = L @ U where U = D @ Lᵀ (LDLᵀ form).
+    CHOLMOD factors a permuted matrix, P_perm P P_permᵀ = L Lᵀ, where
+    P_perm is a fill-reducing permutation.  The draw undoes it:
 
     .. math::
 
-        x = m + L^{-T} D^{-1/2} z, \\quad z \\sim N(0, I)
+        x = m + P_\\text{perm}^{T} L^{-T} z, \\quad z \\sim N(0, I)
 
-    which gives Cov(x) = L^{-T} D^{-1} L^{-1} = (L D L^T)^{-1} = P^{-1}.
+    which gives Cov(x) = P_perm^{T} (L L^T)^{-1} P_perm = P^{-1}.
     """
     if rng is None:
         rng = np.random.default_rng()
 
     precision_csc = sp.csc_matrix(precision)
 
-    if use_cholmod and _HAS_CHOLMOD:
-        return _sample_cholmod(
-            precision_csc, mean_term, rng=rng, cached_factor=cached_factor
-        )
-    else:
-        return _sample_splu(
-            precision_csc, mean_term, rng=rng, cached_factor=cached_factor
-        )
-
-
-# ---------------------------------------------------------------------------
-# CHOLMOD implementation
-# ---------------------------------------------------------------------------
-
-
-def _sample_cholmod(
-    precision_csc: sp.csc_matrix,
-    mean_term: np.ndarray,
-    *,
-    rng: np.random.Generator,
-    cached_factor: CholmodFactor | None = None,
-) -> SpatialNormalDraw:
-    """Draw using CHOLMOD (sksparse.cholmod.cholesky)."""
-    from scipy.sparse.linalg import spsolve_triangular
-
     if cached_factor is not None:
         factor = cached_factor
-        # Re-factorize with current values (reuses symbolic analysis)
+        # Re-factorize with current values (reuses symbolic analysis).
         factor.factorize(precision_csc)
     else:
         factor = CholmodFactor(precision_csc)
 
-    # Conditional mean: m = P^{-1} @ mean_term
-    m = factor.solve(mean_term)
-
-    # Sample: x = m + L^{-T} z, z ~ N(0, I)
-    L = factor._factor.L().tocsc()
-    z = rng.standard_normal(L.shape[0])
-    v = spsolve_triangular(L.T.tocsr(), z, lower=False)
-    x = m + v
-
+    x = factor.sample(mean_term, rng=rng)
     return SpatialNormalDraw(x=x, factor=factor)
-
-
-# ---------------------------------------------------------------------------
-# splu fallback implementation
-# ---------------------------------------------------------------------------
-
-
-def _sample_splu(
-    precision_csc: sp.csc_matrix,
-    mean_term: np.ndarray,
-    *,
-    rng: np.random.Generator,
-    cached_factor: spla.SuperLU | None = None,
-) -> SpatialNormalDraw:
-    """Draw using scipy.sparse.linalg.splu (LDL^T path)."""
-    from scipy.sparse.linalg import spsolve_triangular
-
-    if cached_factor is not None:
-        lu = cached_factor
-    else:
-        lu = spla.splu(precision_csc, permc_spec="MMD_AT_PLUS_A")
-
-    # Conditional mean: m = P^{-1} @ mean_term
-    m = lu.solve(mean_term)
-
-    # Sample from N(0, P^{-1}) using the LDL^T factorisation.
-    #
-    # For SPD P with symmetric ordering (MMD_AT_PLUS_A), splu gives:
-    #   P_perm = L @ U  where U = D @ L^T  (LDL^T form)
-    #   D = diag(U) / diag(L^T) = diag(U)  (since L is unit lower triangular)
-    #
-    # To sample x ~ N(m, P^{-1}):
-    #   z ~ N(0, I)
-    #   Solve L^T v = D^{-1/2} z  (backward substitution)
-    #   x = m + v
-    #
-    # Cov(v) = L^{-T} D^{-1/2} I D^{-1/2} L^{-1}
-    #        = L^{-T} D^{-1} L^{-1}
-    #        = (L D L^T)^{-1}
-    #        = P^{-1}  ✓
-    L = lu.L
-    U = lu.U
-
-    # Extract D from the diagonal of U.
-    D_diag = np.abs(U.diagonal())
-    D_inv_sqrt = 1.0 / np.sqrt(D_diag)
-
-    z = rng.standard_normal(L.shape[0])
-    z_scaled = D_inv_sqrt * z
-
-    # Solve L^T v = z_scaled for v (backward substitution)
-    L_T = L.T.tocsr()
-    v = spsolve_triangular(L_T, z_scaled, lower=False)
-
-    x = m + v
-
-    return SpatialNormalDraw(x=x, factor=lu)
 
 
 # ---------------------------------------------------------------------------

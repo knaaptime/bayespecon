@@ -31,7 +31,7 @@ import scipy.sparse as sp
 
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers._utils._spatial_normal import CholmodFactor
 from ...samplers.gaussian._chain_runner import run_chains
 from ...samplers.negbin import GibbsCache, GibbsPriors, GibbsState, run_chain
 from ...samplers.negbin._jax import run_chains_jax_vectorized
@@ -317,12 +317,8 @@ class SARNegBinStructural(SpatialModel):
         # workers gives no savings, and the concurrent symbolic-analysis
         # calls at unpickle time can deadlock on macOS + Accelerate.
         # Building per-chain isolates each chain's CHOLMOD state.
-        _have_cholmod = has_cholmod()
-        if _have_cholmod:
-            # Any ρ≠0 gives the correct pattern; ρ=0.5 is arbitrary.
-            _cholmod_pattern = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
-        else:
-            _cholmod_pattern = None
+        # Any ρ≠0 gives the correct pattern; ρ=0.5 is arbitrary.
+        _cholmod_pattern = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
 
         # Resolve Gibbs method based on user choice or auto-selection
         _valid_methods = {"auto", "factorize", "jax_dense"}
@@ -342,30 +338,19 @@ class SARNegBinStructural(SpatialModel):
             )
 
         if gibbs_method == "factorize":
-            solve_method = "cholmod" if _have_cholmod else "splu"
+            solve_method = "cholmod"
             logdet_P_method = "cholmod"
-            sample_method = "cholmod" if _have_cholmod else "splu"
+            sample_method = "cholmod"
         elif gibbs_method == "jax_dense":
             solve_method = "jax_dense"
             logdet_P_method = "jax_dense"
             sample_method = "jax_dense"
         else:  # "auto"
-            # Prefer exact factorisation when CHOLMOD is available.
-            # CHOLMOD is 3× faster than jax_dense at n=2500 on CPU.
-            # JAX dense wins on GPU or when CHOLMOD is unavailable.
-            if _have_cholmod:
-                solve_method = "cholmod"
-                logdet_P_method = "cholmod"
-                sample_method = "cholmod"
-            elif _jax_available and n <= self._JAX_DENSE_THRESHOLD:
-                solve_method = "jax_dense"
-                logdet_P_method = "jax_dense"
-                sample_method = "jax_dense"
-            else:
-                # Fallback: SPLU (no CHOLMOD, no JAX)
-                solve_method = "splu"
-                logdet_P_method = "cholmod"  # same code path via splu
-                sample_method = "splu"
+            # Prefer exact CHOLMOD factorisation (3× faster than jax_dense
+            # at n=2500 on CPU).
+            solve_method = "cholmod"
+            logdet_P_method = "cholmod"
+            sample_method = "cholmod"
 
         # Precompute JAX dense components if using jax_dense path
         W_sym_dense = None

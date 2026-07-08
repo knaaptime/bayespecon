@@ -34,13 +34,13 @@ import scipy.sparse as sp  # re-exported for test compatibility
 from ._backend import (
     _DenseLU,
     _factor_kron_factor,
-    _FactorizedCallableSolver,
-    _get_umfpack_spsolve,
+    _klu_available,
     _kron_dense_max,
-    _make_cached_umfpack_solver,
+    _make_cached_sparse_solver,
     _select_sparse_backend,
     _solve_sparse_matrix,
     _solve_sparse_vector,
+    _SparseFactorSolver,
     _umfpack_available,
     _warn_sparse_auto_scipy_fallback_once,
 )
@@ -86,7 +86,7 @@ __all__ = [
     "get_callback_stats",
     # Backend helpers
     "_select_sparse_backend",
-    "_make_cached_umfpack_solver",
+    "_make_cached_sparse_solver",
 ]
 
 
