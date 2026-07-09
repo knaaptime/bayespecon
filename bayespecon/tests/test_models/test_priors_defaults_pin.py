@@ -253,9 +253,29 @@ def test_default_prior_hyperparams_pinned(name):
     assert priors_as_dict(cls()) == EXPECTED[name]
 
 
-def test_snapshot_covers_every_exported_priors_class():
-    """Guard: every ``*Priors`` dataclass in ``__all__`` is pinned above."""
-    exported = {n for n in P.__all__ if n.endswith("Priors") and n != "PriorsLike"}
+# Internal Gibbs-sampler prior structs (resolved-hyperparameter containers the
+# numpy/JAX kernels consume) also live in ``priors.py``, but they are not
+# user-facing validated priors and are exercised by the sampler recovery tests
+# rather than this default-hyperparameter snapshot.
+_GIBBS_PRIOR_STRUCTS = {
+    "GibbsBasePriors",
+    "GaussianGibbsPriors",
+    "GibbsPriors",
+    "ReducedGibbsPriors",
+    "FlowReducedGibbsPriors",
+    "ZINBGibbsPriors",
+    "LogitGibbsPriors",
+    "SEMLogitGibbsPriors",
+    "REGibbsPriors",
+    "PanelGaussianPriors",
+}
+
+
+def test_snapshot_covers_every_user_facing_priors_class():
+    """Guard: every user-facing ``*Priors`` dataclass in ``__all__`` is pinned above."""
+    exported = {
+        n for n in P.__all__ if n.endswith("Priors") and n != "PriorsLike"
+    } - _GIBBS_PRIOR_STRUCTS
     assert exported == set(EXPECTED), (
         "Priors classes not covered by the pin: "
         f"{sorted(exported - set(EXPECTED))}; stale entries: "

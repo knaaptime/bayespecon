@@ -112,7 +112,8 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
-from .._utils._base import GibbsBasePriors, GibbsBaseState
+from ...models.priors import REGibbsPriors
+from .._utils._base import GibbsBaseState
 from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d_adaptive,
@@ -144,34 +145,6 @@ class REGibbsState(GibbsBaseState):
     sigma2: float = 1.0
     alpha: np.ndarray = None
     sigma_alpha2: float = 1.0
-
-
-@dataclass
-class REGibbsPriors(GibbsBasePriors):
-    """Prior hyperparameters for RE panel Gibbs sampler.
-
-    Parameters
-    ----------
-    beta_mu : float or ndarray
-        Prior mean for β.  Scalar is broadcast to all coefficients.
-    beta_sigma : float or ndarray
-        Prior standard deviation for β.  Scalar is broadcast.
-    sigma_sigma : float
-        **Deprecated / unused.**  The σ² block uses a weakly informative
-        Jeffreys prior p(σ²) ∝ 1/σ² (approximated as Inv-Γ(ε, ε) with
-        ε = 1e-3).  Kept for backward compatibility.
-    sigma_alpha_sigma : float
-        **Deprecated / unused.**  The σ_α² block uses a weakly informative
-        Jeffreys prior p(σ_α²) ∝ 1/σ_α² (approximated as Inv-Γ(ε, ε)
-        with ε = 1e-3).  Kept for backward compatibility.
-    rho_lower : float
-        Lower bound for ρ/λ (from spectral stability).
-    rho_upper : float
-        Upper bound for ρ/λ (from spectral stability).
-    """
-
-    sigma_sigma: float = 10.0
-    sigma_alpha_sigma: float = 10.0
 
 
 @dataclass

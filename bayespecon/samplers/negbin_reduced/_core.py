@@ -82,6 +82,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from ...models.priors import ReducedGibbsPriors
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (
     SliceWidthState,
@@ -395,25 +396,6 @@ class ReducedGibbsState:
     rho: float
     alpha: float
     omega: np.ndarray
-
-
-@dataclass
-class ReducedGibbsPriors:
-    """Prior hyperparameters for the reduced-form SAR-NB sampler.
-
-    Notes
-    -----
-    The ``sigma2_*`` fields present on the structural-form
-    :class:`bayespecon.samplers.negbin.GibbsPriors` are intentionally
-    absent — this sampler has no :math:`\\sigma` parameter.
-    """
-
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
-    alpha_sigma: float = 2.5  # Half-Student-t scale for α
-    alpha_nu: float = 3.0  # Half-Student-t degrees of freedom for α
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
 
 
 class ReducedGibbsCache(NamedTuple):

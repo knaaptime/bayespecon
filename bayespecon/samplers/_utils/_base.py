@@ -12,6 +12,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+# Prior structs live in models.priors (single home for all prior containers).
+from ...models.priors import GibbsBasePriors  # noqa: F401
+
 
 @dataclass
 class GibbsBaseState:
@@ -23,17 +26,3 @@ class GibbsBaseState:
 
     beta: np.ndarray
     rho: float
-
-
-@dataclass
-class GibbsBasePriors:
-    """Base priors for all Gibbs samplers.
-
-    Subclasses add model-specific prior fields (e.g. ``sigma2_alpha``,
-    ``alpha_sigma``).
-    """
-
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999

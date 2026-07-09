@@ -44,7 +44,8 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
-from .._utils._base import GibbsBasePriors, GibbsBaseState
+from ...models.priors import LogitGibbsPriors, SEMLogitGibbsPriors
+from .._utils._base import GibbsBaseState
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (
     SliceWidthState,
@@ -94,16 +95,6 @@ JAXLogitGibbsState = make_jax_state_class(
     ("eta", "beta", "rho", "omega"),
     numpy_state_cls=LogitGibbsState,
 )
-
-
-@dataclass
-class LogitGibbsPriors(GibbsBasePriors):
-    """Prior hyperparameters for the SAR-logit Gibbs sampler.
-
-    All priors are weakly informative by default.  There is no σ²
-    parameter (the logit link absorbs the error scale) and no α
-    parameter (binary response is always Bernoulli).
-    """
 
 
 class LogitGibbsCache(NamedTuple):
@@ -774,19 +765,6 @@ JAXSEMLogitGibbsState = make_jax_state_class(
     ("eta", "beta", "lam", "omega"),
     numpy_state_cls=SEMLogitGibbsState,
 )
-
-
-@dataclass
-class SEMLogitGibbsPriors:
-    """Prior hyperparameters for the SEM-logit Gibbs sampler.
-
-    No σ² parameter (logit link absorbs error scale).
-    """
-
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
-    lam_lower: float = -0.999
-    lam_upper: float = 0.999
 
 
 class SEMLogitGibbsCache(NamedTuple):

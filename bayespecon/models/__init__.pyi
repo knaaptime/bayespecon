@@ -1,4 +1,3 @@
-from .base import SpatialModel as SpatialModel
 from .cross_section.logit import Logit as Logit
 from .cross_section.negbin import NegBin as NegBin
 from .cross_section.ols import OLS as OLS
@@ -28,13 +27,25 @@ from .flow._flow import (
     NegBinFlow as NegBinFlow,
 )
 from .flow._flow import (
+    OLSFlow as OLSFlow,
+)
+from .flow._flow import (
+    SARFlow as SARFlow,
+)
+from .flow._flow import (
+    SARFlowSeparable as SARFlowSeparable,
+)
+from .flow._flow import (
     SARNegBinFlow as SARNegBinFlow,
 )
 from .flow._flow import (
     SARNegBinFlowSeparable as SARNegBinFlowSeparable,
 )
-from .flow_panel._panel import (
-    FlowPanelModel as FlowPanelModel,
+from .flow._flow import (
+    SEMFlow as SEMFlow,
+)
+from .flow._flow import (
+    SEMFlowSeparable as SEMFlowSeparable,
 )
 from .flow_panel._panel import (
     NegBinFlowPanel as NegBinFlowPanel,
@@ -117,4 +128,3 @@ from .panel._tobit import (
 from .panel._tobit import (
     SEMPanelTobit as SEMPanelTobit,
 )
-from .panel_base import SpatialPanelModel as SpatialPanelModel

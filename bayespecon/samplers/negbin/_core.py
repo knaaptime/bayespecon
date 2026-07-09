@@ -51,6 +51,7 @@ import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 from ..._jax_dispatch import _eqx_available
+from ...models.priors import GibbsPriors
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (
     SliceWidthState,
@@ -144,24 +145,6 @@ else:
                 "equinox is required for the JAX-dense Gibbs sampler path. "
                 "Install with: pip install equinox"
             )
-
-
-@dataclass
-class GibbsPriors:
-    """Prior hyperparameters for the SAR-NB Gibbs sampler.
-
-    All priors are weakly informative by default, matching the
-    ``GaussianGibbsPriors`` convention.
-    """
-
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
-    sigma2_alpha: float = 2.0  # InverseGamma shape for σ²
-    sigma2_beta: float = 1.0  # InverseGamma scale for σ²
-    alpha_sigma: float = 10.0  # HalfNormal scale for α
-    alpha_nu: float = 3.0  # Half-Student-t degrees of freedom for α
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
 
 
 class GibbsCache(NamedTuple):

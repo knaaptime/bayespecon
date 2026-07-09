@@ -41,6 +41,7 @@ from typing import NamedTuple
 import numpy as np
 import scipy.sparse as sp
 
+from ...models.priors import ZINBGibbsPriors
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._spatial_normal import CholmodFactor
 from ..logit._core import (
@@ -128,28 +129,6 @@ class ZINBGibbsState:
     alpha: float
     omega_cnt: np.ndarray
     z: np.ndarray
-
-
-@dataclass
-class ZINBGibbsPriors:
-    """Prior hyperparameters for the ZINB Gibbs sampler.
-
-    No σ² parameter in either equation: the logit link absorbs the
-    error scale, and the reduced-form NB has no latent noise term.
-    """
-
-    # Selection equation
-    gamma_mu: np.ndarray | float = 0.0
-    gamma_sigma: np.ndarray | float = 1e6
-    lam_lower: float = -0.999
-    lam_upper: float = 0.999
-    # Count equation
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 10.0
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
-    alpha_sigma: float = 2.5
-    alpha_nu: float = 3.0
 
 
 class ZINBGibbsCache(NamedTuple):

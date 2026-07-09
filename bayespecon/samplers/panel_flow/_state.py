@@ -19,6 +19,8 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 
+from ...models.priors import PanelGaussianPriors  # noqa: F401
+
 # ---------------------------------------------------------------------------
 # Kalman filter output
 # ---------------------------------------------------------------------------
@@ -239,47 +241,6 @@ class PanelGaussianCache:
 # ---------------------------------------------------------------------------
 # Prior specification
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class PanelGaussianPriors:
-    r"""Prior hyperparameters for the Gaussian panel flow Gibbs sampler.
-
-    All priors are weakly informative by default, matching the
-    ``GibbsPriors`` / ``FlowGibbsPriors`` convention.
-
-    Parameters
-    ----------
-    beta_mu : float, default 0.0
-        Normal prior mean for :math:`\beta`.
-    beta_sigma : float, default 1e6
-        Normal prior standard deviation for :math:`\beta`.
-    sigma2_alpha : float, default 2.0
-        Inverse-Gamma shape for :math:`\sigma^2_u`.
-    sigma2_beta : float, default 1.0
-        Inverse-Gamma scale for :math:`\sigma^2_u`.
-    sigma2_y_alpha : float, default 2.0
-        Inverse-Gamma shape for :math:`\sigma^2_y`.
-    sigma2_y_beta : float, default 1.0
-        Inverse-Gamma scale for :math:`\sigma^2_y`.
-    gamma_prior_var : float, default 1.0
-        Prior variance for :math:`\gamma \sim N(0, \sigma^2_\gamma)`
-        truncated to :math:`(-1, 1)`.
-    rho_lower : float, default -0.999
-        Lower bound for :math:`\rho_d, \rho_o`.
-    rho_upper : float, default 0.999
-        Upper bound for :math:`\rho_d, \rho_o`.
-    """
-
-    beta_mu: float | np.ndarray = 0.0
-    beta_sigma: float | np.ndarray = 1e6
-    sigma2_alpha: float = 2.0
-    sigma2_beta: float = 1.0
-    sigma2_y_alpha: float = 2.0
-    sigma2_y_beta: float = 1.0
-    gamma_prior_var: float = 1.0
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
 
 
 # ---------------------------------------------------------------------------

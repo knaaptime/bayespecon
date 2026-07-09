@@ -29,6 +29,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields
 from typing import Any, Mapping, Type, Union
 
+import numpy as np
+
 # ---------------------------------------------------------------------------
 # Cross-sectional dataclasses
 # ---------------------------------------------------------------------------
@@ -484,6 +486,232 @@ class PanelSDEMDynamicPriors(PanelSEMDynamicPriors):
     """Priors for :class:`bayespecon.models.SDEMPanelDynamic`."""
 
 
+# ---------------------------------------------------------------------------
+# Gibbs sampler prior structs
+# ---------------------------------------------------------------------------
+#
+# These carry the **resolved** numeric hyperparameters (β mean/scale as
+# scalars or arrays, spatial bounds, α/σ² params) that the numpy / JAX Gibbs
+# kernels consume — distinct from the user-facing validation dataclasses
+# above.  They live here so every prior container is defined in one place;
+# the sampler modules import them from this module.
+
+
+@dataclass
+class GibbsBasePriors:
+    """Base priors for all Gibbs samplers.
+
+    Subclasses add model-specific prior fields (e.g. ``sigma2_alpha``,
+    ``alpha_sigma``).
+    """
+
+    beta_mu: np.ndarray | float = 0.0
+    beta_sigma: np.ndarray | float = 1e6
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+
+
+@dataclass
+class GaussianGibbsPriors:
+    """Prior hyperparameters for Gaussian spatial Gibbs.
+
+    Parameters
+    ----------
+    beta_mu : float or ndarray
+        Prior mean for β.  Scalar is broadcast to all coefficients.
+    beta_sigma : float or ndarray
+        Prior standard deviation for β.  Scalar is broadcast.
+    sigma2_alpha : float
+        Shape hyperparameter of the ``InverseGamma(sigma2_alpha,
+        sigma2_beta)`` prior on σ².  Matches the NUTS path exactly so
+        that posteriors — and therefore LOO/WAIC — agree between the two
+        samplers.  Conjugate with the Gaussian likelihood, so the σ²
+        block is an exact closed-form draw (LeSage 2009 convention).
+    sigma2_beta : float
+        Scale (rate) hyperparameter of the InverseGamma prior on σ².
+        Models typically resolve this to ``Var(y)`` at construction so
+        the prior mean is scale-aware.
+    rho_lower : float
+        Lower bound for ρ/λ (from spectral stability).
+    rho_upper : float
+        Upper bound for ρ/λ (from spectral stability).
+    """
+
+    beta_mu: float | np.ndarray = 0.0
+    beta_sigma: float | np.ndarray = 1e6
+    sigma2_alpha: float = 2.0
+    sigma2_beta: float = 1.0
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+    # Accepted for backward compatibility with callers that still pass
+    # ``sigma_sigma=...`` (e.g. panel models).  Ignored by the sampler;
+    # use ``sigma2_alpha`` / ``sigma2_beta`` instead.
+    sigma_sigma: float = 10.0
+
+
+@dataclass
+class GibbsPriors:
+    """Prior hyperparameters for the SAR-NB Gibbs sampler.
+
+    All priors are weakly informative by default, matching the
+    ``GaussianGibbsPriors`` convention.
+    """
+
+    beta_mu: np.ndarray | float = 0.0
+    beta_sigma: np.ndarray | float = 1e6
+    sigma2_alpha: float = 2.0  # InverseGamma shape for σ²
+    sigma2_beta: float = 1.0  # InverseGamma scale for σ²
+    alpha_sigma: float = 10.0  # HalfNormal scale for α
+    alpha_nu: float = 3.0  # Half-Student-t degrees of freedom for α
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+
+
+@dataclass
+class ReducedGibbsPriors:
+    """Prior hyperparameters for the reduced-form SAR-NB sampler.
+
+    Notes
+    -----
+    The ``sigma2_*`` fields present on the structural-form
+    :class:`GibbsPriors` are intentionally absent — this sampler has no
+    :math:`\\sigma` parameter.
+    """
+
+    beta_mu: np.ndarray | float = 0.0
+    beta_sigma: np.ndarray | float = 1e6
+    alpha_sigma: float = 2.5  # Half-Student-t scale for α
+    alpha_nu: float = 3.0  # Half-Student-t degrees of freedom for α
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+
+
+@dataclass
+class FlowReducedGibbsPriors:
+    """Prior hyperparameters for the reduced-form flow NB sampler."""
+
+    beta_mu: np.ndarray | float = 0.0
+    beta_sigma: np.ndarray | float = 1e6
+    alpha_sigma: float = 2.5
+    alpha_nu: float = 3.0
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+
+
+@dataclass
+class ZINBGibbsPriors:
+    """Prior hyperparameters for the ZINB Gibbs sampler.
+
+    No σ² parameter in either equation: the logit link absorbs the
+    error scale, and the reduced-form NB has no latent noise term.
+    """
+
+    # Selection equation
+    gamma_mu: np.ndarray | float = 0.0
+    gamma_sigma: np.ndarray | float = 1e6
+    lam_lower: float = -0.999
+    lam_upper: float = 0.999
+    # Count equation
+    beta_mu: np.ndarray | float = 0.0
+    beta_sigma: np.ndarray | float = 10.0
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+    alpha_sigma: float = 2.5
+    alpha_nu: float = 3.0
+
+
+@dataclass
+class LogitGibbsPriors(GibbsBasePriors):
+    """Prior hyperparameters for the SAR-logit Gibbs sampler.
+
+    All priors are weakly informative by default.  There is no σ²
+    parameter (the logit link absorbs the error scale) and no α
+    parameter (binary response is always Bernoulli).
+    """
+
+
+@dataclass
+class SEMLogitGibbsPriors:
+    """Prior hyperparameters for the SEM-logit Gibbs sampler.
+
+    No σ² parameter (logit link absorbs error scale).
+    """
+
+    beta_mu: np.ndarray | float = 0.0
+    beta_sigma: np.ndarray | float = 1e6
+    lam_lower: float = -0.999
+    lam_upper: float = 0.999
+
+
+@dataclass
+class REGibbsPriors(GibbsBasePriors):
+    """Prior hyperparameters for RE panel Gibbs sampler.
+
+    Parameters
+    ----------
+    beta_mu : float or ndarray
+        Prior mean for β.  Scalar is broadcast to all coefficients.
+    beta_sigma : float or ndarray
+        Prior standard deviation for β.  Scalar is broadcast.
+    sigma_sigma : float
+        **Deprecated / unused.**  The σ² block uses a weakly informative
+        Jeffreys prior p(σ²) ∝ 1/σ² (approximated as Inv-Γ(ε, ε) with
+        ε = 1e-3).  Kept for backward compatibility.
+    sigma_alpha_sigma : float
+        **Deprecated / unused.**  The σ_α² block uses a weakly informative
+        Jeffreys prior p(σ_α²) ∝ 1/σ_α² (approximated as Inv-Γ(ε, ε)
+        with ε = 1e-3).  Kept for backward compatibility.
+    rho_lower : float
+        Lower bound for ρ/λ (from spectral stability).
+    rho_upper : float
+        Upper bound for ρ/λ (from spectral stability).
+    """
+
+    sigma_sigma: float = 10.0
+    sigma_alpha_sigma: float = 10.0
+
+
+@dataclass
+class PanelGaussianPriors:
+    r"""Prior hyperparameters for the Gaussian panel flow Gibbs sampler.
+
+    All priors are weakly informative by default, matching the
+    ``GibbsPriors`` / ``FlowGibbsPriors`` convention.
+
+    Parameters
+    ----------
+    beta_mu : float, default 0.0
+        Normal prior mean for :math:`\beta`.
+    beta_sigma : float, default 1e6
+        Normal prior standard deviation for :math:`\beta`.
+    sigma2_alpha : float, default 2.0
+        Inverse-Gamma shape for :math:`\sigma^2_u`.
+    sigma2_beta : float, default 1.0
+        Inverse-Gamma scale for :math:`\sigma^2_u`.
+    sigma2_y_alpha : float, default 2.0
+        Inverse-Gamma shape for :math:`\sigma^2_y`.
+    sigma2_y_beta : float, default 1.0
+        Inverse-Gamma scale for :math:`\sigma^2_y`.
+    gamma_prior_var : float, default 1.0
+        Prior variance for :math:`\gamma \sim N(0, \sigma^2_\gamma)`
+        truncated to :math:`(-1, 1)`.
+    rho_lower : float, default -0.999
+        Lower bound for :math:`\rho_d, \rho_o`.
+    rho_upper : float, default 0.999
+        Upper bound for :math:`\rho_d, \rho_o`.
+    """
+
+    beta_mu: float | np.ndarray = 0.0
+    beta_sigma: float | np.ndarray = 1e6
+    sigma2_alpha: float = 2.0
+    sigma2_beta: float = 1.0
+    sigma2_y_alpha: float = 2.0
+    sigma2_y_beta: float = 1.0
+    gamma_prior_var: float = 1.0
+    rho_lower: float = -0.999
+    rho_upper: float = 0.999
+
+
 __all__ = [
     "BasePriors",
     "OLSPriors",
@@ -521,6 +749,17 @@ __all__ = [
     "PanelSDMRDynamicPriors",
     "PanelSDMUDynamicPriors",
     "PanelSDEMDynamicPriors",
+    # Gibbs sampler prior structs
+    "GibbsBasePriors",
+    "GaussianGibbsPriors",
+    "GibbsPriors",
+    "ReducedGibbsPriors",
+    "FlowReducedGibbsPriors",
+    "ZINBGibbsPriors",
+    "LogitGibbsPriors",
+    "SEMLogitGibbsPriors",
+    "REGibbsPriors",
+    "PanelGaussianPriors",
     "PriorsLike",
     "resolve_priors",
     "priors_as_dict",

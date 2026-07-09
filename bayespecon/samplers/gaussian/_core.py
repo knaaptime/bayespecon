@@ -36,6 +36,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
+from ...models.priors import GaussianGibbsPriors
 from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d_adaptive,
@@ -63,44 +64,6 @@ class GaussianGibbsState:
     beta: np.ndarray
     sigma2: float
     rho: float
-
-
-@dataclass
-class GaussianGibbsPriors:
-    """Prior hyperparameters for Gaussian spatial Gibbs.
-
-    Parameters
-    ----------
-    beta_mu : float or ndarray
-        Prior mean for β.  Scalar is broadcast to all coefficients.
-    beta_sigma : float or ndarray
-        Prior standard deviation for β.  Scalar is broadcast.
-    sigma2_alpha : float
-        Shape hyperparameter of the ``InverseGamma(sigma2_alpha,
-        sigma2_beta)`` prior on σ².  Matches the NUTS path exactly so
-        that posteriors — and therefore LOO/WAIC — agree between the two
-        samplers.  Conjugate with the Gaussian likelihood, so the σ²
-        block is an exact closed-form draw (LeSage 2009 convention).
-    sigma2_beta : float
-        Scale (rate) hyperparameter of the InverseGamma prior on σ².
-        Models typically resolve this to ``Var(y)`` at construction so
-        the prior mean is scale-aware.
-    rho_lower : float
-        Lower bound for ρ/λ (from spectral stability).
-    rho_upper : float
-        Upper bound for ρ/λ (from spectral stability).
-    """
-
-    beta_mu: float | np.ndarray = 0.0
-    beta_sigma: float | np.ndarray = 1e6
-    sigma2_alpha: float = 2.0
-    sigma2_beta: float = 1.0
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
-    # Accepted for backward compatibility with callers that still pass
-    # ``sigma_sigma=...`` (e.g. panel models).  Ignored by the sampler;
-    # use ``sigma2_alpha`` / ``sigma2_beta`` instead.
-    sigma_sigma: float = 10.0
 
 
 @dataclass
