@@ -155,28 +155,34 @@ class SARNegBinPriors(SARPriors, NegBinPriors):
 
 
 @dataclass(frozen=True)
-class SARTobitPriors(SARPriors):
-    """Priors for :class:`bayespecon.models.SARTobit`.
+class _CensoredMixin:
+    """Half-normal scale on the censored latent-variable gap (Tobit models).
 
-    Adds ``censor_sigma``: scale of the half-normal prior on the censored
-    latent-variable gap.
+    Placed as the *first* base of each Tobit priors class so its field is
+    collected last, matching the historical ``censor_sigma``-at-the-end
+    field order.
     """
 
     censor_sigma: float = 10.0
 
 
 @dataclass(frozen=True)
-class SEMTobitPriors(SEMPriors):
-    """Priors for :class:`bayespecon.models.SEMTobit`."""
+class SARTobitPriors(_CensoredMixin, SARPriors):
+    """Priors for :class:`bayespecon.models.SARTobit`.
 
-    censor_sigma: float = 10.0
+    Adds ``censor_sigma``: scale of the half-normal prior on the censored
+    latent-variable gap.
+    """
 
 
 @dataclass(frozen=True)
-class SDMTobitPriors(SDMPriors):
-    """Priors for :class:`bayespecon.models.SDMTobit`."""
+class SEMTobitPriors(_CensoredMixin, SEMPriors):
+    """Priors for :class:`bayespecon.models.SEMTobit`."""
 
-    censor_sigma: float = 10.0
+
+@dataclass(frozen=True)
+class SDMTobitPriors(_CensoredMixin, SDMPriors):
+    """Priors for :class:`bayespecon.models.SDMTobit`."""
 
 
 @dataclass(frozen=True)
@@ -407,17 +413,13 @@ class PanelSDEMREPriors(PanelSDEMPriors, PanelREMixinPriors):
 
 
 @dataclass(frozen=True)
-class PanelSARTobitPriors(PanelSARPriors):
+class PanelSARTobitPriors(_CensoredMixin, PanelSARPriors):
     """Priors for :class:`bayespecon.models.SARPanelTobit`."""
-
-    censor_sigma: float = 10.0
 
 
 @dataclass(frozen=True)
-class PanelSEMTobitPriors(PanelSEMPriors):
+class PanelSEMTobitPriors(_CensoredMixin, PanelSEMPriors):
     """Priors for :class:`bayespecon.models.SEMPanelTobit`."""
-
-    censor_sigma: float = 10.0
 
 
 # -- Panel dynamic (tighter [-0.95, 0.95] bounds; adds phi) -----------------
