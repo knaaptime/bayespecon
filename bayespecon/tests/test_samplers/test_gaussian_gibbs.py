@@ -959,26 +959,6 @@ class TestJAXGaussianGibbs:
         )
         assert "lam" in idata.posterior.data_vars
 
-    def test_rw_mh_option(self):
-        """use_mala=False should use RW-MH instead of MALA."""
-        from bayespecon.models.cross_section.sar import SAR
-
-        y, X, W_dense, n = _make_sar_data()
-        W = W_to_graph(W_dense)
-        model = SAR(y=y, X=X, W=W)
-        idata = model.fit(
-            sampler="gibbs",
-            draws=50,
-            tune=20,
-            chains=1,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-            gibbs_method="jax",
-            use_mala=False,
-        )
-        assert "rho" in idata.posterior.data_vars
-
     def test_jax_loo_works(self):
         """LOO should work with JAX-produced InferenceData."""
         from bayespecon.models.cross_section.sar import SAR
@@ -1210,7 +1190,7 @@ class TestInformativeOutput:
         assert "took" in caplog.text
 
     def test_jax_path_logs_sampler_name(self, caplog):
-        """JAX path logs MALA/RW-MH sampler name."""
+        """JAX path logs the slice sampler name."""
         pytest.importorskip("jax")
         from bayespecon.models.cross_section.sar import SAR
 
@@ -1227,10 +1207,9 @@ class TestInformativeOutput:
                 n_jobs=1,
                 progressbar=False,
                 gibbs_method="jax",
-                use_mala=True,
             )
-        assert "MALA" in caplog.text
-        assert "acceptance rate" in caplog.text
+        assert "JAX Gibbs sampling" in caplog.text
+        assert "slice" in caplog.text
 
 
 class TestChainParallelism:
@@ -1354,8 +1333,8 @@ class TestChainParallelism:
                 chain_method="parallel",
             )
 
-    def test_vectorized_per_chain_adaptation(self):
-        """JAX vectorized path uses per-chain adapted step sizes."""
+    def test_vectorized_runner_valid_results(self):
+        """JAX vectorized runner returns valid multi-chain slice results."""
         jax = pytest.importorskip("jax")
         import jax.numpy as jnp
         import scipy.sparse as sp
@@ -1425,7 +1404,6 @@ class TestChainParallelism:
             rho_max=priors.rho_upper,
         )
 
-        # Run with use_mala=True to trigger adaptation
         results = run_chains_jax_gibbs_vectorized(
             y=y,
             X=X,
@@ -1440,8 +1418,6 @@ class TestChainParallelism:
             thin=1,
             jax_seeds=list(range(chains)),
             model_type="sar",
-            mala_step_size=0.05,
-            use_mala=True,
             progressbar=False,
         )
 

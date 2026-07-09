@@ -106,9 +106,6 @@ class GibbsEstimation:
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "jax",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> az.InferenceData:
@@ -139,23 +136,11 @@ class GibbsEstimation:
             slice sampling for ρ/λ (default, falls back to ``"numpy"``
             when JAX is not installed), or ``"numpy"`` for Python-loop
             Gibbs with adaptive slice sampling.
-        mala_step_size : float, default 0.05
-            Initial MALA step size (or RW-MH proposal sd) for the
-            JAX path.  Ignored when ``gibbs_method="numpy"``.
-        use_mala : bool, default True
-            If True, use MALA (gradient-guided proposals) for the
-            ρ/λ update in the JAX path.  If False, use random-walk
-            Metropolis–Hastings.  Ignored when ``gibbs_method="numpy"``
-            or ``use_slice=True``.
-        use_slice : bool, default False
-            If True, use slice sampling for the ρ/λ update in the
-            JAX path.  Slice sampling gives much better ESS per sample
-            than MALA.  Takes priority over ``use_mala``.
-            Ignored when ``gibbs_method="numpy"``.
         slice_width : float or None, default None
-            Initial step-out width for slice sampling.  If None, defaults
-            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
-            ``use_slice=False`` or ``gibbs_method="numpy"``.
+            Initial step-out width for the ρ/λ slice sampler on the JAX
+            path.  If None, defaults to ``(rho_upper - rho_lower) * 0.1``.
+            Ignored when ``gibbs_method="numpy"`` (the NumPy path adapts
+            its own slice width).
         chain_method : str or None, default None
             How to run multiple chains for the JAX path.
             ``"vectorized"`` uses ``jax.vmap`` for JAX-native
@@ -185,9 +170,6 @@ class GibbsEstimation:
                 thin=thin,
                 n_jobs=n_jobs,
                 progressbar=progressbar,
-                mala_step_size=mala_step_size,
-                use_mala=use_mala,
-                use_slice=use_slice,
                 slice_width=slice_width,
                 chain_method=chain_method,
             )
@@ -266,16 +248,13 @@ class GibbsEstimation:
         thin: int = 1,
         n_jobs: int = 1,
         progressbar: bool = True,
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str = "vectorized",
     ) -> az.InferenceData:
         """Run JAX JIT Gibbs chains and assemble InferenceData.
 
-        Uses MALA, RW-MH, or slice sampling for the ρ/λ update,
-        enabling full JIT compilation of the Gibbs step.
+        Uses slice sampling for the ρ/λ update, enabling full JIT
+        compilation of the Gibbs step.
 
         Parameters
         ----------
@@ -296,16 +275,8 @@ class GibbsEstimation:
             parallelism instead.
         progressbar : bool, default True
             Show per-chain progress bars.
-        mala_step_size : float, default 0.05
-            Initial MALA step size.  Ignored when ``use_slice=True``.
-        use_mala : bool, default True
-            If True, use MALA for the ρ/λ update.  Ignored when
-            ``use_slice=True``.
-        use_slice : bool, default False
-            If True, use slice sampling for the ρ/λ update.  Gives
-            much better ESS per sample than MALA.
         slice_width : float or None, default None
-            Initial step-out width for slice sampling.  If None,
+            Initial step-out width for the ρ/λ slice sampler.  If None,
             defaults to ``(rho_upper - rho_lower) * 0.1``.
         chain_method : str, default "vectorized"
             How to run multiple chains. ``"sequential"`` runs chains
@@ -327,10 +298,9 @@ class GibbsEstimation:
         logdet_jax = self._build_logdet_jax()
 
         spatial_param = self._spatial_param_name()
-        sampler_name = "MALA" if use_mala else "RW-MH"
         method_str = f" ({chain_method})" if chain_method != "sequential" else ""
         _log.info(
-            f"JAX Gibbs sampling{method_str} ({chains} chains, {sampler_name}, "
+            f"JAX Gibbs sampling{method_str} ({chains} chains, slice, "
             f"3-block: β, σ², {spatial_param})"
         )
         t_start = time.time()
@@ -375,9 +345,6 @@ class GibbsEstimation:
                 thin=thin,
                 jax_seeds=seeds,
                 model_type=self.model_type,
-                mala_step_size=mala_step_size,
-                use_mala=use_mala,
-                use_slice=use_slice,
                 slice_width=slice_width,
                 progressbar=progressbar,
             )
@@ -385,14 +352,10 @@ class GibbsEstimation:
             # Assemble InferenceData
             idata = self._assemble_idata(chain_results)
             elapsed = time.time() - t_start
-            mean_accept = np.mean([r["mh_accept_rate"] for r in chain_results])
             _log.info(
                 f"Sampling {chains} chains for {tune} tune and {draws} draw "
                 f"iterations ({chains * tune:,} + {chains * draws:,} draws total) "
                 f"took {elapsed:.0f} seconds."
-            )
-            _log.info(
-                f"{sampler_name} acceptance rate: {mean_accept:.3f} (target: 0.574)"
             )
             return idata
 
@@ -437,9 +400,6 @@ class GibbsEstimation:
                 thin=thin,
                 rng=rng,
                 model_type=self.model_type,
-                mala_step_size=mala_step_size,
-                use_mala=use_mala,
-                use_slice=use_slice,
                 slice_width=slice_width,
                 progressbar=progressbar,
                 chain_id=chain_id_kw if chain_id_kw is not None else chain_id,
@@ -462,13 +422,11 @@ class GibbsEstimation:
         # Assemble InferenceData
         idata = self._assemble_idata(chain_results)
         elapsed = time.time() - t_start
-        mean_accept = np.mean([r["mh_accept_rate"] for r in chain_results])
         _log.info(
             f"Sampling {chains} chains for {tune} tune and {draws} draw "
             f"iterations ({chains * tune:,} + {chains * draws:,} draws total) "
             f"took {elapsed:.0f} seconds."
         )
-        _log.info(f"{sampler_name} acceptance rate: {mean_accept:.3f} (target: 0.574)")
         return idata
 
     def _build_logdet_jax(self) -> callable:
@@ -632,7 +590,7 @@ class GaussianSARGibbs(GibbsEstimation):
     """Gibbs sampler for SAR/SDM Gaussian models.
 
     3-block sampler: β (conjugate normal), σ² (conjugate Inv-Γ),
-    ρ (collapsed slice sampling or MALA).
+    ρ (collapsed slice sampling).
 
     Parameters
     ----------
@@ -698,7 +656,7 @@ class GaussianSEMGibbs(GibbsEstimation):
     """Gibbs sampler for SEM/SDEM Gaussian models.
 
     3-block sampler: β (conjugate normal), σ² (conjugate Inv-Γ),
-    λ (conditional slice sampling or MALA).
+    λ (conditional slice sampling).
 
     Parameters
     ----------

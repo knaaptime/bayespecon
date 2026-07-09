@@ -325,7 +325,6 @@ def run_chain_jax(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    mala_eps: float = 0.1,
     progress_manager=None,
     chain_id: int = 0,
 ):
@@ -373,9 +372,6 @@ def run_chain_jax(
         Ignored (kept for API compatibility).
     lanczos_deg : int
         Ignored (kept for API compatibility).
-    mala_eps : float, default 0.1
-        Ignored (kept for API compatibility).  The ρ slice sampler uses a
-        fixed stepping-out width; there is no MALA step size.
     progress_manager : optional
         Progress bar manager.
     chain_id : int, default 0
@@ -661,7 +657,6 @@ def run_chain_jax_sem(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    mala_eps: float = 0.1,
     progress_manager=None,
     chain_id: int = 0,
 ):
@@ -949,7 +944,6 @@ def run_chains_jax_vectorized(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    mala_eps: float = 0.1,
     progressbar: bool = True,
 ) -> list[dict]:
     """Run multiple SAR-logit Gibbs chains in parallel via ``jax.vmap``.
@@ -971,9 +965,6 @@ def run_chains_jax_vectorized(
         Per-chain JAX PRNG seeds.  Defaults to ``range(chains)``.
     pg_n_terms, n_probes, lanczos_deg :
         Same meaning as in :func:`run_chain_jax`.
-    mala_eps : float, default 0.1
-        Ignored (kept for API compatibility).  Slice sampling does
-        not use a step-size parameter.
     progressbar : bool, default True
         Show per-chain progress bars.  Because all chains advance in
         lock-step under vmap, the bar is updated in bulk at the end of
@@ -1142,7 +1133,6 @@ def run_chains_jax_sem_vectorized(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    mala_eps: float = 0.1,
     progressbar: bool = True,
 ) -> list[dict]:
     """Run multiple SEM-logit Gibbs chains in parallel via ``jax.vmap``.

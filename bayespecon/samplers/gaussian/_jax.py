@@ -11,10 +11,11 @@ The sampler uses:
 - **β draw**: Conjugate normal via Cholesky factorisation.
   O(k³) but fast for k ≤ ~2000.
 - **σ² draw**: Conjugate inverse-Gamma (direct, no solve needed).
-- **ρ/λ draw**: Metropolis-adjusted Langevin algorithm (MALA) with
-  JAX-native logdet ``log|I-ρW|`` (eigenvalue, Chebyshev, or trace
-  polynomial).  The proposal uses JAX autodiff for the exact gradient
-  of the collapsed (SAR) or conditional (SEM) log-density.
+- **ρ/λ draw**: Neal (2003) stepping-out slice sampling with
+  persistent-interval reuse and JAX-native logdet ``log|I-ρW|``
+  (eigenvalue, Chebyshev, or trace polynomial).  The slice density is
+  the collapsed (SAR) or conditional (SEM) log-density with β and σ²
+  integrated out.
 
 For SAR/SDM, the ρ log-density is *collapsed* (β and σ² integrated out):
 
@@ -43,25 +44,12 @@ where :math:`y^* = (I - \lambda W)y`, :math:`X^* = (I - \lambda W)X`, and
 The extra term :math:`-\frac{1}{2}\log|X^{*\top} X^*|` appears because :math:`X^*`
 depends on :math:`\lambda` (unlike SAR where :math:`X` is fixed).
 
-MALA proposal
-~~~~~~~~~~~~~
-The MALA update for ρ/λ uses ``jax.value_and_grad`` on the log-density:
-
-.. math::
-
-    \rho^* = \rho + \frac{\varepsilon^2}{2}\,\nabla\log p(\rho\mid\cdot)
-    + \varepsilon\,z, \qquad z\sim\mathcal N(0,1)
-
-The Metropolis–Hastings acceptance ratio includes the asymmetric
-proposal density correction:
-
-.. math::
-
-    \alpha_{\text{MALA}} = \frac{p(\rho^*\mid\cdot)\,q(\rho\mid\rho^*)}
-    {p(\rho\mid\cdot)\,q(\rho^*\mid\rho)},
-
-where the forward and reverse proposal densities are Gaussian with
-mean shifted by the gradient drift.
+Slice sampling
+~~~~~~~~~~~~~~
+The ρ/λ update uses Neal's (2003) stepping-out slice sampler on the
+collapsed log-density, carrying a persistent interval in the sampler
+state across sweeps for better ESS per sample.  No gradient, proposal,
+or Metropolis correction is required — every slice step accepts.
 
 Limitations
 -----------
@@ -69,9 +57,8 @@ Limitations
 
 References
 ----------
-Roberts, G. O., & Tweedie, R. L. (1996). Exponential convergence of
-Langevin distributions and their discrete approximations.
-*Bernoulli*, 2(4), 341–363.
+Neal, R. M. (2003). Slice sampling. *Annals of Statistics*, 31(3),
+705–767.
 
 LeSage, J. P., & Pace, R. K. (2009). *Introduction to Spatial
 Econometrics*. CRC Press.
@@ -209,8 +196,6 @@ def _make_gaussian_gibbs_step(
     WXtWX,
     priors,
     model_type: str,
-    use_mala: bool = True,
-    use_slice: bool = True,
 ):
     """Build a JIT-compiled Gaussian Gibbs step with data bound into the closure.
 
@@ -218,16 +203,9 @@ def _make_gaussian_gibbs_step(
     complete 3-block Gibbs sweep (β, σ², ρ/λ) in a single XLA kernel
     call, eliminating all Python→JAX dispatch overhead.
 
-    The ρ/λ update can use one of three samplers:
-
-    - **MALA** (``use_mala=True``): Metropolis-adjusted Langevin algorithm
-      with JAX autodiff for exact gradients.  Good for unimodal posteriors
-      but has higher autocorrelation than slice sampling.
-    - **Slice** (``use_slice=True``): Neal (2003) slice sampling with
-      persistent interval reuse.  Much better ESS per sample than MALA
-      because slice sampling explores the full conditional more thoroughly.
-    - **RW-MH** (default): Random-walk Metropolis–Hastings.  Simplest
-      but worst mixing.
+    The ρ/λ update is Neal (2003) slice sampling with persistent-interval
+    reuse: it explores the full conditional thoroughly and every step
+    accepts (no Metropolis correction).
 
     Parameters
     ----------
@@ -255,23 +233,18 @@ def _make_gaussian_gibbs_step(
         Prior hyperparameters.
     model_type : str
         One of "sar", "sem", "sdm", "sdem".
-    use_mala : bool, default True
-        If True, use MALA for the ρ/λ update.  Ignored when
-        ``use_slice=True``.
-    use_slice : bool, default False
-        If True, use slice sampling for the ρ/λ update.  Takes priority
-        over ``use_mala``.
 
     Returns
     -------
     gibbs_step : callable
         A JIT-compiled function with signature::
 
-            gibbs_step(state, key, mala_eps) -> (new_state, accept)
+            gibbs_step(state, key) -> (new_state, accept)
 
-        where ``state`` is a ``JAXGaussianGibbsState``, ``key`` is a
-        JAX PRNG key, and ``mala_eps`` is a ``jnp.float64`` step size
-        (used for MALA/RW-MH; ignored when ``use_slice=True``).
+        where ``state`` is a ``JAXGaussianGibbsState`` and ``key`` is a
+        JAX PRNG key.  ``accept`` is always ``True`` (slice sampling has
+        no rejection step); it is retained so callers can accumulate a
+        (trivially unit) acceptance rate.
     """
     import equinox as eqx
     import jax
@@ -295,8 +268,8 @@ def _make_gaussian_gibbs_step(
     beta_prior_prec = jnp.diag(1.0 / beta_sigma2_jax)
 
     @eqx.filter_jit
-    def gibbs_step(state, key, mala_eps):
-        """One complete 3-block Gibbs sweep: β → σ² → ρ/λ (MALA).
+    def gibbs_step(state, key):
+        """One complete 3-block Gibbs sweep: β → σ² → ρ/λ (slice).
 
         Parameters
         ----------
@@ -304,17 +277,13 @@ def _make_gaussian_gibbs_step(
             Current state.
         key : jax.random.PRNGKey
             JAX random key.
-        mala_eps : jax.numpy.float64
-            Step size for MALA proposal (or RW-MH proposal sd).
-            Passed as a runtime argument to avoid recompilation
-            when adapting step size.
 
         Returns
         -------
         new_state : JAXGaussianGibbsState
             Updated state.
         accept : bool
-            Whether the MALA/MH step for ρ/λ was accepted.
+            Always ``True`` (slice sampling has no rejection step).
         """
         sigma2 = state.sigma2
         rho = state.rho  # holds λ for SEM/SDEM
@@ -357,8 +326,8 @@ def _make_gaussian_gibbs_step(
         sigma2_inv = jax.random.gamma(key_sigma2, a_post) / b_post
         sigma2_new = jnp.maximum(1.0 / sigma2_inv, 1e-10)
 
-        # ── Block 3: ρ/λ — MALA, RW-MH, or Slice ──
-        # Build the collapsed log-density used by the chosen sampler.
+        # ── Block 3: ρ/λ — slice sampling ──
+        # Build the collapsed log-density used by the slice sampler.
         # All n-dependent inner products are *precomputed* closure constants,
         # so each density evaluation is O(k³) — no O(nk) or O(n²k) work.
         if is_sar:
@@ -401,92 +370,33 @@ def _make_gaussian_gibbs_step(
                     logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * jnp.log(rss) + log_prior
                 )
 
-        if use_slice:
-            # Slice sampling: uses persistent interval for better ESS
-            from .._utils._jax_slice import jax_slice_sample_1d_adaptive
+        # Slice sampling: uses persistent interval for better ESS.
+        from .._utils._jax_slice import jax_slice_sample_1d_adaptive
 
-            key_rho_slice = key_rho
+        # Always pass persistent interval (JAX arrays, never None).
+        # jax_slice_sample_1d_adaptive checks whether x0 lies inside
+        # [L_prev, R_prev] to decide whether to attempt reuse.
+        rho_new, _, L_final, R_final, _ = jax_slice_sample_1d_adaptive(
+            log_density_spatial,
+            rho,
+            rho_lower_jax,
+            rho_upper_jax,
+            key=key_rho,
+            w=state.slice_w,
+            L_prev=state.slice_L,
+            R_prev=state.slice_R,
+        )
 
-            # Always pass persistent interval (JAX arrays, never None).
-            # jax_slice_sample_1d_adaptive checks whether x0 lies inside
-            # [L_prev, R_prev] to decide whether to attempt reuse.
-            rho_new, _, L_final, R_final, _ = jax_slice_sample_1d_adaptive(
-                log_density_spatial,
-                rho,
-                rho_lower_jax,
-                rho_upper_jax,
-                key=key_rho_slice,
-                w=state.slice_w,
-                L_prev=state.slice_L,
-                R_prev=state.slice_R,
-            )
-
-            # Slice sampling always "accepts" (no MH step)
-            accept = jnp.bool_(True)
-
-            new_state = JAXGaussianGibbsState(
-                beta=beta_new,
-                sigma2=sigma2_new,
-                rho=rho_new,
-                slice_w=state.slice_w,  # width adapted in Python between phases
-                slice_L=L_final,
-                slice_R=R_final,
-            )
-            return new_state, accept
-
-        # ── MALA or RW-MH ──
-        key_rho_proposal, key_rho_accept = jax.random.split(key_rho)
-
-        log_density_fn = log_density_spatial
-
-        if use_mala:
-            # Gradient + value via JAX autodiff
-            val_and_grad = jax.value_and_grad(log_density_fn)
-            log_density_current, g_current = val_and_grad(rho)
-
-            # MALA proposal: ρ* = ρ + (ε²/2) ∇log p(ρ) + ε z
-            eps = mala_eps
-            drift = (eps**2 / 2.0) * g_current
-            noise = eps * jax.random.normal(key_rho_proposal, dtype=jnp.float64)
-            rho_proposed = rho + drift + noise
-            rho_proposed = jnp.clip(rho_proposed, rho_lower_jax, rho_upper_jax)
-
-            # MALA acceptance ratio includes proposal density
-            log_density_proposed, g_proposed = val_and_grad(rho_proposed)
-            log_p_fwd = (
-                -0.5 * ((rho_proposed - rho - (eps**2 / 2.0) * g_current) / eps) ** 2
-            )
-            log_p_rev = (
-                -0.5 * ((rho - rho_proposed - (eps**2 / 2.0) * g_proposed) / eps) ** 2
-            )
-
-            log_alpha = (
-                log_density_proposed - log_density_current + log_p_rev - log_p_fwd
-            )
-        else:
-            # RW-MH proposal
-            rho_proposed = rho + mala_eps * jax.random.normal(
-                key_rho_proposal, dtype=jnp.float64
-            )
-            rho_proposed = jnp.clip(rho_proposed, rho_lower_jax, rho_upper_jax)
-
-            log_density_proposed = log_density_fn(rho_proposed)
-            log_density_current = log_density_fn(rho)
-            log_alpha = log_density_proposed - log_density_current
-
-        u = jax.random.uniform(key_rho_accept, dtype=jnp.float64)
-        accept = jnp.log(u) < log_alpha
-
-        rho_new = jnp.where(accept, rho_proposed, rho)
-        rho_new = jnp.clip(rho_new, rho_lower_jax, rho_upper_jax)
+        # Slice sampling always "accepts" (no MH step)
+        accept = jnp.bool_(True)
 
         new_state = JAXGaussianGibbsState(
             beta=beta_new,
             sigma2=sigma2_new,
             rho=rho_new,
-            slice_w=state.slice_w,
-            slice_L=state.slice_L,
-            slice_R=state.slice_R,
+            slice_w=state.slice_w,  # width adapted in Python between phases
+            slice_L=L_final,
+            slice_R=R_final,
         )
         return new_state, accept
 
@@ -503,7 +413,6 @@ def _run_chain_jax_gibbs_scanned(
     init_state,
     key,
     n_iters,
-    mala_eps,
 ):
     """Run a single chain using ``jax.lax.scan``.
 
@@ -515,15 +424,13 @@ def _run_chain_jax_gibbs_scanned(
     ----------
     gibbs_step : callable
         JIT-compiled step function with signature
-        ``(state, key, mala_eps) -> (new_state, accept)``.
+        ``(state, key) -> (new_state, accept)``.
     init_state : JAXGaussianGibbsState
         Initial state.
     key : jax.random.PRNGKey
         JAX random key.
     n_iters : int
         Number of iterations to run.
-    mala_eps : jax.numpy.float64
-        Step size for MALA/RW-MH proposals.
 
     Returns
     -------
@@ -539,7 +446,7 @@ def _run_chain_jax_gibbs_scanned(
     sigma2s : jax.numpy.ndarray of shape (n_iters,)
         Trace of σ² values.
     accept_rate : jax.numpy.float64
-        Fraction of MALA/MH steps accepted.
+        Fraction of slice steps accepted (always ``1.0``).
     """
     import jax
     import jax.numpy as jnp
@@ -547,7 +454,7 @@ def _run_chain_jax_gibbs_scanned(
     def scan_body(carry, _):
         state, key, accept_sum = carry
         key, step_key = jax.random.split(key)
-        state, accept = gibbs_step(state, step_key, mala_eps)
+        state, accept = gibbs_step(state, step_key)
         return (
             (state, key, accept_sum + accept),
             (state.rho, state.beta, state.sigma2, accept),
@@ -585,9 +492,6 @@ def run_chain_jax_gaussian(
     thin: int = 1,
     rng=None,
     model_type: str = "sar",
-    mala_step_size: float = 0.05,
-    use_mala: bool = True,
-    use_slice: bool = True,
     slice_width: float | None = None,
     progressbar: bool = True,
     chain_id: int = 0,
@@ -628,21 +532,9 @@ def run_chain_jax_gaussian(
         Random state.
     model_type : str, default "sar"
         One of "sar", "sem", "sdm", "sdem".
-    mala_step_size : float, default 0.05
-        Initial MALA step size (or RW-MH proposal sd).
-        Ignored when ``use_slice=True``.
-    use_mala : bool, default True
-        If True, use MALA for the ρ/λ update.  Ignored when
-        ``use_slice=True``.
-    use_slice : bool, default False
-        If True, use slice sampling for the ρ/λ update.  Takes priority
-        over ``use_mala``.  Slice sampling gives much better ESS per
-        sample than MALA because it explores the full conditional more
-        thoroughly.
     slice_width : float or None, default None
         Initial step-out width for slice sampling.  If None, defaults
         to ``(rho_upper - rho_lower) * 0.1`` (10% of the support).
-        Ignored when ``use_slice=False``.
     progressbar : bool, default True
         Show progress bar for this chain.
     chain_id : int, default 0
@@ -714,11 +606,10 @@ def run_chain_jax_gaussian(
     beta_samples = np.empty((n_keep, k), dtype=jnp.float64)
     sigma_samples = np.empty(n_keep, dtype=np.float64)
 
-    # ── Step-size / width adaptation ──
-    adapted_step_size = mala_step_size
+    # ── Slice-width adaptation ──
     adapted_slice_width = slice_width
 
-    # Build the JIT-compiled step function (mala_eps is a runtime arg)
+    # Build the JIT-compiled step function
     gibbs_step = _make_gaussian_gibbs_step(
         y_jax=y_jax,
         X_jax=X_jax,
@@ -740,8 +631,6 @@ def run_chain_jax_gaussian(
         WXtWX=_consts["WXtWX"],
         priors=priors,
         model_type=model_type,
-        use_mala=use_mala,
-        use_slice=use_slice,
     )
 
     key = jax.random.PRNGKey(rng.integers(2**31))
@@ -749,34 +638,20 @@ def run_chain_jax_gaussian(
     # ── Phase 1: Warmup via jax.lax.scan ──
     if tune > 0:
         key, warmup_key = jax.random.split(key)
-        state, _, _, _, _, warmup_accept_rate = _run_chain_jax_gibbs_scanned(
+        state, _, _, _, _, _ = _run_chain_jax_gibbs_scanned(
             gibbs_step,
             state,
             warmup_key,
             tune,
-            jnp.float64(adapted_step_size),
         )
 
-        # Adapt step size / width in Python (no recompilation needed)
-        if use_slice:
-            # For slice sampling, adapt the width based on acceptance.
-            # Slice sampling always "accepts" (accept_rate ≈ 1.0),
-            # so we use the persistent interval reuse rate as a proxy.
-            # A wider width is better when the interval is too narrow
-            # (causing many step-outs), and a narrower width is better
-            # when the interval is too wide (causing slow shrinkage).
-            # Simple heuristic: if accept rate is very high (≈1.0),
-            # the width is fine; shrink slightly for efficiency.
-            adapted_slice_width = slice_width * 0.95  # mild shrink
-            state = eqx.tree_at(
-                lambda s: s.slice_w, state, jnp.float64(adapted_slice_width)
-            )
-        elif use_mala:
-            warmup_rate = float(warmup_accept_rate)
-            target_rate = 0.574
-            if 0.0 < warmup_rate < 1.0:
-                adapt_factor = min(max(target_rate / warmup_rate, 0.5), 2.0)
-                adapted_step_size = mala_step_size * adapt_factor
+        # Adapt the slice width in Python (no recompilation needed).
+        # Slice sampling always "accepts", so we simply shrink the width
+        # mildly after warmup for efficiency.
+        adapted_slice_width = slice_width * 0.95  # mild shrink
+        state = eqx.tree_at(
+            lambda s: s.slice_w, state, jnp.float64(adapted_slice_width)
+        )
 
         # Update progress bar for warmup phase
         if progress_manager is not None:
@@ -791,7 +666,6 @@ def run_chain_jax_gaussian(
         state,
         draw_key,
         draws,
-        jnp.float64(adapted_step_size),
     )
 
     # Apply thinning and convert to NumPy
@@ -804,7 +678,7 @@ def run_chain_jax_gaussian(
     if progress_manager is not None:
         for i in range(tune, total_iters):
             progress_manager.update(chain_id, i, tuning=False, accept=None)
-        # Set the aggregate MALA/MH accept rate for this chain
+        # Set the aggregate slice accept rate for this chain (≈1.0)
         progress_manager.set_accept_rate(chain_id, float(draw_accept_rate))
         progress_manager.refresh()
 
@@ -866,9 +740,6 @@ def run_chains_jax_gibbs_vectorized(
     thin: int = 1,
     jax_seeds: list[int] | None = None,
     model_type: str = "sar",
-    mala_step_size: float = 0.05,
-    use_mala: bool = True,
-    use_slice: bool = True,
     slice_width: float | None = None,
     progressbar: bool = True,
 ) -> list[dict]:
@@ -906,13 +777,6 @@ def run_chains_jax_gibbs_vectorized(
         Per-chain JAX PRNG seeds.
     model_type : str, default "sar"
         One of "sar", "sem", "sdm", "sdem".
-    mala_step_size : float, default 0.05
-        Initial MALA step size.
-    use_mala : bool, default True
-        If True, use MALA for the ρ/λ update.
-    use_slice : bool, default False
-        If True, use slice sampling for the ρ/λ update.  Takes priority
-        over ``use_mala``.
     slice_width : float or None, default None
         Initial step-out width for slice sampling.  If None, defaults
         to ``(rho_upper - rho_lower) * 0.1``.
@@ -980,8 +844,6 @@ def run_chains_jax_gibbs_vectorized(
         WXtWX=_consts["WXtWX"],
         priors=priors,
         model_type=model_type,
-        use_mala=use_mala,
-        use_slice=use_slice,
     )
 
     # Convert NumPy initial states to JAX states, then batch into a
@@ -1030,71 +892,46 @@ def run_chains_jax_gibbs_vectorized(
         if tune > 0:
             warmup_keys = keys
 
-            def _warmup_chunk(state, key, step_size, n):
-                return _run_chain_jax_gibbs_scanned(
-                    gibbs_step, state, key, n, step_size
-                )
+            def _warmup_chunk(state, key, n):
+                return _run_chain_jax_gibbs_scanned(gibbs_step, state, key, n)
 
             warmup_vmap = jax.jit(
                 lambda s, k: jax.vmap(
-                    lambda s_, k_: _warmup_chunk(
-                        s_, k_, jnp.float64(mala_step_size), warmup_chunk
-                    )
+                    lambda s_, k_: _warmup_chunk(s_, k_, warmup_chunk)
                 )(s, k)
             )
 
             state = init_states
             chunk_keys = warmup_keys
-            accept_sum = jnp.zeros(chains, dtype=jnp.float64)
             iter_done = 0
             while iter_done < tune:
                 step = min(warmup_chunk, tune - iter_done)
                 if step == warmup_chunk:
-                    state, chunk_keys, _, _, _, chunk_rate = warmup_vmap(
-                        state, chunk_keys
-                    )
+                    state, chunk_keys, _, _, _, _ = warmup_vmap(state, chunk_keys)
                 else:
-                    state, chunk_keys, _, _, _, chunk_rate = jax.vmap(
-                        lambda s_, k_: _warmup_chunk(
-                            s_, k_, jnp.float64(mala_step_size), step
-                        )
+                    state, chunk_keys, _, _, _, _ = jax.vmap(
+                        lambda s_, k_: _warmup_chunk(s_, k_, step)
                     )(state, chunk_keys)
                 jax.block_until_ready(state.rho)
-                accept_sum = accept_sum + chunk_rate * jnp.float64(step)
                 iter_done += step
                 if pm is not None:
                     for c in range(chains):
                         pm.update(c, iter_done - 1, tuning=True, accept=None)
 
             final_states = state
-            warmup_rates = accept_sum / jnp.float64(tune)
-
-            # Adapt step size per-chain using individual warmup acceptance rates
-            if use_mala:
-                target_rate = 0.574
-                safe_rates = jnp.where(
-                    (warmup_rates > 0) & (warmup_rates < 1),
-                    warmup_rates,
-                    jnp.float64(target_rate),
-                )
-                adapt_factors = jnp.clip(target_rate / safe_rates, 0.5, 2.0)
-                adapted_step_sizes = jnp.float64(mala_step_size) * adapt_factors
-            else:
-                adapted_step_sizes = jnp.full(chains, jnp.float64(mala_step_size))
         else:
             final_states = init_states
-            adapted_step_sizes = jnp.full(chains, jnp.float64(mala_step_size))
 
         # ── Phase 2: Post-warmup draws via vmap (chunked) ──
         draw_keys = jax.random.split(jax.random.fold_in(master_key, 1), chains)
 
-        def _draws_chunk(state, key, step_size, n):
-            return _run_chain_jax_gibbs_scanned(gibbs_step, state, key, n, step_size)
+        def _draws_chunk(state, key, n):
+            return _run_chain_jax_gibbs_scanned(gibbs_step, state, key, n)
 
         draws_vmap = jax.jit(
-            lambda s, k, ss: jax.vmap(
-                lambda s_, k_, ss_: _draws_chunk(s_, k_, ss_, draws_chunk)
-            )(s, k, ss)
+            lambda s, k: jax.vmap(lambda s_, k_: _draws_chunk(s_, k_, draws_chunk))(
+                s, k
+            )
         )
 
         state = final_states
@@ -1108,12 +945,12 @@ def run_chains_jax_gibbs_vectorized(
             step = min(draws_chunk, draws - iter_done)
             if step == draws_chunk:
                 state, chunk_keys, rhos_c, betas_c, sigma2s_c, chunk_rate = draws_vmap(
-                    state, chunk_keys, adapted_step_sizes
+                    state, chunk_keys
                 )
             else:
                 state, chunk_keys, rhos_c, betas_c, sigma2s_c, chunk_rate = jax.vmap(
-                    lambda s_, k_, ss_: _draws_chunk(s_, k_, ss_, step)
-                )(state, chunk_keys, adapted_step_sizes)
+                    lambda s_, k_: _draws_chunk(s_, k_, step)
+                )(state, chunk_keys)
             rho_chunks.append(np.asarray(rhos_c))
             beta_chunks.append(np.asarray(betas_c))
             sigma2_chunks.append(np.asarray(sigma2s_c))
@@ -1128,7 +965,7 @@ def run_chains_jax_gibbs_vectorized(
         sigma2s = np.concatenate(sigma2_chunks, axis=1)
         accept_rates = draw_accept_sum / jnp.float64(draws)
 
-        # Set the aggregate MALA/MH accept rate for each chain
+        # Set the aggregate slice accept rate for each chain (≈1.0)
         if pm is not None:
             for c in range(chains):
                 pm.set_accept_rate(c, float(accept_rates[c]))

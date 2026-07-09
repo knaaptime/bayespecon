@@ -145,15 +145,13 @@ def _make_gibbs_step_with_data(
     XtX_jax,
     priors,
     pg_n_terms,
-    mh_proposal_sd,
     n_probes,
     lanczos_deg,
-    use_mala: bool = True,
 ):
     """Build a JIT-compiled Gibbs step with data bound into the closure.
 
     This function creates a ``@jax.jit``-compiled function that performs
-    one complete Gibbs sweep (ω, η, β, σ², ρ MALA/RW-MH) in a single XLA
+    one complete Gibbs sweep (ω, η, β, σ², ρ slice) in a single XLA
     kernel call, eliminating all Python→JAX dispatch overhead.
 
     Parameters
@@ -186,16 +184,10 @@ def _make_gibbs_step_with_data(
         Number of alternating-series terms for the PG draw (mean-exact
         via tail correction; see :func:`_pg_gamma_series_draw`).
         Values below 20 can destabilize the Gibbs chain.
-    mh_proposal_sd : float
-        Ignored (kept for API compatibility). The ρ update now uses
-        slice sampling with a fixed step-out width of 0.2.
     n_probes : int
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int
         Lanczos iteration depth.
-    use_mala : bool
-        Ignored (kept for API compatibility). The ρ update now uses
-        slice sampling unconditionally.
 
     Returns
     -------
@@ -693,11 +685,9 @@ def run_chain_jax(
     thin: int = 1,
     return_eta: bool = False,
     rng=None,
-    mh_proposal_sd: float = 0.05,
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    use_mala: bool = True,
 ):
     """Run one chain of the full-JIT JAX Gibbs sampler.
 
@@ -735,9 +725,6 @@ def run_chain_jax(
         If True, store the full latent field η.
     rng : numpy.random.Generator, optional
         Random state.
-    mh_proposal_sd : float
-        Ignored (kept for API compatibility). The ρ update now uses
-        slice sampling with a fixed step-out width of 0.2.
     pg_n_terms : int
         Number of alternating-series terms for the PG draw (mean-exact
         via tail correction; see :func:`_pg_gamma_series_draw`).
@@ -746,9 +733,6 @@ def run_chain_jax(
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int
         Lanczos iteration depth.
-    use_mala : bool
-        Ignored (kept for API compatibility). The ρ update now uses
-        slice sampling unconditionally.
 
     Returns
     -------
@@ -810,10 +794,8 @@ def run_chain_jax(
         XtX_jax=XtX_jax,
         priors=priors,
         pg_n_terms=pg_n_terms,
-        mh_proposal_sd=mh_proposal_sd,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
-        use_mala=use_mala,
     )
 
     # Warmup the JIT function (first call triggers compilation)
@@ -963,11 +945,9 @@ def run_chains_jax_vectorized(
     tune: int,
     thin: int = 1,
     jax_seeds: list[int] | None = None,
-    mh_proposal_sd: float = 0.05,
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    use_mala: bool = True,
     progressbar: bool = True,
 ) -> list[dict]:
     """Run multiple SAR-NB Gibbs chains in parallel via ``jax.vmap``.
@@ -1012,10 +992,8 @@ def run_chains_jax_vectorized(
         XtX_jax=XtX_jax,
         priors=priors,
         pg_n_terms=pg_n_terms,
-        mh_proposal_sd=mh_proposal_sd,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
-        use_mala=use_mala,
     )
 
     init_states = _stack_nb_inits(inits)

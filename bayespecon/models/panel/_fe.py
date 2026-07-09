@@ -311,9 +311,6 @@ class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> "az.InferenceData":
@@ -337,19 +334,10 @@ class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             Show per-chain progress bars.
         gibbs_method : str, default "numpy"
             Execution backend: ``"numpy"`` or ``"jax"``.
-        mala_step_size : float, default 0.05
-            Initial MALA step size for the JAX path.
-        use_mala : bool, default True
-            If True, use MALA for the ρ update in the JAX path.
-            Ignored when ``use_slice=True``.
-        use_slice : bool, default True
-            If True, use slice sampling for the ρ/λ update in the
-            JAX path.  Slice sampling gives much better ESS per sample
-            than MALA.  Ignored when ``gibbs_method="numpy"``.
         slice_width : float or None, default None
-            Initial step-out width for slice sampling.  If None, defaults
-            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
-            ``use_slice=False`` or ``gibbs_method="numpy"``.
+            Initial step-out width for the ρ slice sampler (JAX path).
+            If None, defaults to ``(rho_upper - rho_lower) * 0.1``.
+            Ignored when ``gibbs_method="numpy"``.
         chain_method : str or None, default None
             How to run multiple chains for the JAX path.
 
@@ -403,9 +391,6 @@ class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             n_jobs=n_jobs,
             progressbar=progressbar,
             gibbs_method=gibbs_method,
-            mala_step_size=mala_step_size,
-            use_mala=use_mala,
-            use_slice=use_slice,
             slice_width=slice_width,
             chain_method=chain_method,
         )
@@ -624,9 +609,6 @@ class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> "az.InferenceData":
@@ -650,19 +632,10 @@ class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             Show per-chain progress bars.
         gibbs_method : str, default "numpy"
             Execution backend: ``"numpy"`` or ``"jax"``.
-        mala_step_size : float, default 0.05
-            Initial MALA step size for the JAX path.
-        use_mala : bool, default True
-            If True, use MALA for the λ update in the JAX path.
-            Ignored when ``use_slice=True``.
-        use_slice : bool, default True
-            If True, use slice sampling for the ρ/λ update in the
-            JAX path.  Slice sampling gives much better ESS per sample
-            than MALA.  Ignored when ``gibbs_method="numpy"``.
         slice_width : float or None, default None
-            Initial step-out width for slice sampling.  If None, defaults
-            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
-            ``use_slice=False`` or ``gibbs_method="numpy"``.
+            Initial step-out width for the λ slice sampler (JAX path).
+            If None, defaults to ``(rho_upper - rho_lower) * 0.1``.
+            Ignored when ``gibbs_method="numpy"``.
         chain_method : str or None, default None
             How to run multiple chains for the JAX path.
 
@@ -715,9 +688,6 @@ class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             n_jobs=n_jobs,
             progressbar=progressbar,
             gibbs_method=gibbs_method,
-            mala_step_size=mala_step_size,
-            use_mala=use_mala,
-            use_slice=use_slice,
             slice_width=slice_width,
             chain_method=chain_method,
         )
@@ -927,9 +897,6 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> "az.InferenceData":
@@ -957,19 +924,10 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             Show per-chain progress bars.
         gibbs_method : str, default "numpy"
             Execution backend: ``"numpy"`` or ``"jax"``.
-        mala_step_size : float, default 0.05
-            Initial MALA step size for the JAX path.
-        use_mala : bool, default True
-            If True, use MALA for the ρ update in the JAX path.
-            Ignored when ``use_slice=True``.
-        use_slice : bool, default True
-            If True, use slice sampling for the ρ/λ update in the
-            JAX path.  Slice sampling gives much better ESS per sample
-            than MALA.  Ignored when ``gibbs_method="numpy"``.
         slice_width : float or None, default None
-            Initial step-out width for slice sampling.  If None, defaults
-            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
-            ``use_slice=False`` or ``gibbs_method="numpy"``.
+            Initial step-out width for the ρ slice sampler (JAX path).
+            If None, defaults to ``(rho_upper - rho_lower) * 0.1``.
+            Ignored when ``gibbs_method="numpy"``.
         chain_method : str or None, default None
             How to run multiple chains for the JAX path.
 
@@ -1028,9 +986,6 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             n_jobs=n_jobs,
             progressbar=progressbar,
             gibbs_method=gibbs_method,
-            mala_step_size=mala_step_size,
-            use_mala=use_mala,
-            use_slice=use_slice,
             slice_width=slice_width,
             chain_method=chain_method,
         )
@@ -1270,9 +1225,6 @@ class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> "az.InferenceData":
@@ -1300,19 +1252,10 @@ class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             Show per-chain progress bars.
         gibbs_method : str, default "numpy"
             Execution backend: ``"numpy"`` or ``"jax"``.
-        mala_step_size : float, default 0.05
-            Initial MALA step size for the JAX path.
-        use_mala : bool, default True
-            If True, use MALA for the λ update in the JAX path.
-            Ignored when ``use_slice=True``.
-        use_slice : bool, default True
-            If True, use slice sampling for the ρ/λ update in the
-            JAX path.  Slice sampling gives much better ESS per sample
-            than MALA.  Ignored when ``gibbs_method="numpy"``.
         slice_width : float or None, default None
-            Initial step-out width for slice sampling.  If None, defaults
-            to ``(rho_upper - rho_lower) * 0.1``.  Ignored when
-            ``use_slice=False`` or ``gibbs_method="numpy"``.
+            Initial step-out width for the λ slice sampler (JAX path).
+            If None, defaults to ``(rho_upper - rho_lower) * 0.1``.
+            Ignored when ``gibbs_method="numpy"``.
         chain_method : str or None, default None
             How to run multiple chains for the JAX path.
 
@@ -1370,9 +1313,6 @@ class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             n_jobs=n_jobs,
             progressbar=progressbar,
             gibbs_method=gibbs_method,
-            mala_step_size=mala_step_size,
-            use_mala=use_mala,
-            use_slice=use_slice,
             slice_width=slice_width,
             chain_method=chain_method,
         )

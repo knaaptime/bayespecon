@@ -219,7 +219,6 @@ class SARLogit(SpatialModel):
         pg_n_terms: int = 25,
         n_probes: int = 5,
         lanczos_deg: int = 15,
-        mala_eps: float = 0.1,
         **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
@@ -421,7 +420,6 @@ class SARLogit(SpatialModel):
                 pg_n_terms=pg_n_terms,
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
-                mala_eps=mala_eps,
                 progressbar=progressbar,
             )
         else:

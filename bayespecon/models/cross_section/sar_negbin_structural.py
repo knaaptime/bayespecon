@@ -175,9 +175,6 @@ class SARNegBinStructural(SpatialModel):
         pg_n_terms: int = 25,
         n_probes: int = 5,
         lanczos_deg: int = 15,
-        mh_proposal_sd: float = 0.05,
-        use_mala: bool = True,
-        mala_eps: float = 0.01,
         **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
@@ -232,13 +229,6 @@ class SARNegBinStructural(SpatialModel):
         lanczos_deg : int, default 30
             Lanczos iteration depth for log|P| estimation.  Only used
             when ``gibbs_method="jax_dense"``.
-        mh_proposal_sd : float, default 0.05
-            Standard deviation of the random-walk MH proposal for ρ.
-            Only used when ``use_mala=False``.
-        use_mala : bool, default True
-            If True, use MALA (gradient-guided proposals) for the ρ
-            update.  If False, use random-walk Metropolis–Hastings.
-            Only used when ``gibbs_method="jax_dense"``.
 
         Returns
         -------
@@ -442,11 +432,9 @@ class SARNegBinStructural(SpatialModel):
                 tune=tune,
                 thin=thin,
                 jax_seeds=seeds,
-                mh_proposal_sd=mh_proposal_sd,
                 pg_n_terms=pg_n_terms,
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
-                use_mala=use_mala,
                 progressbar=progressbar,
             )
         else:

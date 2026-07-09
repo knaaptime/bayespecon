@@ -350,9 +350,6 @@ class SARPanelRE(SpatialPanelModel):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> "az.InferenceData":
@@ -917,9 +914,6 @@ class SEMPanelRE(SpatialPanelModel):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> "az.InferenceData":

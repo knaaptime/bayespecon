@@ -1112,9 +1112,6 @@ class SpatialPanelModel(ABC):
             n_jobs=n_jobs,
             progressbar=progressbar,
             gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-            mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-            use_mala=sample_kwargs.pop("use_mala", True),
-            use_slice=sample_kwargs.pop("use_slice", True),
             slice_width=sample_kwargs.pop("slice_width", None),
             chain_method=sample_kwargs.pop("chain_method", None),
         )

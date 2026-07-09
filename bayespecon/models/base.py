@@ -741,9 +741,6 @@ class SpatialModel(ABC):
             n_jobs=n_jobs,
             progressbar=progressbar,
             gibbs_method=gibbs_method,
-            mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-            use_mala=sample_kwargs.pop("use_mala", True),
-            use_slice=sample_kwargs.pop("use_slice", True),
             slice_width=sample_kwargs.pop("slice_width", None),
             chain_method=sample_kwargs.pop("chain_method", None),
         )
@@ -875,9 +872,6 @@ class SpatialModel(ABC):
         n_jobs: int = -1,
         progressbar: bool = True,
         gibbs_method: str = "jax",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
         slice_width: float | None = None,
         chain_method: str | None = None,
     ) -> az.InferenceData:
@@ -910,14 +904,8 @@ class SpatialModel(ABC):
             slice sampling for ρ/λ (default, falls back to ``"numpy"``
             when JAX is not installed), or ``"numpy"`` for Python-loop
             Gibbs with adaptive slice sampling.
-        mala_step_size : float, default 0.05
-            Initial MALA step size for the JAX path.
-        use_mala : bool, default True
-            If True, use MALA for the ρ/λ update in the JAX path.
-        use_slice : bool, default True
-            If True, use slice sampling for the ρ/λ update.
         slice_width : float or None, default None
-            Initial step-out width for slice sampling.
+            Initial step-out width for the ρ/λ slice sampler (JAX path).
         chain_method : str or None, default None
             How to run multiple chains for the JAX path.
 
@@ -1007,9 +995,6 @@ class SpatialModel(ABC):
             n_jobs=n_jobs,
             progressbar=progressbar,
             gibbs_method=gibbs_method,
-            mala_step_size=mala_step_size,
-            use_mala=use_mala,
-            use_slice=use_slice,
             slice_width=slice_width,
             chain_method=chain_method,
         )
