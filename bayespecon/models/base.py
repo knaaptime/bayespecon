@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -13,16 +13,12 @@ import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
-from .._lazy_deps import az, pm
-
-if TYPE_CHECKING:
-    from .._backends import ProbabilisticBackend
-
 from .._backends.sampler_helpers import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
     use_jax_likelihood,
 )
+from .._lazy_deps import az, pm
 from .._logdet import (
     make_logdet_fn,
     make_logdet_numpy_fn,
@@ -140,7 +136,6 @@ class SpatialModel(ABC):
         logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
-        backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
     ):
         # Resolve typed priors (dataclass) and dict view.
         from .priors import BasePriors, priors_as_dict, resolve_priors
@@ -150,12 +145,6 @@ class SpatialModel(ABC):
         self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
         self.robust = robust
-
-        # Resolve probabilistic backend (PyMC, NumPyro, BlackJAX, nutpie).
-        from .._backends import resolve_backend
-
-        self.backend = resolve_backend(backend)
-        self.backend_name = self.backend.name
 
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None

@@ -33,6 +33,7 @@ import numpy as np
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..._backends.sampler_helpers import use_jax_likelihood
 from ..._lazy_deps import pm
 from ..._logdet import get_cached_logdet_fn
 from .._base._shared import _pointwise_gaussian_loglik, _write_log_likelihood_to_idata
@@ -297,7 +298,7 @@ class _DynamicPanelMixin:
 
         # SEM/SDEM on JAX backends build an observed CustomDist and already
         # have complete log_likelihood from PyMC.
-        if spatial_param == "lam" and self.backend.use_jax_likelihood(nuts_sampler):
+        if spatial_param == "lam" and use_jax_likelihood(nuts_sampler):
             return
 
         self._prepare_dynamic_design()
@@ -1074,7 +1075,7 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         # ``logdet_fn`` already includes the T_eff multiplier; distribute the
         # full panel Jacobian uniformly across the n_obs entries.
         inv_n = 1.0 / n_obs
-        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
+        jax_logp = use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -1307,7 +1308,7 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         W_pt = self._W_pt_sparse_dyn
         n_obs = int(self._y_dyn.shape[0])
         inv_n = 1.0 / n_obs
-        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
+        jax_logp = use_jax_likelihood(nuts_sampler)
 
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)

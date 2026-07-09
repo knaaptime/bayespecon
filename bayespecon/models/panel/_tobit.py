@@ -42,6 +42,7 @@ import numpy as np
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..._backends.sampler_helpers import use_jax_likelihood
 from ..._lazy_deps import pm
 from .._base._shared import _write_log_likelihood_to_idata
 from ..panel_base import SpatialPanelModel
@@ -230,7 +231,7 @@ class SEMPanelTobit(_PanelTobitBase):
         W_pt = self._W_pt_sparse
         n_obs = int(self._y.shape[0])
         inv_n = 1.0 / n_obs
-        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
+        jax_logp = use_jax_likelihood(nuts_sampler)
         n_cens = int(self._censored_idx.size)
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)

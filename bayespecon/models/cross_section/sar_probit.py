@@ -23,7 +23,6 @@ import pytensor.tensor as pt
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
-from ..._backends import resolve_backend
 from ..._backends.sampler_helpers import prepare_compile_kwargs, prepare_idata_kwargs
 from ..._lazy_deps import az, pm
 from ..priors import SARProbitPriors, priors_as_dict, resolve_priors
@@ -127,14 +126,12 @@ class SARProbit:
         if W is None:
             raise ValueError("W is required.")
 
-        # Resolve typed priors and backend.
+        # Resolve typed priors.
         self.priors_obj = resolve_priors(priors, SARProbitPriors)
         self.priors = priors_as_dict(self.priors_obj)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
-        self.backend = resolve_backend(None)
-        self.backend_name = self.backend.name
 
         self._W_dense = self._as_dense_region_W(W)
         self._m = self._W_dense.shape[0]
