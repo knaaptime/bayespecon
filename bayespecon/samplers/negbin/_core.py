@@ -48,6 +48,7 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 import scipy.sparse as sp
+from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 from ..._jax_dispatch import _eqx_available
 from .._utils._polyagamma import sample_polyagamma
@@ -419,14 +420,13 @@ def _sample_beta(
     # Posterior mean: m_beta = Sigma_beta @ (mu_beta / sigma_beta^2 + Xt @ A_rho_eta / sigma2)
     rhs = beta_mu / beta_sigma2 + X.T @ A_rho_eta / sigma2
 
-    # Solve Sigma_beta_inv @ m_beta = rhs for posterior mean
-    m_beta = np.linalg.solve(Sigma_beta_inv, rhs)
-
-    # Sample: beta = m_beta + L^{-T} z where L L^T = Sigma_beta_inv
-    # Cov(beta) = L^{-T} L^{-1} = (L L^T)^{-1} = Sigma_beta_inv^{-1} ✓
-    L = np.linalg.cholesky(Sigma_beta_inv)
+    # One Cholesky of the SPD precision, reused for both the posterior mean
+    # and the sample: beta = m_beta + L^{-T} z where L L^T = Sigma_beta_inv,
+    # so Cov(beta) = L^{-T} L^{-1} = Sigma_beta_inv^{-1} ✓.
+    L, lower = cho_factor(Sigma_beta_inv, lower=True)
+    m_beta = cho_solve((L, lower), rhs)
     z = rng.standard_normal(k)
-    beta_new = m_beta + np.linalg.solve(L.T, z)
+    beta_new = m_beta + solve_triangular(L, z, lower=lower, trans="T")
 
     return beta_new
 

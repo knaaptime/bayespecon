@@ -42,6 +42,7 @@ from typing import Callable, NamedTuple
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 from .._utils._base import GibbsBasePriors, GibbsBaseState
 from .._utils._polyagamma import sample_polyagamma
@@ -312,11 +313,11 @@ def _sample_beta(
     Sigma_beta_inv = Lambda0_inv + XtX
     rhs_beta = Lambda0_inv_mu0 + X.T @ A_rho_eta  # σ² = 1
 
-    # Posterior mean via Cholesky
-    m_beta = np.linalg.solve(Sigma_beta_inv, rhs_beta)
-    L = np.linalg.cholesky(Sigma_beta_inv)
+    # One Cholesky of the SPD precision, reused for the mean and the sample.
+    L, lower = cho_factor(Sigma_beta_inv, lower=True)
+    m_beta = cho_solve((L, lower), rhs_beta)
     z = rng.standard_normal(len(m_beta))
-    beta_new = m_beta + np.linalg.solve(L.T, z)
+    beta_new = m_beta + solve_triangular(L, z, lower=lower, trans="T")
 
     return beta_new
 
@@ -986,11 +987,11 @@ def _sample_beta_sem(
     Sigma_beta_inv = Lambda0_inv + XstXs
     rhs_beta = Lambda0_inv_mu0 + X_star.T @ eta_star  # σ² = 1
 
-    # Posterior mean via Cholesky
-    m_beta = np.linalg.solve(Sigma_beta_inv, rhs_beta)
-    L = np.linalg.cholesky(Sigma_beta_inv)
+    # One Cholesky of the SPD precision, reused for the mean and the sample.
+    L, lower = cho_factor(Sigma_beta_inv, lower=True)
+    m_beta = cho_solve((L, lower), rhs_beta)
     z = rng.standard_normal(len(m_beta))
-    beta_new = m_beta + np.linalg.solve(L.T, z)
+    beta_new = m_beta + solve_triangular(L, z, lower=lower, trans="T")
 
     return beta_new
 

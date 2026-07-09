@@ -242,15 +242,7 @@ class TestSEMCollapsedLogDensity:
     def test_returns_scalar(self):
         y, X, W_dense, n = _make_sem_data()
         cache = _build_cache(W_dense, X, model_type="sem", y=y)
-        result = _sem_collapsed_log_density(
-            0.3,
-            y,
-            X,
-            cache.W_sparse,
-            cache.logdet_fn,
-            n,
-            X.shape[1],
-        )
+        result = _sem_collapsed_log_density(0.3, cache, n, X.shape[1])
         assert np.isscalar(result) or result.ndim == 0
 
     def test_maximum_near_true_lam(self):
@@ -261,19 +253,33 @@ class TestSEMCollapsedLogDensity:
 
         lam_grid = np.linspace(cache.rho_lower + 0.01, cache.rho_upper - 0.01, 50)
         log_dens = [
-            _sem_collapsed_log_density(
-                l,
-                y,
-                X,
-                cache.W_sparse,
-                cache.logdet_fn,
-                n,
-                X.shape[1],
-            )
-            for l in lam_grid
+            _sem_collapsed_log_density(l, cache, n, X.shape[1]) for l in lam_grid
         ]
         lam_argmax = lam_grid[np.argmax(log_dens)]
         assert abs(lam_argmax - lam_true) < 0.3
+
+    def test_cross_product_form_matches_explicit(self):
+        """Quadratic-in-λ cross-products must equal the explicit y*/X* form."""
+        y, X, W_dense, n = _make_sem_data()
+        k = X.shape[1]
+        cache = _build_cache(W_dense, X, model_type="sem", y=y)
+        W = cache.W_sparse
+        logdet_fn = cache.logdet_fn
+
+        def _explicit(lam):
+            y_star = y - lam * (W @ y)
+            X_star = X - lam * (W @ X)
+            XtX_star = X_star.T @ X_star
+            Xty_star = X_star.T @ y_star
+            yty_star = float(y_star @ y_star)
+            sol = np.linalg.solve(XtX_star, Xty_star)
+            rss = max(yty_star - Xty_star @ sol, 1e-300)
+            logdet_XtX = np.linalg.slogdet(XtX_star)[1]
+            return logdet_fn(lam) - 0.5 * logdet_XtX - 0.5 * (n - k) * np.log(rss)
+
+        for lam in (-0.6, -0.2, 0.0, 0.3, 0.7):
+            got = _sem_collapsed_log_density(lam, cache, n, k)
+            np.testing.assert_allclose(got, _explicit(lam), rtol=0, atol=1e-8)
 
 
 # ===================================================================
