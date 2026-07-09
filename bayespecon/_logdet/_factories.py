@@ -23,6 +23,8 @@ from ._cheb_stochastic import (
     cheb_stochastic_logdet_precompute,
 )
 from ._chebyshev import chebyshev
+from ._clenshaw import clenshaw_scalar as _clenshaw_scalar
+from ._clenshaw import clenshaw_vec as _clenshaw_vec
 from ._config import (
     _LOGDET_FN_CACHE,
     _LOGDET_FN_CACHE_MAXSIZE,
@@ -35,46 +37,8 @@ from ._slq import (
 )
 
 # ---------------------------------------------------------------------------
-# Shared Chebyshev / Clenshaw evaluation helpers
+# Stochastic-Chebyshev coefficient helper
 # ---------------------------------------------------------------------------
-
-
-def _clenshaw_scalar(coeffs, r, rmin_cb, rmax_cb, T):
-    """Evaluate a Chebyshev series at scalar ``r`` via Clenshaw recurrence."""
-    r = float(r)
-    x = (2.0 * r - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-    m = len(coeffs)
-    if m == 0:
-        return 0.0
-    if m == 1:
-        return float(coeffs[0])
-    b_next = 0.0
-    b_curr = float(coeffs[m - 1])
-    for k in range(m - 2, 0, -1):
-        b_new = 2.0 * x * b_curr - b_next + float(coeffs[k])
-        b_next = b_curr
-        b_curr = b_new
-    val = float(coeffs[0]) + x * b_curr - b_next
-    return val if T == 1 else T * val
-
-
-def _clenshaw_vec(coeffs, rho_arr, rmin_cb, rmax_cb, T):
-    """Evaluate a Chebyshev series at an array of ρ via Clenshaw recurrence."""
-    rho_arr = np.asarray(rho_arr, dtype=np.float64)
-    x = (2.0 * rho_arr - rmax_cb - rmin_cb) / (rmax_cb - rmin_cb)
-    m = len(coeffs)
-    if m == 0:
-        return np.zeros_like(rho_arr, dtype=np.float64)
-    if m == 1:
-        return np.full_like(rho_arr, coeffs[0], dtype=np.float64)
-    b_next = np.zeros_like(x, dtype=np.float64)
-    b_curr = np.full_like(x, coeffs[m - 1], dtype=np.float64)
-    for k in range(m - 2, 0, -1):
-        b_new = 2.0 * x * b_curr - b_next + coeffs[k]
-        b_next = b_curr
-        b_curr = b_new
-    val = coeffs[0] + x * b_curr - b_next
-    return val if T == 1 else T * val
 
 
 def _cheb_stochastic_coeffs(W_sparse, rho_min, rho_max):

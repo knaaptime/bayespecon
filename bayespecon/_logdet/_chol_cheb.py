@@ -52,6 +52,8 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
+from ._clenshaw import clenshaw_scalar, clenshaw_vec
+
 
 @dataclass(frozen=True)
 class CholChebPrecompute:
@@ -281,36 +283,11 @@ def chol_cheb_logdet_eval(pre: CholChebPrecompute, rho: float) -> float:
     rho : float
         Spatial autoregressive parameter.
     """
-    x = (2.0 * rho - pre.rho_max - pre.rho_min) / (pre.rho_max - pre.rho_min)
-    m = len(pre.coeffs)
-    if m == 0:
-        return 0.0
-    if m == 1:
-        return float(pre.coeffs[0])
-    b_next = 0.0
-    b_curr = float(pre.coeffs[m - 1])
-    for j in range(m - 2, 0, -1):
-        b_new = 2.0 * x * b_curr - b_next + float(pre.coeffs[j])
-        b_next = b_curr
-        b_curr = b_new
-    return float(pre.coeffs[0]) + x * b_curr - b_next
+    return clenshaw_scalar(pre.coeffs, rho, pre.rho_min, pre.rho_max)
 
 
 def chol_cheb_logdet_eval_vec(
     pre: CholChebPrecompute, rho_arr: np.ndarray
 ) -> np.ndarray:
     """Vectorized evaluation over an array of ρ values."""
-    rho_arr = np.asarray(rho_arr, dtype=np.float64)
-    x = (2.0 * rho_arr - pre.rho_max - pre.rho_min) / (pre.rho_max - pre.rho_min)
-    m = len(pre.coeffs)
-    if m == 0:
-        return np.zeros_like(rho_arr)
-    if m == 1:
-        return np.full_like(rho_arr, pre.coeffs[0])
-    b_next = np.zeros_like(x)
-    b_curr = np.full_like(x, pre.coeffs[m - 1])
-    for k in range(m - 2, 0, -1):
-        b_new = 2.0 * x * b_curr - b_next + pre.coeffs[k]
-        b_next = b_curr
-        b_curr = b_new
-    return pre.coeffs[0] + x * b_curr - b_next
+    return clenshaw_vec(pre.coeffs, rho_arr, pre.rho_min, pre.rho_max)
