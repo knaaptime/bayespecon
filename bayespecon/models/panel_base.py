@@ -29,7 +29,6 @@ from .._logdet import (
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
-from .._logdet._config import _auto_logdet_method
 from ._base._shared import _is_row_standardized_csr
 from .base import (
     _pointwise_gaussian_loglik,
@@ -447,7 +446,8 @@ class SpatialPanelModel(ABC):
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
         # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
 
-        # Resolve rho/lambda bounds from method and priors.
+        # Resolve the logdet method and rho/lambda bounds exactly once,
+        # passing the N×N W so auto-selection can honour graph directedness.
         # For row-standardised W the spectral stability interval is
         # always approximately (-1, 1), so no eigenvalue computation
         # is needed here.
@@ -457,7 +457,9 @@ class SpatialPanelModel(ABC):
             self.logdet_method,
             n=self._W_sparse.shape[0],
             priors=self.priors,
+            W=self._W_sparse,
         )
+        self._resolved_logdet_method = self._logdet_bounds.method
 
         self._y, self._X = _demean_panel(
             self._y_raw, self._X_raw, self._N, self._T, self.model
@@ -485,13 +487,6 @@ class SpatialPanelModel(ABC):
                     self._feature_names[j] for j in self._wx_column_indices
                 ]
 
-        # Resolve the logdet method up-front so the lazy property accessors
-        # know whether eigenvalues are required.
-        self._resolved_logdet_method = (
-            self.logdet_method
-            if self.logdet_method is not None
-            else _auto_logdet_method(self._W_sparse.shape[0])
-        )
         # Logdet builders are constructed lazily on first access — see the
         # ``_logdet_numpy_fn``, ``_logdet_numpy_vec_fn`` and
         # ``_logdet_pytensor_fn`` properties.  Caches are seeded as None so

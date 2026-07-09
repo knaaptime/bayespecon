@@ -221,10 +221,11 @@ class SARNegBinStructural(SpatialModel):
               ~800 MB at n = 10 000).
         pg_n_terms : int, default 25
             Number of alternating-series terms for the JAX Pólya–Gamma
-            sampler.  Higher values reduce bias at the cost of more compute.
-            Values below 20 can cause the Gibbs chain to diverge due to
-            excessive variance in the PG approximation.  Only used when
-            ``gibbs_method="jax_dense"``.
+            sampler.  The draw's mean is exact at any K (a closed-form
+            tail-mean correction is applied); higher values reduce the
+            residual O(1/K³) tail-variance deficit at the cost of more
+            compute.  Values below 20 can destabilize the Gibbs chain.
+            Only used when ``gibbs_method="jax_dense"``.
         n_probes : int, default 10
             Number of Lanczos probe vectors for stochastic log|P|
             estimation.  Only used when ``gibbs_method="jax_dense"``.

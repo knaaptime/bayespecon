@@ -141,10 +141,11 @@ def _is_symmetric_W(W) -> bool:
             pass
 
     if sp.issparse(W):
-        W = W.tocsr()
-        WT = W.T.tocsr()
-        diff = (W - WT).toarray()
-        return np.allclose(diff, 0, atol=1e-10)
+        # Sparse difference stays sparse — never densify (n=20k dense is ~3.2GB).
+        diff = (W.tocsr() - W.T.tocsr()).tocoo()
+        if diff.nnz == 0:
+            return True
+        return bool(np.all(np.abs(diff.data) <= 1e-10))
     else:
         W_arr = np.asarray(W)
         if W_arr.ndim != 2:
@@ -199,12 +200,18 @@ def resolve_logdet_bounds(
     priors: Mapping[str, Any] | None = None,
     rho_min: float | None = None,
     rho_max: float | None = None,
+    W=None,
 ) -> LogdetBounds:
     """Resolve rho bounds from explicit overrides, priors, or defaults.
 
     For row-standardised W the stability interval is approximately (-1, 1).
+
+    ``W`` (when supplied) participates in auto-selection so that the
+    method recorded here agrees with every other resolution site —
+    without it a directed graph would be auto-routed to the
+    symmetric-only ``cheb_cholesky``.
     """
-    resolved_method = method if method is not None else _auto_logdet_method(int(n))
+    resolved_method = resolve_logdet_method(method, n=int(n), W=W)
     source = "default"
 
     if rho_min is not None or rho_max is not None:

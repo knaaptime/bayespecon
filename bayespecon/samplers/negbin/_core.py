@@ -717,9 +717,14 @@ def _sample_rho(
         """Collapsed log-density of ρ (η integrated out)."""
         if use_jax:
             # --- JAX dense path (JIT-compiled) ---
-            # Split key for this evaluation (deterministic from rho)
-            _jax_key_step = jax.random.fold_in(_jax_key, hash(rho) % (2**31))
-            result = _jax_logdens_fn(jnp.float64(rho), _jax_key_step)
+            # Fixed key for the whole slice step: every ρ candidate sees the
+            # same Lanczos probes, so the density is a smooth deterministic
+            # surface during stepping-out/shrinkage.  (Keying on hash(ρ)
+            # made the stochastic-logdet noise a function of the ρ value —
+            # jittering the surface point-to-point within a step.)  A fresh
+            # _jax_key is drawn each Gibbs iteration, so the probe noise
+            # still averages out across the chain.
+            result = _jax_logdens_fn(jnp.float64(rho), _jax_key)
             return float(result)
 
         # --- scipy sparse path ---

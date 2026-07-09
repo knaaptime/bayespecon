@@ -109,24 +109,66 @@ def _adaptive_order(rho_min: float, rho_max: float) -> int:
     return 50  # [-0.95, 0.95] or wider
 
 
-def _d_symmetrize(W: sp.csr_matrix) -> sp.csr_matrix:
+def _d_symmetrize(W: sp.csr_matrix) -> sp.csc_matrix:
     """D-symmetrise row-standardised ``W``.
 
     For ``W = D⁻¹A`` (row-standardised, ``A`` symmetric adjacency),
     ``W_sym = D^{1/2} W D^{-1/2} = D^{-1/2} A D^{-1/2}`` is symmetric
     with the **same eigenvalues** as ``W``.
 
+    The symmetrizing degrees are recovered from the *values* of ``W``
+    via the edge ratios ``D[i]/D[j] = W[j,i]/W[i,j]`` (BFS propagation).
+    The neighbor count (``getnnz``) equals the standardizing degree only
+    for binary adjacency — using it for weighted graphs breaks the
+    symmetry that CHOLMOD relies on (it reads a single triangle) and
+    silently corrupts the log-determinant.
+
     This makes ``I - ρW_sym`` SPD for ``|ρ| < 1``, enabling sparse Cholesky.
+
+    Raises
+    ------
+    ValueError
+        If no symmetrizing diagonal exists (directed graph, or weights
+        inconsistent with ``W = D⁻¹A`` for symmetric ``A``).  Pass
+        ``logdet_method="aaa"`` for such matrices.
     """
     n = W.shape[0]
-    degrees = np.array(W.getnnz(axis=1), dtype=np.float64)
-    D_sqrt = np.sqrt(degrees)
+    W = sp.csr_matrix(W)
+
+    # Fast path: W already symmetric — no scaling needed.
+    diff = (W - W.T).tocoo()
+    if diff.nnz == 0 or np.all(np.abs(diff.data) <= 1e-12):
+        return sp.csc_matrix(W)
+
+    from ._slq import _recover_symmetrizing_diagonal
+
+    D = _recover_symmetrizing_diagonal(W)
+    if D is None or not np.all(np.isfinite(D)) or np.any(D <= 0):
+        raise ValueError(
+            "cheb_cholesky requires a D-symmetrizable W (row-standardised "
+            "undirected graph); no valid symmetrizing diagonal was found. "
+            'Use logdet_method="aaa" for directed or non-symmetrizable W.'
+        )
+
+    D_sqrt = np.sqrt(D)
     D_inv_sqrt = 1.0 / D_sqrt
     # W_sym = D^{1/2} W D^{-1/2}  — sparse scaling, no densification
     # W_sym[i,j] = sqrt(d_i) * W[i,j] / sqrt(d_j)
     W_coo = W.tocoo()
     scaled_data = D_sqrt[W_coo.row] * W_coo.data * D_inv_sqrt[W_coo.col]
-    return sp.csc_matrix((scaled_data, (W_coo.row, W_coo.col)), shape=(n, n))
+    W_sym = sp.csc_matrix((scaled_data, (W_coo.row, W_coo.col)), shape=(n, n))
+
+    # Hard guard: CHOLMOD reads one triangle of its input, so a
+    # non-symmetric W_sym would produce a silently wrong logdet.
+    sym_diff = (W_sym - W_sym.T).tocoo()
+    sym_err = float(np.abs(sym_diff.data).max()) if sym_diff.nnz else 0.0
+    if sym_err > 1e-10:
+        raise ValueError(
+            f"D-symmetrization failed (max asymmetry {sym_err:.2e}); W is "
+            "not of the form D^-1 A with symmetric A. Use "
+            'logdet_method="aaa" for this weights matrix.'
+        )
+    return W_sym
 
 
 def chol_cheb_logdet_precompute(

@@ -19,7 +19,6 @@ dependencies:
   # optional
 # - blackjax
 # - numpyro
-# - scikit_umfpack
 # - pip
 #   - pip:
 #     - klujax

@@ -354,3 +354,43 @@ class TestSARNegBinStructuralJaxVectorized:
                 gibbs_method="jax_dense",
                 return_eta=True,
             )
+
+
+@pytest.mark.slow
+@pytest.mark.recovery
+@pytest.mark.requires_jax
+class TestSARNegBinStructuralJaxDenseRecovery:
+    """Parameter recovery through the ``jax_dense`` path.
+
+    Tombstone for the truncated Gamma-series PG mean bias: without the
+    closed-form tail-mean correction, the K=25 series under-draws omega
+    by ~1%, which accumulates across Gibbs iterations and drags alpha
+    toward collapse.
+    """
+
+    def test_alpha_rho_recovery_jax_dense(self, sar_nb_data):
+        pytest.importorskip("jax")
+        y = sar_nb_data["y"]
+        X = sar_nb_data["X"]
+        W = sar_nb_data["W_graph"]
+
+        model = SARNegBinStructural(y=y, X=X, W=W)
+        idata = model.fit(
+            draws=DRAWS,
+            tune=TUNE,
+            chains=CHAINS,
+            random_seed=42,
+            n_jobs=1,
+            progressbar=False,
+            gibbs_method="jax_dense",
+        )
+
+        alpha_mean = float(idata.posterior["alpha"].mean())
+        rho_mean = float(idata.posterior["rho"].mean())
+        # Same tolerances as the factorize-path recovery tests above.
+        assert abs(alpha_mean - ALPHA_TRUE) < 1.5, (
+            f"alpha_mean={alpha_mean:.3f} too far from alpha_true={ALPHA_TRUE}"
+        )
+        assert abs(rho_mean - RHO_TRUE) < 0.2, (
+            f"rho_mean={rho_mean:.3f} too far from rho_true={RHO_TRUE}"
+        )

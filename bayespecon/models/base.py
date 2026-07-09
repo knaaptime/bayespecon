@@ -29,7 +29,6 @@ from .._logdet import (
     make_logdet_numpy_vec_fn,
     resolve_logdet_bounds,
 )
-from .._logdet._config import _auto_logdet_method
 from ._base._shared import (
     _parse_W,
     _pointwise_gaussian_loglik,
@@ -177,14 +176,8 @@ class SpatialModel(ABC):
             # Eigenvalues are computed lazily via the _W_eigs cached property
             # to avoid the O(n³) eigendecomposition for large n where trace
             # or Chebyshev methods are used instead.
-            # Resolve the logdet method up-front so the lazy property
-            # accessors know whether eigenvalues are required.
-            self._resolved_logdet_method = (
-                self.logdet_method
-                if self.logdet_method is not None
-                else _auto_logdet_method(self._W_sparse.shape[0], W=self._W_sparse)
-            )
-            # Resolve rho/lambda bounds from method and priors.
+            # Resolve the logdet method and rho/lambda bounds exactly once,
+            # passing W so auto-selection can honour graph directedness.
             # For row-standardised W the spectral stability interval is
             # always approximately (-1, 1), so no eigenvalue computation
             # is needed here.
@@ -192,7 +185,9 @@ class SpatialModel(ABC):
                 self.logdet_method,
                 n=len(self._y),
                 priors=self.priors,
+                W=self._W_sparse,
             )
+            self._resolved_logdet_method = self._logdet_bounds.method
             self._wx_column_indices = self._spatial_lag_column_indices(
                 self._X, self._feature_names
             )

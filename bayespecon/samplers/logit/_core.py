@@ -461,8 +461,10 @@ def _sample_rho(
         if use_jax:
             # NOTE: JAX path still uses β-conditional density;
             # marginalising β here is deferred to a follow-up.
-            _jax_key_step = jax.random.fold_in(_jax_key, hash(rho) % (2**31))
-            result = _jax_logdens_fn(jnp.float64(rho), _jax_key_step)
+            # Fixed key per slice step: all ρ candidates share the same
+            # Lanczos probes, giving a deterministic density surface within
+            # the step (fresh _jax_key each Gibbs iteration).
+            result = _jax_logdens_fn(jnp.float64(rho), _jax_key)
             return float(result)
 
         # --- scipy sparse path (β-marginalised, σ² = 1) ---
@@ -1117,8 +1119,10 @@ def _sample_lam(
     def log_density(lam: float) -> float:
         """Collapsed log-density of λ (η integrated out)."""
         if use_jax:
-            _jax_key_step = jax.random.fold_in(_jax_key, hash(lam) % (2**31))
-            result = _jax_logdens_fn(jnp.float64(lam), _jax_key_step)
+            # Fixed key per slice step: all λ candidates share the same
+            # Lanczos probes, giving a deterministic density surface within
+            # the step (fresh _jax_key each Gibbs iteration).
+            result = _jax_logdens_fn(jnp.float64(lam), _jax_key)
             return float(result)
 
         # --- scipy sparse path ---

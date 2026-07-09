@@ -368,7 +368,11 @@ def make_flow_separable_logdet(
         W_dense = np.asarray(W_sparse, dtype=np.float64)
 
     if method is None:
+        # Only eigenvalue/chebyshev are implemented for the separable flow
+        # Jacobian; clamp the general auto-selection to that set.
         method = _auto_logdet_method(n)
+        if method not in {"eigenvalue", "chebyshev"}:
+            method = "chebyshev"
 
     if method == "eigenvalue":
         eigs = np.linalg.eigvals(W_dense)
@@ -415,7 +419,10 @@ def make_flow_separable_logdet_numpy(
         W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
 
     if method is None:
+        # Clamp auto-selection to the methods implemented for this path.
         method = _auto_logdet_method(n)
+        if method not in {"eigenvalue", "chebyshev"}:
+            method = "chebyshev"
     if method not in {"eigenvalue", "chebyshev"}:
         raise ValueError(
             f"make_flow_separable_logdet_numpy: method={method!r} not recognised. "

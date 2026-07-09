@@ -24,6 +24,7 @@ series (degree k from k trace moments).
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
@@ -79,17 +80,17 @@ def _recover_symmetrizing_diagonal(W: sp.csr_matrix) -> np.ndarray | None:
         (directed graph — D-symmetrisation not applicable).
     """
     n = W.shape[0]
-    W.tocsc()
 
-    # Check symmetric sparsity pattern
-    pattern_sym = (W != 0).toarray() == (W.T != 0).toarray()
-    if not pattern_sym.all():
+    # Check symmetric sparsity pattern without densifying: the boolean
+    # patterns differ iff their sparse XOR has any stored entries.
+    pattern = (W != 0).tocsr()
+    if (pattern != pattern.T.tocsr()).nnz > 0:
         return None
 
-    # BFS to propagate D[i]/D[j] = W[j,i] / W[i,j]
+    # BFS to propagate D[i]/D[j] = W[j,i] / W[i,j], seeded per connected
+    # component so disconnected graphs get a consistent D on every block.
     D = np.empty(n, dtype=np.float64)
     D[:] = np.nan
-    D[0] = 1.0
 
     # Build adjacency list for BFS
     W_coo = W.tocoo()
@@ -98,22 +99,26 @@ def _recover_symmetrizing_diagonal(W: sp.csr_matrix) -> np.ndarray | None:
         if i != j:
             adj[i].append(j)
 
-    queue = [0]
-    while queue:
-        i = queue.pop(0)
-        for j in adj[i]:
-            if np.isnan(D[j]):
-                # D[i] / D[j] = W[j,i] / W[i,j]
-                wij = W[i, j]
-                wji = W[j, i]
-                if abs(wij) < 1e-300 or abs(wji) < 1e-300:
-                    continue
-                D[j] = D[i] * wij / wji
-                queue.append(j)
+    W_csr = W.tocsr()
+    for seed in range(n):
+        if not np.isnan(D[seed]):
+            continue
+        D[seed] = 1.0
+        queue = deque([seed])
+        while queue:
+            i = queue.popleft()
+            for j in adj[i]:
+                if np.isnan(D[j]):
+                    # D[i] / D[j] = W[j,i] / W[i,j]
+                    wij = W_csr[i, j]
+                    wji = W_csr[j, i]
+                    if abs(wij) < 1e-300 or abs(wji) < 1e-300:
+                        continue
+                    D[j] = D[i] * wij / wji
+                    queue.append(j)
 
-    # Check all nodes reached (connected graph)
+    # Isolated/unreachable-by-value nodes (e.g. zero rows) default to 1
     if np.any(np.isnan(D)):
-        # Disconnected graph — set unreached nodes to 1
         D[np.isnan(D)] = 1.0
 
     return D
@@ -376,12 +381,15 @@ def slq_logdet_precompute(
     ----------
     W : array-like or scipy.sparse matrix
         Spatial weights matrix (dense or sparse).
-    n_probes : int, default 10
+    n_probes : int, default 50
     lanczos_deg : int, default 30
     rng : np.random.Generator, optional
+        Probe-vector RNG.  Defaults to a *seeded* generator so the
+        precomputed quadrature (and thus the logdet approximation) is
+        reproducible run-to-run; pass your own Generator to randomize.
     """
     if rng is None:
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(0)
 
     if sp.issparse(W) or hasattr(W, "format"):
         W_sp = sp.csr_matrix(W)

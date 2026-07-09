@@ -348,9 +348,12 @@ def cheb_stochastic_logdet_precompute(
     lam_min, lam_max : float, optional
         Spectral bounds of W.  If not provided, estimated via power iteration.
     rng : np.random.Generator, optional
+        Probe-vector RNG.  Defaults to a *seeded* generator so the
+        precomputed moments (and thus the logdet approximation) are
+        reproducible run-to-run; pass your own Generator to randomize.
     """
     if rng is None:
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(0)
 
     if sp.issparse(W) or hasattr(W, "format"):
         W_sp = sp.csr_matrix(W, dtype=np.float64)
