@@ -1570,9 +1570,11 @@ def _sar_null_lambda_info(
     n = W_sparse.shape[0]
     A = np.eye(n) - rho_mean * W_dense
     G = np.linalg.solve(A, W_dense)  # = (I - rho W)^{-1} W
-    # Trace identities: tr(B'C + BC) = sum(B*C) + tr(B@C)
-    T_GG = float(np.sum(G * G) + np.trace(G @ G))
-    T_WG = float(np.sum(W_dense * G) + np.trace(W_dense @ G))
+    # Trace identities.  tr(B'C) = sum(B * C) and tr(BC) = sum(B * C.T),
+    # so both traces are O(n^2) elementwise sums — never form the dense
+    # O(n^3) products G @ G or W_dense @ G just to take their trace.
+    T_GG = float(np.sum(G * G) + np.sum(G * G.T))
+    T_WG = float(np.sum(W_dense * G) + np.sum(W_dense * G.T))
     tr_G = float(np.trace(G))
     # tr(M_X G) for centering the M_X-projected score g_rho = e_perp' W y.
     # M_X = I - X (X'X)^{-1} X', so

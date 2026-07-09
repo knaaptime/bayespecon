@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from ._backend import _solve_sparse_matrix
+
 
 def kron_solve_vec(
     Lo: sp.csr_matrix,
@@ -35,8 +37,8 @@ def kron_solve_vec(
     eta : ndarray, shape (N,)
     """
     Hb = b.reshape(n, n, order="F")
-    Hp = sp.linalg.spsolve(Ld, Hb)
-    Z = sp.linalg.spsolve(Lo, Hp.T)
+    Hp = _solve_sparse_matrix(Ld, Hb)
+    Z = _solve_sparse_matrix(Lo, Hp.T)
     return np.asarray(Z, dtype=np.float64).T.ravel(order="F")
 
 
@@ -64,10 +66,10 @@ def kron_solve_matrix(
     """
     k = B.shape[1]
     R = B.reshape(n, n * k, order="F")
-    Hp = sp.linalg.spsolve(Ld, R)
+    Hp = _solve_sparse_matrix(Ld, R)
     Hp3 = Hp.reshape(n, n, k, order="F")
     RHS2 = Hp3.transpose(2, 0, 1).reshape(k * n, n).T
-    Z_h = sp.linalg.spsolve(Lo, RHS2)
+    Z_h = _solve_sparse_matrix(Lo, RHS2)
     Z3 = Z_h.reshape(n, n, k, order="F")
     return np.asarray(
         Z3.transpose(1, 0, 2).reshape(n * n, k, order="F"), dtype=np.float64

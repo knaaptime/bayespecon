@@ -692,6 +692,86 @@ class TestFlowSparseLUCache:
 
         assert calls["splu"] == 1
 
+    @staticmethod
+    def _counting_umf_env(monkeypatch):
+        """Force the umfpack sparse path and return a factor-call counter."""
+        pytest.importorskip("sksparse.umfpack")
+        from bayespecon import _ops as ops_mod
+
+        monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
+        monkeypatch.setenv("BAYESPECON_SPARSE_STRICT", "1")
+        monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "0")
+        ops_mod._select_sparse_backend.cache_clear()
+
+        called = {"umfpack": 0}
+
+        def _fake_sparse_factor(A_csc, backend):
+            called["umfpack"] += 1
+            assert backend == "umfpack"
+            A_dense = A_csc.toarray()
+
+            class _F:
+                def solve(self, rhs):
+                    return np.linalg.solve(A_dense, np.asarray(rhs))
+
+            return _F()
+
+        monkeypatch.setattr(ops_mod._backend, "_sparse_factor", _fake_sparse_factor)
+        return called
+
+    def test_sparse_flow_forward_reuses_umfpack_factorization(self, monkeypatch):
+        from bayespecon._ops import SparseFlowSolveOp
+
+        called = self._counting_umf_env(monkeypatch)
+        n = 3
+        W = _ring_W(n)
+        Wd, Wo, Ww = _flow_weight_mats(W)
+        op = SparseFlowSolveOp(Wd, Wo, Ww)
+        b = np.linspace(1.0, 2.0, n * n, dtype=np.float64)
+
+        got1 = op._solve_forward(0.2, -0.1, 0.05, b)
+        got2 = op._solve_forward(0.2, -0.1, 0.05, b)
+
+        assert called["umfpack"] == 1
+        np.testing.assert_allclose(got1, got2, atol=1e-12)
+
+    def test_sparse_flow_adjoint_reuses_umfpack_factorization(self, monkeypatch):
+        from bayespecon._ops import SparseFlowSolveOp
+
+        called = self._counting_umf_env(monkeypatch)
+        n = 3
+        W = _ring_W(n)
+        Wd, Wo, Ww = _flow_weight_mats(W)
+        op = SparseFlowSolveOp(Wd, Wo, Ww)
+        g = np.linspace(1.0, 2.0, n * n, dtype=np.float64)
+
+        got1 = op._vjp_op._solve_adjoint(0.2, -0.1, 0.05, g)
+        got2 = op._vjp_op._solve_adjoint(0.2, -0.1, 0.05, g)
+
+        assert called["umfpack"] == 1
+        np.testing.assert_allclose(got1, got2, atol=1e-12)
+
+    def test_sparse_flow_matrix_reuses_umfpack_factorization(self, monkeypatch):
+        from bayespecon._ops import SparseFlowSolveMatrixOp
+
+        called = self._counting_umf_env(monkeypatch)
+        n, T = 3, 2
+        W = _ring_W(n)
+        Wd, Wo, Ww = _flow_weight_mats(W)
+        op = SparseFlowSolveMatrixOp(Wd, Wo, Ww)
+        B = np.arange(1, n * n * T + 1, dtype=np.float64).reshape(n * n, T)
+
+        got1 = op._solve_forward_matrix(0.15, 0.1, -0.05, B)
+        got2 = op._solve_forward_matrix(0.15, 0.1, -0.05, B)
+        v1 = op._vjp_op._solve_adjoint_matrix(0.15, 0.1, -0.05, B)
+        v2 = op._vjp_op._solve_adjoint_matrix(0.15, 0.1, -0.05, B)
+
+        # One factorisation each for the forward and the adjoint system,
+        # reused across the repeat call at the same rhos.
+        assert called["umfpack"] == 2
+        np.testing.assert_allclose(got1, got2, atol=1e-12)
+        np.testing.assert_allclose(v1, v2, atol=1e-12)
+
 
 class TestSparseSARSolveOpNumbaDispatch:
     def test_numba_dense_path_matches_default(self, monkeypatch):

@@ -8,6 +8,7 @@ import scipy.sparse as sp
 from pytensor.graph.basic import Apply
 
 from ._backend import (
+    _make_cached_sparse_solver,
     _select_sparse_backend,
     _solve_sparse_matrix,
     _solve_sparse_vector,
@@ -88,9 +89,26 @@ class _SparseFlowVJPOp(pt.Op):
                 self._cached_solver.solve(g64, trans="T"), dtype=np.float64
             )
 
+        # KLU/UMFPACK: reuse the cached factor of A^T when backend and rho
+        # are unchanged, otherwise build and cache a fresh one.  (The factor
+        # has no ``trans`` support, so A^T is factorised directly.)
+        if (
+            self._cached_backend == backend
+            and self._cached_rhos == rhos
+            and self._cached_solver is not None
+        ):
+            return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
+
         A_t = (
             self._I - rhos[0] * self._Wd.T - rhos[1] * self._Wo.T - rhos[2] * self._Ww.T
         )
+        cached_solver = _make_cached_sparse_solver(A_t, backend)
+        if cached_solver is not None:
+            self._cached_solver = cached_solver
+            self._cached_backend = backend
+            self._cached_rhos = rhos
+            return np.asarray(self._cached_solver.solve(g64), dtype=np.float64)
+
         return _solve_sparse_vector(A_t, g64)
 
     def make_node(self, rho_d, rho_o, rho_w, eta, g):
@@ -247,7 +265,23 @@ class SparseFlowSolveOp(pt.Op):
                 self._cached_rhos = rhos
             return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
 
+        # KLU/UMFPACK: reuse the cached factor when backend and rho are
+        # unchanged, otherwise build and cache a fresh one.
+        if (
+            self._cached_backend == backend
+            and self._cached_rhos == rhos
+            and self._cached_solver is not None
+        ):
+            return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
+
         A = self._I - rhos[0] * self._Wd - rhos[1] * self._Wo - rhos[2] * self._Ww
+        cached_solver = _make_cached_sparse_solver(A, backend)
+        if cached_solver is not None:
+            self._cached_solver = cached_solver
+            self._cached_backend = backend
+            self._cached_rhos = rhos
+            return np.asarray(self._cached_solver.solve(b64), dtype=np.float64)
+
         return _solve_sparse_vector(A, b64)
 
     def make_node(self, rho_d, rho_o, rho_w, b):
@@ -361,9 +395,25 @@ class _SparseFlowVJPMatrixOp(pt.Op):
                 self._cached_solver.solve(G64, trans="T"), dtype=np.float64
             )
 
+        # KLU/UMFPACK: reuse the cached factor of A^T (one factorisation
+        # covers all T columns) when backend and rho are unchanged.
+        if (
+            self._cached_backend == backend
+            and self._cached_rhos == rhos
+            and self._cached_solver is not None
+        ):
+            return np.asarray(self._cached_solver.solve(G64), dtype=np.float64)
+
         A_t = (
             self._I - rhos[0] * self._Wd.T - rhos[1] * self._Wo.T - rhos[2] * self._Ww.T
         )
+        cached_solver = _make_cached_sparse_solver(A_t, backend)
+        if cached_solver is not None:
+            self._cached_solver = cached_solver
+            self._cached_backend = backend
+            self._cached_rhos = rhos
+            return np.asarray(self._cached_solver.solve(G64), dtype=np.float64)
+
         return _solve_sparse_matrix(A_t, G64)
 
     def make_node(self, rho_d, rho_o, rho_w, H, G):
@@ -450,7 +500,23 @@ class SparseFlowSolveMatrixOp(pt.Op):
                 self._cached_rhos = rhos
             return np.asarray(self._cached_solver.solve(B64), dtype=np.float64)
 
+        # KLU/UMFPACK: reuse the cached factor (one factorisation covers all
+        # T columns) when backend and rho are unchanged.
+        if (
+            self._cached_backend == backend
+            and self._cached_rhos == rhos
+            and self._cached_solver is not None
+        ):
+            return np.asarray(self._cached_solver.solve(B64), dtype=np.float64)
+
         A = self._I - rhos[0] * self._Wd - rhos[1] * self._Wo - rhos[2] * self._Ww
+        cached_solver = _make_cached_sparse_solver(A, backend)
+        if cached_solver is not None:
+            self._cached_solver = cached_solver
+            self._cached_backend = backend
+            self._cached_rhos = rhos
+            return np.asarray(self._cached_solver.solve(B64), dtype=np.float64)
+
         return _solve_sparse_matrix(A, B64)
 
     def make_node(self, rho_d, rho_o, rho_w, B):
