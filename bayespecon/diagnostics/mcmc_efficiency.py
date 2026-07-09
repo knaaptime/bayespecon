@@ -35,8 +35,9 @@ import warnings
 from dataclasses import dataclass, field
 from typing import ClassVar, Optional
 
-import arviz as az
 import numpy as np
+
+from .._lazy_deps import az
 
 
 @dataclass

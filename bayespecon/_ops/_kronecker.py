@@ -1,4 +1,4 @@
-"""Auto-generated from _ops.py — see git history for provenance."""
+"""PyTensor Ops for Kronecker-structured spatial-flow solves and their VJPs."""
 
 from __future__ import annotations
 

@@ -197,19 +197,6 @@ class TestSARSpatialEffectsPosterior:
         # Verify that indirect = total - direct
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
 
-        # Verify that posterior mean is close to existing computation
-        # (within Monte Carlo error for 100 draws)
-        rho_mean = float(np.mean(rho_draws))
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean, rho=rho_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,  # Allow MC error
-        )
-
     def test_spatial_effects_result(self):
         """Test that spatial_effects() returns a DataFrame."""
         n = 5
@@ -315,18 +302,6 @@ class TestSDMSpatialEffectsPosterior:
 
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
 
-        # Compare with existing
-        rho_mean = float(np.mean(rho_draws))
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean, rho=rho_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,
-        )
-
 
 # ------------------------------------------------------------------
 # Tests for SLX spatial effects posterior
@@ -354,17 +329,6 @@ class TestSLXSpatialEffectsPosterior:
         assert direct_samples.shape == (G, 1)
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
 
-        # Compare with existing
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,
-        )
-
 
 # ------------------------------------------------------------------
 # Tests for SDEM spatial effects posterior
@@ -391,16 +355,6 @@ class TestSDEMSpatialEffectsPosterior:
 
         assert direct_samples.shape == (G, 1)
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
-
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,
-        )
 
 
 # ------------------------------------------------------------------
@@ -431,16 +385,6 @@ class TestSEMSpatialEffectsPosterior:
         # SEM: indirect = 0, total = direct
         np.testing.assert_allclose(indirect_samples, 0.0)
         np.testing.assert_allclose(total_samples, direct_samples)
-
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,
-        )
 
 
 # ------------------------------------------------------------------

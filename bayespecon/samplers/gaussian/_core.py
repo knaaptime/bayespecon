@@ -525,57 +525,6 @@ def _sem_collapsed_log_density(
 
 
 # ---------------------------------------------------------------------------
-# Un-collapsed λ log-density (SEM/SDEM) — kept for backward compatibility
-# ---------------------------------------------------------------------------
-
-
-def _sem_conditional_log_density(
-    lam: float,
-    beta: np.ndarray,
-    sigma2: float,
-    y: np.ndarray,
-    X: np.ndarray,
-    W_sparse: sp.csr_matrix,
-    logdet_fn: Callable[[float], float],
-) -> float:
-    """Conditional log p(λ | β, σ², y) for SEM/SDEM Gaussian model.
-
-    Uses the un-collapsed approach: condition on current β and σ².
-
-        log p(λ | β, σ², y) = log|I - λW| - 1/(2σ²) ||ε||² + const
-
-    where ε = (I - λW)(y - Xβ).
-
-    Parameters
-    ----------
-    lam : float
-        Spatial error parameter.
-    beta : ndarray of shape (k,)
-        Current regression coefficients.
-    sigma2 : float
-        Current residual variance.
-    y : ndarray of shape (n,)
-        Response vector.
-    X : ndarray of shape (n, k)
-        Design matrix.
-    W_sparse : csr_matrix
-        Sparse spatial weights matrix.
-    logdet_fn : callable
-        log|I - lam*W| callable.
-
-    Returns
-    -------
-    log_density : float
-        Conditional log-density of λ (up to a constant).
-    """
-    resid = y - X @ beta
-    eps = resid - lam * (W_sparse @ resid)
-    ss = np.dot(eps, eps)
-    logdet = logdet_fn(lam)
-    return logdet - 0.5 * ss / sigma2
-
-
-# ---------------------------------------------------------------------------
 # ρ/λ slice sampler
 # ---------------------------------------------------------------------------
 

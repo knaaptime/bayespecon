@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import arviz as az
 import numpy as np
 
+from ..._lazy_deps import az
 from .._mixins import GaussianLikelihoodMixin
 from ..panel_base import SpatialPanelModel
 from ..priors import (
@@ -125,23 +125,6 @@ class OLSPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             ni = self._beta_nonintercept_indices
             return self._X[:, ni] @ beta
         return self._X @ beta
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects for OLS panel model.
-
-        Returns
-        -------
-        dict
-            Direct, indirect, total effects and feature names.
-        """
-        beta = self._posterior_mean("beta")
-        ni = self._beta_nonintercept_indices
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros(len(ni)),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -442,30 +425,6 @@ class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             ni = self._beta_nonintercept_indices
             return rho * self._Wy + self._X[:, ni] @ beta
         return rho * self._Wy + self._X @ beta
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute SAR panel direct/indirect/total effects.
-
-        Returns
-        -------
-        dict
-            Direct, indirect, total effects and feature names.
-        """
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        ni = self._beta_nonintercept_indices
-        eigs = self._W_eigs
-        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        indirect = total - direct
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -777,23 +736,6 @@ class SEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             ni = self._beta_nonintercept_indices
             return self._X[:, ni] @ beta
         return self._X @ beta
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute SEM panel direct/indirect/total effects.
-
-        Returns
-        -------
-        dict
-            Direct, indirect, total effects and feature names.
-        """
-        beta = self._posterior_mean("beta")
-        ni = self._beta_nonintercept_indices
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros(len(ni)),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -1110,49 +1052,6 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         else:
             Z = np.hstack([self._X, self._WX])
         return rho * self._Wy + Z @ beta
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute SDM panel direct/indirect/total effects.
-
-        Returns
-        -------
-        dict
-            Direct, indirect, total effects and feature names.
-        """
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        if self._intercept_dropped:
-            k = len(self._beta_nonintercept_indices)
-        else:
-            k = self._X.shape[1]
-        kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-
-        eigs = self._W_eigs
-        inv_eigs = 1.0 / (1.0 - rho * eigs)
-        mean_diag_M = float(np.mean(inv_eigs.real))
-        mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
-        rho_arr = np.array([rho])
-        mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
-        mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
-        wx_idx = self._beta_wx_column_indices
-        direct = np.array(
-            [beta1[j] * mean_diag_M + b2 * mean_diag_MW for j, b2 in zip(wx_idx, beta2)]
-        )
-        total = np.array(
-            [
-                beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-                for j, b2 in zip(wx_idx, beta2)
-            ]
-        )
-        indirect = total - direct
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._wx_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -1495,33 +1394,6 @@ class SDEMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
             Z = np.hstack([self._X, self._WX])
         return Z @ beta
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute SDEM panel direct/indirect/total effects.
-
-        Returns
-        -------
-        dict
-            Direct, indirect, total effects and feature names.
-        """
-        beta = self._posterior_mean("beta")
-        if self._intercept_dropped:
-            k = len(self._beta_nonintercept_indices)
-        else:
-            k = self._X.shape[1]
-        kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-        mean_diag_w = float(self._W_sparse.diagonal().mean())
-        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-        wx_idx = self._beta_wx_column_indices
-        direct = beta1[wx_idx] + beta2 * mean_diag_w
-        total = beta1[wx_idx] + beta2 * mean_row_sum_w
-        return {
-            "direct": direct,
-            "indirect": total - direct,
-            "total": total,
-            "feature_names": self._wx_feature_names,
-        }
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -1662,37 +1534,6 @@ class SLXPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         else:
             Z = np.hstack([self._X, self._WX])
         return Z @ beta
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute SLX panel direct/indirect/total effects.
-
-        Returns
-        -------
-        dict
-            Direct, indirect, total effects and feature names.
-        """
-        beta = self._posterior_mean("beta")
-        if self._intercept_dropped:
-            k = len(self._beta_nonintercept_indices)
-        else:
-            k = self._X.shape[1]
-        kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-
-        mean_diag_w = float(self._W_sparse.diagonal().mean())
-        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-
-        wx_idx = self._beta_wx_column_indices
-        direct = beta1[wx_idx] + beta2 * mean_diag_w
-        total = beta1[wx_idx] + beta2 * mean_row_sum_w
-        indirect = total - direct
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._wx_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,

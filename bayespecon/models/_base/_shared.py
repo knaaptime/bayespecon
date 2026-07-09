@@ -10,10 +10,11 @@ from __future__ import annotations
 import warnings
 from typing import Optional, Union
 
-import arviz as az
 import numpy as np
 import scipy.sparse as sp
 from libpysal.graph import Graph
+
+from ..._lazy_deps import az
 
 
 def gelman_default_beta_prior(

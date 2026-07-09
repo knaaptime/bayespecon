@@ -145,21 +145,6 @@ class TestFittedProbabilities:
 class TestSpatialEffects:
     """spatial_effects should compute direct/indirect/total impacts."""
 
-    def test_effects_keys(self):
-        y, X, W = _binary_data()
-        model = SARLogit(y=y, X=X, W=W)
-        model._idata = _idata(
-            {
-                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
-                "rho": np.array([0.15, 0.16]),
-            }
-        )
-        effects = model._compute_spatial_effects()
-        assert "direct" in effects
-        assert "indirect" in effects
-        assert "total" in effects
-        assert "feature_names" in effects
-
     def test_probability_scale_eigen(self):
         """``scale='probability'`` returns response-scale impacts via eigen path."""
         y, X, W = _binary_data()
@@ -328,34 +313,6 @@ class TestSEMFittedProbabilities:
 
 class TestSEMSpatialEffects:
     """spatial_effects should compute direct/indirect/total impacts."""
-
-    def test_effects_keys(self):
-        y, X, W = _binary_data()
-        model = SEMLogit(y=y, X=X, W=W)
-        model._idata = _idata(
-            {
-                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
-                "lam": np.array([0.15, 0.16]),
-            }
-        )
-        effects = model._compute_spatial_effects()
-        assert "direct" in effects
-        assert "indirect" in effects
-        assert "total" in effects
-        assert "feature_names" in effects
-
-    def test_sem_indirect_zero(self):
-        """For SEM, indirect effects should be zero."""
-        y, X, W = _binary_data()
-        model = SEMLogit(y=y, X=X, W=W)
-        model._idata = _idata(
-            {
-                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
-                "lam": np.array([0.15, 0.16]),
-            }
-        )
-        effects = model._compute_spatial_effects()
-        assert np.allclose(effects["indirect"], 0.0)
 
 
 class TestSEMDGPIntegration:

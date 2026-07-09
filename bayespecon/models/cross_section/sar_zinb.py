@@ -42,11 +42,11 @@ import warnings
 from functools import cached_property
 from typing import Optional
 
-import arviz as az
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
+from ..._lazy_deps import az
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
 from ...samplers._utils._spatial_normal import CholmodFactor
@@ -617,67 +617,6 @@ class SARZINB(SpatialModel):
             "SARZINB does not build a PyMC model. "
             "Use the fit() method for Gibbs sampling."
         )
-
-    def _compute_spatial_effects(
-        self, equation: str = "count"
-    ) -> dict[str, np.ndarray]:
-        """Compute average direct/indirect/total impacts at posterior means.
-
-        Parameters
-        ----------
-        equation : {"count", "selection"}, default "count"
-            Which equation to compute impacts for.
-
-            - ``"count"``: LeSage–Pace decomposition for the SAR-NB
-              count equation using ρ and β.
-            - ``"selection"``: LeSage–Pace decomposition for the
-              SAR-logit selection equation using λ and γ.
-        """
-        if equation == "count":
-            rho = float(self._posterior_mean("rho"))
-            beta = self._posterior_mean("beta")
-            eigs = self._W_eigs
-            mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-            mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-            ni = self._nonintercept_indices
-            direct = mean_diag * beta[ni]
-            total = mean_row_sum * beta[ni]
-            indirect = total - direct
-            feature_names = self._nonintercept_feature_names
-        elif equation == "selection":
-            lam = float(self._posterior_mean("lam"))
-            gamma = self._posterior_mean("gamma")
-            sel_eigs = self._W_sel_eigs
-            mean_diag = float(np.mean((1.0 / (1.0 - lam * sel_eigs)).real))
-            # Mean row sum of (I - lam * W_sel)^{-1}
-            if self._is_sel_row_std:
-                mean_row_sum = 1.0 / (1.0 - lam)
-            else:
-                # Eigenvalue-based computation for non-row-standardised W_sel
-                n = self._Z.shape[0]
-                W_sel_dense = self._W_sel_sparse.toarray().astype(np.float64)
-                V_sel = np.linalg.eig(W_sel_dense)[1]
-                c_sel = np.linalg.solve(V_sel, np.ones(n))
-                V_col_sums_sel = V_sel.sum(axis=0)
-                mean_row_sum = float(
-                    np.real(np.mean((V_col_sums_sel * c_sel) / (1.0 - lam * sel_eigs)))
-                )
-            ni = self._sel_nonintercept_indices
-            direct = mean_diag * gamma[ni]
-            total = mean_row_sum * gamma[ni]
-            indirect = total - direct
-            feature_names = self._sel_nonintercept_feature_names
-        else:
-            raise ValueError(
-                f"equation must be 'count' or 'selection', got '{equation}'"
-            )
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self, equation: str = "count"

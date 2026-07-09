@@ -22,13 +22,12 @@ the convention used by all other panel classes in this package.
 
 from __future__ import annotations
 
-import arviz as az
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
 from ..._backends.sampler_helpers import use_jax_likelihood
+from ..._lazy_deps import az, pm
 from ..panel_base import SpatialPanelModel
 from ..priors import (
     PanelOLSREPriors,
@@ -175,22 +174,6 @@ class OLSPanelRE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         alpha = self._posterior_mean("alpha")
         return self._X @ beta + alpha[self._unit_idx]
-
-    def _compute_spatial_effects(self) -> dict:
-        """Direct/indirect/total effects (no spatial multiplier).
-
-        Returns
-        -------
-        dict
-        """
-        ni = self._nonintercept_indices
-        beta = self._posterior_mean("beta")
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros_like(beta[ni]),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -540,28 +523,6 @@ class SARPanelRE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         alpha = self._posterior_mean("alpha")
         return rho * self._Wy + self._X @ beta + alpha[self._unit_idx]
-
-    def _compute_spatial_effects(self) -> dict:
-        """SAR direct/indirect/total effects at posterior mean rho.
-
-        Returns
-        -------
-        dict
-        """
-        ni = self._nonintercept_indices
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        eigs = self._W_eigs
-        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        return {
-            "direct": direct,
-            "indirect": total - direct,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -1128,22 +1089,6 @@ class SEMPanelRE(SpatialPanelModel):
         alpha = self._posterior_mean("alpha")
         return self._X @ beta + alpha[self._unit_idx]
 
-    def _compute_spatial_effects(self) -> dict:
-        """SEM direct/indirect/total effects (error model: no y-multiplier).
-
-        Returns
-        -------
-        dict
-        """
-        ni = self._nonintercept_indices
-        beta = self._posterior_mean("beta")
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros_like(beta[ni]),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -1423,23 +1368,6 @@ class SDEMPanelRE(SpatialPanelModel):
         alpha = self._posterior_mean("alpha")
         Z = np.hstack([self._X, self._WX])
         return Z @ beta + alpha[self._unit_idx]
-
-    def _compute_spatial_effects(self) -> dict:
-        """SDEM-style direct/indirect/total effects (no rho multiplier)."""
-        beta = self._posterior_mean("beta")
-        k = self._X.shape[1]
-        kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-        mean_diag_w = float(self._W_sparse.diagonal().mean())
-        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-        direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
-        total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
-        return {
-            "direct": direct,
-            "indirect": total - direct,
-            "total": total,
-            "feature_names": self._wx_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,

@@ -125,35 +125,6 @@ def _recover_symmetrizing_diagonal(W: sp.csr_matrix) -> np.ndarray | None:
 
 
 # ---------------------------------------------------------------------------
-# W_sym LinearOperator
-# ---------------------------------------------------------------------------
-
-
-def _make_sym_operator(W: sp.csr_matrix, D: np.ndarray) -> spla.LinearOperator:
-    """Create a LinearOperator for W_sym = D^{1/2} W D^{-1/2}.
-
-    Matvec: q → D^{1/2} (W (D^{-1/2} q)) — two O(n) scalings + O(nnz) sparse.
-    Handles both 1D vectors and 2D blocks (n, n_probes).
-    """
-    n = W.shape[0]
-    sqrt_D = np.sqrt(D)
-    inv_sqrt_D = 1.0 / sqrt_D
-
-    def _matvec(q):
-        return sqrt_D * (W @ (inv_sqrt_D * q))
-
-    def _rmatvec(q):
-        return inv_sqrt_D * (W.T @ (sqrt_D * q))
-
-    return spla.LinearOperator(
-        shape=(n, n),
-        matvec=_matvec,
-        rmatvec=_rmatvec,
-        dtype=np.float64,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Batched Lanczos (all probes simultaneously — one block matvec per step)
 # ---------------------------------------------------------------------------
 
@@ -263,59 +234,6 @@ def _batched_lanczos(
         weights[j, :m] = z_norms_sq[j] * eigvecs[0, :] ** 2
 
     return nodes, weights, z_norms_sq
-
-
-def _lanczos_iteration(
-    W_op: spla.LinearOperator,
-    n: int,
-    k: int,
-    z: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, float]:
-    """Run k steps of Lanczos on a symmetric operator starting from z.
-
-    Returns (theta, e1_sq, z_norm) where theta are real eigenvalues of T_k.
-    """
-    z_norm = np.linalg.norm(z)
-    if z_norm == 0:
-        return np.empty(0), np.empty(0), 0.0
-
-    q = z / z_norm
-
-    alpha_vals = np.empty(k)
-    beta_vals = np.empty(k - 1)
-    Q = np.empty((n, k))
-
-    Q[:, 0] = q
-    r = W_op @ q
-    alpha_vals[0] = float(q @ r)
-    r = r - alpha_vals[0] * q
-
-    for i in range(1, k):
-        beta_vals[i - 1] = np.linalg.norm(r)
-        if beta_vals[i - 1] < 1e-15:
-            alpha_vals = alpha_vals[:i]
-            beta_vals = beta_vals[: i - 1] if i > 1 else beta_vals[:0]
-            Q = Q[:, :i]
-            break
-        q_new = r / beta_vals[i - 1]
-        Q[:, i] = q_new
-        r = W_op @ q_new
-        alpha_vals[i] = float(q_new @ r)
-        r = r - alpha_vals[i] * q_new - beta_vals[i - 1] * Q[:, i - 1]
-        # Full reorthogonalization
-        for j in range(i):
-            r = r - float(Q[:, j] @ r) * Q[:, j]
-
-    m = len(alpha_vals)
-    T = np.diag(alpha_vals[:m])
-    if m > 1:
-        T += np.diag(beta_vals[: m - 1], 1) + np.diag(beta_vals[: m - 1], -1)
-
-    # Symmetric → eigh (real eigenvalues, valid Gauss quadrature)
-    theta, eigvecs = np.linalg.eigh(T)
-    e1_sq = eigvecs[0, :] ** 2
-
-    return theta, e1_sq, z_norm
 
 
 # ---------------------------------------------------------------------------

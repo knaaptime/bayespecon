@@ -254,7 +254,6 @@ def _make_gibbs_step_with_data(
         beta = state.beta
         sigma2 = state.sigma2
         rho = state.rho
-        state.omega
         alpha = state.alpha
 
         key_omega, key_eta, key_beta, key_sigma2, key_rho = jax.random.split(key, 5)

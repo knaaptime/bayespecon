@@ -12,9 +12,10 @@ LM test families (cross-sectional, panel, flow):
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
-import arviz as az
 import numpy as np
 from scipy import stats as sp_stats
+
+from ..._lazy_deps import az
 
 # ---------------------------------------------------------------------------
 # BayesianLMTestResult dataclass

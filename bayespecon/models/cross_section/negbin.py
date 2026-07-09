@@ -14,9 +14,9 @@ spatial-specification diagnostics applied after fitting.
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 
+from ..._lazy_deps import pm
 from ..base import SpatialModel
 from ..priors import NegBinPriors
 
@@ -106,13 +106,6 @@ class NegBin(SpatialModel):
     # ------------------------------------------------------------------
     # Spatial-effects hooks (not applicable for non-spatial model)
     # ------------------------------------------------------------------
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        raise NotImplementedError(
-            "NegBin has no spatial structure and therefore no "
-            "spatial effects. Use Bayesian LM diagnostics to assess whether "
-            "a spatial count model (e.g. SARNegBinStructural) is appropriate."
-        )
 
     def _compute_spatial_effects_posterior(
         self,

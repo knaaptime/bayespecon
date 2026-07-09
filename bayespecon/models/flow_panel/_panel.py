@@ -13,10 +13,8 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Any, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
@@ -26,6 +24,7 @@ from ..._backends.sampler_helpers import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
 )
+from ..._lazy_deps import az, pm
 from ..._logdet import (
     compute_flow_traces,
     flow_logdet_numpy,

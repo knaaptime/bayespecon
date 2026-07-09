@@ -12,10 +12,10 @@ All classes use latent-data augmentation for censored observations.
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..._lazy_deps import pm
 from ..base import SpatialModel
 from ..priors import SARTobitPriors, SDMTobitPriors, SEMTobitPriors
 

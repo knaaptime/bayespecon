@@ -27,10 +27,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
+from ..._lazy_deps import az
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
 from ...samplers._utils._spatial_normal import CholmodFactor

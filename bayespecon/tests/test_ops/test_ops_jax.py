@@ -385,7 +385,7 @@ def test_jax_auto_falls_to_callback_scipy_when_no_optional_backends(monkeypatch)
     assert backend == "callback"
     msgs = [str(w.message) for w in caught]
     assert any("callback+scipy" in m for m in msgs)
-    assert any("scikit-umfpack" in m for m in msgs)
+    assert any("scikit-sparse" in m for m in msgs)
 
 
 # ---------------------------------------------------------------------------

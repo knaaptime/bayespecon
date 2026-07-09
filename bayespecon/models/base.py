@@ -7,13 +7,13 @@ from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm
 import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
+
+from .._lazy_deps import az, pm
 
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
@@ -1580,19 +1580,6 @@ class SpatialModel(ABC):
         """Number of columns in the beta1 block (X part of beta)."""
         return self._X.shape[1]
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute model-specific impact measures at posterior mean.
-
-        Dispatches based on ``_jacobian_param`` and ``_has_wx_in_beta``.
-        Subclasses normally do not need to override this.
-        """
-        jp = self._jacobian_param
-        if jp == "rho":
-            return self._effects_rho()
-        if self._has_wx_in_beta:
-            return self._effects_linear()
-        return self._effects_trivial()
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -1612,17 +1599,6 @@ class SpatialModel(ABC):
     # Pattern 1: Trivial (OLS, SEM)
     # ------------------------------------------------------------------
 
-    def _effects_trivial(self) -> dict[str, np.ndarray]:
-        """Direct=beta, indirect=0, total=beta (OLS, SEM)."""
-        beta = self._posterior_mean("beta")
-        ni = self._beta_ni
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros(len(ni)),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
-
     def _effects_trivial_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Posterior draws: direct=beta, indirect=0, total=beta."""
         from ..diagnostics.lmtests import _get_posterior_draws
@@ -1638,24 +1614,6 @@ class SpatialModel(ABC):
     # ------------------------------------------------------------------
     # Pattern 2: Linear (SLX, SDEM)
     # ------------------------------------------------------------------
-
-    def _effects_linear(self) -> dict[str, np.ndarray]:
-        """S_k = beta1_k*I + beta2_k*W (SLX, SDEM)."""
-        beta = self._posterior_mean("beta")
-        k = self._beta_k
-        kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-        mean_diag_w = float(self._W_sparse.diagonal().mean())
-        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-        wx_idx = self._beta_wx_idx
-        direct = beta1[wx_idx] + beta2 * mean_diag_w
-        total = beta1[wx_idx] + beta2 * mean_row_sum_w
-        return {
-            "direct": direct,
-            "indirect": total - direct,
-            "total": total,
-            "feature_names": self._wx_feature_names,
-        }
 
     def _effects_linear_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Posterior draws: linear SLX/SDEM pattern."""
@@ -1677,51 +1635,6 @@ class SpatialModel(ABC):
     # ------------------------------------------------------------------
     # Pattern 3: Rho multiplier (SAR, SDM)
     # ------------------------------------------------------------------
-
-    def _effects_rho(self) -> dict[str, np.ndarray]:
-        """S_k = (I-rho*W)^{-1} * (beta1_k*I + beta2_k*W) (SAR, SDM)."""
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        eigs = self._W_eigs
-        inv_eigs = 1.0 / (1.0 - rho * eigs)
-        mean_diag_M = float(np.mean(inv_eigs.real))
-        mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
-        rho_arr = np.array([rho])
-        mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
-        mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
-
-        if self._has_wx_in_beta:
-            # SDM: beta = [beta1, beta2]
-            k = self._beta_k
-            kw = self._WX.shape[1]
-            beta1, beta2 = beta[:k], beta[k : k + kw]
-            wx_idx = self._beta_wx_idx
-            direct = np.array(
-                [
-                    beta1[j] * mean_diag_M + b2 * mean_diag_MW
-                    for j, b2 in zip(wx_idx, beta2)
-                ]
-            )
-            total = np.array(
-                [
-                    beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-                    for j, b2 in zip(wx_idx, beta2)
-                ]
-            )
-            feature_names = self._wx_feature_names
-        else:
-            # SAR: beta only
-            ni = self._beta_ni
-            direct = mean_diag_M * beta[ni]
-            total = mean_row_sum_M * beta[ni]
-            feature_names = self._nonintercept_feature_names
-
-        return {
-            "direct": direct,
-            "indirect": total - direct,
-            "total": total,
-            "feature_names": feature_names,
-        }
 
     def _effects_rho_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Posterior draws: SAR/SDM rho-multiplier pattern."""

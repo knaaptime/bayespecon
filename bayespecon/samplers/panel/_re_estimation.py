@@ -14,9 +14,10 @@ import logging
 import time
 from abc import abstractmethod
 
-import arviz as az
 import numpy as np
 import scipy.sparse as sp
+
+from ..._lazy_deps import az
 
 _log = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ from ._re_core import (
     REGibbsCache,
     REGibbsPriors,
     _initialize_re_gibbs,
+    _sem_re_unit_aggregated_terms,
     run_re_chain,
 )
 
@@ -212,6 +214,15 @@ class REGibbsEstimation:
         XtX = self.X.T @ self.X
         XtX_cho = cho_factor(XtX)
 
+        # SEM-RE α block: precompute the λ-independent terms of BᵀB once so
+        # the sweep uses the closed form instead of rebuilding a dense NT × N
+        # matrix each iteration (O(N²·NT) → O(N²)).
+        sem_BtB_M1 = sem_BtB_M2 = None
+        if self.model_type == "sem" and self.W_sparse is not None:
+            sem_BtB_M1, sem_BtB_M2 = _sem_re_unit_aggregated_terms(
+                self.W_sparse, self.unit_idx, self.N
+            )
+
         return REGibbsCache(
             XtX=XtX,
             XtX_cho=XtX_cho,
@@ -225,6 +236,8 @@ class REGibbsEstimation:
             N=self.N,
             T=self.T,
             unit_idx=self.unit_idx,
+            sem_BtB_M1=sem_BtB_M1,
+            sem_BtB_M2=sem_BtB_M2,
         )
 
     def _assemble_idata(

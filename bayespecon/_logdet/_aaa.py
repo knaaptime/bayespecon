@@ -69,33 +69,18 @@ class AAAPrecompute:
 def _lu_logdet(A: sp.csc_matrix) -> float:
     """Compute ``log|det(A)|`` via UMFPACK sparse LU factorisation.
 
-    Falls back to scipy SuperLU if UMFPACK is not available.
+    Uses ``sksparse.umfpack`` (scikit-sparse), which exposes ``slogdet``
+    directly on the factor.  Falls back to scipy SuperLU if UMFPACK fails.
     """
-    A.shape[0]
     try:
-        from scikits.umfpack import splu as umfpack_splu
+        from sksparse.umfpack import umf_factor
 
-        lu = umfpack_splu(A)
-        logdet = np.sum(np.log(np.abs(lu.L.diagonal()))) + np.sum(
-            np.log(np.abs(lu.U.diagonal()))
-        )
-        # UMFPACK row scaling
-        if hasattr(lu, "R") and lu.R is not None:
-            R = lu.R
-            # do_recip: True means R is reciprocal scaling
-            if np.any(R != 1.0):
-                # det(A) = det(P^T) * det(L) * det(U) * det(Q) * prod(R)
-                # P, Q are permutations (det = ±1), R is row scaling
-                # For logdet, we need sum(log|R_i|)
-                # But scikits.umfpack doesn't expose do_recip directly
-                # The R array contains scale factors; if do_recip=True,
-                # the actual scaling is 1/R
-                logdet += np.sum(np.log(np.abs(R)))
-        return float(logdet)
-    except ImportError:
+        _sign, logabsdet = umf_factor(A.tocsc()).slogdet()
+        return float(logabsdet)
+    except Exception:
         from scipy.sparse.linalg import splu as scipy_splu
 
-        lu = scipy_splu(A)
+        lu = scipy_splu(A.tocsc())
         logdet = np.sum(np.log(np.abs(lu.L.diagonal()))) + np.sum(
             np.log(np.abs(lu.U.diagonal()))
         )

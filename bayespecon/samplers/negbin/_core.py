@@ -1109,6 +1109,9 @@ def run_chain(
                 if return_eta:
                     eta_samples[idx] = state.eta
 
+        if progress_manager is not None:
+            progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
+
     result = {
         "rho": rho_samples,
         "beta": beta_samples,

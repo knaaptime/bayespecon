@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from typing import Sequence
 
-import arviz as az
 import numpy as np
+
+from ..._lazy_deps import az
 
 
 def gibbs_to_inference_data(

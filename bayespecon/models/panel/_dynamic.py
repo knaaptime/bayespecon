@@ -30,10 +30,10 @@ from __future__ import annotations
 from typing import Union
 
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..._lazy_deps import pm
 from ..._logdet import get_cached_logdet_fn
 from .._base._shared import _pointwise_gaussian_loglik, _write_log_likelihood_to_idata
 from ..panel_base import SpatialPanelModel, _resolve_effects
@@ -482,34 +482,6 @@ class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         beta = self._posterior_mean("beta")
         return phi * self._y_lag + self._Z_dyn @ beta
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        self._prepare_dynamic_design()
-        beta = self._posterior_mean("beta")
-        k = self._X_dyn.shape[1]
-        kw = self._WX_dyn.shape[1]
-        beta1 = beta[:k]
-
-        if kw == 0:
-            direct = beta1.copy()
-            indirect = np.zeros_like(beta1)
-            total = beta1.copy()
-            names = self._feature_names
-        else:
-            beta2 = beta[k : k + kw]
-            mean_diag_w = float(self._W_sparse.diagonal().mean())
-            mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-            direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
-            total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
-            indirect = total - direct
-            names = self._wx_feature_names
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": names,
-        }
-
 
 class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSDMRDynamicPriors
@@ -636,49 +608,6 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             - rho * phi * self._Wy_lag
             + self._Z_dyn @ beta
         )
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        self._prepare_dynamic_design()
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        k = self._X_dyn.shape[1]
-        kw = self._WX_dyn.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-
-        if kw == 0:
-            direct = beta1.copy()
-            indirect = np.zeros_like(beta1)
-            total = beta1.copy()
-            names = self._feature_names
-        else:
-            eigs = self._W_eigs
-            inv_eigs = 1.0 / (1.0 - rho * eigs)
-            mean_diag_M = float(np.mean(inv_eigs.real))
-            mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
-            rho_arr = np.array([rho])
-            mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
-            mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
-            direct = np.array(
-                [
-                    beta1[j] * mean_diag_M + b2 * mean_diag_MW
-                    for j, b2 in zip(self._wx_column_indices, beta2)
-                ]
-            )
-            total = np.array(
-                [
-                    beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-                    for j, b2 in zip(self._wx_column_indices, beta2)
-                ]
-            )
-            indirect = total - direct
-            names = self._wx_feature_names
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": names,
-        }
 
 
 class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
@@ -870,50 +799,6 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
             + self._Z_dyn @ beta
         )
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        # Effects reported for contemporaneous X/WX terms.
-        self._prepare_dynamic_design()
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        k = self._X_dyn.shape[1]
-        kw = self._WX_dyn.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-
-        if kw == 0:
-            direct = beta1.copy()
-            indirect = np.zeros_like(beta1)
-            total = beta1.copy()
-            names = self._feature_names
-        else:
-            eigs = self._W_eigs
-            inv_eigs = 1.0 / (1.0 - rho * eigs)
-            mean_diag_M = float(np.mean(inv_eigs.real))
-            mean_diag_MW = float(np.mean((eigs * inv_eigs).real))
-            rho_arr = np.array([rho])
-            mean_row_sum_M = float(self._batch_mean_row_sum(rho_arr)[0])
-            mean_row_sum_MW = float(self._batch_mean_row_sum_MW(rho_arr)[0])
-            direct = np.array(
-                [
-                    beta1[j] * mean_diag_M + b2 * mean_diag_MW
-                    for j, b2 in zip(self._wx_column_indices, beta2)
-                ]
-            )
-            total = np.array(
-                [
-                    beta1[j] * mean_row_sum_M + b2 * mean_row_sum_MW
-                    for j, b2 in zip(self._wx_column_indices, beta2)
-                ]
-            )
-            indirect = total - direct
-            names = self._wx_feature_names
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": names,
-        }
-
 
 class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSARDynamicPriors
@@ -1079,24 +964,6 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         phi = float(self._posterior_mean("phi"))
         beta = self._posterior_mean("beta")
         return phi * self._y_lag + rho * self._Wy_dyn + self._X_dyn @ beta
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        self._prepare_dynamic_design()
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        ni = self._nonintercept_indices
-        eigs = self._W_eigs
-        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        indirect = total - direct
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
 
 
 class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
@@ -1323,17 +1190,6 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         phi = float(self._posterior_mean("phi"))
         beta = self._posterior_mean("beta")
         return phi * self._y_lag + self._X_dyn @ beta
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        self._prepare_dynamic_design()
-        beta = self._posterior_mean("beta")
-        ni = self._nonintercept_indices
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros(len(ni)),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
 
 
 class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
@@ -1569,38 +1425,6 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         Z = np.hstack([self._X_dyn, self._WX_dyn])
         return phi * self._y_lag + Z @ beta
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        self._prepare_dynamic_design()
-        beta = self._posterior_mean("beta")
-        k = self._X_dyn.shape[1]
-        kw = self._WX_dyn.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-
-        if kw == 0:
-            direct = beta1.copy()
-            indirect = np.zeros_like(beta1)
-            total = beta1.copy()
-            names = self._feature_names
-        else:
-            mean_diag_w = float(self._W_sparse.diagonal().mean())
-            mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-            wx_idx = self._wx_column_indices
-            direct = np.array(
-                [beta1[j] + b2 * mean_diag_w for j, b2 in zip(wx_idx, beta2)]
-            )
-            total = np.array(
-                [beta1[j] + b2 * mean_row_sum_w for j, b2 in zip(wx_idx, beta2)]
-            )
-            indirect = total - direct
-            names = self._wx_feature_names
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": names,
-        }
-
 
 class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
     _priors_cls = PanelSLXDynamicPriors
@@ -1725,24 +1549,3 @@ class SLXPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         beta = self._posterior_mean("beta")
         Z = np.hstack([self._X_dyn, self._WX_dyn])
         return phi * self._y_lag + Z @ beta
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        self._prepare_dynamic_design()
-        beta = self._posterior_mean("beta")
-        k = self._X_dyn.shape[1]
-        kw = self._WX_dyn.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-
-        mean_diag_w = float(self._W_sparse.diagonal().mean())
-        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-
-        direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
-        total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
-        indirect = total - direct
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._wx_feature_names,
-        }

@@ -25,7 +25,7 @@ from ._cheb_stochastic import (
     cheb_stochastic_logdet_eval_vec,
     cheb_stochastic_logdet_precompute,
 )
-from ._chebyshev import chebyshev, clear_chebyshev_cache
+from ._chebyshev import chebyshev
 from ._chol_cheb import (
     CholChebPrecompute,
     chol_cheb_logdet_eval,
@@ -92,7 +92,6 @@ __all__ = [
     "make_flow_separable_logdet_numpy",
     # Chebyshev
     "chebyshev",
-    "clear_chebyshev_cache",
     # SLQ
     "SLQPrecompute",
     "slq_logdet_precompute",

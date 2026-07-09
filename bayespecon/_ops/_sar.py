@@ -1,4 +1,4 @@
-"""Auto-generated from _ops.py — see git history for provenance."""
+"""PyTensor Ops for the SAR reduced form ``(I - rho W)^{-1}`` and its VJP."""
 
 from __future__ import annotations
 

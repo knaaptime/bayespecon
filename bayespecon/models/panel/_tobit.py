@@ -39,10 +39,10 @@ Association*, 88(422), 669–679.
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..._lazy_deps import pm
 from .._base._shared import _write_log_likelihood_to_idata
 from ..panel_base import SpatialPanelModel
 from ..priors import PanelSARTobitPriors, PanelSEMTobitPriors
@@ -79,12 +79,6 @@ class _PanelTobitBase(SpatialPanelModel):
                 gap_hat, dtype=float
             )
         return y_lat
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects at posterior mean."""
-        raise NotImplementedError(
-            "Spatial effects not yet implemented for panel Tobit models."
-        )
 
     def _compute_spatial_effects_posterior(
         self,

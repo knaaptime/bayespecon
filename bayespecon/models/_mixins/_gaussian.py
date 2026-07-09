@@ -22,10 +22,10 @@ works for both cross-section (``self._W_sparse @ X``) and panel
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 
 from ..._backends.sampler_helpers import use_jax_likelihood
+from ..._lazy_deps import pm
 
 
 class GaussianLikelihoodMixin:

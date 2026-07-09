@@ -12,9 +12,9 @@ by Bayesian LM spatial-specification diagnostics applied after fitting.
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 
+from ..._lazy_deps import pm
 from ..base import SpatialModel
 from ..priors import SARLogitPriors
 

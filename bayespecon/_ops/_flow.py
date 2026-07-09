@@ -1,4 +1,4 @@
-"""Auto-generated from _ops.py — see git history for provenance."""
+"""PyTensor Ops for spatial-flow ``(I - rho W)^{-1}`` solves (vector and matrix RHS)."""
 
 from __future__ import annotations
 

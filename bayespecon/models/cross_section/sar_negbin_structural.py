@@ -25,10 +25,10 @@ from __future__ import annotations
 import warnings
 from typing import Optional
 
-import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
+from ..._lazy_deps import az
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
 from ...samplers._utils._spatial_normal import CholmodFactor
@@ -567,25 +567,6 @@ class SARNegBinStructural(SpatialModel):
             self._X @ beta,
         )
         return np.exp(A_rho_inv)
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute average direct/indirect/total impacts on the log-mean scale."""
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        eigs = self._W_eigs
-        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        ni = self._nonintercept_indices
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        indirect = total - direct
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,

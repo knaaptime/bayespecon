@@ -8,13 +8,13 @@ from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm
 import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
+
+from .._lazy_deps import az, pm
 
 if TYPE_CHECKING:
     from .._backends import ProbabilisticBackend
@@ -973,9 +973,6 @@ class SpatialPanelModel(ABC):
         """Construct and return a pm.Model."""
 
     @abstractmethod
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects at posterior mean."""
-
     @abstractmethod
     def _compute_spatial_effects_posterior(
         self,

@@ -17,16 +17,15 @@ from __future__ import annotations
 
 from typing import Any, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm
 import pytensor.tensor as pt
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
 from ..._backends import resolve_backend
 from ..._backends.sampler_helpers import prepare_compile_kwargs, prepare_idata_kwargs
+from ..._lazy_deps import az, pm
 from ..priors import SARProbitPriors, priors_as_dict, resolve_priors
 
 

@@ -21,9 +21,10 @@ import logging
 import time
 from abc import abstractmethod
 
-import arviz as az
 import numpy as np
 import scipy.sparse as sp
+
+from ..._lazy_deps import az
 
 _log = logging.getLogger(__name__)
 

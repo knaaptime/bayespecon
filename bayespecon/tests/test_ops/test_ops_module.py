@@ -463,7 +463,7 @@ class TestSparseSARSolveOp:
 
 class TestOptionalSparseBackends:
     def test_selects_umfpack_when_requested_and_installed(self, monkeypatch):
-        pytest.importorskip("scikits.umfpack")
+        pytest.importorskip("sksparse.umfpack")
         from bayespecon._ops import _select_sparse_backend
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
@@ -472,7 +472,7 @@ class TestOptionalSparseBackends:
         assert _select_sparse_backend() == "umfpack"
 
     def test_sparse_vector_solver_routes_to_umfpack_backend(self, monkeypatch):
-        pytest.importorskip("scikits.umfpack")
+        pytest.importorskip("sksparse.umfpack")
         from bayespecon import _ops as ops_mod
 
         monkeypatch.setenv("BAYESPECON_SPARSE_BACKEND", "umfpack")
@@ -480,26 +480,31 @@ class TestOptionalSparseBackends:
         monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "0")
         ops_mod._select_sparse_backend.cache_clear()
 
-        called = {"umfpack": False}
+        called = {"umfpack": 0}
 
-        def _fake_umfpack_spsolve(A, rhs):
-            called["umfpack"] = True
-            return np.linalg.solve(A.toarray(), rhs)
+        def _fake_sparse_factor(A_csc, backend):
+            called["umfpack"] += 1
+            assert backend == "umfpack"
+            A_dense = A_csc.toarray()
 
-        monkeypatch.setattr(
-            ops_mod._backend, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
-        )
+            class _F:
+                def solve(self, rhs):
+                    return np.linalg.solve(A_dense, np.asarray(rhs))
+
+            return _F()
+
+        monkeypatch.setattr(ops_mod._backend, "_sparse_factor", _fake_sparse_factor)
 
         A = sp.csr_matrix(np.array([[2.0, 1.0], [1.0, 2.0]], dtype=np.float64))
         rhs = np.array([1.0, 2.0], dtype=np.float64)
         got = ops_mod._solve_sparse_vector(A, rhs)
         ref = np.linalg.solve(A.toarray(), rhs)
 
-        assert called["umfpack"] is True
+        assert called["umfpack"] >= 1
         np.testing.assert_allclose(got, ref, atol=1e-12)
 
     def test_sparse_flow_solver_routes_to_umfpack_backend(self, monkeypatch):
-        pytest.importorskip("scikits.umfpack")
+        pytest.importorskip("sksparse.umfpack")
         from bayespecon import _ops as ops_mod
         from bayespecon._ops import SparseFlowSolveOp
 
@@ -510,13 +515,18 @@ class TestOptionalSparseBackends:
 
         called = {"umfpack": 0}
 
-        def _fake_umfpack_spsolve(A, rhs):
+        def _fake_sparse_factor(A_csc, backend):
             called["umfpack"] += 1
-            return np.linalg.solve(A.toarray(), rhs)
+            assert backend == "umfpack"
+            A_dense = A_csc.toarray()
 
-        monkeypatch.setattr(
-            ops_mod._backend, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
-        )
+            class _F:
+                def solve(self, rhs):
+                    return np.linalg.solve(A_dense, np.asarray(rhs))
+
+            return _F()
+
+        monkeypatch.setattr(ops_mod._backend, "_sparse_factor", _fake_sparse_factor)
 
         n = 3
         W = _ring_W(n)
@@ -536,7 +546,7 @@ class TestOptionalSparseBackends:
         np.testing.assert_allclose(got, ref, atol=1e-10)
 
     def test_sparse_flow_matrix_solver_routes_to_umfpack_backend(self, monkeypatch):
-        pytest.importorskip("scikits.umfpack")
+        pytest.importorskip("sksparse.umfpack")
         from bayespecon import _ops as ops_mod
         from bayespecon._ops import SparseFlowSolveMatrixOp
 
@@ -546,13 +556,18 @@ class TestOptionalSparseBackends:
 
         called = {"umfpack": 0}
 
-        def _fake_umfpack_spsolve(A, rhs):
+        def _fake_sparse_factor(A_csc, backend):
             called["umfpack"] += 1
-            return np.linalg.solve(A.toarray(), rhs)
+            assert backend == "umfpack"
+            A_dense = A_csc.toarray()
 
-        monkeypatch.setattr(
-            ops_mod._backend, "_get_umfpack_spsolve", lambda: _fake_umfpack_spsolve
-        )
+            class _F:
+                def solve(self, rhs):
+                    return np.linalg.solve(A_dense, np.asarray(rhs))
+
+            return _F()
+
+        monkeypatch.setattr(ops_mod._backend, "_sparse_factor", _fake_sparse_factor)
 
         n, T = 3, 2
         W = _ring_W(n)
@@ -568,11 +583,12 @@ class TestOptionalSparseBackends:
         got = f(0.15, 0.1, -0.05, B)
         ref = _unrestricted_ref_matrix(0.15, 0.1, -0.05, W, B)
 
-        assert called["umfpack"] >= T
+        # sksparse UMFPACK factorises once and batch-solves the T columns.
+        assert called["umfpack"] >= 1
         np.testing.assert_allclose(got, ref, atol=1e-10)
 
     def test_sparse_sar_forward_reuses_umfpack_factorization(self, monkeypatch):
-        pytest.importorskip("scikits.umfpack")
+        pytest.importorskip("sksparse.umfpack")
         from bayespecon import _ops as ops_mod
         from bayespecon._ops import SparseSARSolveOp
 
@@ -581,22 +597,19 @@ class TestOptionalSparseBackends:
         monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "0")
         ops_mod._select_sparse_backend.cache_clear()
 
-        called = {"factorized": 0}
+        called = {"umfpack": 0}
 
-        def _fake_cached_solver(A):
-            called["factorized"] += 1
-            A_dense = A.toarray()
+        def _fake_sparse_factor(A_csc, backend):
+            called["umfpack"] += 1
+            A_dense = A_csc.toarray()
 
-            class _Solver:
-                def solve(self, rhs, trans="N"):
-                    assert trans == "N"
-                    return np.linalg.solve(A_dense, rhs)
+            class _F:
+                def solve(self, rhs):
+                    return np.linalg.solve(A_dense, np.asarray(rhs))
 
-            return _Solver()
+            return _F()
 
-        monkeypatch.setattr(
-            ops_mod._sar, "_make_cached_umfpack_solver", _fake_cached_solver
-        )
+        monkeypatch.setattr(ops_mod._backend, "_sparse_factor", _fake_sparse_factor)
 
         n = 8
         W = _ring_W(n)
@@ -606,11 +619,11 @@ class TestOptionalSparseBackends:
         got1 = op._solve_forward(0.25, b)
         got2 = op._solve_forward(0.25, b)
 
-        assert called["factorized"] == 1
+        assert called["umfpack"] == 1
         np.testing.assert_allclose(got1, got2, atol=1e-12)
 
     def test_sparse_sar_adjoint_reuses_umfpack_factorization(self, monkeypatch):
-        pytest.importorskip("scikits.umfpack")
+        pytest.importorskip("sksparse.umfpack")
         from bayespecon import _ops as ops_mod
         from bayespecon._ops import _SparseSARVJPOp
 
@@ -619,22 +632,19 @@ class TestOptionalSparseBackends:
         monkeypatch.setenv("BAYESPECON_KRON_DENSE_MAX", "0")
         ops_mod._select_sparse_backend.cache_clear()
 
-        called = {"factorized": 0}
+        called = {"umfpack": 0}
 
-        def _fake_cached_solver(A):
-            called["factorized"] += 1
-            A_dense = A.toarray()
+        def _fake_sparse_factor(A_csc, backend):
+            called["umfpack"] += 1
+            A_dense = A_csc.toarray()
 
-            class _Solver:
-                def solve(self, rhs, trans="N"):
-                    assert trans == "N"
-                    return np.linalg.solve(A_dense, rhs)
+            class _F:
+                def solve(self, rhs):
+                    return np.linalg.solve(A_dense, np.asarray(rhs))
 
-            return _Solver()
+            return _F()
 
-        monkeypatch.setattr(
-            ops_mod._sar, "_make_cached_umfpack_solver", _fake_cached_solver
-        )
+        monkeypatch.setattr(ops_mod._backend, "_sparse_factor", _fake_sparse_factor)
 
         n = 8
         W = _ring_W(n)
@@ -644,7 +654,7 @@ class TestOptionalSparseBackends:
         got1 = op._solve_adjoint(0.25, g)
         got2 = op._solve_adjoint(0.25, g)
 
-        assert called["factorized"] == 1
+        assert called["umfpack"] == 1
         np.testing.assert_allclose(got1, got2, atol=1e-12)
 
 

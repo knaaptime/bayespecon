@@ -108,7 +108,7 @@ def _select_sparse_backend() -> str:
         warnings.warn(msg, RuntimeWarning)
         return "scipy"
 
-    if requested in {"umfpack", "sksparse.umfpack", "scikits.umfpack"}:
+    if requested in {"umfpack", "sksparse.umfpack"}:
         if _umfpack_available():
             return "umfpack"
         msg = (
