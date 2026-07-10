@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from .sampler_helpers import (
     enforce_c_backend,
+    jax_available,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
     use_jax_likelihood,
@@ -19,6 +20,7 @@ from .sampler_helpers import (
 
 __all__ = [
     "enforce_c_backend",
+    "jax_available",
     "prepare_compile_kwargs",
     "prepare_idata_kwargs",
     "use_jax_likelihood",

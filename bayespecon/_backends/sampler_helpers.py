@@ -35,6 +35,16 @@ def _has_module(name: str) -> bool:
         return False
 
 
+def jax_available() -> bool:
+    """Return ``True`` when optional ``jax`` is importable.
+
+    Single probe used by every ``fit`` path that resolves a ``"jax"``/
+    ``"jax_dense"`` request against JAX availability, so the check lives in
+    exactly one place (results are cached via :func:`_has_module`).
+    """
+    return _has_module("jax")
+
+
 @lru_cache(maxsize=1)
 def _jax_dispatches_available() -> bool:
     """Return ``True`` if both JAX and PyTensor's JAX dispatch are present.

@@ -28,6 +28,7 @@ from typing import Optional
 import numpy as np
 import scipy.sparse as sp
 
+from ..._backends.sampler_helpers import jax_available
 from ..._lazy_deps import az
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
@@ -319,9 +320,7 @@ class SARNegBinStructural(SpatialModel):
             )
 
         # Check JAX availability for jax_dense path
-        import importlib.util
-
-        _jax_available = importlib.util.find_spec("jax") is not None
+        _jax_available = jax_available()
 
         if gibbs_method == "jax_dense" and not _jax_available:
             raise ImportError(

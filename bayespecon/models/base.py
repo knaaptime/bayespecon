@@ -14,6 +14,7 @@ from formulaic import model_matrix
 from libpysal.graph import Graph
 
 from .._backends.sampler_helpers import (
+    jax_available,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
     use_jax_likelihood,
@@ -725,11 +726,8 @@ class SpatialModel(ABC):
         kwargs are popped from ``sample_kwargs``.
         """
         # Resolve "jax" → "numpy" fallback when JAX is not installed.
-        if gibbs_method == "jax":
-            import importlib.util
-
-            if importlib.util.find_spec("jax") is None:
-                gibbs_method = "numpy"
+        if gibbs_method == "jax" and not jax_available():
+            gibbs_method = "numpy"
 
         sample_kwargs = dict(sample_kwargs or {})
         return self._fit_gibbs(

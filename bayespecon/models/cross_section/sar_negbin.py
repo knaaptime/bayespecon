@@ -49,6 +49,7 @@ import numpy as np
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
+from ..._backends.sampler_helpers import jax_available
 from ..._lazy_deps import az, pm
 from ...samplers._utils._slice import SliceWidthState
 from ..base import SpatialModel
@@ -276,9 +277,7 @@ class SARNegBin(SpatialModel):
         rho_upper = float(bounds.rho_max)
 
         # Resolve Gibbs method
-        import importlib.util
-
-        _jax_available = importlib.util.find_spec("jax") is not None
+        _jax_available = jax_available()
         _valid_methods = {"auto", "factorize", "jax_dense"}
         if gibbs_method not in _valid_methods:
             raise ValueError(
