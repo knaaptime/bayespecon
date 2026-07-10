@@ -26,6 +26,7 @@ import pytensor.tensor as pt
 
 from ..._backends.sampler_helpers import use_jax_likelihood
 from ..._lazy_deps import pm
+from ...samplers._registry import register
 
 
 class GaussianLikelihoodMixin:
@@ -62,116 +63,6 @@ class GaussianLikelihoodMixin:
     # ``self._sparse_panel_lag(X)`` which applies W ⊗ I_T).  The mixin calls
     # ``self._spatial_lag(X)`` so the correct implementation is dispatched
     # via MRO regardless of which base class the model inherits from.
-
-    # ------------------------------------------------------------------
-    # Fitting
-    # ------------------------------------------------------------------
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed=None,
-        idata_kwargs=None,
-        sampler: str | None = None,
-        gibbs_method: str = "jax",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Draw samples from the posterior.
-
-        Dispatches to the Gibbs sampler (``sampler="gibbs"``) or NUTS
-        (``sampler="nuts"``).  When ``sampler`` is ``None`` (default),
-        Gibbs is used if the model has a Gibbs sampler
-        (``_gibbs_class is not None``), otherwise NUTS is used.
-
-        When NUTS is used and ``log_likelihood=True`` is requested via
-        ``idata_kwargs``, the complete pointwise log-likelihood (including
-        the Jacobian correction) is reconstructed post-sampling via
-        :meth:`_reconstruct_log_likelihood`.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of posterior samples per chain (after tuning).
-        tune : int, default 1000
-            Number of tuning (burn-in) steps per chain.
-        chains : int, default 4
-            Number of parallel chains.
-        random_seed : int, optional
-            Seed for reproducibility.
-        idata_kwargs : dict, optional
-            Passed to ``pm.sample`` for InferenceData creation. If contains
-            ``log_likelihood: True``, the complete pointwise log-likelihood
-            (including the Jacobian correction) is attached to the output.
-            Only used when ``sampler="nuts"``.
-        sampler : str, default None
-            ``"nuts"`` for NUTS via PyMC, ``"gibbs"`` for the custom
-            block Gibbs sampler, or ``None`` to auto-select (Gibbs when
-            available, NUTS otherwise).
-        gibbs_method : {"jax", "numpy"}, default "jax"
-            Execution backend for the Gibbs sampler.
-        thin : int, default 1
-            Keep every ``thin``-th draw after warmup (Gibbs only).
-        n_jobs : int, default -1
-            Number of parallel workers for Gibbs chains.
-        progressbar : bool, default True
-            Show per-chain progress bars.
-        **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
-            acceptance rate, ``nuts_sampler="blackjax"`` etc. to select
-            an alternative NUTS backend.
-        """
-        # Auto-select: Gibbs when available, NUTS otherwise.
-        if sampler is None:
-            sampler = (
-                "gibbs" if getattr(self, "_gibbs_class", None) is not None else "nuts"
-            )
-
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            # Panel models call _reconstruct_panel_log_likelihood themselves
-            # in their own fit() method with the correct spatial_param.
-            # Cross-section models use _reconstruct_log_likelihood.
-            if not hasattr(self, "_reconstruct_panel_log_likelihood"):
-                self._reconstruct_log_likelihood(nuts_sampler=nuts_sampler)
-
-        return self._idata
 
     # ------------------------------------------------------------------
     # Design matrix
@@ -488,3 +379,50 @@ class GaussianLikelihoodMixin:
                 pm.Potential("jacobian", logdet_fn(lam))
 
         return model
+
+
+# ---------------------------------------------------------------------------
+# Gibbs registry entry
+# ---------------------------------------------------------------------------
+
+
+def _run_gaussian_cross_section(
+    model,
+    *,
+    draws,
+    tune,
+    chains,
+    random_seed,
+    thin,
+    n_jobs,
+    progressbar,
+    backend,
+    slice_width=None,
+    chain_method=None,
+):
+    """Registry runner for Gaussian cross-section Gibbs.
+
+    Thin adapter over :meth:`SpatialModel._fit_gibbs`; ``backend`` (``"jax"``
+    or ``"numpy"``) maps directly onto the sampler's ``gibbs_method``.
+    """
+    return model._fit_gibbs(
+        draws=draws,
+        tune=tune,
+        chains=chains,
+        random_seed=random_seed,
+        thin=thin,
+        n_jobs=n_jobs,
+        progressbar=progressbar,
+        gibbs_method=backend,
+        slice_width=slice_width,
+        chain_method=chain_method,
+    )
+
+
+register(
+    "gaussian",
+    "cross_section",
+    run=_run_gaussian_cross_section,
+    backends={"jax", "numpy"},
+    options={"slice_width", "chain_method"},
+)

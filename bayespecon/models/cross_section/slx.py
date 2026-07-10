@@ -106,6 +106,7 @@ class SLX(GaussianLikelihoodMixin, SpatialModel):
     _has_wx_in_beta: bool = True
     _gibbs_class: str | None = None
     _model_type: str = "slx"
+    _likelihood: str = "gaussian"  # NUTS-only (no _gibbs_key)
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]

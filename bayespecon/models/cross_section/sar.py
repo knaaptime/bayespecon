@@ -108,6 +108,8 @@ class SAR(GaussianLikelihoodMixin, SpatialModel):
     _has_wx_in_beta: bool = False
     _gibbs_class: str | None = "GaussianSARGibbs"
     _model_type: str = "sar"
+    _likelihood: str = "gaussian"
+    _gibbs_key: tuple[str, str] | None = ("gaussian", "cross_section")
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean parameters.

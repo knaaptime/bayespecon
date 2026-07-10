@@ -897,7 +897,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "posterior" in idata.groups()
         assert "rho" in idata.posterior.data_vars
@@ -918,7 +918,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "lam" in idata.posterior.data_vars
 
@@ -936,7 +936,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "rho" in idata.posterior.data_vars
         assert idata.posterior["beta"].shape[-1] == 3  # intercept + x + W*x
@@ -955,7 +955,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "lam" in idata.posterior.data_vars
 
@@ -974,7 +974,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         loo = az.loo(idata)
         assert np.isfinite(loo.elpd_loo)
@@ -994,7 +994,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "rho" in idata.posterior.data_vars
 
@@ -1068,25 +1068,43 @@ class TestEdgeCases:
         with pytest.raises(ValueError, match="sampler"):
             model.fit(sampler="invalid")
 
-    def test_invalid_gibbs_method_falls_back(self):
-        """Invalid gibbs_method falls back to numpy path (no error raised)."""
+    def test_invalid_gibbs_backend_raises(self):
+        """An invalid gibbs_backend value raises (strict; no silent fallback)."""
         from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
         model = SAR(y=y, X=X, W=W)
-        # gibbs_method="invalid" falls through to numpy path
-        idata = model.fit(
-            sampler="gibbs",
-            draws=10,
-            tune=5,
-            chains=1,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-            gibbs_method="invalid",
-        )
-        assert "posterior" in idata.groups()
+        with pytest.raises(ValueError, match="gibbs_backend must be one of"):
+            model.fit(
+                sampler="gibbs",
+                draws=10,
+                tune=5,
+                chains=1,
+                random_seed=42,
+                n_jobs=1,
+                progressbar=False,
+                gibbs_backend="invalid",
+            )
+
+    def test_removed_gibbs_method_kwarg_rejected(self):
+        """The old gibbs_method kwarg was renamed to gibbs_backend (strict)."""
+        from bayespecon.models.cross_section.sar import SAR
+
+        y, X, W_dense, n = _make_sar_data()
+        W = W_to_graph(W_dense)
+        model = SAR(y=y, X=X, W=W)
+        with pytest.raises(TypeError, match="unsupported keyword"):
+            model.fit(
+                sampler="gibbs",
+                draws=10,
+                tune=5,
+                chains=1,
+                random_seed=42,
+                n_jobs=1,
+                progressbar=False,
+                gibbs_method="jax",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1206,7 +1224,7 @@ class TestInformativeOutput:
                 random_seed=42,
                 n_jobs=1,
                 progressbar=False,
-                gibbs_method="jax",
+                gibbs_backend="jax",
             )
         assert "JAX Gibbs sampling" in caplog.text
         assert "slice" in caplog.text
@@ -1287,7 +1305,7 @@ class TestChainParallelism:
             chains=2,
             random_seed=42,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
             chain_method="vectorized",
         )
         assert "posterior" in idata.groups()
@@ -1308,7 +1326,7 @@ class TestChainParallelism:
             chains=2,
             random_seed=42,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "posterior" in idata.groups()
         assert idata.posterior["beta"].shape[0] == 2  # 2 chains
@@ -1329,7 +1347,7 @@ class TestChainParallelism:
                 chains=2,
                 random_seed=42,
                 progressbar=False,
-                gibbs_method="jax",
+                gibbs_backend="jax",
                 chain_method="parallel",
             )
 

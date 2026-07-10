@@ -87,6 +87,7 @@ class OLS(GaussianLikelihoodMixin, SpatialModel):
     _has_wx_in_beta: bool = False
     _gibbs_class: str | None = None
     _model_type: str = "ols"
+    _likelihood: str = "gaussian"  # NUTS-only (no _gibbs_key)
 
     def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
         """Not applicable — OLS has no spatial lag structure.

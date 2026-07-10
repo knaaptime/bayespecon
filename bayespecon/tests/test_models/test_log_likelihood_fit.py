@@ -498,11 +498,13 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -524,11 +526,13 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -550,11 +554,13 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -576,11 +582,13 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -795,6 +803,7 @@ class TestJaxLogLikelihoodCapture:
         y, X, W, _, n = _cross_section_data()
         model = SEM(y=y, X=X, W=W, logdet_method="eigenvalue")
         idata = model.fit(
+            sampler="nuts",
             draws=20,
             tune=20,
             chains=1,
@@ -810,6 +819,7 @@ class TestJaxLogLikelihoodCapture:
         y, X, W, _, n = _cross_section_data()
         model = SDEM(y=y, X=X, W=W, logdet_method="eigenvalue")
         idata = model.fit(
+            sampler="nuts",
             draws=20,
             tune=20,
             chains=1,

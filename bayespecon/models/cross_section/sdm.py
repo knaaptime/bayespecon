@@ -113,6 +113,8 @@ class SDM(GaussianLikelihoodMixin, SpatialModel):
     _has_wx_in_beta: bool = True
     _gibbs_class: str | None = "GaussianSARGibbs"
     _model_type: str = "sdm"
+    _likelihood: str = "gaussian"
+    _gibbs_key: tuple[str, str] | None = ("gaussian", "cross_section")
 
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
