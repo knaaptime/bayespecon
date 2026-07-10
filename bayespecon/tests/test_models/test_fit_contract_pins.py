@@ -16,8 +16,24 @@ import numpy as np
 import pytest
 
 from bayespecon.models import OLS, SAR, SDEM, SDM, SEM, SLX
+from bayespecon.models.panel._fe import (
+    OLSPanelFE,
+    SARPanelFE,
+    SDEMPanelFE,
+    SDMPanelFE,
+    SEMPanelFE,
+    SLXPanelFE,
+)
 from bayespecon.tests.helpers import (
+    PANEL_N,
+    PANEL_T,
     W_to_graph,
+    make_line_W,
+    make_panel_ols_data,
+    make_panel_sar_data,
+    make_panel_sdem_fe_data,
+    make_panel_sdm_fe_data,
+    make_panel_sem_data,
     make_rook_W,
     make_sar_data,
     make_sdem_data,
@@ -70,6 +86,75 @@ def test_gaussian_xs_fit_contract(name, ctor, data_fn, expected, sampler):
     y, X = data_fn(rng, _W_DENSE)
     model = ctor(y=y, X=X, W=_graph())
     varnames, has_ll = _fit_varnames(model, sampler)
+    assert varnames == expected, f"{name} [{sampler}]: {sorted(varnames)}"
+    if sampler == "gibbs":
+        assert has_ll, f"{name} gibbs should attach a log_likelihood group"
+
+
+# ---------------------------------------------------------------------------
+# Gaussian panel fixed-effects family
+# ---------------------------------------------------------------------------
+
+_W_PANEL = make_line_W(PANEL_N)
+
+
+def _panel_graph():
+    return W_to_graph(_W_PANEL)
+
+
+# name -> (ctor, data_fn, expected_varnames, samplers)
+GAUSSIAN_PANEL_FE: dict[str, tuple] = {
+    "SAR": (
+        SARPanelFE,
+        make_panel_sar_data,
+        {"beta", "rho", "sigma", "sigma2"},
+        ("gibbs", "nuts"),
+    ),
+    "SEM": (
+        SEMPanelFE,
+        make_panel_sem_data,
+        {"beta", "lam", "sigma", "sigma2"},
+        ("gibbs", "nuts"),
+    ),
+    "SDM": (
+        SDMPanelFE,
+        make_panel_sdm_fe_data,
+        {"beta", "rho", "sigma", "sigma2"},
+        ("gibbs", "nuts"),
+    ),
+    "SDEM": (
+        SDEMPanelFE,
+        make_panel_sdem_fe_data,
+        {"beta", "lam", "sigma", "sigma2"},
+        ("gibbs", "nuts"),
+    ),
+    "OLS": (OLSPanelFE, make_panel_ols_data, {"beta", "sigma", "sigma2"}, ("nuts",)),
+    # SLX has no closed-form panel DGP helper; the SDM generator supplies WX
+    # signal and SLX ignores the ρ lag.
+    "SLX": (SLXPanelFE, make_panel_sdm_fe_data, {"beta", "sigma", "sigma2"}, ("nuts",)),
+}
+
+
+def _panel_fe_cases():
+    for name, (ctor, data_fn, expected, samplers) in GAUSSIAN_PANEL_FE.items():
+        for sampler in samplers:
+            yield pytest.param(
+                name, ctor, data_fn, expected, sampler, id=f"{name}-{sampler}"
+            )
+
+
+@pytest.mark.parametrize("name,ctor,data_fn,expected,sampler", list(_panel_fe_cases()))
+def test_gaussian_panel_fe_fit_contract(name, ctor, data_fn, expected, sampler):
+    y, X, _ = data_fn(np.random.default_rng(1), _W_PANEL, PANEL_N, PANEL_T)
+    model = ctor(y=y, X=X, W=_panel_graph(), N=PANEL_N, T=PANEL_T, effects=1)
+    kwargs = dict(
+        sampler=sampler, draws=6, tune=6, chains=1, progressbar=False, random_seed=1
+    )
+    if sampler == "gibbs":
+        kwargs["n_jobs"] = 1
+    idata = model.fit(**kwargs)
+    varnames = set(idata.posterior.data_vars)
+    has_ll = "log_likelihood" in idata.groups()
     assert varnames == expected, f"{name} [{sampler}]: {sorted(varnames)}"
     if sampler == "gibbs":
         assert has_ll, f"{name} gibbs should attach a log_likelihood group"

@@ -386,7 +386,7 @@ class GaussianLikelihoodMixin:
 # ---------------------------------------------------------------------------
 
 
-def _run_gaussian_cross_section(
+def _run_gaussian_gibbs(
     model,
     *,
     draws,
@@ -400,10 +400,13 @@ def _run_gaussian_cross_section(
     slice_width=None,
     chain_method=None,
 ):
-    """Registry runner for Gaussian cross-section Gibbs.
+    """Registry runner for Gaussian Gibbs (cross-section and panel FE).
 
-    Thin adapter over :meth:`SpatialModel._fit_gibbs`; ``backend`` (``"jax"``
-    or ``"numpy"``) maps directly onto the sampler's ``gibbs_method``.
+    Thin adapter over ``model._fit_gibbs``; ``backend`` (``"jax"`` or
+    ``"numpy"``) maps directly onto the sampler's ``gibbs_method``.  The
+    cross-section vs panel FE distinction is handled entirely by MRO dispatch
+    of ``_fit_gibbs`` (``SpatialModel`` vs ``SpatialPanelModel``), so the same
+    runner serves both registry keys.
     """
     return model._fit_gibbs(
         draws=draws,
@@ -419,10 +422,11 @@ def _run_gaussian_cross_section(
     )
 
 
-register(
-    "gaussian",
-    "cross_section",
-    run=_run_gaussian_cross_section,
-    backends={"jax", "numpy"},
-    options={"slice_width", "chain_method"},
-)
+for _structure in ("cross_section", "panel_fe"):
+    register(
+        "gaussian",
+        _structure,
+        run=_run_gaussian_gibbs,
+        backends={"jax", "numpy"},
+        options={"slice_width", "chain_method"},
+    )

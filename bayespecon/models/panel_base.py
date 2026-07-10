@@ -15,6 +15,7 @@ from formulaic import model_matrix
 from libpysal.graph import Graph
 
 from .._backends.sampler_helpers import (
+    jax_available,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
     use_jax_likelihood,
@@ -330,6 +331,16 @@ class SpatialPanelModel(ABC):
     # Subclasses with a spatial autoregressive term should set this to
     # "rho" (spatial lag) or "lam" (spatial error).  OLS/SLX leave it None.
     _jacobian_param: str | None = None
+
+    # Sampler-registry wiring (mirrors ``SpatialModel``).  Gaussian FE
+    # subclasses set ``_likelihood="gaussian"``, ``_gibbs_key=("gaussian",
+    # "panel_fe")`` and the ``_gibbs_class``/``_model_type`` the generic
+    # ``_fit_gibbs`` resolves at runtime.  OLS/SLX are NUTS-only (no
+    # ``_gibbs_key``).
+    _likelihood: str = ""
+    _gibbs_key: tuple[str, str] | None = None
+    _gibbs_class: str | None = None
+    _model_type: str = ""
 
     def __init__(
         self,
@@ -1028,62 +1039,251 @@ class SpatialPanelModel(ABC):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
+        sampler: str | None = None,
+        gibbs_backend: str = "auto",
+        thin: int = 1,
+        n_jobs: int = -1,
+        idata_kwargs: dict[str, Any] | None = None,
         **sample_kwargs,
     ) -> az.InferenceData:
-        """Sample the posterior for the panel model.
+        """Draw samples from the posterior for the panel model.
+
+        Mirrors :meth:`SpatialModel.fit`: dispatches to this model's Gibbs
+        sampler (``sampler="gibbs"``) or NUTS (``sampler="nuts"``).  When
+        ``sampler`` is ``None`` (default), Gibbs is used if the model has a
+        registered Gibbs sampler (Gaussian FE families), otherwise NUTS.  (The
+        two ``fit`` bodies are duplicated across the cross-section and panel
+        base classes until Phase 5c collapses the hierarchies.)
 
         Parameters
         ----------
-        draws : int, default=2000
-            Number of post-tuning draws per chain.
-        tune : int, default=1000
-            Number of tuning draws per chain.
-        chains : int, default=4
-            Number of chains.
-        target_accept : float, default=0.9
-            NUTS target acceptance probability.
+        draws, tune, chains : int
+            Post-warmup draws, warmup steps, and number of chains.
         random_seed : int, optional
-            Random seed used by PyMC.
+            Seed for reproducibility.
         progressbar : bool, default True
-            Show progress bar during sampling.
+            Show progress bar(s) during sampling.
+        sampler : {"gibbs", "nuts", None}, default None
+            Sampling method.  ``None`` auto-selects Gibbs when this model has
+            one, else NUTS.
+        gibbs_backend : {"auto", "jax", "numpy"}, default "auto"
+            Execution backend for the Gibbs sampler.  ``"auto"`` uses JAX when
+            installed and supported, otherwise NumPy.  Ignored for NUTS.
+        thin : int, default 1
+            Keep every ``thin``-th post-warmup Gibbs draw (Gibbs only).
+        n_jobs : int, default -1
+            Parallel workers for the NumPy Gibbs path (Gibbs only).
+        idata_kwargs : dict, optional
+            Passed to ``pm.sample`` (NUTS only).  ``{"log_likelihood": True}``
+            reconstructs the complete Jacobian-corrected pointwise
+            log-likelihood.
         **sample_kwargs
-            Extra keyword arguments forwarded to :func:`pymc.sample`.  Pass
-            ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
-            select an alternative NUTS backend; defaults to PyMC's built-in
-            sampler.
+            For NUTS, forwarded to ``pm.sample`` (``target_accept``,
+            ``nuts_sampler="blackjax"``/``"numpyro"``/``"nutpie"``, ...).  For
+            Gibbs, the family's declared options (``slice_width``, ...); an
+            unsupported key raises.
 
         Returns
         -------
         arviz.InferenceData
             Posterior samples and diagnostics.
         """
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        try:
-            model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        except TypeError:
-            # Subclasses that don't accept ``nuts_sampler`` build the same
-            # model on every backend.
-            model = self._build_pymc_model()
-        self._pymc_model = model
-        if "idata_kwargs" in sample_kwargs:
-            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
-                sample_kwargs["idata_kwargs"], model, nuts_sampler
-            )
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-        with model:
-            self._idata = pm.sample(
+        from ..samplers._registry import pop_options, resolve, resolve_backend
+
+        entry = resolve(*self._gibbs_key) if self._gibbs_key is not None else None
+        if sampler is None:
+            sampler = "gibbs" if entry is not None else "nuts"
+
+        if sampler == "gibbs":
+            if entry is None:
+                raise NotImplementedError(
+                    f"{type(self).__name__} has no Gibbs sampler. "
+                    "Use sampler='nuts' (the default)."
+                )
+            if self.robust and not entry.supports_robust:
+                raise NotImplementedError(
+                    "Gibbs sampling is not supported for robust (Student-t) "
+                    "models. Use sampler='nuts'."
+                )
+            backend = resolve_backend(gibbs_backend, entry, jax_ok=jax_available())
+            family_opts = pop_options(sample_kwargs, entry)
+            self._idata = entry.run(
+                self,
                 draws=draws,
                 tune=tune,
                 chains=chains,
-                target_accept=target_accept,
                 random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
                 progressbar=progressbar,
-                nuts_sampler=nuts_sampler,
-                **sample_kwargs,
+                backend=backend,
+                **family_opts,
             )
+            return self._idata
+
+        if sampler != "nuts":
+            raise ValueError(
+                f"sampler must be 'gibbs', 'nuts', or None, got {sampler!r}"
+            )
+
+        return self._fit_nuts_and_reconstruct(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            idata_kwargs=idata_kwargs,
+            sample_kwargs=sample_kwargs,
+        )
+
+    def _fit_nuts_and_reconstruct(
+        self,
+        *,
+        draws: int,
+        tune: int,
+        chains: int,
+        random_seed: Optional[int],
+        progressbar: bool,
+        idata_kwargs: dict[str, Any] | None,
+        sample_kwargs: dict[str, Any],
+    ) -> az.InferenceData:
+        """Shared NUTS path for panel models: sample, then reconstruct log-lik.
+
+        The Jacobian-corrected pointwise log-likelihood is reconstructed only
+        for Gaussian spatial-lag/error panel families (``_likelihood ==
+        "gaussian"`` with a ``rho``/``lam`` Jacobian).  OLS/SLX capture it
+        natively and non-Gaussian panels (e.g. Tobit) reconstruct in their own
+        ``fit``.
+        """
+        sample_kwargs = dict(sample_kwargs)
+        target_accept = sample_kwargs.pop("target_accept", 0.9)
+        idata_kwargs = dict(idata_kwargs or {})
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
+
+        if (
+            compute_log_likelihood
+            and self._likelihood == "gaussian"
+            and self._jacobian_param in {"rho", "lam"}
+        ):
+            self._reconstruct_panel_log_likelihood(
+                spatial_param=self._jacobian_param,
+                nuts_sampler=nuts_sampler,
+                T_eff=self._T,
+            )
+
+        return self._idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> az.InferenceData:
+        """Sample a Gaussian FE panel posterior via 3-block Gaussian Gibbs.
+
+        Generic over the FE families: resolves the Gibbs class from
+        ``_gibbs_class``, builds the ``[X, WX]`` design when ``_has_wx_in_beta``,
+        and passes ``T`` and the block-diagonal ``W_sparse_NT``.  SAR/SDM
+        (``_jacobian_param == "rho"``) additionally pass ``Wy``.  Mirrors
+        :meth:`SpatialModel._fit_gibbs` with panel-specific inputs.
+        """
+        if self._gibbs_class is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support Gibbs sampling. "
+                "Use sampler='nuts' (the default)."
+            )
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        import importlib
+
+        from ..samplers.gaussian import GaussianGibbsPriors
+
+        gibbs_module = importlib.import_module(
+            "..samplers.gaussian", package=__package__
+        )
+        GibbsClass = getattr(gibbs_module, self._gibbs_class)
+
+        if self._has_wx_in_beta:
+            Z = np.hstack([self._X, self._WX])
+            feature_names = list(self._feature_names) + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
+        else:
+            Z = self._X
+            feature_names = list(self._feature_names)
+
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            Z, feature_names
+        )
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs_kwargs: dict[str, Any] = dict(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse_NT,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type=self._model_type,
+            W_eigs=self._W_eigs
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+        # SAR/SDM need Wy; SEM/SDEM do not.
+        if self._jacobian_param == "rho":
+            gibbs_kwargs["Wy"] = self._Wy
+
+        gibbs = GibbsClass(**gibbs_kwargs)
+
+        self._idata = gibbs.fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            thin=thin,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            gibbs_method=gibbs_method,
+            slice_width=slice_width,
+            chain_method=chain_method,
+        )
         return self._idata
 
     def _fit_gibbs_dispatch(
