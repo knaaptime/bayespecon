@@ -24,6 +24,12 @@ from bayespecon.models.panel._fe import (
     SEMPanelFE,
     SLXPanelFE,
 )
+from bayespecon.models.panel._re import (
+    OLSPanelRE,
+    SARPanelRE,
+    SDEMPanelRE,
+    SEMPanelRE,
+)
 from bayespecon.tests.helpers import (
     PANEL_N,
     PANEL_T,
@@ -147,6 +153,62 @@ def _panel_fe_cases():
 def test_gaussian_panel_fe_fit_contract(name, ctor, data_fn, expected, sampler):
     y, X, _ = data_fn(np.random.default_rng(1), _W_PANEL, PANEL_N, PANEL_T)
     model = ctor(y=y, X=X, W=_panel_graph(), N=PANEL_N, T=PANEL_T, effects=1)
+    kwargs = dict(
+        sampler=sampler, draws=6, tune=6, chains=1, progressbar=False, random_seed=1
+    )
+    if sampler == "gibbs":
+        kwargs["n_jobs"] = 1
+    idata = model.fit(**kwargs)
+    varnames = set(idata.posterior.data_vars)
+    has_ll = "log_likelihood" in idata.groups()
+    assert varnames == expected, f"{name} [{sampler}]: {sorted(varnames)}"
+    if sampler == "gibbs":
+        assert has_ll, f"{name} gibbs should attach a log_likelihood group"
+
+
+# ---------------------------------------------------------------------------
+# Gaussian panel random-effects family
+#
+# RE posteriors carry the unit effect ``alpha`` and its scale ``sigma_alpha``.
+# The 5-block RE Gibbs sampler does not emit the deterministic ``sigma2`` that
+# the NUTS build derives, so the contract is pinned *per sampler*.
+# ---------------------------------------------------------------------------
+
+_RE_BASE = {"alpha", "beta", "sigma", "sigma_alpha"}
+
+# name -> (ctor, data_fn, {sampler: expected_varnames})
+GAUSSIAN_PANEL_RE: dict[str, tuple] = {
+    "OLS": (OLSPanelRE, make_panel_ols_data, {"nuts": _RE_BASE | {"sigma2"}}),
+    "SAR": (
+        SARPanelRE,
+        make_panel_sar_data,
+        {"gibbs": _RE_BASE | {"rho"}, "nuts": _RE_BASE | {"rho", "sigma2"}},
+    ),
+    "SEM": (
+        SEMPanelRE,
+        make_panel_sem_data,
+        {"gibbs": _RE_BASE | {"lam"}, "nuts": _RE_BASE | {"lam", "sigma2"}},
+    ),
+    "SDEM": (
+        SDEMPanelRE,
+        make_panel_sdem_fe_data,
+        {"nuts": _RE_BASE | {"lam", "sigma2"}},
+    ),
+}
+
+
+def _panel_re_cases():
+    for name, (ctor, data_fn, expected_by_sampler) in GAUSSIAN_PANEL_RE.items():
+        for sampler, expected in expected_by_sampler.items():
+            yield pytest.param(
+                name, ctor, data_fn, expected, sampler, id=f"{name}-{sampler}"
+            )
+
+
+@pytest.mark.parametrize("name,ctor,data_fn,expected,sampler", list(_panel_re_cases()))
+def test_gaussian_panel_re_fit_contract(name, ctor, data_fn, expected, sampler):
+    y, X, _ = data_fn(np.random.default_rng(1), _W_PANEL, PANEL_N, PANEL_T)
+    model = ctor(y=y, X=X, W=_panel_graph(), N=PANEL_N, T=PANEL_T)
     kwargs = dict(
         sampler=sampler, draws=6, tune=6, chains=1, progressbar=False, random_seed=1
     )

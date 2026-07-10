@@ -28,6 +28,7 @@ from pytensor import sparse as pts
 
 from ..._backends.sampler_helpers import use_jax_likelihood
 from ..._lazy_deps import az, pm
+from ...samplers._registry import register
 from ..panel_base import SpatialPanelModel
 from ..priors import (
     PanelOLSREPriors,
@@ -119,6 +120,7 @@ class OLSPanelRE(SpatialPanelModel):
     """
 
     _priors_cls = PanelOLSREPriors
+    _likelihood: str = "gaussian"  # NUTS-only (no _gibbs_key)
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)  # RE always uses raw (pooled) data
@@ -291,6 +293,9 @@ class SARPanelRE(SpatialPanelModel):
     """
 
     _priors_cls = PanelSARREPriors
+    _jacobian_param: str | None = "rho"
+    _likelihood: str = "gaussian"
+    _gibbs_key: tuple[str, str] | None = ("gaussian", "panel_re")
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -349,11 +354,10 @@ class SARPanelRE(SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
-        slice_width: float | None = None,
-        chain_method: str | None = None,
     ) -> "az.InferenceData":
         """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², ρ).
+
+        NumPy-only; there is no JAX kernel for the RE sampler.
 
         Parameters
         ----------
@@ -419,94 +423,6 @@ class SARPanelRE(SpatialPanelModel):
             n_jobs=n_jobs,
             progressbar=progressbar,
         )
-        return self._idata
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        sampler: str = "gibbs",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Sample posterior for SAR panel RE model.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of post-warmup draws per chain.
-        tune : int, default 1000
-            Number of warmup draws per chain (NUTS) or burn-in draws
-            (Gibbs).
-        chains : int, default 4
-            Number of independent chains.
-        target_accept : float, default 0.9
-            NUTS target acceptance probability. Ignored for Gibbs.
-        random_seed : int or None
-            Seed for reproducibility.
-        idata_kwargs : dict or None
-            Extra kwargs for InferenceData (NUTS only).
-        sampler : str, default "gibbs"
-            Sampler to use: ``"gibbs"`` for 5-block Gibbs or ``"nuts"``
-            for PyMC NUTS.
-        thin : int, default 1
-            Keep every ``thin``-th draw after warmup (Gibbs only).
-        n_jobs : int, default -1
-            Number of parallel workers (Gibbs only).
-        progressbar : bool, default True
-            Show per-chain progress bars (Gibbs only).
-        **sample_kwargs
-            Extra keyword arguments forwarded to PyMC (NUTS only).
-
-        Returns
-        -------
-        az.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path (default) ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="rho",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -704,6 +620,9 @@ class SEMPanelRE(SpatialPanelModel):
     """
 
     _priors_cls = PanelSEMREPriors
+    _jacobian_param: str | None = "lam"
+    _likelihood: str = "gaussian"
+    _gibbs_key: tuple[str, str] | None = ("gaussian", "panel_re")
 
     def __init__(self, mundlak: bool = False, **kwargs):
         kwargs.pop("model", None)
@@ -913,11 +832,10 @@ class SEMPanelRE(SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
-        slice_width: float | None = None,
-        chain_method: str | None = None,
     ) -> "az.InferenceData":
         """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², λ).
+
+        NumPy-only; there is no JAX kernel for the RE sampler.
 
         Parameters
         ----------
@@ -982,94 +900,6 @@ class SEMPanelRE(SpatialPanelModel):
             n_jobs=n_jobs,
             progressbar=progressbar,
         )
-        return self._idata
-
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        sampler: str = "gibbs",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Sample posterior for SEM panel RE model.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of post-warmup draws per chain.
-        tune : int, default 1000
-            Number of warmup draws per chain (NUTS) or burn-in draws
-            (Gibbs).
-        chains : int, default 4
-            Number of independent chains.
-        target_accept : float, default 0.9
-            NUTS target acceptance probability. Ignored for Gibbs.
-        random_seed : int or None
-            Seed for reproducibility.
-        idata_kwargs : dict or None
-            Extra kwargs for InferenceData (NUTS only).
-        sampler : str, default "gibbs"
-            Sampler to use: ``"gibbs"`` for 5-block Gibbs or ``"nuts"``
-            for PyMC NUTS.
-        thin : int, default 1
-            Keep every ``thin``-th draw after warmup (Gibbs only).
-        n_jobs : int, default -1
-            Number of parallel workers (Gibbs only).
-        progressbar : bool, default True
-            Show per-chain progress bars (Gibbs only).
-        **sample_kwargs
-            Extra keyword arguments forwarded to PyMC (NUTS only).
-
-        Returns
-        -------
-        az.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path (default) ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="lam",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
         return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
@@ -1193,6 +1023,8 @@ class SDEMPanelRE(SpatialPanelModel):
     """
 
     _has_wx_in_beta = True
+    _jacobian_param: str | None = "lam"
+    _likelihood: str = "gaussian"  # NUTS-only (no _gibbs_key)
 
     _priors_cls = PanelSDEMREPriors
 
@@ -1319,44 +1151,6 @@ class SDEMPanelRE(SpatialPanelModel):
 
         return model
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics."""
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        progressbar = sample_kwargs.pop("progressbar", True)
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="lam",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
-        return self._idata
-
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         beta = self._posterior_mean("beta")
         alpha = self._posterior_mean("alpha")
@@ -1384,3 +1178,46 @@ class SDEMPanelRE(SpatialPanelModel):
         total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
         indirect_samples = total_samples - direct_samples
         return direct_samples, indirect_samples, total_samples
+
+
+# ---------------------------------------------------------------------------
+# Gibbs registry entry
+# ---------------------------------------------------------------------------
+
+
+def _run_gaussian_re(
+    model,
+    *,
+    draws,
+    tune,
+    chains,
+    random_seed,
+    thin,
+    n_jobs,
+    progressbar,
+    backend,
+):
+    """Registry runner for Gaussian panel random-effects Gibbs.
+
+    Thin adapter over the per-class ``_fit_gibbs`` (SAR/SEM RE own their own
+    5-block sampler).  RE Gibbs is NumPy-only — there is no JAX kernel and no
+    ``slice_width``/``chain_method`` options — so ``backend`` is always
+    ``"numpy"`` and no family options are threaded.
+    """
+    return model._fit_gibbs(
+        draws=draws,
+        tune=tune,
+        chains=chains,
+        random_seed=random_seed,
+        thin=thin,
+        n_jobs=n_jobs,
+        progressbar=progressbar,
+    )
+
+
+register(
+    "gaussian",
+    "panel_re",
+    run=_run_gaussian_re,
+    backends={"numpy"},
+)

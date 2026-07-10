@@ -910,6 +910,7 @@ class TestJaxLogLikelihoodCapture:
             chains=1,
             random_seed=0,
             progressbar=False,
+            sampler="nuts",
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )

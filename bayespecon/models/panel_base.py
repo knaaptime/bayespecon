@@ -1286,36 +1286,6 @@ class SpatialPanelModel(ABC):
         )
         return self._idata
 
-    def _fit_gibbs_dispatch(
-        self,
-        *,
-        draws: int,
-        tune: int,
-        chains: int,
-        random_seed: Optional[int],
-        thin: int,
-        n_jobs: int,
-        progressbar: bool,
-        sample_kwargs: dict[str, Any] | None = None,
-    ) -> az.InferenceData:
-        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs.
-
-        Centralizes how Gibbs-specific kwargs are popped from ``sample_kwargs``.
-        """
-        sample_kwargs = dict(sample_kwargs or {})
-        return self._fit_gibbs(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            thin=thin,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-            slice_width=sample_kwargs.pop("slice_width", None),
-            chain_method=sample_kwargs.pop("chain_method", None),
-        )
-
     def _fit_nuts(
         self,
         *,
