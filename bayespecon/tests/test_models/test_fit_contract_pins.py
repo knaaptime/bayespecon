@@ -15,7 +15,19 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon.models import OLS, SAR, SDEM, SDM, SEM, SLX
+from bayespecon.models import (
+    OLS,
+    SAR,
+    SARZINB,
+    SDEM,
+    SDM,
+    SEM,
+    SLX,
+    SARLogit,
+    SARNegBin,
+    SARNegBinStructural,
+    SEMLogit,
+)
 from bayespecon.models.panel._fe import (
     OLSPanelFE,
     SARPanelFE,
@@ -220,3 +232,123 @@ def test_gaussian_panel_re_fit_contract(name, ctor, data_fn, expected, sampler):
     assert varnames == expected, f"{name} [{sampler}]: {sorted(varnames)}"
     if sampler == "gibbs":
         assert has_ll, f"{name} gibbs should attach a log_likelihood group"
+
+
+# ---------------------------------------------------------------------------
+# Binary (Pólya-Gamma logit) cross-section family
+#
+# SARLogit/SEMLogit are Gibbs-only (no NUTS build).  The logit link fixes
+# σ² = 1, so the posterior carries only the spatial parameter and β.
+# ---------------------------------------------------------------------------
+
+_N_BINARY = 24
+
+
+def _binary_xy(seed: int = 3):
+    rng = np.random.default_rng(seed)
+    x1 = rng.standard_normal(_N_BINARY)
+    X = np.column_stack([np.ones(_N_BINARY), x1])
+    probs = 1.0 / (1.0 + np.exp(-(0.3 + 0.6 * x1)))
+    y = rng.binomial(1, probs).astype(float)
+    return y, X
+
+
+def _binary_graph():
+    return W_to_graph(make_line_W(_N_BINARY))
+
+
+# name -> (ctor, expected_varnames)
+BINARY_XS: dict[str, tuple] = {
+    "SARLogit": (SARLogit, {"beta", "rho"}),
+    "SEMLogit": (SEMLogit, {"beta", "lam"}),
+}
+
+
+@pytest.mark.parametrize("name", list(BINARY_XS))
+def test_binary_xs_fit_contract(name):
+    ctor, expected = BINARY_XS[name]
+    y, X = _binary_xy()
+    model = ctor(y=y, X=X, W=_binary_graph())
+    idata = model.fit(
+        sampler="gibbs",
+        draws=6,
+        tune=6,
+        chains=1,
+        n_jobs=1,
+        progressbar=False,
+        random_seed=1,
+    )
+    varnames = set(idata.posterior.data_vars)
+    assert varnames == expected, f"{name} [gibbs]: {sorted(varnames)}"
+    assert "log_likelihood" in idata.groups(), f"{name} gibbs should attach log_lik"
+
+
+# ---------------------------------------------------------------------------
+# Count (Pólya-Gamma NegBin / ZINB) cross-section family
+#
+# Gibbs-registered count models.  ``auto`` resolves to NumPy/CHOLMOD for all
+# of them (the jax_dense path is opt-in via gibbs_backend="jax").  SARNegBin
+# also supports NUTS (reduced-form PyMC model with a Deterministic ``mu``).
+# ---------------------------------------------------------------------------
+
+_N_COUNT = 40
+
+
+def _count_xy(seed: int = 5, zero_inflate: bool = False):
+    rng = np.random.default_rng(seed)
+    x1 = rng.standard_normal(_N_COUNT)
+    X = np.column_stack([np.ones(_N_COUNT), x1])
+    y = rng.poisson(np.exp(0.3 + 0.2 * x1)).astype(float)
+    if zero_inflate:
+        y = y * (rng.uniform(size=_N_COUNT) > 0.3)
+    return y, X
+
+
+def _count_graph():
+    return W_to_graph(make_line_W(_N_COUNT))
+
+
+# name -> (ctor, zero_inflate, {sampler: expected_varnames})
+COUNT_XS: dict[str, tuple] = {
+    "SARNegBin": (
+        SARNegBin,
+        False,
+        {"gibbs": {"beta", "rho", "alpha"}, "nuts": {"beta", "rho", "alpha", "mu"}},
+    ),
+    "SARNegBinStructural": (
+        SARNegBinStructural,
+        False,
+        {"gibbs": {"beta", "rho", "alpha", "sigma"}},
+    ),
+    "SARZINB": (
+        SARZINB,
+        True,
+        {"gibbs": {"beta", "rho", "alpha", "gamma", "lam"}},
+    ),
+}
+
+
+def _count_cases():
+    for name, (ctor, zi, expected_by_sampler) in COUNT_XS.items():
+        for sampler, expected in expected_by_sampler.items():
+            yield pytest.param(
+                name, ctor, zi, expected, sampler, id=f"{name}-{sampler}"
+            )
+
+
+@pytest.mark.parametrize("name,ctor,zi,expected,sampler", list(_count_cases()))
+@pytest.mark.filterwarnings("ignore:SAR Negative Binomial:UserWarning")
+@pytest.mark.filterwarnings("ignore:Zero-inflated NB:UserWarning")
+def test_count_xs_fit_contract(name, ctor, zi, expected, sampler):
+    y, X = _count_xy(zero_inflate=zi)
+    model = ctor(y=y, X=X, W=_count_graph())
+    kwargs = dict(
+        sampler=sampler, draws=6, tune=6, chains=1, progressbar=False, random_seed=1
+    )
+    if sampler == "gibbs":
+        kwargs["n_jobs"] = 1
+    idata = model.fit(**kwargs)
+    varnames = set(idata.posterior.data_vars)
+    assert varnames == expected, f"{name} [{sampler}]: {sorted(varnames)}"
+    if sampler == "gibbs":
+        assert "log_likelihood" in idata.groups(), f"{name} gibbs should attach log_lik"

@@ -33,7 +33,6 @@ from typing import Optional
 import numpy as np
 import scipy.sparse as sp
 
-from ..._backends.sampler_helpers import jax_available
 from ..._lazy_deps import az
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
@@ -115,6 +114,8 @@ class SEMLogit(SpatialModel):
     _jacobian_param: str | None = "lam"
     _gibbs_class: str | None = None  # Gibbs-only, no NUTS
     _model_type: str = "sem_logit"
+    _likelihood: str = "binary"
+    _gibbs_key: tuple[str, str] | None = ("binary", "cross_section")
     _priors_cls = SEMLogitPriors
 
     def __init__(self, *args, **kwargs):
@@ -173,80 +174,59 @@ class SEMLogit(SpatialModel):
             omega=omega_init,
         )
 
-    def fit(
+    def _fit_gibbs(
         self,
+        *,
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
         random_seed: Optional[int] = None,
         thin: int = 1,
-        return_eta: bool = False,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "auto",
+        backend: str = "numpy",
+        return_eta: bool = False,
         pg_n_terms: int = 25,
         n_probes: int = 5,
         lanczos_deg: int = 15,
-        **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
 
         Parameters
         ----------
-        draws : int
-            Number of post-warmup draws per chain.
-        tune : int
-            Number of warmup (burn-in) draws per chain.
-        chains : int
-            Number of independent chains.
+        draws, tune, chains : int
+            Post-warmup draws, warmup draws, and number of chains.
         random_seed : int or None
             Seed for reproducibility.
         thin : int
             Keep every ``thin``-th draw. Default 1 (no thinning).
-        return_eta : bool
-            If True, store the full latent field η in the posterior.
-            Default False — η is n × draws × chains, which can be large.
         n_jobs : int
             Number of parallel chains. -1 = all CPUs.
         progressbar : bool
             Show per-chain progress bars.
-        gibbs_method : str, default "auto"
-            Which Gibbs sampler path to use:
-
-            - ``"auto"``: select based on JAX availability and CHOLMOD.
-            - ``"factorize"``: force factorisation-based path (CHOLMOD if
-              available, else ``scipy.sparse.linalg.splu``).
-            - ``"jax_dense"``: force JAX-accelerated path.  Requires
-              JAX with float64 enabled.  Viable for n ≤ ~10 000.
+        backend : {"numpy", "jax"}
+            Execution backend.  ``"numpy"`` uses the CHOLMOD factorisation
+            path (the default); ``"jax"`` uses the JAX-accelerated dense path
+            (requires float64; viable for n ≲ 10 000).
+        return_eta : bool
+            If True, store the full latent field η in the posterior.
+            Default False — η is n × draws × chains, which can be large.
         pg_n_terms : int, default 25
             Ignored (kept for API compatibility).  PG draws now use the
             exact sum-of-exponentials method which does not require
-            truncation.  Only relevant when ``gibbs_method="jax_dense"``.
+            truncation.  Only relevant on the JAX path.
         n_probes : int, default 5
             Number of Lanczos probe vectors for stochastic log|P|
-            estimation.  Only used when ``gibbs_method="jax_dense"``.
+            estimation.  Only used on the JAX path.
         lanczos_deg : int, default 15
             Lanczos iteration depth for log|P| estimation.  Only used
-            when ``gibbs_method="jax_dense"``.
+            on the JAX path.
 
         Returns
         -------
         az.InferenceData
             With posterior, log_likelihood, and observed_data groups.
-
-        Raises
-        ------
-        TypeError
-            If NUTS-specific kwargs (nuts_sampler, target_accept) are passed.
         """
-        # Reject NUTS-specific kwargs
-        for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
-            if bad_kwarg in kwargs:
-                raise TypeError(
-                    f"SEMLogit.fit() does not accept '{bad_kwarg}'. "
-                    f"This model uses a Gibbs sampler, not NUTS."
-                )
-
         y = self._y
         X = self._X
         W_sparse = self._W_sparse
@@ -279,29 +259,12 @@ class SEMLogit(SpatialModel):
         _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
         cholmod_factor = CholmodFactor(_P0)
 
-        # Resolve Gibbs method
-        _valid_methods = {"auto", "factorize", "jax_dense"}
-        if gibbs_method not in _valid_methods:
-            raise ValueError(
-                f"gibbs_method must be one of {_valid_methods}, got '{gibbs_method}'"
-            )
-
-        _jax_available = jax_available()
-
-        if gibbs_method == "jax_dense" and not _jax_available:
-            raise ImportError(
-                "gibbs_method='jax_dense' requires JAX. Install with: pip install jax"
-            )
-
-        if gibbs_method == "factorize":
-            solve_method = "cholmod"
-            logdet_P_method = "cholmod"
-            sample_method = "cholmod"
-        elif gibbs_method == "jax_dense":
+        # Map the resolved backend onto the sampler's solve/logdet/sample paths.
+        if backend == "jax":
             solve_method = "jax_dense"
             logdet_P_method = "jax_dense"
             sample_method = "jax_dense"
-        else:  # "auto"
+        else:  # "numpy" → CHOLMOD factorisation
             solve_method = "cholmod"
             logdet_P_method = "cholmod"
             sample_method = "cholmod"

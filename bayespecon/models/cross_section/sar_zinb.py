@@ -127,6 +127,8 @@ class SARZINB(SpatialModel):
     _jacobian_param: str | None = "rho"  # count equation Jacobian
     _gibbs_class: str | None = None
     _model_type: str = "zinb_sar"
+    _likelihood: str = "count"
+    _gibbs_key: tuple[str, str] | None = ("zinb", "cross_section")
 
     def __init__(
         self,
@@ -371,36 +373,36 @@ class SARZINB(SpatialModel):
             z=z_init,
         )
 
-    def fit(
+    def _fit_gibbs(
         self,
+        *,
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
         random_seed: Optional[int] = None,
         thin: int = 1,
-        progressbar: bool = True,
         n_jobs: int = 1,
+        progressbar: bool = True,
+        backend: str = "numpy",
         timeout: float | None = None,
-        **_unused,
     ) -> az.InferenceData:
         """Sample posterior via 9-block Pólya–Gamma Gibbs.
 
         Parameters
         ----------
-        draws : int
-            Number of post-warmup draws per chain.
-        tune : int
-            Number of warmup (burn-in) draws per chain.
-        chains : int
-            Number of independent chains.
+        draws, tune, chains : int
+            Post-warmup draws, warmup draws, and number of chains.
         random_seed : int, optional
             Seed for reproducibility.
         thin : int
             Keep every ``thin``-th draw. Default 1.
-        progressbar : bool
-            Show per-chain progress bars.
         n_jobs : int
             Number of parallel chains. 1 = sequential.
+        progressbar : bool
+            Show per-chain progress bars.
+        backend : {"numpy"}
+            Execution backend.  ZINB is NumPy-only (CHOLMOD 9-block Gibbs);
+            there is no JAX kernel.
         timeout : float or None
             Maximum wall-clock seconds for parallel chains.
 
@@ -409,19 +411,7 @@ class SARZINB(SpatialModel):
         arviz.InferenceData
             Posterior draws of ``lam``, ``gamma``, ``rho``, ``beta``,
             ``alpha`` and pointwise ``log_likelihood``.
-
-        Raises
-        ------
-        TypeError
-            If NUTS-specific kwargs are passed.
         """
-        for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
-            if bad_kwarg in _unused:
-                raise TypeError(
-                    f"SARZINB.fit() does not accept '{bad_kwarg}'. "
-                    f"This model uses a Gibbs sampler, not NUTS."
-                )
-
         n, k = self._X.shape
         self._Z.shape[1]
 

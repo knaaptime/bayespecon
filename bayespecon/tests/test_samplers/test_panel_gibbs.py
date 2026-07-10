@@ -371,6 +371,7 @@ class TestPanelGibbsVsNUTS:
 
         model_nuts = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, effects=1)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=300,
             tune=300,
             chains=2,
@@ -421,6 +422,7 @@ class TestPanelGibbsVsNUTS:
 
         model_nuts = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, effects=1)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=300,
             tune=300,
             chains=2,

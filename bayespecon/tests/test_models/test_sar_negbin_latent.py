@@ -301,7 +301,7 @@ class TestSARNegBinStructuralRecovery:
 
 
 # ---------------------------------------------------------------------------
-# JAX vmap (gibbs_method="jax_dense") path
+# JAX vmap (gibbs_backend="jax") path
 # ---------------------------------------------------------------------------
 
 
@@ -325,7 +325,7 @@ class TestSARNegBinStructuralJaxVectorized:
             random_seed=0,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax_dense",
+            gibbs_backend="jax",
         )
         rho = idata.posterior["rho"].values
         beta = idata.posterior["beta"].values
@@ -351,7 +351,7 @@ class TestSARNegBinStructuralJaxVectorized:
                 random_seed=0,
                 n_jobs=1,
                 progressbar=False,
-                gibbs_method="jax_dense",
+                gibbs_backend="jax",
                 return_eta=True,
             )
 
@@ -382,7 +382,7 @@ class TestSARNegBinStructuralJaxDenseRecovery:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax_dense",
+            gibbs_backend="jax",
         )
 
         alpha_mean = float(idata.posterior["alpha"].mean())

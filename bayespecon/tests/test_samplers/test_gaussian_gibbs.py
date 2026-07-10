@@ -683,6 +683,7 @@ class TestGibbsVsNUTS:
 
         model_nuts = SAR(y=y, X=X, W=W)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=500,
             tune=500,
             chains=2,
@@ -721,6 +722,7 @@ class TestGibbsVsNUTS:
 
         model_nuts = SEM(y=y, X=X, W=W)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=500,
             tune=500,
             chains=2,
@@ -754,6 +756,7 @@ class TestGibbsVsNUTS:
 
         model_nuts = SDM(y=y, X=X, W=W)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=500,
             tune=500,
             chains=2,
@@ -786,6 +789,7 @@ class TestGibbsVsNUTS:
 
         model_nuts = SDEM(y=y, X=X, W=W)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=500,
             tune=500,
             chains=2,

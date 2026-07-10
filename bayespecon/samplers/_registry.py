@@ -50,6 +50,13 @@ class GibbsEntry:
         Execution backends this family supports, a subset of
         ``{"jax", "numpy"}``.  ``"auto"`` resolves against this set; every
         family supports ``"numpy"`` (JAX is the optional accelerated path).
+    auto_backend
+        Which backend ``gibbs_backend="auto"`` prefers.  ``"jax"`` (default)
+        selects JAX when installed and supported, else NumPy — the Gaussian
+        families, where the vmapped JAX Gibbs is the fast default.  ``"numpy"``
+        pins ``auto`` to NumPy regardless of JAX availability — the nonlinear
+        Pólya-Gamma families, where the CHOLMOD ``factorize`` path is the fast
+        default and the ``jax_dense`` path is an opt-in (GPU / experimental).
     options
         Names of family-specific ``fit`` keyword arguments this runner accepts
         (e.g. ``{"init_jitter", "slice_width", "krylov_degree"}``).  The base
@@ -63,6 +70,7 @@ class GibbsEntry:
 
     run: GibbsRunner
     backends: frozenset[str]
+    auto_backend: str = "jax"
     options: frozenset[str] = field(default_factory=frozenset)
     supports_robust: bool = False
 
@@ -76,10 +84,17 @@ def register(
     *,
     run: GibbsRunner,
     backends,
+    auto_backend: str | None = None,
     options=(),
     supports_robust: bool = False,
 ) -> GibbsEntry:
-    """Register (once) the Gibbs runner for ``(likelihood, structure)``."""
+    """Register (once) the Gibbs runner for ``(likelihood, structure)``.
+
+    ``auto_backend`` defaults to ``"jax"`` when the family supports JAX, else
+    ``"numpy"``.  Pass ``auto_backend="numpy"`` explicitly for a JAX-capable
+    family whose ``auto`` should still prefer NumPy (the Pólya-Gamma families,
+    where ``jax_dense`` is opt-in).
+    """
     key = (likelihood, structure)
     if key in _REGISTRY:
         raise ValueError(f"duplicate Gibbs registry entry for {key!r}")
@@ -91,9 +106,17 @@ def register(
             f"registry entry {key!r} backends must be a subset of "
             f"{{'jax', 'numpy'}}, got {sorted(backends)}"
         )
+    if auto_backend is None:
+        auto_backend = "jax" if "jax" in backends else "numpy"
+    if auto_backend not in backends:
+        raise ValueError(
+            f"registry entry {key!r} auto_backend={auto_backend!r} must be one of "
+            f"its backends {sorted(backends)}"
+        )
     entry = GibbsEntry(
         run=run,
         backends=backends,
+        auto_backend=auto_backend,
         options=frozenset(options),
         supports_robust=supports_robust,
     )
@@ -131,7 +154,9 @@ def resolve_backend(requested: str, entry: GibbsEntry, *, jax_ok: bool) -> str:
             f"gibbs_backend must be one of {sorted(valid)}, got {requested!r}"
         )
     if requested == "auto":
-        if "jax" in entry.backends and jax_ok:
+        # Prefer the entry's declared auto backend; only escalate to JAX when the
+        # family prefers it *and* JAX is importable, else fall back to NumPy.
+        if entry.auto_backend == "jax" and "jax" in entry.backends and jax_ok:
             return "jax"
         return "numpy" if "numpy" in entry.backends else next(iter(entry.backends))
     if requested not in entry.backends:

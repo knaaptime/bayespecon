@@ -397,7 +397,7 @@ class TestProgressForwarding:
             random_seed=0,
             n_jobs=1,
             progressbar=True,
-            gibbs_method="factorize",
+            gibbs_backend="numpy",
         )
 
         assert seen["progress_manager"] is not None
@@ -447,7 +447,7 @@ class TestProgressForwarding:
             random_seed=0,
             n_jobs=1,
             progressbar=True,
-            gibbs_method="factorize",
+            gibbs_backend="numpy",
         )
 
         assert seen["progress_manager"] is not None
@@ -455,7 +455,7 @@ class TestProgressForwarding:
 
 
 # ---------------------------------------------------------------------------
-# JAX vmap (gibbs_method="jax_dense") path
+# JAX vmap (gibbs_backend="jax") path
 # ---------------------------------------------------------------------------
 
 
@@ -475,7 +475,7 @@ class TestJaxVectorizedFit:
             random_seed=0,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax_dense",
+            gibbs_backend="jax",
         )
         rho = idata.posterior["rho"].values
         beta = idata.posterior["beta"].values
@@ -495,7 +495,7 @@ class TestJaxVectorizedFit:
                 random_seed=0,
                 n_jobs=1,
                 progressbar=False,
-                gibbs_method="jax_dense",
+                gibbs_backend="jax",
                 return_eta=True,
             )
 
@@ -509,7 +509,7 @@ class TestJaxVectorizedFit:
             random_seed=0,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax_dense",
+            gibbs_backend="jax",
         )
         lam = idata.posterior["lam"].values
         beta = idata.posterior["beta"].values
@@ -528,6 +528,6 @@ class TestJaxVectorizedFit:
                 random_seed=0,
                 n_jobs=1,
                 progressbar=False,
-                gibbs_method="jax_dense",
+                gibbs_backend="jax",
                 return_eta=True,
             )
