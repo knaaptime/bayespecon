@@ -16,19 +16,31 @@ Same computational structure as Barry-Pace:
 * **Per-ρ eval**: ``O(p)`` Clenshaw-like evaluation:
   ``(c₀(ρ)/2)·n + Σ c_j(ρ)·μ_j``.
 
-**Deflation** (optional): When ``n_deflate > 0``, the top-``n_deflate``
-singular vectors of ``W̃`` are captured via randomized SVD (``k+5`` matvecs),
-deflated exactly, and stochastic Chebyshev is applied only to the low-variance
-residual.  This reduces the Hutchinson probe count 2-3× for the same accuracy
-because ``‖T_j(W̃_res)‖_F²`` is much smaller than ``‖T_j(W̃)‖_F²``.
+**Deflation** (optional): When ``n_deflate > 0`` *and* ``W`` is symmetrizable
+(undirected graph), the top-``n_deflate`` **eigenpairs** (by magnitude) of the
+D-symmetrized, rescaled operator ``W̃_sym = D^{1/2} W̃ D^{-1/2}`` are captured
+exactly via ``eigsh`` (applied matrix-free, never materialised) and removed
+from the residual; stochastic Chebyshev then runs only on the deflated
+residual, whose Frobenius norm — and hence Hutchinson variance — is smaller.
+Because Chebyshev traces are similarity-invariant, ``tr(T_j(W̃_sym)) =
+tr(T_j(W̃))``, and an eigenpair split decomposes the trace exactly
+(``tr(T_j(W̃)) = Σᵢ T_j(λᵢ) − r·T_j(0) + tr(T_j(W̃_res))``) — unlike the
+non-invariant singular-value split it replaced.  Directed W has an asymmetric
+sparsity pattern and is not symmetrizable, so deflation is skipped with a
+warning.  Spatial spectra are often flat enough that deflation barely helps,
+so it is **off by default** (``n_deflate=0``).
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg as spla
+
+from ._slq import _recover_symmetrizing_diagonal
 
 
 @dataclass(frozen=True)
@@ -55,74 +67,6 @@ class ChebStochasticPrecompute:
     lam_max: float
     order: int
     n: int
-
-
-# ---------------------------------------------------------------------------
-# Spectral bounds estimation
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Randomized SVD for deflation
-# ---------------------------------------------------------------------------
-
-
-def _randomized_svd(
-    W: sp.csr_matrix,
-    k: int,
-    n_oversamples: int = 5,
-    rng: np.random.Generator | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Compute top-``k`` SVD of ``W`` via randomized projection.
-
-    Cost: ``k + n_oversamples`` matvecs + ``O(n · (k+p)²)`` — negligible for
-    ``k = 5``.
-
-    Parameters
-    ----------
-    W : sp.csr_matrix
-        Matrix to decompose.
-    k : int
-        Number of singular values/vectors to retain.
-    n_oversamples : int, default 5
-        Oversampling parameter for randomized range finder.
-    rng : np.random.Generator, optional
-
-    Returns
-    -------
-    U : np.ndarray, shape (n, k)
-        Left singular vectors.
-    S : np.ndarray, shape (k,)
-        Singular values (descending).
-    Vt : np.ndarray, shape (k, n)
-        Right singular vectors (transposed).
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-    n = W.shape[0]
-    p = n_oversamples
-
-    # Draw k+p Gaussian probes
-    Omega = rng.standard_normal((n, k + p))
-
-    # Range finder: Y = W @ Omega, then QR
-    Y = W @ Omega
-    Q, _ = np.linalg.qr(Y)
-
-    # Small B = Q^T @ W @ Q  ( (k+p) × (k+p) )
-    B = Q.T @ (W @ Q)
-
-    # SVD of B
-    U_k, S_k, Vt_k = np.linalg.svd(B, full_matrices=False)
-
-    # Map back to original space:
-    # U = Q @ U_k (n, k+p), truncate to k
-    # Vt = Vt_k @ Q^T (k+p, n), truncate to k
-    U = Q @ U_k[:, :k]
-    S = S_k[:k]
-    Vt = Vt_k[:k, :] @ Q.T  # (k, n)
-
-    return U, S, Vt
 
 
 # ---------------------------------------------------------------------------
@@ -184,26 +128,31 @@ def _estimate_spectral_bounds(
 
 
 def _chebyshev_moments(
-    W_tilde: sp.csr_matrix,
+    matvec,
+    n: int,
     order: int,
     n_probes: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Estimate ``tr(T_j(W̃))`` for ``j = 0, .., order`` via Hutchinson probes.
+    """Estimate ``tr(T_j(A))`` for ``j = 0, .., order`` via Hutchinson probes.
 
-    Uses the three-term recurrence::
+    ``matvec`` applies the operator ``A`` (spectrum in [-1, 1]) to an
+    ``(n, n_probes)`` block; it may be a bare sparse matmul or a matrix-free
+    closure (e.g. the deflated residual).  Uses the three-term recurrence::
 
-        v_0 = ω,  v_1 = W̃ω,  v_{j+1} = 2W̃v_j - v_{j-1}
+        v_0 = ω,  v_1 = Aω,  v_{j+1} = 2Av_j - v_{j-1}
 
-    and the moment estimate ``μ̂_j = (n/k) Σ_l ω_l^T v_j^{(l)}``.
+    with moment estimate ``μ̂_j = (n/k) Σ_l ω_l^T v_j^{(l)} / ‖ω_l‖²``.
 
-    Cost: ``order`` batched sparse matvecs — identical to Barry-Pace, no
+    Cost: ``order`` batched matvecs — identical to Barry-Pace, no
     reorthogonalization.
 
     Parameters
     ----------
-    W_tilde : sp.csr_matrix
-        Rescaled matrix with spectrum in [-1, 1].
+    matvec : callable
+        ``(n, n_probes) -> (n, n_probes)`` application of the operator.
+    n : int
+        Matrix dimension.
     order : int
         Maximum Chebyshev degree.
     n_probes : int
@@ -213,39 +162,133 @@ def _chebyshev_moments(
     Returns
     -------
     np.ndarray, shape (order + 1,)
-        Moment estimates ``μ̂_0, ..., μ̂_order``.  ``μ̂_0 = n`` (exact) and
-        ``μ̂_1 = tr(W̃)`` (exact) are overridden.
+        Moment estimates ``μ̂_0, ..., μ̂_order``.  ``μ̂_0 = n`` is exact; the
+        caller may override ``μ̂_1 = tr(A)`` with its exact value.
     """
-    n = W_tilde.shape[0]
     U = rng.standard_normal((n, n_probes))
     utu = np.einsum("ij,ij->j", U, U)
 
-    # μ_0 = tr(T_0(W̃)) = tr(I) = n (exact)
+    # μ_0 = tr(T_0(A)) = tr(I) = n (exact)
     moments = np.zeros(order + 1, dtype=np.float64)
     moments[0] = float(n)
 
-    # μ_1 = tr(T_1(W̃)) = tr(W̃) (exact, cheap)
-    moments[1] = float(W_tilde.diagonal().sum())
-
-    # Three-term recurrence for j >= 1
-    # v_0 = U, v_1 = W̃ @ U
-    v_prev = U.copy()  # (n, n_probes)
-    v_curr = W_tilde @ U  # (n, n_probes) — 1st batched matvec
-
-    # μ̂_1 from probes (overridden below by exact, but compute for reference)
-    # Actually we already set moments[1] = exact. Start recurrence from j=1.
+    # Three-term recurrence: v_0 = U, v_1 = A @ U
+    v_prev = U
+    v_curr = matvec(U)  # (n, n_probes) — 1st batched matvec
+    moments[1] = n * np.mean(np.einsum("ij,ij->j", U, v_curr) / utu)
 
     for j in range(1, order):
-        # v_{j+1} = 2 W̃ v_j - v_{j-1}
-        v_next = 2.0 * (W_tilde @ v_curr) - v_prev  # batched matvec
+        # v_{j+1} = 2 A v_j - v_{j-1}
+        v_next = 2.0 * matvec(v_curr) - v_prev  # batched matvec
 
-        # μ̂_{j+1} = (n / k) * Σ ω^T v_{j+1}
+        # μ̂_{j+1} = (n / k) * Σ ω^T v_{j+1} / ‖ω‖²
         moments[j + 1] = n * np.mean(np.einsum("ij,ij->j", U, v_next) / utu)
 
         v_prev = v_curr
         v_curr = v_next
 
     return moments
+
+
+def _cheb_recurrence(x: np.ndarray, order: int) -> np.ndarray:
+    """Chebyshev polynomials ``T_j(x)`` for ``j = 0, .., order``.
+
+    Parameters
+    ----------
+    x : np.ndarray, shape (r,)
+        Evaluation points (assumed in [-1, 1]).
+    order : int
+
+    Returns
+    -------
+    np.ndarray, shape (order + 1, r)
+        ``T[j, i] = T_j(x_i)``.
+    """
+    T = np.empty((order + 1, x.shape[0]), dtype=np.float64)
+    T[0] = 1.0
+    if order >= 1:
+        T[1] = x
+    for j in range(1, order):
+        T[j + 1] = 2.0 * x * T[j] - T[j - 1]
+    return T
+
+
+def _deflated_moments(
+    W_sp: sp.csr_matrix,
+    D: np.ndarray,
+    lam_min: float,
+    lam_max: float,
+    r: int,
+    order: int,
+    n_probes: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Eigen-deflated Chebyshev moments for a symmetrizable ``W``.
+
+    Captures the top-``r`` eigenpairs (by magnitude) of the D-symmetrized,
+    rescaled operator ``W̃_sym`` exactly and estimates the remaining moments
+    on the deflated residual.  Both operators are applied matrix-free — the
+    ``n × n`` low-rank correction is never materialised.
+
+    Combination (deflated directions sit at eigenvalue 0 in the residual)::
+
+        tr(T_j(W̃)) = Σᵢ T_j(λᵢ) − r·T_j(0) + tr(T_j(W̃_res))
+
+    with ``T_j(0) = cos(jπ/2)``.  ``μ₀`` and ``μ₁`` are overridden with their
+    exact values by the caller.
+    """
+    n = W_sp.shape[0]
+    spread = lam_max - lam_min
+    sqrt_D = np.sqrt(D)
+    inv_sqrt_D = 1.0 / sqrt_D
+    scale = 2.0 / spread
+    shift = (lam_max + lam_min) / spread
+
+    def wtilde_sym(B: np.ndarray) -> np.ndarray:
+        """Apply ``W̃_sym = scale·(D^{1/2} W D^{-1/2}) − shift·I`` to a block."""
+        two_d = B if B.ndim == 2 else B[:, None]
+        WB = sqrt_D[:, None] * (W_sp @ (inv_sqrt_D[:, None] * two_d))
+        out = scale * WB - shift * two_d
+        return out if B.ndim == 2 else out[:, 0]
+
+    # Top-r eigenpairs by magnitude of the rescaled symmetric operator
+    # (which="LM" captures both ends of the [-1, 1] spectrum).
+    op = spla.LinearOperator(
+        (n, n),
+        matvec=wtilde_sym,
+        rmatvec=wtilde_sym,
+        matmat=wtilde_sym,
+        dtype=np.float64,
+    )
+    try:
+        lam_eig, U_eig = spla.eigsh(op, k=r, which="LM")
+    except spla.ArpackNoConvergence as exc:  # pragma: no cover - defensive
+        lam_eig, U_eig = exc.eigenvalues, exc.eigenvectors
+        r = lam_eig.shape[0]
+        warnings.warn(
+            "eigsh did not converge during deflation; proceeding with the "
+            f"{r} eigenpairs that did converge.",
+            stacklevel=2,
+        )
+    if r == 0:  # pragma: no cover - defensive
+        U_eig = np.zeros((n, 0), dtype=np.float64)
+        lam_eig = np.zeros(0, dtype=np.float64)
+
+    def residual_matvec(B: np.ndarray) -> np.ndarray:
+        """W̃_res @ B = W̃_sym @ B − U (λ ∘ (Uᵀ B))."""
+        return wtilde_sym(B) - U_eig @ (lam_eig[:, None] * (U_eig.T @ B))
+
+    res_moments = _chebyshev_moments(residual_matvec, n, order, n_probes, rng)
+
+    # Exact contribution of the r captured eigenpairs: Σᵢ T_j(λᵢ).
+    eig_moments = _cheb_recurrence(np.clip(lam_eig, -1.0, 1.0), order).sum(axis=1)
+
+    # Deflated directions contribute T_j(0) = cos(jπ/2) = [1, 0, -1, 0, ...].
+    Tj0 = np.zeros(order + 1, dtype=np.float64)
+    Tj0[0::4] = 1.0
+    Tj0[2::4] = -1.0
+
+    return eig_moments - r * Tj0 + res_moments
 
 
 # ---------------------------------------------------------------------------
@@ -339,12 +382,15 @@ def cheb_stochastic_logdet_precompute(
         ``‖T_j(W̃)‖₂ ≤ 1`` uniformly in *j*, variance is bounded and 50
         probes match Barry-Pace's 100-probe accuracy at half the cost.
     n_deflate : int, default 0
-        Number of top singular vectors to deflate via randomized SVD.
-        When ``n_deflate > 0``, the top-``n_deflate`` components are
-        captured exactly (no stochastic noise), and stochastic Chebyshev
-        is applied only to the low-variance residual.  This reduces the
-        probe count 2-3× for the same accuracy.  Auto-selected as
-        ``min(5, n // 100)`` when set to ``-1``.
+        Number of top eigenpairs (by magnitude) to deflate exactly.  When
+        ``n_deflate > 0`` *and* ``W`` is symmetrizable (undirected graph),
+        the top-``n_deflate`` eigenpairs of the D-symmetrized, rescaled
+        operator are captured with no stochastic noise (matrix-free
+        ``eigsh``) and stochastic Chebyshev is applied only to the deflated
+        residual.  Directed W is skipped with a warning.  Auto-selected as
+        ``min(5, n // 100)`` when set to ``-1``.  Off by default: on the flat
+        spectra typical of spatial ``W`` the variance reduction is usually
+        marginal.
     lam_min, lam_max : float, optional
         Spectral bounds of W.  If not provided, estimated via power iteration.
     rng : np.random.Generator, optional
@@ -384,38 +430,30 @@ def cheb_stochastic_logdet_precompute(
         )
         W_tilde = W_tilde.tocsr()
 
-    # Deflation: split moments into exact (deflated) + stochastic (residual)
-    if n_deflate > 0 and n_deflate < n:
-        # Randomized SVD of W̃
-        U_k, S_k, Vt_k = _randomized_svd(W_tilde, n_deflate, rng=rng)
+    # Exact μ₁ = tr(W̃) (variance reduction; overrides the stochastic estimate).
+    mu1_exact = float(W_tilde.diagonal().sum())
 
-        # Deflated low-rank component: W̃_low = U_k @ diag(S_k) @ Vt_k
-        # Residual: W̃_res = W̃ - W̃_low
-        W_low = (U_k * S_k) @ Vt_k  # (n, n) dense, rank n_deflate
-        W_res = W_tilde - sp.csr_matrix(W_low)
+    # Deflation (symmetrizable W only): capture the top-r eigenpairs exactly
+    # and run stochastic Chebyshev on the lower-variance deflated residual.
+    r = min(n_deflate, n - 2) if n_deflate > 0 else 0
+    D = _recover_symmetrizing_diagonal(W_sp) if r >= 1 and spread >= 1e-300 else None
+    if n_deflate > 0 and r >= 1 and D is None:
+        warnings.warn(
+            "Eigen-deflation requires a symmetrizable (undirected) W, but the "
+            "sparsity pattern of W is asymmetric (directed graph). Falling back "
+            "to plain stochastic Chebyshev; n_deflate is ignored.",
+            stacklevel=2,
+        )
 
-        # Exact moments from deflated part: tr(T_j(W̃_low))
-        # T_j(x) = cos(j * arccos(x)), so tr(T_j(W̃_low)) = Σ_i T_j(σ_i)
-        # where σ_i are the singular values of W̃_low (which are S_k)
-        exact_moments = np.zeros(order + 1, dtype=np.float64)
-        exact_moments[0] = float(n)  # tr(T_0) = tr(I) = n
-        for j in range(1, order + 1):
-            # T_j(σ) = cos(j * arccos(σ))
-            exact_moments[j] = np.sum(np.cos(j * np.arccos(np.clip(S_k, -1.0, 1.0))))
-
-        # Stochastic moments from residual
-        stoch_moments = _chebyshev_moments(W_res, order, n_probes, rng)
-
-        # Total moments = exact (deflated) + stochastic (residual)
-        # But _chebyshev_moments already sets moments[0] = n and moments[1] = tr(W_res)
-        # We need: total[0] = n, total[j] = exact[j] + stoch[j] for j >= 1
-        # But exact[0] = n and stoch[0] = n, so total[0] = n (not 2n)
-        # Fix: subtract n from stoch[0] to avoid double-counting
-        stoch_moments[0] = 0.0  # tr(T_0(W_res)) = n, but we already have exact[0] = n
-        moments = exact_moments + stoch_moments
+    if D is not None:
+        moments = _deflated_moments(W_sp, D, lam_min, lam_max, r, order, n_probes, rng)
     else:
-        # No deflation: standard stochastic Chebyshev
-        moments = _chebyshev_moments(W_tilde, order, n_probes, rng)
+        # No deflation: standard stochastic Chebyshev on W̃.
+        moments = _chebyshev_moments(lambda B: W_tilde @ B, n, order, n_probes, rng)
+
+    # Exact low-order overrides on the total: μ₀ = n, μ₁ = tr(W̃).
+    moments[0] = float(n)
+    moments[1] = mu1_exact
 
     return ChebStochasticPrecompute(
         moments=moments,

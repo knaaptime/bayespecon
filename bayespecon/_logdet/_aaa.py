@@ -8,10 +8,12 @@ options are sparse LU (exact but expensive) or stochastic methods
 
 This module implements the **AAA rational approximation** strategy:
 
-1. Evaluate ``log|det(I - ρW)|`` exactly at adaptively-selected support
-   points via sparse LU (UMFPACK, ~2.7× faster than scipy SuperLU).
+1. Evaluate ``log|det(I - ρW)|`` exactly at ``n_coarse`` Chebyshev-spaced
+   points via sparse LU, reusing one symbolic factorisation across all of
+   them (KLU, falling back to UMFPACK then scipy SuperLU).
 2. Fit a rational function in barycentric form via the AAA algorithm
-   [@nakatsukasa2018].
+   [@nakatsukasa2018], which selects ``m`` support points from the coarse
+   grid.
 3. Evaluate at any ρ via the barycentric formula in ``O(m)`` per ρ.
 
 **Why rational instead of polynomial?**  The logdet function
@@ -25,9 +27,14 @@ unavailable.  For symmetric ``W``, use ``cheb_cholesky`` (exact, faster).
 For very large ``n`` (>20,000), use ``cheb_stochastic`` (avoids
 factorisation entirely).
 
-**Cost**: ``m`` sparse LU factorisations (UMFPACK) + ``O(m)`` per-ρ
-evaluation.  UMFPACK is ~2.7× faster than scipy SuperLU but ~2× slower
-than CHOLMOD for the same matrix size.
+**Cost**: ``n_coarse`` sparse LU factorisations + ``O(m)`` per-ρ
+evaluation, where ``n_coarse`` is the coarse-grid size (adaptive: 16 for the
+narrow default interval, up to 30 for wide/near-singular intervals) and
+``m ≤ n_coarse // 2`` is the number of AAA support points actually selected.
+All ``I - ρW`` share one sparsity pattern, so KLU's symbolic analysis is
+computed once and reused for every subsequent numeric factorisation (measured
+1.6-3.4× faster than a fresh UMFPACK factorisation per node over the coarse
+grid).
 """
 
 from __future__ import annotations
@@ -66,25 +73,85 @@ class AAAPrecompute:
     n: int
 
 
-def _lu_logdet(A: sp.csc_matrix) -> float:
-    """Compute ``log|det(A)|`` via UMFPACK sparse LU factorisation.
+def _klu_logdet_from_factor(factor) -> float:
+    """Recover ``log|det(A)|`` from a ``sksparse.klu`` factor.
 
-    Uses ``sksparse.umfpack`` (scikit-sparse), which exposes ``slogdet``
-    directly on the factor.  Falls back to scipy SuperLU if UMFPACK fails.
+    KLU factorises ``P R A Q = L U`` with a diagonal row scaling ``R``; the
+    permutations affect only the sign, so
+    ``log|det(A)| = Σ log|diag(U)| + Σ log|diag(L)| - Σ log|diag(R)|``.
     """
+    logdet = float(np.sum(np.log(np.abs(factor.U.diagonal()))))
+    l_diag = factor.L.diagonal()
+    logdet += float(np.sum(np.log(np.abs(l_diag))))
+    rscale = factor.rscale
+    if rscale is not None:
+        logdet -= float(np.sum(np.log(np.abs(rscale))))
+    return logdet
+
+
+def _lu_logdet(A: sp.csc_matrix) -> float:
+    """Compute ``log|det(A)|`` via sparse LU factorisation (single shot).
+
+    Prefers KLU (``sksparse.klu``), then UMFPACK (``sksparse.umfpack``,
+    which exposes ``slogdet`` directly), then scipy SuperLU.  For repeated
+    factorisations of matrices sharing a sparsity pattern (the AAA coarse
+    grid), use :func:`_make_reusable_lu_logdet`, which reuses KLU's symbolic
+    analysis.
+    """
+    A = A.tocsc()
+    try:
+        from sksparse.klu import klu_factor
+
+        return _klu_logdet_from_factor(klu_factor(A))
+    except Exception:
+        pass
     try:
         from sksparse.umfpack import umf_factor
 
-        _sign, logabsdet = umf_factor(A.tocsc()).slogdet()
+        _sign, logabsdet = umf_factor(A).slogdet()
         return float(logabsdet)
     except Exception:
         from scipy.sparse.linalg import splu as scipy_splu
 
-        lu = scipy_splu(A.tocsc())
+        lu = scipy_splu(A)
         logdet = np.sum(np.log(np.abs(lu.L.diagonal()))) + np.sum(
             np.log(np.abs(lu.U.diagonal()))
         )
         return float(logdet)
+
+
+def _make_reusable_lu_logdet():
+    """Return a callable ``A -> log|det(A)|`` that reuses symbolic analysis.
+
+    On the first call it computes KLU's symbolic + numeric factorisation; on
+    subsequent calls it refactorises numerically only (``KLUFactor.factorize``),
+    valid because every ``I - ρW`` shares one sparsity pattern.  This mirrors
+    the CHOLMOD symbolic reuse in :func:`chol_cheb_logdet_precompute` and is
+    measured 1.6-3.4× faster than a fresh UMFPACK factorisation per node.
+
+    Falls back to the single-shot :func:`_lu_logdet` (UMFPACK / scipy) when
+    ``sksparse.klu`` is unavailable or its first factorisation fails.
+    """
+    state = {"factor": None, "use_klu": True}
+
+    def _evaluate(A) -> float:
+        A = A.tocsc()
+        if state["use_klu"]:
+            try:
+                if state["factor"] is None:
+                    from sksparse.klu import klu_factor
+
+                    state["factor"] = klu_factor(A)
+                else:
+                    state["factor"].factorize(A)
+                return _klu_logdet_from_factor(state["factor"])
+            except Exception:
+                # KLU unavailable or failed — drop to single-shot fallback.
+                state["use_klu"] = False
+                state["factor"] = None
+        return _lu_logdet(A)
+
+    return _evaluate
 
 
 def _aaa_algorithm(
@@ -207,6 +274,39 @@ def _aaa_algorithm(
     return support_points, support_values, weights
 
 
+def _adaptive_n_coarse(rho_min: float, rho_max: float) -> int:
+    """Choose the coarse-grid size (= number of exact LU factorisations).
+
+    Each coarse-grid point costs one sparse LU factorisation, so ``n_coarse``
+    directly sets the setup cost.  The AAA support count ``m`` (a subset of the
+    grid, capped at ``n_coarse // 2``) is what determines accuracy, and both
+    grow as the interval widens toward the ``ρ = ±1`` logdet singularities.
+
+    Empirically (rook + knn, n∈{1600, 2000}): the default narrow interval
+    ``[0.1, 0.8]`` reaches ~1e-10 max error with only 16 nodes, while intervals
+    that approach ``±0.95`` need the full 30 nodes for ~1e-7.  This mirrors
+    :func:`_adaptive_order` in ``_chol_cheb.py``.
+
+    Parameters
+    ----------
+    rho_min, rho_max : float
+        The ρ approximation interval.
+
+    Returns
+    -------
+    int
+        Number of Chebyshev-spaced coarse-grid points (LU factorisations).
+    """
+    width = rho_max - rho_min
+    dist = min(abs(1.0 - rho_max), abs(1.0 + rho_min))
+    # Narrow interval well clear of the ±1 singularities (e.g. the default
+    # [0.1, 0.8]) converges with far fewer nodes; everything else keeps the
+    # full grid so wide/near-singular intervals still hit ~1e-7.
+    if width <= 0.71 and dist > 0.15:
+        return 16
+    return 30
+
+
 def _aaa_algorithm_lazy(
     z: np.ndarray,
     eval_fn,
@@ -270,16 +370,20 @@ def aaa_logdet_precompute(
     n_samples: int = 200,
     tol: float = 1e-10,
     max_iter: int = 30,
+    n_coarse: int | None = None,
 ) -> AAAPrecompute:
     """Precompute AAA rational approximant for ``log|I - ρW|``.
 
-    Evaluates ``log|det(I - ρW)|`` exactly at adaptively-selected support
-    points via sparse LU, then fits a rational function via the AAA algorithm.
+    Evaluates ``log|det(I - ρW)|`` exactly at a coarse grid of ``n_coarse``
+    Chebyshev-spaced points via sparse LU (KLU with symbolic reuse), then
+    fits a rational function via the AAA algorithm, which greedily selects
+    ``m`` support points (``m ≤ n_coarse // 2``, typically 5-15) from that grid.
 
-    Only ``~6-15`` sparse LU factorisations are performed (one per support
-    point), not ``n_samples``.  The sample grid is used only for the AAA
-    residual proxy computation, which operates on the approximant — no
-    factorisation needed there.
+    The number of exact LU factorisations equals ``n_coarse`` — **not** the
+    support count ``m`` and **not** ``n_samples`` (the 200-point sample grid is
+    only the AAA residual proxy and involves no factorisations).  ``n_coarse``
+    defaults to :func:`_adaptive_n_coarse`: 16 for the narrow default interval,
+    30 for wider or near-singular intervals.
 
     Parameters
     ----------
@@ -296,7 +400,11 @@ def aaa_logdet_precompute(
     tol : float, default 1e-10
         Relative tolerance for AAA convergence.
     max_iter : int, default 30
-        Maximum number of AAA support points (LU factorisations).
+        Maximum number of AAA support points selected from the coarse grid.
+    n_coarse : int, optional
+        Number of exact LU factorisations (coarse-grid size).  ``None``
+        (default) selects it adaptively from the interval via
+        :func:`_adaptive_n_coarse`.
 
     Returns
     -------
@@ -310,17 +418,25 @@ def aaa_logdet_precompute(
 
     n = W_sp.shape[0]
 
+    if n_coarse is None:
+        n_coarse = _adaptive_n_coarse(rho_min, rho_max)
+
     # Dense sample grid for AAA (no factorisation here — just the grid)
     z = np.linspace(rho_min, rho_max, n_samples)
 
-    # Lazy evaluation function: only called at support points
-    def _eval_logdet(rho):
-        A = sp.eye(n, format="csc") - rho * W_sp
-        return _lu_logdet(A)
+    # Lazy evaluation function: called only at the n_coarse coarse-grid
+    # points.  All I - ρW share one sparsity pattern, so the evaluator reuses
+    # KLU's symbolic factorisation across calls (numeric refactor only).
+    eye = sp.eye(n, format="csc")
+    lu_logdet = _make_reusable_lu_logdet()
 
-    # Run lazy AAA: only ~6-15 LU factorisations
+    def _eval_logdet(rho):
+        return lu_logdet(eye - rho * W_sp)
+
+    # Run lazy AAA: exactly n_coarse LU factorisations (m ≤ n_coarse//2 of the
+    # grid points become support points).
     support_points, support_values, weights = _aaa_algorithm_lazy(
-        z, _eval_logdet, tol=tol, max_iter=max_iter
+        z, _eval_logdet, tol=tol, max_iter=max_iter, n_coarse=n_coarse
     )
 
     return AAAPrecompute(
