@@ -665,7 +665,7 @@ class SARLogit(SpatialModel):
         with the count-mean weight :math:`\mu` replaced by the Bernoulli
         variance :math:`p(1-p)`.
         """
-        from ..._ops import _make_cached_umfpack_solver
+        from ..._ops import _make_cached_sparse_solver
 
         W = self._W_sparse
         I_n = sp.eye(n, format="csr", dtype=np.float64)
@@ -687,7 +687,8 @@ class SARLogit(SpatialModel):
             rho_f = float(rho)
             A = (I_n - rho_f * W).tocsc()
 
-            solver = _make_cached_umfpack_solver(A)
+            # KLU/UMFPACK reusable factor when available, else scipy SuperLU.
+            solver = _make_cached_sparse_solver(A)
             if solver is None:
                 solver = sp.linalg.splu(A)
 

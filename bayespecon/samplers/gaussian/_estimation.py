@@ -435,6 +435,14 @@ class GibbsEstimation:
         Uses ``make_logdet_jax_fn`` from ``bayespecon.logdet`` with the
         model's eigenvalues (if available) or sparse W matrix.
 
+        The panel Jacobian is ``T·log|I_N − ρW|``, applied by passing the
+        per-period ``N×N`` weights with ``T=self.T``.  For panels the sampler
+        receives the ``NT×NT`` block-diagonal lag matrix (``I_T ⊗ W``) as
+        ``self.W_sparse`` — whose determinant *already* carries the ``T``
+        replication — so the per-period block ``W[:N, :N]`` is extracted first to
+        avoid a ``T²`` double-count (``W_eigs`` is already length ``N``; a
+        cross-section has ``T=1`` and the slice is a no-op).
+
         Returns
         -------
         callable
@@ -443,7 +451,12 @@ class GibbsEstimation:
         from ..._logdet import make_logdet_jax_fn
 
         # Use eigenvalues if available (fastest for JAX path)
-        W_input = self.W_eigs if self.W_eigs is not None else self.W_sparse
+        if self.W_eigs is not None:
+            W_input = self.W_eigs
+        else:
+            W = self.W_sparse
+            n_units = W.shape[0] // self.T  # per-period unit count
+            W_input = W[:n_units, :n_units] if self.T > 1 else W
 
         return make_logdet_jax_fn(
             W=W_input,
