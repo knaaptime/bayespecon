@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 import warnings
 from abc import ABC, abstractmethod
-from functools import cached_property
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -590,16 +589,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
             )
         return np.asarray(W @ R.T, dtype=np.float64).T
 
-    @cached_property
-    def _W_eigs(self) -> np.ndarray:
-        """Eigenvalues of the N×N spatial weights matrix, computed lazily.
-
-        Cached on first access to keep init O(n²) when chebyshev / sparse-grid
-        log-determinants are used (those methods do not need the full
-        eigendecomposition).
-        """
-        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
-
     @property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or sparse W.
@@ -752,19 +741,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
                 sp.csc_matrix(self._W_sparse_NT)
             )
         return self._W_pt_sparse_cache
-
-    @property
-    def _T_ww(self) -> float:
-        """Trace of W'W + W², cached on first access.
-
-        Computed as ``||W||_F² + sum(W * W')`` using sparse operations,
-        which is O(nnz) rather than O(n²).
-        """
-        if not hasattr(self, "_T_ww_cache"):
-            from ..graph import sparse_trace_WtW_plus_WW
-
-            self._T_ww_cache = sparse_trace_WtW_plus_WW(self._W_sparse)
-        return self._T_ww_cache
 
     def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
@@ -1287,75 +1263,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
             ll_total.reshape(n_chains, n_draws_per_chain, n),
         )
 
-    def _attach_jacobian_corrected_log_likelihood(
-        self,
-        idata: az.InferenceData,
-        spatial_param: str,
-        T: int = 1,
-    ) -> None:
-        """Add Jacobian correction to the auto-captured log-likelihood group.
-
-        For models that use ``pm.Normal("obs", observed=y)`` plus
-        ``pm.Potential("jacobian", logdet_fn(rho))``, PyMC auto-captures
-        the Gaussian part in the ``log_likelihood`` group but the Jacobian
-        term is absent.  This method adds the per-observation Jacobian
-        contribution ``log|I - ρW| * T / n`` to each pointwise LL value.
-
-        Notes
-        -----
-        The full panel log-determinant of the spatial filter is
-        :math:`T \\log|I_N - \\rho W|` because the stacked
-        :math:`(N T) \\times (N T)` filter is
-        :math:`I_T \\otimes (I_N - \\rho W)`, whose determinant is
-        :math:`|I_N - \\rho W|^T` by the Kronecker product rule.  Dividing
-        by :math:`n = N T` distributes that scalar Jacobian uniformly
-        over the per-observation pointwise log-likelihood entries that
-        ArviZ expects, so quantities like LOO and WAIC are computed on a
-        per-observation log density.  For dynamic panels the time
-        dimension is ``T - 1`` (one period is consumed by the lag), so
-        callers pass ``T = T - 1`` here.
-
-        Parameters
-        ----------
-        idata : arviz.InferenceData
-            InferenceData with an existing ``log_likelihood`` group.
-        spatial_param : str
-            Name of the spatial autoregressive parameter (``"rho"`` or
-            ``"lam"``) in the posterior.
-        T : int, default 1
-            Panel time-period multiplier for the Jacobian.
-        """
-        import xarray as xr
-
-        if "log_likelihood" not in idata.groups():
-            return
-
-        n = self._y.shape[0]
-        param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
-
-        # Jacobian: log|I - param*W| * T (pure numpy, respects logdet_method)
-        jacobian = self._logdet_numpy_vec_fn(param_draws) * T  # (n_draws,)
-        ll_jac = jacobian[:, None] / n  # (n_draws, 1)
-
-        # Add Jacobian to each variable in the log_likelihood group
-        n_chains = idata.posterior.sizes["chain"]
-        n_draws_per_chain = idata.posterior.sizes["draw"]
-        ll_jac_3d = ll_jac.reshape(n_chains, n_draws_per_chain, 1)  # broadcast over obs
-
-        new_vars = {}
-        for var_name in list(idata.log_likelihood.data_vars):
-            da = idata.log_likelihood[var_name]
-            # Use numpy addition + broadcast to avoid xarray alignment issues
-            # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
-            new_vals = da.values + ll_jac_3d
-            new_vars[var_name] = xr.DataArray(
-                new_vals,
-                dims=da.dims,
-                coords={k: v for k, v in da.coords.items() if k != da.dims[-1]},
-            )
-
-        idata["log_likelihood"] = xr.Dataset(new_vars)
-
     @property
     def pymc_model(self) -> Optional[pm.Model]:
         """Return the PyMC model object built for the most recent fit.
@@ -1518,80 +1425,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
             fmt=format,
             title=f"{model_type} decision tree (alpha={alpha})",
         )
-
-    def spatial_effects(
-        self, return_posterior_samples: bool = False
-    ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
-        """Compute Bayesian inference for direct, indirect, and total impacts.
-
-        Computes impact measures for each posterior draw, then summarises
-        the posterior distribution with means, 95% credible intervals, and
-        Bayesian p-values.
-
-        Parameters
-        ----------
-        return_posterior_samples : bool, optional
-            If ``True``, return a ``(DataFrame, dict)`` tuple where the
-            dict contains the full posterior draws under keys
-            ``"direct"``, ``"indirect"``, and ``"total"``.  Default
-            ``False``.
-
-        Returns
-        -------
-        pd.DataFrame or tuple of (pd.DataFrame, dict)
-            If *return_posterior_samples* is ``False`` (default), returns
-            a DataFrame indexed by feature names with columns for posterior
-            means, credible-interval bounds, and Bayesian p-values.
-
-            If *return_posterior_samples* is ``True``, returns
-            ``(DataFrame, dict)`` where the dict has keys
-            ``"direct"``, ``"indirect"``, ``"total"``, each mapping
-            to a ``(G, k)`` array of posterior draws.
-        """
-        from ..diagnostics.spatial_effects import _build_effects_dataframe
-
-        self._require_fit()
-        direct_samples, indirect_samples, total_samples = (
-            self._compute_spatial_effects_posterior()
-        )
-
-        # Determine feature names based on the shape of the posterior samples.
-        # Models with WX terms (SDM, SLX, SDEM) report effects only for
-        # lagged covariates (k_wx columns), while models without WX terms
-        # (SAR, SEM) report effects for non-intercept covariates.
-        k_effects = direct_samples.shape[1]
-        if (
-            hasattr(self, "_wx_feature_names")
-            and len(self._wx_feature_names) == k_effects
-        ):
-            feature_names = list(self._wx_feature_names)
-        elif (
-            hasattr(self, "_nonintercept_feature_names")
-            and len(self._nonintercept_feature_names) == k_effects
-        ):
-            feature_names = list(self._nonintercept_feature_names)
-        else:
-            feature_names = list(self._feature_names[:k_effects])
-
-        # Determine model type label
-        model_type = self.__class__.__name__
-
-        df = _build_effects_dataframe(
-            direct_samples=direct_samples,
-            indirect_samples=indirect_samples,
-            total_samples=total_samples,
-            feature_names=feature_names,
-            model_type=model_type,
-        )
-
-        if return_posterior_samples:
-            posterior_samples = {
-                "direct": direct_samples,
-                "indirect": indirect_samples,
-                "total": total_samples,
-            }
-            return df, posterior_samples
-        return df
 
     def __repr__(self) -> str:
         n, k = self._X.shape

@@ -8,6 +8,7 @@ to avoid circular imports and code duplication.
 from __future__ import annotations
 
 import warnings
+from functools import cached_property
 from typing import Optional, Union
 
 import numpy as np
@@ -565,3 +566,164 @@ class SharedSpatialMethods:
         ``self._y`` as the response.  See that function for details.
         """
         return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
+
+    @cached_property
+    def _W_eigs(self) -> np.ndarray | None:
+        """Eigenvalues of the N×N spatial weights matrix (complex), lazy.
+
+        For large ``n`` this is O(n³), so it is only computed when needed
+        (e.g. by the eigenvalue logdet method); Chebyshev / trace / sparse-grid
+        methods never trigger it.  Cross-section models return ``None`` when no
+        ``W`` was supplied (panel models always have a ``W``).
+        """
+        if self._W_sparse is None:
+            return None
+        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
+
+    @cached_property
+    def _T_ww(self) -> float:
+        """Sparse trace ``tr(WᵀW + WW)`` used by LM diagnostics (lazy)."""
+        from ...graph import sparse_trace_WtW_plus_WW
+
+        return sparse_trace_WtW_plus_WW(self._W_sparse)
+
+    def _attach_jacobian_corrected_log_likelihood(
+        self,
+        idata: az.InferenceData,
+        spatial_param: str,
+        T: int = 1,
+    ) -> None:
+        """Add Jacobian correction to the auto-captured log-likelihood group.
+
+        For models that use ``pm.Normal("obs", observed=y)`` plus
+        ``pm.Potential("jacobian", logdet_fn(rho))``, PyMC auto-captures
+        the Gaussian part in the ``log_likelihood`` group but the Jacobian
+        term is absent.  This method adds the per-observation Jacobian
+        contribution ``log|I - ρW| * T / n`` to each pointwise LL value.
+
+        Parameters
+        ----------
+        idata : arviz.InferenceData
+            InferenceData with an existing ``log_likelihood`` group.
+        spatial_param : str
+            Name of the spatial autoregressive parameter (``"rho"`` or
+            ``"lam"``) in the posterior.
+        T : int, default 1
+            Time-period multiplier for the Jacobian.  Cross-section models use
+            ``1``; panel models pass ``self._T`` because the stacked
+            ``(N T) × (N T)`` filter ``I_T ⊗ (I_N - ρW)`` has log-determinant
+            ``T·log|I_N - ρW|`` (Kronecker rule).  Dynamic panels pass
+            ``T - 1`` (one period is consumed by the lag).
+        """
+        import xarray as xr
+
+        if "log_likelihood" not in idata.groups():
+            return
+
+        n = self._y.shape[0]
+        param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
+
+        # Jacobian: log|I - param*W| * T (pure numpy, respects logdet_method)
+        jacobian = self._logdet_numpy_vec_fn(param_draws) * T  # (n_draws,)
+        ll_jac = jacobian[:, None] / n  # (n_draws, 1)
+
+        # Add Jacobian to each variable in the log_likelihood group
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        ll_jac_3d = ll_jac.reshape(n_chains, n_draws_per_chain, 1)  # broadcast over obs
+
+        new_vars = {}
+        for var_name in list(idata.log_likelihood.data_vars):
+            da = idata.log_likelihood[var_name]
+            # Use numpy addition + broadcast to avoid xarray alignment issues
+            # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
+            new_vals = da.values + ll_jac_3d
+            new_vars[var_name] = xr.DataArray(
+                new_vals,
+                dims=da.dims,
+                coords={k: v for k, v in da.coords.items() if k != da.dims[-1]},
+            )
+
+        idata["log_likelihood"] = xr.Dataset(new_vars)
+
+    def spatial_effects(
+        self, return_posterior_samples: bool = False
+    ) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]:
+        r"""Compute Bayesian inference for direct, indirect, and total impacts.
+
+        Computes impact measures for each posterior draw, then summarises
+        the posterior distribution with means, 95% credible intervals, and
+        Bayesian p-values.  This is the fully Bayesian analog of the
+        simulation-based approach in :cite:t:`lesage2009IntroductionSpatial`
+        and the asymptotic variance formulas in
+        :cite:t:`arbia2020TestingImpact`.
+
+        Models without a spatial lag on y do not exhibit global
+        feedback propagation through :math:`(I-\\rho W)^{-1}`. However,
+        models with spatially lagged covariates (SLX, SDEM) can still
+        have non-zero neighbour spillovers captured in the indirect term.
+
+        Parameters
+        ----------
+        return_posterior_samples : bool, optional
+            If ``True``, return a ``(DataFrame, dict)`` tuple where the
+            dict contains the full posterior draws under keys
+            ``"direct"``, ``"indirect"``, and ``"total"``.  Default
+            ``False``.
+
+        Returns
+        -------
+        pd.DataFrame or tuple of (pd.DataFrame, dict)
+            If *return_posterior_samples* is ``False`` (default), returns
+            a DataFrame indexed by feature names with columns for posterior
+            means, credible-interval bounds, and Bayesian p-values.
+
+            If *return_posterior_samples* is ``True``, returns
+            ``(DataFrame, dict)`` where the dict has keys
+            ``"direct"``, ``"indirect"``, ``"total"``, each mapping
+            to a ``(G, k)`` array of posterior draws.
+        """
+        from ...diagnostics.spatial_effects import _build_effects_dataframe
+
+        self._require_fit()
+        direct_samples, indirect_samples, total_samples = (
+            self._compute_spatial_effects_posterior()
+        )
+
+        # Determine feature names based on the shape of the posterior samples.
+        # Models with WX terms (SDM, SLX, SDEM) report effects only for
+        # lagged covariates (k_wx columns), while models without WX terms
+        # (SAR, SEM) report effects for non-intercept covariates.
+        k_effects = direct_samples.shape[1]
+        if (
+            hasattr(self, "_wx_feature_names")
+            and len(self._wx_feature_names) == k_effects
+        ):
+            feature_names = list(self._wx_feature_names)
+        elif (
+            hasattr(self, "_nonintercept_feature_names")
+            and len(self._nonintercept_feature_names) == k_effects
+        ):
+            feature_names = list(self._nonintercept_feature_names)
+        else:
+            feature_names = list(self._feature_names[:k_effects])
+
+        # Determine model type label
+        model_type = self.__class__.__name__
+
+        df = _build_effects_dataframe(
+            direct_samples=direct_samples,
+            indirect_samples=indirect_samples,
+            total_samples=total_samples,
+            feature_names=feature_names,
+            model_type=model_type,
+        )
+
+        if return_posterior_samples:
+            posterior_samples = {
+                "direct": direct_samples,
+                "indirect": indirect_samples,
+                "total": total_samples,
+            }
+            return df, posterior_samples
+        return df
