@@ -11,10 +11,11 @@ import warnings
 from typing import Optional, Union
 
 import numpy as np
+import pandas as pd
 import scipy.sparse as sp
 from libpysal.graph import Graph
 
-from ..._lazy_deps import az
+from ..._lazy_deps import az, pm
 
 
 def gelman_default_beta_prior(
@@ -328,3 +329,134 @@ def _tobit_pointwise_loglik(
         ll[:, uncens] = -0.5 * (resid**2 + np.log(2.0 * np.pi) + 2.0 * np.log(sig))
         ll[:, censored] = norm.logcdf((censoring - mu[:, censored]) / sig)
     return ll
+
+
+class SharedSpatialMethods:
+    """Behaviour-preserving mixin of methods shared verbatim by the two base
+    classes (:class:`SpatialModel` and :class:`SpatialPanelModel`).
+
+    Phase 5c converges the ~39 duplicated methods into this single home before
+    the two hierarchies are collapsed.  Only methods whose bodies are *already
+    identical* across the two classes live here; anything that differs (N vs NT
+    sizing, cross-section vs panel Jacobians, ...) stays on the subclasses and
+    overrides the mixin via normal MRO.  All methods rely only on attributes
+    both classes provide (``self._X``, ``self._feature_names``, ``self.priors``,
+    ``self._idata``).
+    """
+
+    @property
+    def _nonintercept_indices(self) -> list[int]:
+        """Return indices of non-constant (non-intercept) columns in X.
+
+        This is used to exclude the intercept from impact measures, since
+        the intercept has no meaningful spatial effect interpretation.
+
+        Returns
+        -------
+        list[int]
+            Column indices of X that are not constant/intercept columns.
+        """
+        indices: list[int] = []
+        for j, name in enumerate(self._feature_names):
+            column = self._X[:, j]
+            is_named_intercept = name.lower() == "intercept"
+            is_constant = np.allclose(column, column[0])
+            if not (is_named_intercept or is_constant):
+                indices.append(j)
+        return indices
+
+    @property
+    def _nonintercept_feature_names(self) -> list[str]:
+        """Return feature names for non-intercept columns.
+
+        Returns
+        -------
+        list[str]
+            Feature names excluding intercept/constant columns.
+        """
+        return [self._feature_names[i] for i in self._nonintercept_indices]
+
+    def _add_nu_prior(self, model: pm.Model) -> pm.Model:
+        """Add the degrees-of-freedom prior for robust (Student-t) models.
+
+        Called inside ``_build_pymc_model`` when ``self.robust`` is True.
+        Uses an :math:`\\mathrm{Exp}(\\lambda_\\nu)` prior on ``nu`` with rate ``nu_lam`` (default
+        1/30, giving mean ≈ 30, favouring near-Normal tails). A lower
+        bound of 2 is enforced so that the variance exists.
+
+        Parameters
+        ----------
+        model : pymc.Model
+            The model context in which to add the ``nu`` prior.
+
+        Returns
+        -------
+        pymc.Model
+            The same model context (``nu`` is added as a side effect).
+        """
+        nu_lam = self.priors.get("nu_lam", 1.0 / 30.0)
+        pm.Truncated("nu", pm.Exponential.dist(lam=nu_lam), lower=2.0)
+        return model
+
+    def _beta_names(self) -> list[str]:
+        """Return coefficient labels used for posterior summaries.
+
+        Returns
+        -------
+        list[str]
+            Coefficient labels aligned with the ``beta`` parameter.
+        """
+        return list(self._feature_names)
+
+    def _model_coords(self) -> dict[str, list[str]]:
+        """Return PyMC coordinate labels for named dimensions.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Coordinates passed to :class:`pymc.Model`.
+        """
+        return {"coefficient": self._beta_names()}
+
+    @staticmethod
+    def _rename_summary_index(summary_df: pd.DataFrame) -> pd.DataFrame:
+        """Strip the ``beta[...]`` wrapper from coefficient row labels.
+
+        Parameters
+        ----------
+        summary_df : pandas.DataFrame
+            ArviZ summary output.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Summary with human-readable coefficient row labels.
+        """
+        renamed = []
+        for label in summary_df.index.astype(str):
+            if label.startswith("beta[") and label.endswith("]"):
+                renamed.append(label[5:-1])
+            else:
+                renamed.append(label)
+        out = summary_df.copy()
+        out.index = renamed
+        return out
+
+    @property
+    def inference_data(self) -> Optional[az.InferenceData]:
+        """Return the ArviZ InferenceData from the most recent fit.
+
+        Returns
+        -------
+        arviz.InferenceData or None
+            The inference data object, or ``None`` if the model has not
+            been fit yet.
+        """
+        return self._idata
+
+    def _require_fit(self):
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet. Call .fit() first.")
+
+    def _posterior_mean(self, var: str) -> np.ndarray:
+        return self._idata.posterior[var].mean(("chain", "draw")).to_numpy()
