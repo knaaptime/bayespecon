@@ -515,14 +515,12 @@ class SARNegBinStructural(SpatialModel):
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior impacts on the log-mean scale for each draw."""
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs
-        mean_diag = _chunked_eig_means(rho_draws, eigs)
+        mean_diag = self._batch_mean_diag(rho_draws)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
         ni = self._nonintercept_indices

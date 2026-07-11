@@ -204,14 +204,39 @@ class SARZINB(SpatialModel):
     # ------------------------------------------------------------------
 
     @cached_property
-    def _W_sel_eigs(self) -> np.ndarray | None:
-        """Eigenvalues of W_sel (complex), computed lazily.
+    def _sel_logdet_grad_numpy_vec_fn(self):
+        """Vectorised ``(λ_arr) -> g(λ)`` logdet-gradient evaluator for W_sel.
 
-        Used by the selection-equation spatial effects decomposition.
+        Mirrors :attr:`SpatialModel._logdet_grad_numpy_vec_fn` on the
+        selection-equation weights; ``method=None`` auto-resolves to the fast
+        surrogate for ``W_sel``'s own size/symmetry, only touching the
+        eigenvalue path when that is the resolved method (tiny n).
         """
-        if self._W_sel_sparse is None:
-            return None
-        return np.linalg.eigvals(self._W_sel_sparse.toarray().astype(np.float64))
+        from ..._logdet import make_logdet_grad_numpy_vec_fn
+
+        return make_logdet_grad_numpy_vec_fn(
+            self._W_sel_sparse,
+            eigs=None,
+            method=None,
+            rho_min=float(self.priors.get("lam_lower", self._logdet_bounds.rho_min)),
+            rho_max=float(self.priors.get("lam_upper", self._logdet_bounds.rho_max)),
+        )
+
+    def _sel_batch_mean_diag(self, lam_draws: np.ndarray) -> np.ndarray:
+        """``(1/n) tr((I − λ W_sel)⁻¹)`` per draw for the selection equation.
+
+        Direct analogue of :meth:`SpatialModel._batch_mean_diag` on the
+        selection-equation weights.  When ``W_sel`` is the count-equation
+        ``W`` the shared helper is reused; otherwise a resolvent
+        (logdet-gradient) evaluator is built once for ``W_sel`` so the
+        selection direct effect avoids the O(n³) eigendecomposition too.
+        """
+        if self._same_W:
+            return self._batch_mean_diag(lam_draws)
+        lam_draws = np.asarray(lam_draws, dtype=np.float64)
+        n = int(self._W_sel_sparse.shape[0])
+        g = np.asarray(self._sel_logdet_grad_numpy_vec_fn(lam_draws), dtype=np.float64)
+        return 1.0 - (lam_draws / n) * g
 
     @cached_property
     def _sel_nonintercept_indices(self) -> list[int]:
@@ -619,7 +644,6 @@ class SARZINB(SpatialModel):
             Which equation to compute impacts for.
         """
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
 
@@ -627,8 +651,7 @@ class SARZINB(SpatialModel):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
 
-            eigs = self._W_eigs
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
             ni = self._nonintercept_indices
@@ -639,13 +662,19 @@ class SARZINB(SpatialModel):
             lam_draws = _get_posterior_draws(idata, "lam")
             gamma_draws = _get_posterior_draws(idata, "gamma")
 
-            sel_eigs = self._W_sel_eigs
-            mean_diag = _chunked_eig_means(lam_draws, sel_eigs)
+            # Direct-effect trace (1/n)tr((I−λW_sel)⁻¹) via the resolvent
+            # (logdet gradient) — no eigendecomposition of W_sel.
+            mean_diag = self._sel_batch_mean_diag(lam_draws)
 
             # Mean row sum of (I - lam * W_sel)^{-1}
             if self._is_sel_row_std:
                 mean_row_sum = 1.0 / (1.0 - lam_draws)
             else:
+                # The non-row-standardised total effect is a column-weighted
+                # bilinear form (1'S1), not a trace, so it keeps the
+                # eigenvector decomposition of W_sel.
+                from ...diagnostics.spatial_effects import _chunked_eig_means
+
                 n = self._Z.shape[0]
                 W_sel_dense = self._W_sel_sparse.toarray().astype(np.float64)
                 eigvals_sel, V_sel = np.linalg.eig(W_sel_dense)
