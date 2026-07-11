@@ -32,7 +32,6 @@ from ._base._shared import (
     _parse_W,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
-    gelman_default_beta_prior,
 )
 
 
@@ -554,28 +553,6 @@ class SpatialModel(SharedSpatialMethods, ABC):
             X_arr = np.asarray(X, dtype=np.float64)
             feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
         return y_arr, X_arr, feature_names
-
-    def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
-        """Compute W @ X for the spatial filter.
-
-        Cross-section models use ``self._W_sparse @ X`` directly.
-        Panel models (:class:`SpatialPanelModel`) override this to apply
-        the Kronecker structure ``W ⊗ I_T`` via :meth:`_sparse_panel_lag`.
-        """
-        return np.asarray(self._W_sparse @ X, dtype=np.float64)
-
-    def _gelman_default_beta_prior(
-        self,
-        design: np.ndarray,
-        feature_names: list[str],
-        scale: float = 2.5,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        r"""Weakly-informative default prior on regression coefficients.
-
-        Thin wrapper around :func:`gelman_default_beta_prior` that uses
-        ``self._y`` as the response. See that function for details.
-        """
-        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
 
     # ------------------------------------------------------------------
     # Abstract interface

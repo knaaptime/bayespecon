@@ -543,3 +543,25 @@ class SharedSpatialMethods:
         """
         self._require_fit()
         return self._y - self.fitted_values()
+
+    def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
+        """Compute ``W @ X`` for the spatial filter.
+
+        This is the cross-section default (``self._W_sparse @ X``).  Panel
+        models (:class:`SpatialPanelModel`) override it to apply the Kronecker
+        structure ``W ⊗ I_T`` via :meth:`SpatialPanelModel._sparse_panel_lag`.
+        """
+        return np.asarray(self._W_sparse @ X, dtype=np.float64)
+
+    def _gelman_default_beta_prior(
+        self,
+        design: np.ndarray,
+        feature_names: list[str],
+        scale: float = 2.5,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        r"""Weakly-informative default prior on regression coefficients.
+
+        Thin wrapper around :func:`gelman_default_beta_prior` that uses
+        ``self._y`` as the response.  See that function for details.
+        """
+        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)

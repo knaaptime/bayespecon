@@ -31,7 +31,6 @@ from ._base._shared import SharedSpatialMethods, _is_row_standardized_csr
 from .base import (
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
-    gelman_default_beta_prior,
 )
 
 # ---------------------------------------------------------------------------
@@ -507,19 +506,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
             self._WX = self._sparse_panel_lag(self._X[:, self._wx_column_indices])
         else:
             self._WX = np.empty((self._X.shape[0], 0), dtype=float)
-
-    def _gelman_default_beta_prior(
-        self,
-        design: np.ndarray,
-        feature_names: list[str],
-        scale: float = 2.5,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Weakly-informative default Gaussian prior on regression coefficients.
-
-        Thin wrapper around :func:`bayespecon.models.base.gelman_default_beta_prior`
-        that uses ``self._y`` as the response.
-        """
-        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
 
     def _spatial_lag(self, v: np.ndarray) -> np.ndarray:
         """Spatial lag hook — delegates to panel-aware implementation."""
