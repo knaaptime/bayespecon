@@ -1755,7 +1755,93 @@ class OLSFlow(FlowModel):
 # ---------------------------------------------------------------------------
 
 
-class SARNegBinFlow(SARFlow):
+class _NegBinFlowMixin:
+    """Shared ``fit`` dispatch for Negative-Binomial flow models.
+
+    The NB flow classes share a single ``fit`` wrapper — NUTS by default, or a
+    reduced-form Pólya–Gamma Gibbs sampler via ``sampler="gibbs"``.  Only the
+    per-class :meth:`_fit_gibbs` (unrestricted 3-ρ vs. separable 2-ρ
+    reduced-form sampler) differs, so it stays on each subclass.  The mixin is
+    listed first in the bases so its ``fit`` wins and ``super().fit`` resolves
+    to the Gaussian :class:`FlowModel.fit` NUTS path.
+    """
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        sampler: str = "nuts",
+        gibbs_backend: str = "numpy",
+        store_lambda: bool = False,
+        idata_kwargs: Optional[dict] = None,
+        progressbar: bool = True,
+        **sample_kwargs,
+    ) -> az.InferenceData:
+        """Draw samples from the posterior.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of posterior samples per chain (after tuning).
+        tune : int, default 1000
+            Number of tuning (warm-up) steps per chain.
+        chains : int, default 4
+            Number of parallel chains.
+        random_seed : int, optional
+            Seed for reproducibility.
+        sampler : {"nuts", "gibbs"}, default "nuts"
+            Sampling method: ``"nuts"`` for NUTS (default) or ``"gibbs"`` for
+            the reduced-form Pólya–Gamma Gibbs sampler.
+        gibbs_backend : {"numpy", "auto"}, default "numpy"
+            Execution backend for the Gibbs sampler (only used when
+            ``sampler="gibbs"``).  The NB flow Gibbs sampler is NumPy-only.
+        store_lambda : bool, default False
+            If True, include the high-dimensional fitted mean ``lambda`` in the
+            stored posterior (NUTS only).
+        idata_kwargs : dict, optional
+            Forwarded to ``pm.sample`` (NUTS only).
+        progressbar : bool, default True
+            Show progress bar during sampling.
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample`` (NUTS
+            only).  Pass ``target_accept=0.95`` to adjust the NUTS acceptance
+            rate.
+
+        Returns
+        -------
+        arviz.InferenceData
+        """
+        if sampler == "gibbs":
+            if gibbs_backend not in {"numpy", "auto"}:
+                raise ValueError(
+                    "Negative-Binomial flow Gibbs supports only "
+                    f"gibbs_backend='numpy' (or 'auto'); got {gibbs_backend!r}."
+                )
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                sample_kwargs=sample_kwargs,
+            )
+        if sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got {sampler!r}")
+        return super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            store_lambda=store_lambda,
+            idata_kwargs=idata_kwargs,
+            progressbar=progressbar,
+            **sample_kwargs,
+        )
+
+
+class SARNegBinFlow(_NegBinFlowMixin, SARFlow):
     r"""Bayesian SAR flow model with NB2 observation noise.
 
     This class extends :class:`SARFlow` with a Negative Binomial likelihood:
@@ -1884,75 +1970,6 @@ class SARNegBinFlow(SARFlow):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        sampler: str = "nuts",
-        gibbs_method: str = "numpy",
-        store_lambda: bool = False,
-        idata_kwargs: Optional[dict] = None,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Draw samples from the posterior.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of posterior samples per chain (after tuning).
-        tune : int, default 1000
-            Number of tuning (warm-up) steps per chain.
-        chains : int, default 4
-            Number of parallel chains.
-        random_seed : int, optional
-            Seed for reproducibility.
-        sampler : str, default "nuts"
-            Sampling method: ``"nuts"`` for NUTS (default) or
-            ``"gibbs"`` for Pólya–Gamma Gibbs.
-        gibbs_method : str, default "numpy"
-            Gibbs backend (only used when ``sampler="gibbs"``).
-            Currently only ``"numpy"`` is supported.
-        store_lambda : bool, default False
-            If True, include the high-dimensional fitted mean
-            ``lambda`` in the stored posterior.
-        idata_kwargs : dict, optional
-            Forwarded to ``pm.sample`` (NUTS only).
-        progressbar : bool, default True
-            Show progress bar during sampling.
-        **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
-            acceptance rate.
-
-        Returns
-        -------
-        arviz.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        # NUTS path — delegate to parent
-        return super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            store_lambda=store_lambda,
-            idata_kwargs=idata_kwargs,
-            progressbar=progressbar,
-            **sample_kwargs,
-        )
-
     def _fit_gibbs(
         self,
         draws: int = 2000,
@@ -1960,7 +1977,6 @@ class SARNegBinFlow(SARFlow):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via reduced-form PG-Gibbs (unrestricted 3-ρ).
@@ -2083,7 +2099,7 @@ class SARNegBinFlow(SARFlow):
         return self._idata
 
 
-class SARNegBinFlowSeparable(SARFlowSeparable):
+class SARNegBinFlowSeparable(_NegBinFlowMixin, SARFlowSeparable):
     """Separable SAR flow model with NB2 observation noise."""
 
     def __init__(self, y, G, X, **kwargs):
@@ -2184,74 +2200,6 @@ class SARNegBinFlowSeparable(SARFlowSeparable):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        sampler: str = "nuts",
-        gibbs_method: str = "numpy",
-        store_lambda: bool = False,
-        idata_kwargs: Optional[dict] = None,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Draw samples from the posterior.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of posterior samples per chain (after tuning).
-        tune : int, default 1000
-            Number of tuning (warm-up) steps per chain.
-        chains : int, default 4
-            Number of parallel chains.
-        random_seed : int, optional
-            Seed for reproducibility.
-        sampler : str, default "nuts"
-            Sampling method: ``"nuts"`` for NUTS (default) or
-            ``"gibbs"`` for Pólya–Gamma Gibbs.
-        gibbs_method : str, default "numpy"
-            Gibbs backend (only used when ``sampler="gibbs"``).
-            Currently only ``"numpy"`` is supported.
-        store_lambda : bool, default False
-            If True, include the high-dimensional fitted mean
-            ``lambda`` in the stored posterior.
-        idata_kwargs : dict, optional
-            Forwarded to ``pm.sample`` (NUTS only).
-        progressbar : bool, default True
-            Show progress bar during sampling.
-        **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
-            acceptance rate.
-
-        Returns
-        -------
-        arviz.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        return super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            store_lambda=store_lambda,
-            idata_kwargs=idata_kwargs,
-            progressbar=progressbar,
-            **sample_kwargs,
-        )
-
     def _fit_gibbs(
         self,
         draws: int = 2000,
@@ -2259,7 +2207,6 @@ class SARNegBinFlowSeparable(SARFlowSeparable):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via reduced-form PG-Gibbs (separable 2-ρ).
@@ -2380,7 +2327,7 @@ class SARNegBinFlowSeparable(SARFlowSeparable):
         return self._idata
 
 
-class NegBinFlow(OLSFlow):
+class NegBinFlow(_NegBinFlowMixin, OLSFlow):
     """Aspatial OD-flow Negative Binomial gravity baseline."""
 
     def __init__(self, y, G, X, **kwargs):
@@ -2448,74 +2395,6 @@ class NegBinFlow(OLSFlow):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        sampler: str = "nuts",
-        gibbs_method: str = "numpy",
-        store_lambda: bool = False,
-        idata_kwargs: Optional[dict] = None,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Draw samples from the posterior.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of posterior samples per chain (after tuning).
-        tune : int, default 1000
-            Number of tuning (warm-up) steps per chain.
-        chains : int, default 4
-            Number of parallel chains.
-        random_seed : int, optional
-            Seed for reproducibility.
-        sampler : str, default "nuts"
-            Sampling method: ``"nuts"`` for NUTS (default) or
-            ``"gibbs"`` for Pólya–Gamma Gibbs.
-        gibbs_method : str, default "numpy"
-            Gibbs backend (only used when ``sampler="gibbs"``).
-            Currently only ``"numpy"`` is supported.
-        store_lambda : bool, default False
-            If True, include the high-dimensional fitted mean
-            ``lambda`` in the stored posterior.
-        idata_kwargs : dict, optional
-            Forwarded to ``pm.sample`` (NUTS only).
-        progressbar : bool, default True
-            Show progress bar during sampling.
-        **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
-            acceptance rate.
-
-        Returns
-        -------
-        arviz.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        return super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            store_lambda=store_lambda,
-            idata_kwargs=idata_kwargs,
-            progressbar=progressbar,
-            **sample_kwargs,
-        )
-
     def _fit_gibbs(
         self,
         draws: int = 2000,
@@ -2523,7 +2402,6 @@ class NegBinFlow(OLSFlow):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via aspatial PG-Gibbs (no spatial parameters).
