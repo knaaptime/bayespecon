@@ -78,15 +78,13 @@ class _DynamicPanelMixin:
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior samples of direct, indirect, and total effects."""
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
 
         if isinstance(self, SARPanelDynamic):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
-            eigs = self._W_eigs
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             ni = self._nonintercept_indices
             direct_samples = mean_diag[:, None] * beta_draws[:, ni]
@@ -106,9 +104,8 @@ class _DynamicPanelMixin:
             beta_draws = _get_posterior_draws(idata, "beta")
             beta1_draws = beta_draws[:, : self._X_dyn.shape[1]]
             beta2_draws = beta_draws[:, self._X_dyn.shape[1] :]
-            eigs = self._W_eigs
-            mean_diag_M = _chunked_eig_means(rho_draws, eigs)
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
+            mean_diag_M = self._batch_mean_diag(rho_draws)
+            mean_diag_MW = self._batch_mean_diag_MW(rho_draws)
             mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             wx_idx = self._wx_column_indices

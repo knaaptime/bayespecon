@@ -28,21 +28,23 @@ use ``eigenvalue`` (exact eigendecomposition).  For ``n > 20000`` use
 non-symmetric ``W`` (directed graphs: KNN, travel time) use ``aaa`` (rational
 approximation via sparse LU).
 
-**Benchmark** (2D rook grid, order=15, ρ ∈ [0.1, 0.8], 2026-07):
+**Benchmark** (2D rook grid, adaptive order, ρ ∈ [0.1, 0.8], 2026-07):
 
-========== ============= ============= =========== ===========
+========== ============= ============= =========== ==================
 n          chol setup    chol eval     chol error  stoch(200)
-========== ============= ============= =========== ===========
-1,000      3ms           1.4μs         2e-7        5ms, 0.07 err
-5,000      24ms          1.4μs         1e-6        28ms, 0.14 err
-10,000     55ms          1.4μs         2e-6        49ms, 0.49 err
-20,000     120ms         1.4μs         4e-6        98ms, 0.63 err
-40,000     240ms         1.4μs         8e-6        228ms, 0.07 err
-60,000     366ms         1.4μs         1e-5        358ms, 0.15 err
-========== ============= ============= =========== ===========
+========== ============= ============= =========== ==================
+484        9ms           1.3μs         2e-7        2.5ms, 0.46 err
+4,900      91ms          1.3μs         2e-6        25ms, 0.74 err
+10,000     194ms         1.3μs         3e-6        53ms, 0.75 err
+20,000     432ms         1.4μs         6e-6        87ms, 1.7 err
+40,000     997ms         1.4μs         1e-5        207ms, 1.8 err
+60,000     2.2s          1.4μs         2e-5        331ms, 3.5 err
+========== ============= ============= =========== ==================
 
-Cholesky-Chebyshev dominates up to n≈20000: exact accuracy (1e-6 vs 0.1-0.7
-for stochastic), 40× faster eval (1.4μs vs 58μs), and comparable setup cost.
+Cholesky-Chebyshev is the accuracy leader across this range: exact (2e-7 to
+2e-5 vs 0.5-3.5 for stochastic) and ~40× faster eval (1.3μs vs ~55μs).  Its
+setup grows with Cholesky fill-in (≈2× the stochastic cost by n≈40k), the
+crossover past which ``cheb_stochastic`` trades accuracy for cheaper setup.
 """
 
 from __future__ import annotations

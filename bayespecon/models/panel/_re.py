@@ -189,9 +189,7 @@ class OLSPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs
-            inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
-            mean_diag = np.mean(inv_eigs, axis=1)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             direct_samples = mean_diag[:, None] * beta_draws
             total_samples = mean_row_sum[:, None] * beta_draws
@@ -449,9 +447,7 @@ class SARPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs
-            inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
-            mean_diag = np.mean(inv_eigs, axis=1)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             direct_samples = mean_diag[:, None] * beta_draws
             total_samples = mean_row_sum[:, None] * beta_draws
@@ -925,9 +921,7 @@ class SEMPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs
-            inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
-            mean_diag = np.mean(inv_eigs, axis=1)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             direct_samples = mean_diag[:, None] * beta_draws
             total_samples = mean_row_sum[:, None] * beta_draws

@@ -267,15 +267,14 @@ class SARPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         cross-sectional SAR, applied per draw.
         """
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
         beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
         rho_draws.shape[0]
 
-        eigs = self._W_eigs
-        mean_diag = _chunked_eig_means(rho_draws, eigs)  # (G,)
+        # Direct-effect trace via the resolvent (no O(N³) eigendecomposition).
+        mean_diag = self._batch_mean_diag(rho_draws)  # (G,)
 
         mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
 
@@ -548,7 +547,6 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         cross-sectional SDM, applied per draw.
         """
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
@@ -563,9 +561,9 @@ class SDMPanelFE(GaussianLikelihoodMixin, SpatialPanelModel):
         beta1_draws = beta_draws[:, :k]  # (G, k)
         beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
 
-        eigs = self._W_eigs
-        mean_diag_M = _chunked_eig_means(rho_draws, eigs)  # (G,)
-        mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)  # (G,)
+        # Direct-effect traces via the resolvent (no O(N³) eigendecomposition).
+        mean_diag_M = self._batch_mean_diag(rho_draws)  # (G,)
+        mean_diag_MW = self._batch_mean_diag_MW(rho_draws)  # (G,)
 
         mean_row_sum_M = self._batch_mean_row_sum(rho_draws)  # (G,)
         mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)  # (G,)

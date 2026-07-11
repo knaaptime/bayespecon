@@ -159,15 +159,19 @@ def _auto_logdet_method(n: int, W=None) -> str:
     - ``eigenvalue`` for n ≤ eigen_cutoff (default 500): exact O(n³) eigendecomposition.
     - ``cheb_cholesky`` for n ≤ cheb_cutoff (default 20000) when W is symmetric:
       exact logdet via sparse Cholesky at Chebyshev nodes with symbolic reuse.
-      Measured setup: ~55ms at n=10k, ~240ms at n=40k, ~370ms at n=60k for 2D grids.
-      Accuracy: machine precision (~1e-6).  Eval: ~1.4μs/ρ via Clenshaw.
+      Measured setup (2D rook, adaptive order): ~194ms at n=10k, ~1.0s at n=40k,
+      ~2.2s at n=60k.  Accuracy: 3e-6 (n=10k) to 2e-5 (n=60k).  Eval: ~1.3μs/ρ
+      via Clenshaw.
     - ``aaa`` for n ≤ cheb_cutoff when W is non-symmetric (directed graph):
-      exact logdet via sparse LU at adaptively-selected AAA support points.
-      Rational approximation converges exponentially near singularities.
-      Needs only ~30 LU factorisations (vs 50 Cholesky for cheb_cholesky).
+      exact logdet via sparse LU (KLU with symbolic reuse) at adaptively-selected
+      AAA support points.  Rational approximation converges exponentially near
+      singularities.  Uses an adaptive coarse grid of 16–30 LU factorisations
+      (16 for narrow intervals clear of ±1), selecting ~7 support points.
+      Measured setup ~152ms at n=10k; eval ~5μs/ρ; error 1e-9 to 2e-8.
     - ``cheb_stochastic`` for n > cheb_cutoff: stochastic Chebyshev expansion.
-      Lower setup cost but ~0.1-0.6 error with 50 probes, ~0.07-0.7 with 200.
-      Eval: ~58μs/ρ.  Use when factorisation fill-in makes setup too expensive.
+      Lower setup cost (~53ms at n=10k) but carries stochastic error ~0.2-1.9
+      with 50 probes, ~0.5-3.5 with 200.  Eval: ~55μs/ρ.  Use when factorisation
+      fill-in makes exact setup too expensive.
     """
     eigen_cutoff_raw = os.getenv("BAYESPECON_LOGDET_EIGEN_MAX_N", "500")
     cheb_cutoff_raw = os.getenv("BAYESPECON_LOGDET_CHEB_MAX_N", "20000")

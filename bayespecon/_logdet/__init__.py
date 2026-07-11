@@ -44,6 +44,8 @@ from ._factories import (
     clear_logdet_fn_cache,
     get_cached_logdet_fn,
     make_logdet_fn,
+    make_logdet_grad_numpy_fn,
+    make_logdet_grad_numpy_vec_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
@@ -54,8 +56,14 @@ from ._flow import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from ._jax import jax_logdet_chebyshev, jax_slq_logdet_precompute, make_logdet_jax_fn
+from ._jax import jax_logdet_chebyshev, make_logdet_jax_fn
 from ._pytensor import logdet_chebyshev, logdet_eigenvalue
+from ._resolvent import (
+    logdet_grad_aaa,
+    logdet_grad_chebyshev,
+    logdet_grad_eigenvalue,
+    logdet_grad_slq,
+)
 from ._slq import (
     SLQPrecompute,
     slq_logdet_eval,
@@ -82,8 +90,15 @@ __all__ = [
     "make_logdet_fn",
     "make_logdet_numpy_fn",
     "make_logdet_numpy_vec_fn",
+    "make_logdet_grad_numpy_fn",
+    "make_logdet_grad_numpy_vec_fn",
     "get_cached_logdet_fn",
     "clear_logdet_fn_cache",
+    # Resolvent trace / logdet gradient core
+    "logdet_grad_eigenvalue",
+    "logdet_grad_chebyshev",
+    "logdet_grad_aaa",
+    "logdet_grad_slq",
     # Flow
     "flow_logdet_pytensor",
     "flow_logdet_numpy",

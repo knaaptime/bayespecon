@@ -23,6 +23,7 @@ from .._backends.sampler_helpers import (
 from .._lazy_deps import az, pm
 from .._logdet import (
     make_logdet_fn,
+    make_logdet_grad_numpy_vec_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
@@ -494,6 +495,7 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
         # methods that do not need it (chebyshev, sparse_grid, etc.).
         self._logdet_numpy_fn_cache = None
         self._logdet_numpy_vec_fn_cache = None
+        self._logdet_grad_numpy_vec_fn_cache = None
         self._logdet_pytensor_fn_cache = None
         self._W_for_logdet_cache = None
 
@@ -655,6 +657,44 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
                 T=self._T,
             )
         return self._logdet_numpy_vec_fn_cache
+
+    @property
+    def _logdet_grad_numpy_vec_fn(self):
+        """Vectorised ``(rho_arr) -> g(ρ)`` gradient of the **N×N** logdet (lazy).
+
+        Built with ``T=1`` — the direct-effect trace is a per-period property of
+        the N×N spatial multiplier, independent of the number of periods.
+        """
+        if self._logdet_grad_numpy_vec_fn_cache is None:
+            eigs = (
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
+            )
+            self._logdet_grad_numpy_vec_fn_cache = make_logdet_grad_numpy_vec_fn(
+                self._W_sparse,
+                eigs,
+                method=self.logdet_method,
+                T=1,
+            )
+        return self._logdet_grad_numpy_vec_fn_cache
+
+    def _batch_mean_diag(self, rho_draws: np.ndarray) -> np.ndarray:
+        """``(1/N) tr((I - ρW)⁻¹)`` per draw via the resolvent identity.
+
+        ``tr(S)/N = 1 − (ρ/N)·g(ρ)`` with ``g = d/dρ log|I − ρW|``, so the
+        direct-effect trace rides the fast logdet surrogate and needs no
+        O(N³) eigendecomposition (unless the method is already eigenvalue).
+        """
+        rho_draws = np.asarray(rho_draws, dtype=np.float64)
+        N = int(self._W_sparse.shape[0])
+        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
+        return 1.0 - (rho_draws / N) * g
+
+    def _batch_mean_diag_MW(self, rho_draws: np.ndarray) -> np.ndarray:
+        """``(1/N) tr((I - ρW)⁻¹ W)`` per draw — equals ``−g(ρ)/N``."""
+        rho_draws = np.asarray(rho_draws, dtype=np.float64)
+        N = int(self._W_sparse.shape[0])
+        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
+        return -g / N
 
     @property
     def _logdet_pytensor_fn(self):
@@ -884,36 +924,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
         n_const = ni[0] if ni else 0
         return [i - n_const for i in self._wx_column_indices]
 
-    @staticmethod
-    def _spatial_lag_column_indices(
-        X: np.ndarray, feature_names: list[str]
-    ) -> list[int]:
-        """Return indices of regressors that should receive spatial lags.
-
-        Constant columns are treated as intercept-like and excluded, which
-        avoids adding redundant ``W * intercept`` terms to SLX/Durbin models.
-
-        Parameters
-        ----------
-        X : np.ndarray
-            Raw panel design matrix before FE transformation.
-        feature_names : list[str]
-            Column labels aligned with ``X``.
-
-        Returns
-        -------
-        list[int]
-            Column indices eligible for spatial lags.
-        """
-        indices: list[int] = []
-        for j, name in enumerate(feature_names):
-            column = X[:, j]
-            is_named_intercept = name.lower() == "intercept"
-            is_constant = np.allclose(column, column[0])
-            if not (is_named_intercept or is_constant):
-                indices.append(j)
-        return indices
-
     @abstractmethod
     def _build_pymc_model(self) -> pm.Model:
         """Construct and return a pm.Model."""
@@ -1040,16 +1050,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
             sample_kwargs=sample_kwargs,
         )
         return self._postprocess_idata(idata)
-
-    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
-        """Hook to augment ``idata`` after sampling, before it is returned.
-
-        The default is a no-op.  Subclasses whose likelihood is expressed via
-        ``pm.Potential`` (so PyMC captures no pointwise ``log_likelihood``),
-        e.g. the panel Tobit families, override this to attach a complete
-        Jacobian-corrected pointwise log-likelihood for information criteria.
-        """
-        return idata
 
     def _fit_nuts_and_reconstruct(
         self,
@@ -1381,47 +1381,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
             has not been fit yet.
         """
         return self._pymc_model
-
-    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
-        """Return posterior summary table.
-
-        Parameters
-        ----------
-        var_names : list, optional
-            Variable names to include.
-        **kwargs
-            Additional arguments passed to :func:`arviz.summary`.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Posterior summary table.
-        """
-        self._require_fit()
-        summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
-        return self._rename_summary_index(summary_df)
-
-    def fitted_values(self) -> np.ndarray:
-        """Return fitted values at posterior mean parameters.
-
-        Returns
-        -------
-        np.ndarray
-            Fitted values on transformed panel scale.
-        """
-        self._require_fit()
-        return self._fitted_mean_from_posterior()
-
-    def residuals(self) -> np.ndarray:
-        """Return transformed residuals ``y - fitted``.
-
-        Returns
-        -------
-        np.ndarray
-            Residual vector on transformed panel scale.
-        """
-        self._require_fit()
-        return self._y - self.fitted_values()
 
     def spatial_diagnostics(self) -> pd.DataFrame:
         """Run Bayesian LM specification tests and return a summary table.

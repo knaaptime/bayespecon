@@ -22,6 +22,7 @@ from .._backends.sampler_helpers import (
 from .._lazy_deps import az, pm
 from .._logdet import (
     make_logdet_fn,
+    make_logdet_grad_numpy_vec_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
     resolve_logdet_bounds,
@@ -212,6 +213,7 @@ class SpatialModel(SharedSpatialMethods, ABC):
             # chebyshev / trace methods.
             self._logdet_numpy_fn_cache = None
             self._logdet_numpy_vec_fn_cache = None
+            self._logdet_grad_numpy_vec_fn_cache = None
             self._logdet_pytensor_fn_cache = None
             self._W_for_logdet_cache = None
             self._Wy: np.ndarray = np.asarray(
@@ -449,6 +451,54 @@ class SpatialModel(SharedSpatialMethods, ABC):
         )
 
     # ------------------------------------------------------------------
+    # Resolvent-based direct-effect traces (no eigendecomposition)
+    # ------------------------------------------------------------------
+
+    @property
+    def _logdet_grad_numpy_vec_fn(self):
+        """Vectorised ``(rho_arr) -> g(ρ)`` logdet-gradient evaluator (lazy).
+
+        Built from the model's resolved logdet method, so it uses the fast
+        surrogate (chol-cheb / AAA / …) and only touches the eigenvalue path
+        when that is genuinely the resolved method (tiny n).
+        """
+        if self._logdet_grad_numpy_vec_fn_cache is None:
+            eigs = (
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
+            )
+            self._logdet_grad_numpy_vec_fn_cache = make_logdet_grad_numpy_vec_fn(
+                self._W_sparse,
+                eigs,
+                method=self._logdet_bounds.method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
+            )
+        return self._logdet_grad_numpy_vec_fn_cache
+
+    def _batch_mean_diag(self, rho_draws: np.ndarray) -> np.ndarray:
+        """``(1/n) tr((I - ρW)⁻¹)`` per draw — the SAR/SDM direct-effect trace.
+
+        Uses the resolvent identity ``tr(S)/n = 1 − (ρ/n)·g(ρ)`` with
+        ``g(ρ) = d/dρ log|I − ρW| = −tr(W(I−ρW)⁻¹)``, so it rides the model's
+        fast logdet surrogate and never triggers the O(n³) eigendecomposition
+        (unless the resolved method is already ``eigenvalue``).
+        """
+        rho_draws = np.asarray(rho_draws, dtype=np.float64)
+        n = int(self._W_sparse.shape[0])
+        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
+        return 1.0 - (rho_draws / n) * g
+
+    def _batch_mean_diag_MW(self, rho_draws: np.ndarray) -> np.ndarray:
+        """``(1/n) tr((I - ρW)⁻¹ W)`` per draw — the SDM cross direct-effect trace.
+
+        Equals ``−g(ρ)/n`` for the same ``g``, again with no eigendecomposition.
+        """
+        rho_draws = np.asarray(rho_draws, dtype=np.float64)
+        n = int(self._W_sparse.shape[0])
+        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
+        return -g / n
+
+    # ------------------------------------------------------------------
     # Input parsing helpers
     # ------------------------------------------------------------------
 
@@ -513,36 +563,6 @@ class SpatialModel(SharedSpatialMethods, ABC):
         the Kronecker structure ``W ⊗ I_T`` via :meth:`_sparse_panel_lag`.
         """
         return np.asarray(self._W_sparse @ X, dtype=np.float64)
-
-    @staticmethod
-    def _spatial_lag_column_indices(
-        X: np.ndarray, feature_names: list[str]
-    ) -> list[int]:
-        """Return indices of regressors that should receive spatial lags.
-
-        Constant columns are treated as intercept-like and excluded, which
-        avoids adding redundant ``W * intercept`` terms to SLX/Durbin models.
-
-        Parameters
-        ----------
-        X : np.ndarray
-            Design matrix.
-        feature_names : list[str]
-            Column labels aligned with ``X``.
-
-        Returns
-        -------
-        list[int]
-            Column indices eligible for spatial lags.
-        """
-        indices: list[int] = []
-        for j, name in enumerate(feature_names):
-            column = X[:, j]
-            is_named_intercept = name.lower() == "intercept"
-            is_constant = np.allclose(column, column[0])
-            if not (is_named_intercept or is_constant):
-                indices.append(j)
-        return indices
 
     def _gelman_default_beta_prior(
         self,
@@ -670,16 +690,6 @@ class SpatialModel(SharedSpatialMethods, ABC):
             sample_kwargs=sample_kwargs,
         )
         return self._postprocess_idata(idata)
-
-    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
-        """Hook to augment ``idata`` after sampling, before it is returned.
-
-        The default is a no-op.  Subclasses whose likelihood is expressed via
-        ``pm.Potential`` (so PyMC captures no pointwise ``log_likelihood``),
-        e.g. the Tobit families, override this to attach a complete
-        Jacobian-corrected pointwise log-likelihood for information criteria.
-        """
-        return idata
 
     def _fit_nuts_and_reconstruct(
         self,
@@ -1056,25 +1066,6 @@ class SpatialModel(SharedSpatialMethods, ABC):
             except TypeError:
                 self._pymc_model = self._build_pymc_model(nuts_sampler="pymc")
         return self._pymc_model
-
-    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
-        """Return posterior summary table.
-
-        Parameters
-        ----------
-        var_names : list, optional
-            Variable names to include in the summary.
-        **kwargs
-            Additional arguments passed to :func:`arviz.summary`.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Posterior summary statistics.
-        """
-        self._require_fit()
-        summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
-        return self._rename_summary_index(summary_df)
 
     @staticmethod
     def _run_lm_diagnostics(model, tests: list[tuple]) -> pd.DataFrame:
@@ -1580,19 +1571,20 @@ class SpatialModel(SharedSpatialMethods, ABC):
     def _effects_rho_posterior(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Posterior draws: SAR/SDM rho-multiplier pattern."""
         from ..diagnostics.lmtests import _get_posterior_draws
-        from ..diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
-        eigs = self._W_eigs
 
-        mean_diag_M = _chunked_eig_means(rho_draws, eigs)
+        # Direct-effect traces via the resolvent identity (fast logdet gradient),
+        # so impacts avoid the O(n³) eigendecomposition.  Total-effect row sums
+        # use the closed form 1/(1-ρ) for row-standardised W (else eigenvectors).
+        mean_diag_M = self._batch_mean_diag(rho_draws)
         mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
 
         if self._has_wx_in_beta:
             # SDM
-            mean_diag_MW = _chunked_eig_means(rho_draws, eigs, weights=eigs)
+            mean_diag_MW = self._batch_mean_diag_MW(rho_draws)
             mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
             k = self._beta_k
             kw = self._WX.shape[1]
@@ -1636,28 +1628,6 @@ class SpatialModel(SharedSpatialMethods, ABC):
                 "This method requires a spatial weights matrix W. "
                 "Pass W when constructing the model."
             )
-
-    def fitted_values(self) -> np.ndarray:
-        """Return fitted values at posterior mean parameters.
-
-        Returns
-        -------
-        np.ndarray
-            Posterior-mean fitted values.
-        """
-        self._require_fit()
-        return self._fitted_mean_from_posterior()
-
-    def residuals(self) -> np.ndarray:
-        """Return residuals on the observed scale.
-
-        Returns
-        -------
-        np.ndarray
-            Residual vector ``y - fitted_values``.
-        """
-        self._require_fit()
-        return self._y - self.fitted_values()
 
     def __repr__(self) -> str:
         n, k = self._X.shape

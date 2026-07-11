@@ -60,6 +60,39 @@ def _exact_logdet_eigenvalue(rho: float, eigs: np.ndarray) -> float:
     return float(np.sum(np.log(np.abs(1.0 - rho * eigs))))
 
 
+def _rook_row_standardized(side: int) -> np.ndarray:
+    """Row-standardised rook-contiguity W on a ``side × side`` grid.
+
+    Symmetric sparsity pattern (undirected graph) → SLQ takes the Lanczos path.
+    """
+    n = side * side
+    A = np.zeros((n, n), dtype=float)
+    for r in range(side):
+        for c in range(side):
+            i = r * side + c
+            for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                rr, cc = r + dr, c + dc
+                if 0 <= rr < side and 0 <= cc < side:
+                    A[i, rr * side + cc] = 1.0
+    return A / A.sum(axis=1, keepdims=True)
+
+
+def _knn_row_standardized(n: int, k: int) -> np.ndarray:
+    """Row-standardised k-nearest-neighbour W on random 2-D points.
+
+    Asymmetric sparsity pattern (directed graph) → SLQ falls back to Arnoldi.
+    """
+    rng = np.random.default_rng(0)
+    pts = rng.random((n, 2))
+    A = np.zeros((n, n), dtype=float)
+    for i in range(n):
+        d = np.sum((pts - pts[i]) ** 2, axis=1)
+        d[i] = np.inf
+        for j in np.argsort(d)[:k]:
+            A[i, j] = 1.0
+    return A / A.sum(axis=1, keepdims=True)
+
+
 # ---------------------------------------------------------------------------
 # jax_logdet_chebyshev
 # ---------------------------------------------------------------------------
@@ -394,3 +427,91 @@ class TestMakeLogdetJaxFn:
         np.testing.assert_allclose(
             float(fn_t3(rho)), 3.0 * float(fn_t1(rho)), rtol=1e-6
         )
+
+    # --- slq ---
+
+    def test_slq_matches_numpy_eval(self):
+        """JAX slq eval agrees with the numpy slq_logdet_eval on the same rules.
+
+        Both consume the identical (seeded) sparse Lanczos precompute, so they
+        must agree to floating-point tolerance — this pins the JAX quadrature
+        evaluation to the reference numpy implementation.
+        """
+        from bayespecon._logdet import slq_logdet_eval, slq_logdet_precompute
+
+        # Undirected (symmetric sparsity) row-standardised W → Lanczos path.
+        W = _rook_row_standardized(6)
+        W_sp = sp.csr_matrix(W)
+
+        fn = make_logdet_jax_fn(W_sp, method="slq")
+        pre = slq_logdet_precompute(W_sp)  # same default seed → same rules
+
+        for rho in [0.0, 0.1, 0.3, 0.5, -0.2]:
+            jax_val = float(fn(jnp.float64(rho)))
+            np_val = slq_logdet_eval(pre, rho)
+            np.testing.assert_allclose(jax_val, np_val, rtol=1e-10, atol=1e-10)
+
+    def test_slq_autodiff_matches_surrogate_derivative(self):
+        """jax.grad through slq equals the analytic derivative of the surrogate.
+
+        The SLQ surrogate value is stochastic (it carries the full Hutchinson
+        trace variance, so it does not track the *exact* logdet closely at small
+        n — that is a property of the numpy method, covered in test_slq.py).
+        What I1 must guarantee is that the JAX path differentiates *that same
+        surrogate* correctly: jax.grad must match a central finite-difference of
+        the numpy ``slq_logdet_eval`` (the resolvent-trace estimate
+        Σ wᵢθᵢ/(1-ρθᵢ)) to solver precision.
+        """
+        from bayespecon._logdet import slq_logdet_eval, slq_logdet_precompute
+
+        W = _rook_row_standardized(6)
+        W_sp = sp.csr_matrix(W)
+        fn_slq = make_logdet_jax_fn(W_sp, method="slq")
+        pre = slq_logdet_precompute(W_sp)  # same default seed → same rules
+
+        h = 1e-5
+        for rho in [0.1, 0.3, 0.5]:
+            g_jax = float(jax.grad(fn_slq)(jnp.float64(rho)))
+            g_fd = (slq_logdet_eval(pre, rho + h) - slq_logdet_eval(pre, rho - h)) / (
+                2 * h
+            )
+            assert np.isfinite(g_jax)
+            np.testing.assert_allclose(g_jax, g_fd, rtol=1e-6)
+
+    def test_slq_jit_compilable(self):
+        """slq eval works inside jax.jit."""
+        W = _rook_row_standardized(6)
+        fn = make_logdet_jax_fn(sp.csr_matrix(W), method="slq")
+
+        @jax.jit
+        def compiled(rho):
+            return fn(rho)
+
+        assert jnp.isfinite(compiled(jnp.float64(0.3)))
+
+    def test_slq_directed_arnoldi(self):
+        """Directed W (asymmetric sparsity) routes through the Arnoldi fallback.
+
+        The complex bilinear weights must be handled without NaNs, and the JAX
+        eval must match the numpy reference that uses the same complex rules.
+        """
+        from bayespecon._logdet import slq_logdet_eval, slq_logdet_precompute
+
+        W = _knn_row_standardized(12, k=3)
+        W_sp = sp.csr_matrix(W)
+
+        pre = slq_logdet_precompute(W_sp)
+        assert pre.method == "arnoldi", "expected directed W to use Arnoldi"
+
+        fn = make_logdet_jax_fn(W_sp, method="slq")
+        for rho in [0.0, 0.1, 0.3]:
+            jax_val = float(fn(jnp.float64(rho)))
+            np_val = slq_logdet_eval(pre, rho)
+            assert np.isfinite(jax_val)
+            np.testing.assert_allclose(jax_val, np_val, rtol=1e-10, atol=1e-10)
+
+    def test_slq_rejects_eigenvalue_input(self):
+        """slq with a 1-D eigenvalue array raises (needs the matrix)."""
+        eigs = np.linalg.eigvals(_toy_w()).real
+        with pytest.raises(ValueError, match="requires the weight matrix"):
+            make_logdet_jax_fn(eigs, method="slq")

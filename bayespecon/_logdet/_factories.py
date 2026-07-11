@@ -141,6 +141,196 @@ def make_logdet_numpy_fn(
 
 
 # ---------------------------------------------------------------------------
+# NumPy gradient factory (logdet gradient = resolvent trace)
+# ---------------------------------------------------------------------------
+
+
+def make_logdet_grad_numpy_fn(
+    W_sparse,
+    eigs: np.ndarray | None,
+    method: str | None,
+    rho_min: float = -1.0,
+    rho_max: float = 1.0,
+    T: int = 1,
+):
+    """Return a pure-numpy ``(rho: float) -> float`` **logdet-gradient** evaluator.
+
+    Returns ``g(ρ) = d/dρ log|I − ρW| = −tr(W(I − ρW)⁻¹)`` — the analytic
+    derivative of the matching :func:`make_logdet_numpy_fn` value form, so the
+    two compose into a consistent ``(logp, grad)`` pair for gradient-based
+    samplers (nutpie-custom, MALA, pseudo-marginal).  The negated value,
+    ``−g(ρ)``, is the resolvent trace used by spatial impacts.
+
+    Every branch mirrors :func:`make_logdet_numpy_fn`'s representation choice
+    (in particular ``slq`` shares the Chebyshev-converted coefficients its value
+    form uses) so ``grad == d(value)/dρ`` holds exactly for each method.
+    """
+    from ._resolvent import (
+        logdet_grad_aaa,
+        logdet_grad_chebyshev,
+        logdet_grad_eigenvalue,
+    )
+
+    T = int(T)
+    n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
+    method = resolve_logdet_method(method, n=n, W=W_sparse)
+
+    def _scale(g):
+        return float(g) if T == 1 else T * float(g)
+
+    if method == "eigenvalue":
+        if eigs is None:
+            eigs = np.linalg.eigvals(np.asarray(W_sparse.toarray(), dtype=np.float64))
+        _eigs = np.asarray(eigs, dtype=np.complex128)
+        return lambda r: _scale(logdet_grad_eigenvalue(float(r), _eigs))
+
+    if method == "chebyshev":
+        out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
+        coeffs, rmin_cb, rmax_cb = out["coeffs"], out["rmin"], out["rmax"]
+        return lambda r: _scale(
+            logdet_grad_chebyshev(float(r), coeffs, rmin_cb, rmax_cb)
+        )
+
+    if method == "cheb_stochastic":
+        coeffs, rmin_cb, rmax_cb = _cheb_stochastic_coeffs(W_sparse, rho_min, rho_max)
+        return lambda r: _scale(
+            logdet_grad_chebyshev(float(r), coeffs, rmin_cb, rmax_cb)
+        )
+
+    if method == "cheb_cholesky":
+        from ._chol_cheb import chol_cheb_logdet_precompute
+
+        pre = chol_cheb_logdet_precompute(
+            W_sparse, order=None, rho_min=rho_min, rho_max=rho_max
+        )
+        coeffs, rmin_cb, rmax_cb = pre.coeffs, pre.rho_min, pre.rho_max
+        return lambda r: _scale(
+            logdet_grad_chebyshev(float(r), coeffs, rmin_cb, rmax_cb)
+        )
+
+    if method == "aaa":
+        from ._aaa import aaa_logdet_precompute
+
+        pre = aaa_logdet_precompute(W_sparse, rho_min=rho_min, rho_max=rho_max)
+        sp_z = pre.support_points
+        sp_f = pre.support_values
+        w = pre.weights
+        return lambda r: _scale(logdet_grad_aaa(float(r), sp_z, sp_f, w))
+
+    if method == "slq":
+        # Match make_logdet_numpy_fn: its slq value form is the Chebyshev-
+        # converted series, so the consistent gradient differentiates that.
+        pre = slq_logdet_precompute(W_sparse)
+        cheb = slq_to_chebyshev_coeffs(
+            pre, W=W_sparse, order=20, rho_min=rho_min, rho_max=rho_max
+        )
+        coeffs, rmin_cb, rmax_cb = cheb["coeffs"], cheb["rmin"], cheb["rmax"]
+        return lambda r: _scale(
+            logdet_grad_chebyshev(float(r), coeffs, rmin_cb, rmax_cb)
+        )
+
+    raise ValueError(f"Unsupported logdet method: {method!r}")
+
+
+def make_logdet_grad_numpy_vec_fn(
+    W_sparse,
+    eigs: np.ndarray | None,
+    method: str | None,
+    rho_min: float = -1.0,
+    rho_max: float = 1.0,
+    T: int = 1,
+):
+    """Vectorised ``(rho_arr) -> np.ndarray`` **logdet-gradient** evaluator.
+
+    Batched form of :func:`make_logdet_grad_numpy_fn`: returns ``g(ρ)`` for a
+    whole array of ρ draws at once.  Used by the spatial-impacts path, where the
+    per-draw direct-effect trace quantities are exactly ``g(ρ)`` (see
+    :meth:`bayespecon.models.base.SpatialModel._batch_mean_diag`), so impacts
+    never need the O(n³) eigendecomposition when a fast logdet method exists.
+    """
+    from ._resolvent import logdet_grad_chebyshev
+
+    T = int(T)
+    n = eigs.shape[0] if eigs is not None else int(W_sparse.shape[0])
+    method = resolve_logdet_method(method, n=n, W=W_sparse)
+
+    def _scale(g):
+        return g if T == 1 else T * g
+
+    if method == "eigenvalue":
+        if eigs is None:
+            eigs = np.linalg.eigvals(np.asarray(W_sparse.toarray(), dtype=np.float64))
+        _eigs = np.asarray(eigs, dtype=np.complex128)
+
+        def _vec_eig_grad(rho_arr, chunk: int = 1024):
+            rho_arr = np.asarray(rho_arr, dtype=np.float64)
+            out = np.empty(rho_arr.shape[0], dtype=np.float64)
+            for i in range(0, rho_arr.shape[0], chunk):
+                r = rho_arr[i : i + chunk, None]
+                block = _eigs[None, :] / (1.0 - r * _eigs[None, :])
+                out[i : i + chunk] = -block.sum(axis=1).real
+            return _scale(out)
+
+        return _vec_eig_grad
+
+    # Chebyshev-family (chebyshev / cheb_cholesky / cheb_stochastic / slq) share
+    # the Clenshaw-derivative, which vectorises naturally over ρ arrays.
+    if method in ("chebyshev", "cheb_stochastic", "cheb_cholesky", "slq"):
+        if method == "chebyshev":
+            out = chebyshev(W_sparse, order=20, rmin=rho_min, rmax=rho_max, eigs=eigs)
+            coeffs, rmin_cb, rmax_cb = out["coeffs"], out["rmin"], out["rmax"]
+        elif method == "cheb_stochastic":
+            coeffs, rmin_cb, rmax_cb = _cheb_stochastic_coeffs(
+                W_sparse, rho_min, rho_max
+            )
+        elif method == "cheb_cholesky":
+            from ._chol_cheb import chol_cheb_logdet_precompute
+
+            pre = chol_cheb_logdet_precompute(
+                W_sparse, order=None, rho_min=rho_min, rho_max=rho_max
+            )
+            coeffs, rmin_cb, rmax_cb = pre.coeffs, pre.rho_min, pre.rho_max
+        else:  # slq
+            pre = slq_logdet_precompute(W_sparse)
+            cheb = slq_to_chebyshev_coeffs(
+                pre, W=W_sparse, order=20, rho_min=rho_min, rho_max=rho_max
+            )
+            coeffs, rmin_cb, rmax_cb = cheb["coeffs"], cheb["rmin"], cheb["rmax"]
+
+        def _vec_cheb_grad(rho_arr):
+            rho_arr = np.asarray(rho_arr, dtype=np.float64)
+            return _scale(
+                np.asarray(logdet_grad_chebyshev(rho_arr, coeffs, rmin_cb, rmax_cb))
+            )
+
+        return _vec_cheb_grad
+
+    if method == "aaa":
+        from ._aaa import aaa_logdet_precompute
+
+        pre = aaa_logdet_precompute(W_sparse, rho_min=rho_min, rho_max=rho_max)
+        z = pre.support_points.astype(np.float64)
+        f = pre.support_values.astype(np.float64)
+        w = pre.weights.astype(np.float64)
+
+        def _vec_aaa_grad(rho_arr):
+            # Barycentric derivative (N'D - N D')/D², broadcast over ρ.
+            rho_arr = np.asarray(rho_arr, dtype=np.float64)
+            diff = rho_arr[:, None] - z[None, :]  # (G, m)
+            inv = w[None, :] / diff
+            inv2 = w[None, :] / diff**2
+            n_val = (inv * f[None, :]).sum(axis=1)
+            d_val = inv.sum(axis=1)
+            dn = -(inv2 * f[None, :]).sum(axis=1)
+            dd = -inv2.sum(axis=1)
+            return _scale((dn * d_val - n_val * dd) / d_val**2)
+
+        return _vec_aaa_grad
+
+    raise ValueError(f"Unsupported logdet method: {method!r}")
+
+
+# ---------------------------------------------------------------------------
 # NumPy vectorized factory
 # ---------------------------------------------------------------------------
 

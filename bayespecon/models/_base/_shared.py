@@ -460,3 +460,86 @@ class SharedSpatialMethods:
 
     def _posterior_mean(self, var: str) -> np.ndarray:
         return self._idata.posterior[var].mean(("chain", "draw")).to_numpy()
+
+    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
+        """Hook to augment ``idata`` after sampling, before it is returned.
+
+        The default is a no-op.  Subclasses whose likelihood is expressed via
+        ``pm.Potential`` (so PyMC captures no pointwise ``log_likelihood``),
+        e.g. the (panel) Tobit families, override this to attach a complete
+        Jacobian-corrected pointwise log-likelihood for information criteria.
+        """
+        return idata
+
+    @staticmethod
+    def _spatial_lag_column_indices(
+        X: np.ndarray, feature_names: list[str]
+    ) -> list[int]:
+        """Return indices of regressors that should receive spatial lags.
+
+        Constant columns are treated as intercept-like and excluded, which
+        avoids adding redundant ``W * intercept`` terms to SLX/Durbin models.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Design matrix (raw, before any panel fixed-effects transformation).
+        feature_names : list[str]
+            Column labels aligned with ``X``.
+
+        Returns
+        -------
+        list[int]
+            Column indices eligible for spatial lags.
+        """
+        indices: list[int] = []
+        for j, name in enumerate(feature_names):
+            column = X[:, j]
+            is_named_intercept = name.lower() == "intercept"
+            is_constant = np.allclose(column, column[0])
+            if not (is_named_intercept or is_constant):
+                indices.append(j)
+        return indices
+
+    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
+        """Return posterior summary table.
+
+        Parameters
+        ----------
+        var_names : list, optional
+            Variable names to include in the summary.
+        **kwargs
+            Additional arguments passed to :func:`arviz.summary`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Posterior summary statistics.
+        """
+        self._require_fit()
+        summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
+        return self._rename_summary_index(summary_df)
+
+    def fitted_values(self) -> np.ndarray:
+        """Return fitted values at posterior mean parameters.
+
+        Returns
+        -------
+        np.ndarray
+            Posterior-mean fitted values (on the model's native scale;
+            fixed-effects-transformed for panel models).
+        """
+        self._require_fit()
+        return self._fitted_mean_from_posterior()
+
+    def residuals(self) -> np.ndarray:
+        """Return residuals ``y - fitted_values``.
+
+        Returns
+        -------
+        np.ndarray
+            Residual vector ``y - fitted_values`` on the same scale as
+            :meth:`fitted_values`.
+        """
+        self._require_fit()
+        return self._y - self.fitted_values()
