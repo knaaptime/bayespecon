@@ -750,14 +750,14 @@ class SpatialModel(ABC):
                 backend=backend,
                 **family_opts,
             )
-            return self._idata
+            return self._postprocess_idata(self._idata)
 
         if sampler != "nuts":
             raise ValueError(
                 f"sampler must be 'gibbs', 'nuts', or None, got {sampler!r}"
             )
 
-        return self._fit_nuts_and_reconstruct(
+        idata = self._fit_nuts_and_reconstruct(
             draws=draws,
             tune=tune,
             chains=chains,
@@ -766,6 +766,17 @@ class SpatialModel(ABC):
             idata_kwargs=idata_kwargs,
             sample_kwargs=sample_kwargs,
         )
+        return self._postprocess_idata(idata)
+
+    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
+        """Hook to augment ``idata`` after sampling, before it is returned.
+
+        The default is a no-op.  Subclasses whose likelihood is expressed via
+        ``pm.Potential`` (so PyMC captures no pointwise ``log_likelihood``),
+        e.g. the Tobit families, override this to attach a complete
+        Jacobian-corrected pointwise log-likelihood for information criteria.
+        """
+        return idata
 
     def _fit_nuts_and_reconstruct(
         self,

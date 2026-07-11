@@ -266,3 +266,65 @@ def _write_log_likelihood_to_idata(
 
     ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
     idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+
+
+def _tobit_pointwise_loglik(
+    y: np.ndarray,
+    mu: np.ndarray,
+    sigma_f: np.ndarray,
+    censored: np.ndarray,
+    censoring: float,
+    nu_f: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Pointwise Tobit log-likelihood (density part, no Jacobian).
+
+    Uncensored observations contribute the log-density of the (Normal, or
+    Student-t when ``nu_f`` is given) innovation evaluated at ``y``; censored
+    observations contribute the corresponding left-tail log-CDF at the
+    censoring point ``c``.  The caller adds the ``log|I - ρW|`` Jacobian.
+
+    Parameters
+    ----------
+    y : np.ndarray
+        Observed (censored) response, shape ``(n,)``.
+    mu : np.ndarray
+        Latent mean per flattened posterior draw, shape ``(s, n)``.
+    sigma_f : np.ndarray
+        Innovation scale per draw, shape ``(s,)``.
+    censored : np.ndarray
+        Boolean mask of censored observations, shape ``(n,)``.
+    censoring : float
+        Left-censoring threshold ``c``.
+    nu_f : np.ndarray, optional
+        Student-t degrees of freedom per draw, shape ``(s,)``.  ``None``
+        (default) selects the Gaussian innovation.
+
+    Returns
+    -------
+    np.ndarray
+        Pointwise log-likelihood, shape ``(s, n)``.
+    """
+    s, n = mu.shape
+    ll = np.empty((s, n), dtype=np.float64)
+    uncens = ~censored
+    sig = sigma_f[:, None]
+    resid = (y[uncens][None, :] - mu[:, uncens]) / sig
+    if nu_f is not None:
+        from scipy.special import gammaln
+        from scipy.stats import t as t_dist
+
+        nu = nu_f[:, None]
+        ll[:, uncens] = (
+            gammaln((nu + 1) / 2)
+            - gammaln(nu / 2)
+            - 0.5 * np.log(nu * np.pi)
+            - np.log(sig)
+            - (nu + 1) / 2 * np.log1p(resid**2 / nu)
+        )
+        ll[:, censored] = t_dist.logcdf((censoring - mu[:, censored]) / sig, df=nu)
+    else:
+        from scipy.stats import norm
+
+        ll[:, uncens] = -0.5 * (resid**2 + np.log(2.0 * np.pi) + 2.0 * np.log(sig))
+        ll[:, censored] = norm.logcdf((censoring - mu[:, censored]) / sig)
+    return ll
