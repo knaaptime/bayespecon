@@ -259,20 +259,6 @@ class SpatialModel(SharedSpatialMethods, ABC):
         return _pts.as_sparse_variable(_sp.csc_matrix(self._W_sparse))
 
     @property
-    def _W_for_logdet(self):
-        """Argument passed to ``make_logdet_fn`` — eigenvalues or dense W.
-
-        Computed lazily so that init never forces an eigendecomposition for
-        chebyshev / trace methods.
-        """
-        if self._W_for_logdet_cache is None:
-            if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs
-            else:
-                self._W_for_logdet_cache = self._W_sparse.toarray().astype(np.float64)
-        return self._W_for_logdet_cache
-
-    @property
     def _logdet_numpy_fn(self):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
         if self._logdet_numpy_fn_cache is None:

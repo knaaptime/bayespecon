@@ -587,6 +587,30 @@ class SharedSpatialMethods:
 
         return sparse_trace_WtW_plus_WW(self._W_sparse)
 
+    @property
+    def _logdet_W_operand(self):
+        """Non-eigenvalue ``W`` operand handed to the logdet factory.
+
+        Cross-section default: the dense ``N×N`` matrix.  Panel models
+        (:class:`SpatialPanelModel`) override this to keep ``W`` sparse.
+        """
+        return self._W_sparse.toarray().astype(np.float64)
+
+    @property
+    def _W_for_logdet(self):
+        """Argument passed to ``make_logdet_fn`` — eigenvalues or the
+        structure-specific ``W`` operand (:attr:`_logdet_W_operand`).
+
+        Computed lazily so that init never forces an eigendecomposition for
+        chebyshev / sparse-grid methods.
+        """
+        if self._W_for_logdet_cache is None:
+            if self._resolved_logdet_method == "eigenvalue":
+                self._W_for_logdet_cache = self._W_eigs
+            else:
+                self._W_for_logdet_cache = self._logdet_W_operand
+        return self._W_for_logdet_cache
+
     def _attach_jacobian_corrected_log_likelihood(
         self,
         idata: az.InferenceData,

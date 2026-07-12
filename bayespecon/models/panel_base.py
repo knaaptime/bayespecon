@@ -590,18 +590,13 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
         return np.asarray(W @ R.T, dtype=np.float64).T
 
     @property
-    def _W_for_logdet(self):
-        """Argument passed to ``make_logdet_fn`` — eigenvalues or sparse W.
+    def _logdet_W_operand(self):
+        """Non-eigenvalue ``W`` operand — kept sparse for panel logdets.
 
-        Computed lazily so that init never forces an eigendecomposition for
-        chebyshev / sparse-grid methods.
+        Overrides the cross-section (dense) default in
+        :class:`SharedSpatialMethods`.
         """
-        if self._W_for_logdet_cache is None:
-            if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs
-            else:
-                self._W_for_logdet_cache = self._W_sparse
-        return self._W_for_logdet_cache
+        return self._W_sparse
 
     @property
     def _logdet_numpy_fn(self):
