@@ -80,5 +80,54 @@ class PanelStructure(SpatialStructure):
         # Full (N*T)×(N*T) block matrix provided.
         return np.asarray(W @ v, dtype=float)
 
+    def batch_spatial_lag(
+        self, resid: np.ndarray, T_eff: int | None = None
+    ) -> np.ndarray:
+        """Apply the panel spatial lag to a batch of stacked residual draws.
+
+        Parameters
+        ----------
+        resid : np.ndarray
+            Residual draws with shape ``(n_draws, N*T_eff)``.
+        T_eff : int, optional
+            Effective time periods in the stacked layout.  Defaults to ``T``;
+            dynamic panel paths pass ``T - 1``.
+
+        Returns
+        -------
+        np.ndarray
+            Spatially lagged residuals with the same shape as ``resid``.
+        """
+        R = np.asarray(resid, dtype=np.float64)
+        if R.ndim != 2:
+            raise ValueError(
+                f"resid must be 2D (n_draws, N*T_eff), got shape {R.shape}."
+            )
+        N = self._N
+        Te = int(self._T if T_eff is None else T_eff)
+        expected = N * Te
+        if R.shape[1] != expected:
+            raise ValueError(
+                "resid second dimension must equal N*T_eff; "
+                f"got {R.shape[1]} and expected {expected} (N={N}, T_eff={Te})."
+            )
+
+        W = self._W_sparse
+        if W.shape[0] == N:
+            # Reshape (draws, N*T_eff) -> (draws*T_eff, N), apply one sparse
+            # matrix multiply, then reshape back.
+            draws = R.shape[0]
+            R_flat = R.reshape(draws * Te, N)
+            WR_flat = np.asarray(W @ R_flat.T, dtype=np.float64).T
+            return WR_flat.reshape(draws, Te * N)
+
+        # Full panel matrix path (N*T x N*T) if supplied by caller.
+        if W.shape[0] != expected:
+            raise ValueError(
+                f"W has shape {W.shape}; expected ({N},{N}) or ({expected},{expected}) "
+                "for the provided N and T_eff."
+            )
+        return np.asarray(W @ R.T, dtype=np.float64).T
+
     def logdet_W_operand(self):
         return self._W_sparse
