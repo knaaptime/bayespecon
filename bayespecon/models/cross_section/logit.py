@@ -89,13 +89,6 @@ class Logit(SpatialModel):
     # Spatial-effects hooks (not applicable for non-spatial model)
     # ------------------------------------------------------------------
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        raise NotImplementedError(
-            "Logit has no spatial structure and therefore no spatial effects. "
-            "Use Bayesian LM diagnostics to assess whether a spatial binary "
-            "model (e.g. SARLogit) is appropriate."
-        )
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

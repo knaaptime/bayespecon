@@ -25,9 +25,9 @@ import numpy as np
 
 from .utils import (
     _hetero_scale,
+    _maybe_geodataframe,
     ensure_rng,
     make_design_matrix,
-    make_panel_output_geodataframe,
     panel_index,
     resolve_weights,
 )
@@ -134,45 +134,6 @@ def _simulate_panel_sdem_fe_core(
         y_list.append(yt)
         X_list.append(Xt)
     return _panel_finalize(y_list, X_list, N, T)
-
-
-def _maybe_geodataframe(
-    *,
-    y: np.ndarray,
-    X: np.ndarray,
-    idx: dict,
-    N: int,
-    T: int,
-    Wd: np.ndarray,
-    Wg,
-    params_true: dict,
-    create_gdf: bool,
-    gdf,
-    geometry_type: str,
-    wide: bool,
-) -> dict:
-    out = {
-        "y": y,
-        "X": X,
-        "unit": idx["unit"],
-        "time": idx["time"],
-        "W_dense": Wd,
-        "W_graph": Wg,
-        "params_true": params_true,
-    }
-    if create_gdf or gdf is not None or wide:
-        return make_panel_output_geodataframe(
-            y,
-            X,
-            idx["unit"],
-            idx["time"],
-            N,
-            T,
-            gdf=gdf,
-            geometry_type=geometry_type,
-            wide=wide,
-        )
-    return out
 
 
 def simulate_panel_ols_fe(

@@ -322,12 +322,6 @@ class FlowPanelModel(SpatialPanelModel):
     ) -> dict[str, np.ndarray]:
         """Compute posterior effects per draw."""
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects at posterior mean."""
-        raise NotImplementedError(
-            "Spatial effects not yet implemented for flow panel models."
-        )
-
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values on transformed scale."""
         raise NotImplementedError(

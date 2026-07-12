@@ -457,26 +457,6 @@ class SEMLogit(SpatialModel):
         """
         return self.fitted_probabilities()
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute spatial effects for SEM-logit.
-
-        For SEM, direct effects equal β and indirect effects are zero
-        (spatial dependence enters only through the disturbance).
-        """
-        beta = self._posterior_mean("beta")
-        ni = self._nonintercept_indices
-
-        direct = beta[ni]
-        total = beta[ni]
-        indirect = total - direct  # zeros
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

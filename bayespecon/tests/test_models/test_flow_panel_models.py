@@ -47,24 +47,6 @@ def _panel_flow_stack(n: int, T: int, k: int, seed: int = 0):
     return out["y"], out["X"], out["col_names"]
 
 
-def _panel_count_vector(n: int, T: int, seed: int = 0):
-    """Build noise-only Poisson panel-flow counts via bayespecon's panel DGP."""
-    from bayespecon.dgp.flows import generate_panel_poisson_flow_data
-
-    out = generate_panel_poisson_flow_data(
-        n=n,
-        T=T,
-        k=1,
-        rho_d=0.0,
-        rho_o=0.0,
-        rho_w=0.0,
-        beta_d=np.zeros(1),
-        beta_o=np.zeros(1),
-        seed=seed,
-    )
-    return out["y"]
-
-
 class TestFlowPanelModelConstruction:
     def test_sar_flow_panel_builds(self):
         n = 4
@@ -203,36 +185,9 @@ PF_SIGMA_ALPHA_TRUE = 0.5
 PF_RHO_D_SEP_TRUE = 0.40
 PF_RHO_O_SEP_TRUE = 0.30
 
-# Poisson panel true values
-PP_RHO_D_TRUE = 0.3
-PP_RHO_O_TRUE = 0.2
-PP_RHO_W_TRUE = 0.1
-PP_N = 6  # 36 O-D pairs per period — matches PANEL_FLOW_N; Poisson identifies well
-PANEL_FLOW_T_POISSON = 3  # fewer periods keeps cost down (each step is more expensive)
-
-# Separable Poisson panel — asymmetric so rho_d ≠ rho_o (breaks swap symmetry)
-# rho_w = -0.4*0.3 = -0.12 provides clear identification signal
-PP_RHO_D_SEP_TRUE = 0.40
-PP_RHO_O_SEP_TRUE = 0.30
-PANEL_FLOW_T_POISSON_SEP = 4  # one extra period for the separable variant
-# Larger grid for separable panel: bilinear rho_w term needs more data
-PP_N_SEP = 10  # 100 O-D pairs * T=4 = 400 total — more data to identify bilinear rho_w
-
-# Poisson models are more expensive per step (no conjugacy); use fewer samples
-POISSON_SAMPLE_KWARGS: dict = dict(
-    tune=400, draws=600, chains=2, random_seed=42, progressbar=False
-)
-# Separable Poisson: bilinear rho_w term makes the posterior harder to tune;
-# 1500 tune steps gives NUTS enough budget to adapt away from (0, 0).
-POISSON_SEP_SAMPLE_KWARGS: dict = dict(
-    tune=1800, draws=1500, chains=2, random_seed=42, progressbar=False
-)
-
 # Tolerances
 ABS_TOL_RHO = 0.25
-ABS_TOL_RHO_POI = 0.25  # Poisson panel: tighter after removing spurious Jacobian
 ABS_TOL_BETA = 0.40
-ABS_TOL_BETA_POI = 0.40  # Poisson panel beta: tighter after removing spurious Jacobian
 ABS_TOL_SIGMA = 0.35
 
 

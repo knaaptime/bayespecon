@@ -497,24 +497,6 @@ class SARLogit(SpatialModel):
         """
         return self.fitted_probabilities()
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute average direct/indirect/total impacts on the log-odds scale."""
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        mean_diag = float(self._batch_mean_diag(np.array([rho]))[0])
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        ni = self._nonintercept_indices
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        indirect = total - direct
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

@@ -52,15 +52,6 @@ from .flow_panel._panel import (
     OLSFlowPanel as OLSFlowPanel,
 )
 from .flow_panel._panel import (
-    PoissonFlowPanel as PoissonFlowPanel,
-)
-from .flow_panel._panel import (
-    PoissonSARFlowPanel as PoissonSARFlowPanel,
-)
-from .flow_panel._panel import (
-    PoissonSARFlowSeparablePanel as PoissonSARFlowSeparablePanel,
-)
-from .flow_panel._panel import (
     SARFlowPanel as SARFlowPanel,
 )
 from .flow_panel._panel import (

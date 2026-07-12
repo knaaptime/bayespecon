@@ -11,16 +11,13 @@ import numpy as np
 from scipy.special import erf
 
 from .cross_sectional import simulate_sar, simulate_sdm, simulate_sem
-from .utils import _hetero_scale, ensure_rng, make_design_matrix, resolve_weights
-
-
-def _left_censor(
-    y_latent: np.ndarray, censoring: float
-) -> tuple[np.ndarray, np.ndarray]:
-    mask = y_latent <= censoring
-    y_obs = y_latent.copy()
-    y_obs[mask] = censoring
-    return y_obs, mask
+from .utils import (
+    _hetero_scale,
+    _left_censor,
+    ensure_rng,
+    make_design_matrix,
+    resolve_weights,
+)
 
 
 def simulate_sar_tobit(

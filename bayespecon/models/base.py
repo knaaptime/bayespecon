@@ -1671,16 +1671,6 @@ class SpatialModel(ABC):
         return df
 
     @abstractmethod
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute model-specific impact measures at posterior mean.
-
-        Returns
-        -------
-        dict
-            Dictionary with direct, indirect, and total effects.
-        """
-
-    @abstractmethod
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
