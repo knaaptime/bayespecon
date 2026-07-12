@@ -244,22 +244,16 @@ class SpatialModel(SharedSpatialMethods, ABC):
         """Dense weight matrix, materialised lazily on first access."""
         return np.asarray(self._W_sparse.toarray(), dtype=np.float64)
 
-    @cached_property
+    @property
     def _W_pt_sparse(self):
-        """PyTensor sparse variable wrapping :attr:`_W_sparse`.
+        """PyTensor sparse operator for the PyMC model (delegates to structure).
 
-        Cached so repeated PyMC model builds reuse the same symbolic sparse
-        operator and avoid the ``O(n²)`` dense materialisation that
-        ``pt.as_tensor_variable(self._W_dense)`` performs each time.
-
-        Use with :func:`pytensor.sparse.structured_dot` (vector inputs must
-        first be reshaped to ``(n, 1)`` because the vector overload's
-        backward pass is broken in PyTensor).
+        Structure-cached so repeated PyMC model builds reuse the same symbolic
+        sparse operator.  Use with :func:`pytensor.sparse.structured_dot`
+        (vector inputs must first be reshaped to ``(n, 1)`` because the vector
+        overload's backward pass is broken in PyTensor).
         """
-        import scipy.sparse as _sp
-        from pytensor import sparse as _pts
-
-        return _pts.as_sparse_variable(_sp.csc_matrix(self._W_sparse))
+        return self._structure.W_pt_sparse()
 
     @property
     def _logdet_numpy_fn(self):

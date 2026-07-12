@@ -30,6 +30,15 @@ class SpatialStructure(ABC):
     def logdet_W_operand(self):
         """Return the non-eigenvalue ``W`` operand for the logdet factory."""
 
+    @abstractmethod
+    def W_pt_sparse(self):
+        """Return the cached PyTensor sparse operator applied in the PyMC model.
+
+        Cross-section wraps the ``N×N`` ``W``; panel wraps the ``(N*T)×(N*T)``
+        Kronecker block ``I_T ⊗ W`` so a single symbolic multiply performs the
+        per-period lag on a stacked panel vector.
+        """
+
 
 class CrossSectionStructure(SpatialStructure):
     """Cross-section: a single ``N×N`` weights matrix ``W``.
@@ -40,12 +49,21 @@ class CrossSectionStructure(SpatialStructure):
 
     def __init__(self, W_sparse):
         self._W_sparse = W_sparse
+        self._W_pt_cache = None
 
     def spatial_lag(self, x: np.ndarray) -> np.ndarray:
         return np.asarray(self._W_sparse @ x, dtype=np.float64)
 
     def logdet_W_operand(self):
         return self._W_sparse.toarray().astype(np.float64)
+
+    def W_pt_sparse(self):
+        if self._W_pt_cache is None:
+            import scipy.sparse as sp
+            from pytensor import sparse as pts
+
+            self._W_pt_cache = pts.as_sparse_variable(sp.csc_matrix(self._W_sparse))
+        return self._W_pt_cache
 
 
 class PanelStructure(SpatialStructure):
@@ -60,6 +78,8 @@ class PanelStructure(SpatialStructure):
         self._W_sparse = W_sparse
         self._N = int(N)
         self._T = int(T)
+        self._W_pt_cache = None
+        self._W_sparse_NT_cache = None
 
     def spatial_lag(self, v: np.ndarray) -> np.ndarray:
         W = self._W_sparse
@@ -131,3 +151,33 @@ class PanelStructure(SpatialStructure):
 
     def logdet_W_operand(self):
         return self._W_sparse
+
+    def W_sparse_NT(self):
+        """Cached sparse ``(N*T)×(N*T)`` Kronecker block ``I_T ⊗ W``.
+
+        Exposes a single linear operator that applies the per-period lag to a
+        stacked panel vector without the ``O((N*T)²)`` dense footprint.  When
+        the caller already supplied a full ``(N*T)×(N*T)`` matrix it is reused.
+        """
+        if self._W_sparse_NT_cache is None:
+            import scipy.sparse as sp
+
+            W = self._W_sparse
+            if W.shape[0] == self._N:
+                # Force ``csr_matrix`` (not ``csr_array``) so the result is
+                # accepted by :mod:`pytensor.sparse`, which currently only
+                # supports the legacy ``scipy.sparse`` matrix API.
+                self._W_sparse_NT_cache = sp.csr_matrix(
+                    sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
+                )
+            else:
+                self._W_sparse_NT_cache = sp.csr_matrix(W)
+        return self._W_sparse_NT_cache
+
+    def W_pt_sparse(self):
+        if self._W_pt_cache is None:
+            import scipy.sparse as sp
+            from pytensor import sparse as pts
+
+            self._W_pt_cache = pts.as_sparse_variable(sp.csc_matrix(self.W_sparse_NT()))
+        return self._W_pt_cache

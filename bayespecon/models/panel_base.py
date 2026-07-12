@@ -637,39 +637,19 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
     def _W_sparse_NT(self) -> "sp.csr_matrix":
         """Sparse (N*T)×(N*T) Kronecker-block weight matrix ``I_T ⊗ W_n``.
 
-        Cached on first access. Used by symbolic (PyMC/PyTensor) likelihoods
-        to avoid the O((N*T)²) memory footprint of :attr:`_W_dense` while
-        still exposing a single linear operator that can be applied to a
-        stacked panel residual vector.
+        Delegates to :meth:`PanelStructure.W_sparse_NT` (kept as a property
+        because RE/dynamic samplers read ``model._W_sparse_NT``).
         """
-        if not hasattr(self, "_W_sparse_NT_cache") or self._W_sparse_NT_cache is None:
-            W = self._W_sparse
-            if W.shape[0] == self._N:
-                # Force ``csr_matrix`` (not ``csr_array``) so the result is
-                # accepted by :mod:`pytensor.sparse`, which currently only
-                # supports the legacy ``scipy.sparse`` matrix API.
-                self._W_sparse_NT_cache = sp.csr_matrix(
-                    sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
-                )
-            else:
-                # Caller already supplied a full (N*T)×(N*T) matrix.
-                self._W_sparse_NT_cache = sp.csr_matrix(W)
-        return self._W_sparse_NT_cache
+        return self._structure.W_sparse_NT()
 
     @property
     def _W_pt_sparse(self):
-        """PyTensor sparse variable wrapping :attr:`_W_sparse_NT`.
+        """PyTensor sparse operator for the PyMC model (delegates to structure).
 
-        Cached so that repeated PyMC model builds reuse the same symbolic
-        sparse weight operator, avoiding redundant ``as_sparse_variable`` calls.
+        Structure-cached so repeated PyMC model builds reuse the same symbolic
+        sparse weight operator.
         """
-        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
-            from pytensor import sparse as pts
-
-            self._W_pt_sparse_cache = pts.as_sparse_variable(
-                sp.csc_matrix(self._W_sparse_NT)
-            )
-        return self._W_pt_sparse_cache
+        return self._structure.W_pt_sparse()
 
     def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
