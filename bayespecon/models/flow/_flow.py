@@ -422,21 +422,30 @@ class FlowModel(SpatialModel):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev"}
-        if logdet_method in _SEPARABLE_METHODS:
+        _SEPARABLE_METHODS = {
+            "eigenvalue",
+            "chebyshev",
+            "cheb_cholesky",
+            "aaa",
+            "cheb_stochastic",
+        }
+        if logdet_method is None or logdet_method in _SEPARABLE_METHODS:
+            from ..._logdet._config import resolve_logdet_method
+
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
                 self._n,
                 method=logdet_method,
-                cheb_order=miter,
             )
             self._separable_logdet_numpy_fn = make_flow_separable_logdet_numpy(
                 self._W_sparse,
                 self._n,
                 method=logdet_method,
-                cheb_order=miter,
             )
-            if logdet_method == "eigenvalue":
+            # Populate ``_W_eigs`` only when the resolved method is eigenvalue
+            # (auto-selection may resolve None to eigenvalue for small n).
+            resolved = resolve_logdet_method(logdet_method, n=self._n, W=self._W_sparse)
+            if resolved == "eigenvalue":
                 self._W_eigs = np.linalg.eigvals(
                     self._W_sparse.toarray().astype(np.float64)
                 ).real
@@ -1394,12 +1403,12 @@ class SARFlowSeparable(FlowModel):
     """
 
     def __init__(self, y, G, X, **kwargs):
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SARFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SARFlowSeparable logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y, G, X, **kwargs)
@@ -1414,7 +1423,8 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -1449,7 +1459,8 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "Initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         return self._separable_logdet_numpy_fn(rho_d, rho_o)
 
@@ -2137,7 +2148,8 @@ class SARNegBinFlowSeparable(_NegBinFlowMixin, SARFlowSeparable):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARNegBinFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         X_t = pt.as_tensor_variable(self._X.astype(np.float64))
 
@@ -2860,7 +2872,9 @@ class SEMFlowSeparable(SEMFlow):
         Number of regional attribute columns. Inferred from
         ``dest_*``/``orig_*`` column names when the standard LeSage
         layout is used.
-    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"} or None, default None
+        ``None`` auto-selects (``aaa`` for directed W, ``cheb_cholesky`` for
+        symmetric, ``eigenvalue`` for small n).
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
@@ -2890,12 +2904,12 @@ class SEMFlowSeparable(SEMFlow):
     """
 
     def __init__(self, y, G, X, **kwargs):
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SEMFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SEMFlowSeparable logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y, G, X, **kwargs)
@@ -2910,7 +2924,8 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -2953,6 +2968,7 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "Initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         return self._separable_logdet_numpy_fn(lam_d, lam_o)

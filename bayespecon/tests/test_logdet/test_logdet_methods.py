@@ -175,5 +175,10 @@ class TestMakeFlowSeparableLogdet:
     def test_invalid_method_raises(self):
         from bayespecon._logdet import make_flow_separable_logdet
 
-        with pytest.raises(ValueError, match="not recognised"):
+        # The separable factory now delegates to the general single-parameter
+        # factory, which rejects methods it does not support (e.g. "traces",
+        # which is only for the unrestricted 3-parameter flow) and unknown names.
+        with pytest.raises(ValueError, match="[Uu]nsupported|[Uu]nknown"):
             make_flow_separable_logdet(self.W_sp, self.n, method="traces")
+        with pytest.raises(ValueError, match="[Uu]nsupported|[Uu]nknown"):
+            make_flow_separable_logdet(self.W_sp, self.n, method="bogus")

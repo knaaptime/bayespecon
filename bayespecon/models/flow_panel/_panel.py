@@ -260,21 +260,32 @@ class FlowPanelModel(SpatialPanelModel):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev"}
-        if self.logdet_method in _SEPARABLE_METHODS:
+        _SEPARABLE_METHODS = {
+            "eigenvalue",
+            "chebyshev",
+            "cheb_cholesky",
+            "aaa",
+            "cheb_stochastic",
+        }
+        if self.logdet_method is None or self.logdet_method in _SEPARABLE_METHODS:
+            from ..._logdet._config import resolve_logdet_method
+
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
                 self._n,
                 method=self.logdet_method,
-                cheb_order=miter,
             )
             self._separable_logdet_numpy_fn = make_flow_separable_logdet_numpy(
                 self._W_sparse,
                 self._n,
                 method=self.logdet_method,
-                cheb_order=miter,
             )
-            if self.logdet_method == "eigenvalue":
+            # Populate ``_W_eigs`` only when the resolved method is eigenvalue
+            # (auto-selection may resolve None to eigenvalue for small n).
+            resolved = resolve_logdet_method(
+                self.logdet_method, n=self._n, W=self._W_sparse
+            )
+            if resolved == "eigenvalue":
                 self._W_eigs = np.linalg.eigvals(
                     self._W_sparse.toarray().astype(np.float64)
                 ).real
@@ -1354,7 +1365,9 @@ class SARFlowSeparablePanel(FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"} or None, default None
+        ``None`` auto-selects (``aaa`` for directed W, ``cheb_cholesky`` for
+        symmetric, ``eigenvalue`` for small n).
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -1391,12 +1404,12 @@ class SARFlowSeparablePanel(FlowPanelModel):
     """
 
     def __init__(self, y, G, X, **kwargs):
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SARFlowSeparablePanel logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y, G, X, **kwargs)
@@ -1411,7 +1424,8 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -1448,7 +1462,8 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "Initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
         return self._T * self._separable_logdet_numpy_fn(rho_d, rho_o)
 
@@ -1883,12 +1898,12 @@ class SARNegBinFlowSeparablePanel(SARFlowSeparablePanel):
                 "SARNegBinFlowSeparablePanel requires non-negative integer observations."
             )
 
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SARNegBinFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SARNegBinFlowSeparablePanel logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
@@ -1990,7 +2005,8 @@ class SARNegBinFlowSeparablePanel(SARFlowSeparablePanel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARNegBinFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
         n = self._n
         N = self._N_flow
@@ -2407,7 +2423,9 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"} or None, default None
+        ``None`` auto-selects (``aaa`` for directed W, ``cheb_cholesky`` for
+        symmetric, ``eigenvalue`` for small n).
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -2444,12 +2462,12 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     """
 
     def __init__(self, y, G, X, T, **kwargs):
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SEMFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SEMFlowSeparablePanel logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y, G, X, T, **kwargs)
@@ -2465,7 +2483,8 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -2513,7 +2532,8 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "Initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
         return self._T * self._separable_logdet_numpy_fn(lam_d, lam_o)
 

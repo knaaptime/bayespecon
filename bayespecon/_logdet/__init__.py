@@ -56,6 +56,13 @@ from ._flow import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
+from ._flow_resolvent import (
+    FlowKron,
+    flow_logdet_grad,
+    flow_logdet_grad_exact,
+    flow_logdet_value,
+    flow_logdet_value_and_grad,
+)
 from ._jax import jax_logdet_chebyshev, make_logdet_jax_fn
 from ._pytensor import logdet_chebyshev, logdet_eigenvalue
 from ._resolvent import (
@@ -105,6 +112,12 @@ __all__ = [
     "compute_flow_traces",
     "make_flow_separable_logdet",
     "make_flow_separable_logdet_numpy",
+    # Flow resolvent-Kronecker gradient (scalable, eigenvalue-free)
+    "FlowKron",
+    "flow_logdet_grad",
+    "flow_logdet_grad_exact",
+    "flow_logdet_value",
+    "flow_logdet_value_and_grad",
     # Chebyshev
     "chebyshev",
     # SLQ
