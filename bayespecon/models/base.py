@@ -33,6 +33,7 @@ from ._base._shared import (
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
 )
+from ._base._structure import CrossSectionStructure
 
 
 class SpatialModel(SharedSpatialMethods, ABC):
@@ -235,6 +236,8 @@ class SpatialModel(SharedSpatialMethods, ABC):
             self._WX = np.empty((self._X.shape[0], 0), dtype=np.float64)
             if w_vars is not None:
                 raise ValueError("w_vars requires a spatial weights matrix W.")
+
+        self._structure = CrossSectionStructure(self._W_sparse)
 
     @cached_property
     def _W_dense(self) -> np.ndarray:

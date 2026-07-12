@@ -343,7 +343,16 @@ class SharedSpatialMethods:
     overrides the mixin via normal MRO.  All methods rely only on attributes
     both classes provide (``self._X``, ``self._feature_names``, ``self.priors``,
     ``self._idata``).
+
+    Structure-dependent operations (spatial lag, logdet ``W`` operand) are
+    delegated to ``self._structure`` (a
+    :class:`bayespecon.models._base._structure.SpatialStructure`), which the two
+    base ``__init__`` methods assign.  The class-level ``None`` default keeps the
+    attribute resolvable for classes that do not use it (e.g. flow models, which
+    shadow ``_spatial_lag`` and never touch the single-``W`` logdet path).
     """
+
+    _structure = None
 
     @property
     def _nonintercept_indices(self) -> list[int]:
@@ -546,13 +555,12 @@ class SharedSpatialMethods:
         return self._y - self.fitted_values()
 
     def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
-        """Compute ``W @ X`` for the spatial filter.
+        """Compute the spatial lag of ``X`` for the spatial filter.
 
-        This is the cross-section default (``self._W_sparse @ X``).  Panel
-        models (:class:`SpatialPanelModel`) override it to apply the Kronecker
-        structure ``W ⊗ I_T`` via :meth:`SpatialPanelModel._sparse_panel_lag`.
+        Delegates to the model's :attr:`_structure`: ``W @ X`` for
+        cross-section, the Kronecker ``W ⊗ I_T`` lag for panel.
         """
-        return np.asarray(self._W_sparse @ X, dtype=np.float64)
+        return self._structure.spatial_lag(X)
 
     def _gelman_default_beta_prior(
         self,
@@ -591,10 +599,10 @@ class SharedSpatialMethods:
     def _logdet_W_operand(self):
         """Non-eigenvalue ``W`` operand handed to the logdet factory.
 
-        Cross-section default: the dense ``N×N`` matrix.  Panel models
-        (:class:`SpatialPanelModel`) override this to keep ``W`` sparse.
+        Delegates to the model's :attr:`_structure` (dense ``W`` for
+        cross-section, sparse ``W`` for panel).
         """
-        return self._W_sparse.toarray().astype(np.float64)
+        return self._structure.logdet_W_operand()
 
     @property
     def _W_for_logdet(self):

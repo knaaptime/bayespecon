@@ -27,6 +27,7 @@ from .._logdet import (
     make_logdet_numpy_vec_fn,
 )
 from ._base._shared import SharedSpatialMethods, _is_row_standardized_csr
+from ._base._structure import PanelStructure
 from .base import (
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
@@ -443,6 +444,7 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
 
         # Validate W and store as N×N CSR. Dense expansion is deferred.
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
+        self._structure = PanelStructure(self._W_sparse, self._N, self._T)
         # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
 
         # Resolve the logdet method and rho/lambda bounds exactly once,
@@ -506,36 +508,15 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
         else:
             self._WX = np.empty((self._X.shape[0], 0), dtype=float)
 
-    def _spatial_lag(self, v: np.ndarray) -> np.ndarray:
-        """Spatial lag hook — delegates to panel-aware implementation."""
-        return self._sparse_panel_lag(v)
-
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
-        """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
+        """Apply the panel spatial lag ``W ⊗ I_T`` to a stacked vector/matrix.
 
-        Accepts either a 1-D stacked vector of length ``N*T`` or a 2-D matrix
-        ``(N*T, k)`` whose columns will all be lagged in a single batched
-        sparse multiply.  Stays sparse until the final reshape.
+        Thin delegator to :meth:`PanelStructure.spatial_lag` (kept as a method
+        because samplers and diagnostics call ``model._sparse_panel_lag``).
+        Accepts a 1-D stacked vector of length ``N*T`` or a 2-D ``(N*T, k)``
+        matrix whose columns are all lagged in one batched sparse multiply.
         """
-        W = self._W_sparse
-        N, T = self._N, self._T
-        v = np.asarray(v, dtype=float)
-        if W.shape[0] == N:
-            if v.ndim == 1:
-                # Stack ordered (T, N); apply W per period in one matmul.
-                chunks = v.reshape(T, N)  # (T, N)
-                return np.asarray((W @ chunks.T).T, dtype=float).ravel()
-            # 2-D path: (N*T, k) → reshape so all periods/columns become a
-            # single dense block, perform ONE sparse matmul, then reshape back.
-            k = v.shape[1]
-            chunks = v.reshape(T, N, k)  # (T, N, k)
-            mat = chunks.transpose(1, 0, 2).reshape(N, T * k)
-            out = np.asarray(W @ mat, dtype=float)  # (N, T*k)
-            return out.reshape(N, T, k).transpose(1, 0, 2).reshape(T * N, k)
-        # Full (N*T)×(N*T) block matrix provided.
-        if v.ndim == 1:
-            return np.asarray(W @ v, dtype=float)
-        return np.asarray(W @ v, dtype=float)
+        return self._structure.spatial_lag(v)
 
     def _batch_sparse_lag(
         self,
@@ -588,15 +569,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
                 "for the provided N and T_eff."
             )
         return np.asarray(W @ R.T, dtype=np.float64).T
-
-    @property
-    def _logdet_W_operand(self):
-        """Non-eigenvalue ``W`` operand — kept sparse for panel logdets.
-
-        Overrides the cross-section (dense) default in
-        :class:`SharedSpatialMethods`.
-        """
-        return self._W_sparse
 
     @property
     def _logdet_numpy_fn(self):
