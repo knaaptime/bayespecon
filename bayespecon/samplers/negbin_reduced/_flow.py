@@ -33,6 +33,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from ...models.priors import FlowReducedGibbsPriors
 from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d_adaptive,
@@ -80,18 +81,6 @@ class FlowReducedGibbsState:
     rho_w: Optional[float]
     alpha: float
     omega: np.ndarray
-
-
-@dataclass
-class FlowReducedGibbsPriors:
-    """Prior hyperparameters for the reduced-form flow NB sampler."""
-
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
-    alpha_sigma: float = 2.5
-    alpha_nu: float = 3.0
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
 
 
 class FlowReducedGibbsCache:

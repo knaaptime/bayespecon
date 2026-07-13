@@ -40,7 +40,7 @@ def test_reduced_inherits_from_spatial_model():
     """The reduced-form class inherits from SpatialModel."""
     from bayespecon.models.base import SpatialModel
 
-    assert issubclass(bp.SARNegBin, SpatialModel)
+    assert issubclass(bp.models.SARNegBin, SpatialModel)
 
 
 def test_reduced_rejects_noninteger_or_negative_y():
@@ -48,17 +48,17 @@ def test_reduced_rejects_noninteger_or_negative_y():
     y_bad = np.array([0.0, 1.2, 2.0, 1.0])
     X_bad = np.column_stack([np.ones(4), np.arange(4)])
     with pytest.raises(ValueError, match="integer-valued"):
-        bp.SARNegBin(y=y_bad, X=X_bad, W=W_to_graph(make_line_W(4)))
+        bp.models.SARNegBin(y=y_bad, X=X_bad, W=W_to_graph(make_line_W(4)))
 
     y_neg = np.array([0.0, 1.0, -1.0, 2.0])
     with pytest.raises(ValueError, match="non-negative"):
-        bp.SARNegBin(y=y_neg, X=X_bad, W=W_to_graph(make_line_W(4)))
+        bp.models.SARNegBin(y=y_neg, X=X_bad, W=W_to_graph(make_line_W(4)))
 
 
 def test_reduced_robust_is_unsupported():
     y, X, W = _count_data()
     with pytest.raises(NotImplementedError):
-        bp.SARNegBin(y=y, X=X, W=W, robust=True)
+        bp.models.SARNegBin(y=y, X=X, W=W, robust=True)
 
 
 def test_reduced_build_pymc_model_returns_valid_model():
@@ -66,7 +66,7 @@ def test_reduced_build_pymc_model_returns_valid_model():
     import pymc as pm
 
     y, X, W = _count_data()
-    model = bp.SARNegBin(y=y, X=X, W=W)
+    model = bp.models.SARNegBin(y=y, X=X, W=W)
     pymc_model = model._build_pymc_model()
     assert isinstance(pymc_model, pm.Model)
     assert "rho" in pymc_model.named_vars
@@ -86,7 +86,7 @@ def test_reduced_build_pymc_model_returns_valid_model():
 
 def test_reduced_fitted_values_and_effects_with_mock_posterior():
     y, X, W = _count_data(seed=103)
-    model = bp.SARNegBin(y=y, X=X, W=W)
+    model = bp.models.SARNegBin(y=y, X=X, W=W)
 
     # Reduced form: only β, ρ, α — no σ, no z.
     model._idata = _idata(
@@ -123,7 +123,7 @@ def test_reduced_fit_returns_inference_data():
     mu = np.exp(eta)
     y = rng.poisson(mu)
 
-    model = bp.SARNegBin(y=y, X=X, W=W)
+    model = bp.models.SARNegBin(y=y, X=X, W=W)
     idata = model.fit(draws=30, tune=30, chains=2, random_seed=0)
 
     assert isinstance(idata, az.InferenceData)
@@ -151,7 +151,7 @@ def test_reduced_fit_default_is_gibbs():
     mu = np.exp(eta)
     y = rng.poisson(mu)
 
-    model = bp.SARNegBin(y=y, X=X, W=W)
+    model = bp.models.SARNegBin(y=y, X=X, W=W)
     # Default call (no sampler kwarg) should use Gibbs
     idata = model.fit(draws=10, tune=10, chains=1, random_seed=0)
     assert isinstance(idata, az.InferenceData)
@@ -201,7 +201,7 @@ def test_reduced_rho_mixing_with_beta_marginalisation():
     p = alpha_true / (alpha_true + mu)
     y = rng.negative_binomial(alpha_true, p).astype(float)
 
-    model = bp.SARNegBin(y=y, X=X, W=W_to_graph(W_sparse))
+    model = bp.models.SARNegBin(y=y, X=X, W=W_to_graph(W_sparse))
     model.fit(draws=400, tune=400, chains=2, random_seed=0)
 
     rho_ess = float(az.ess(model.inference_data, var_names=["rho"]).rho.values)

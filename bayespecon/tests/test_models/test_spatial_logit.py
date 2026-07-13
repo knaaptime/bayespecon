@@ -1,4 +1,4 @@
-"""Fast build/method tests for SARSpatialLogit and SEMSpatialLogit."""
+"""Fast build/method tests for SARLogit and SEMLogit."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ import pytest
 import scipy.sparse as sp
 
 from bayespecon import dgp
-from bayespecon.models.cross_section.sem_spatial_logit import SEMSpatialLogit
-from bayespecon.models.cross_section.spatial_logit import SARSpatialLogit
-from bayespecon.models.priors import SEMSpatialLogitPriors, SpatialLogitPriors
+from bayespecon.models.cross_section.sar_logit import SARLogit
+from bayespecon.models.cross_section.sem_logit import SEMLogit
+from bayespecon.models.priors import SARLogitPriors, SEMLogitPriors
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 
@@ -38,12 +38,12 @@ def _idata(vars_dict: dict[str, np.ndarray]) -> az.InferenceData:
 
 
 class TestConstruction:
-    """SARSpatialLogit construction and validation."""
+    """SARLogit construction and validation."""
 
     def test_construct_matrix_mode(self):
         """Model can be constructed in matrix mode."""
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         assert model._y.shape == (20,)
         assert model._X.shape == (20, 2)
 
@@ -52,24 +52,24 @@ class TestConstruction:
         _, X, W = _binary_data()
         y_bad = np.array([0.0, 0.5, 1.0, 2.0] * 5)
         with pytest.raises(ValueError, match="binary"):
-            SARSpatialLogit(y=y_bad, X=X, W=W)
+            SARLogit(y=y_bad, X=X, W=W)
 
     def test_rejects_robust(self):
         """robust=True should raise NotImplementedError."""
         y, X, W = _binary_data()
         with pytest.raises(NotImplementedError, match="robust"):
-            SARSpatialLogit(y=y, X=X, W=W, robust=True)
+            SARLogit(y=y, X=X, W=W, robust=True)
 
     def test_priors_cls(self):
-        """Model should use SpatialLogitPriors."""
+        """Model should use SARLogitPriors."""
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
-        assert model._priors_cls is SpatialLogitPriors
+        model = SARLogit(y=y, X=X, W=W)
+        assert model._priors_cls is SARLogitPriors
 
     def test_spatial_params(self):
         """Model should declare rho as spatial parameter."""
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         assert model._spatial_params == ("rho",)
         assert model._jacobian_param == "rho"
         assert model._model_type == "sar_logit"
@@ -86,7 +86,7 @@ class TestBuildPyMCModel:
     def test_raises(self):
         """Gibbs-only model should not build a PyMC model."""
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         with pytest.raises(NotImplementedError, match="Gibbs"):
             model._build_pymc_model()
 
@@ -101,13 +101,13 @@ class TestFitKwargRejection:
 
     def test_rejects_nuts_sampler(self):
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         with pytest.raises(TypeError, match="nuts_sampler"):
             model.fit(nuts_sampler="numpyro")
 
     def test_rejects_target_accept(self):
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         with pytest.raises(TypeError, match="target_accept"):
             model.fit(target_accept=0.95)
 
@@ -122,7 +122,7 @@ class TestFittedProbabilities:
 
     def test_output_range(self):
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         n = X.shape[0]
         model._idata = _idata(
             {
@@ -145,25 +145,10 @@ class TestFittedProbabilities:
 class TestSpatialEffects:
     """spatial_effects should compute direct/indirect/total impacts."""
 
-    def test_effects_keys(self):
-        y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
-        model._idata = _idata(
-            {
-                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
-                "rho": np.array([0.15, 0.16]),
-            }
-        )
-        effects = model._compute_spatial_effects()
-        assert "direct" in effects
-        assert "indirect" in effects
-        assert "total" in effects
-        assert "feature_names" in effects
-
     def test_probability_scale_eigen(self):
         """``scale='probability'`` returns response-scale impacts via eigen path."""
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         model._idata = _idata(
             {
                 "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
@@ -183,7 +168,7 @@ class TestSpatialEffects:
     def test_probability_scale_sparse_matches_eigen(self):
         """Sparse Hutchinson path agrees with eigen path within MC tolerance."""
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         model._idata = _idata(
             {
                 "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
@@ -199,7 +184,7 @@ class TestSpatialEffects:
 
     def test_probability_scale_invalid_scale(self):
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         model._idata = _idata(
             {
                 "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
@@ -232,22 +217,22 @@ class TestDGPIntegration:
     def test_model_from_dgp(self):
         """Model should accept data from simulate_sar_logit."""
         out = dgp.simulate_sar_logit(n=5, rho=0.3, seed=42)
-        model = SARSpatialLogit(y=out["y"], X=out["X"], W=out["W_graph"])
+        model = SARLogit(y=out["y"], X=out["X"], W=out["W_graph"])
         assert model._y.shape == (25,)
 
 
 # ---------------------------------------------------------------------------
-# SEMSpatialLogit tests
+# SEMLogit tests
 # ---------------------------------------------------------------------------
 
 
 class TestSEMConstruction:
-    """SEMSpatialLogit construction and validation."""
+    """SEMLogit construction and validation."""
 
     def test_construct_matrix_mode(self):
         """Model can be constructed in matrix mode."""
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         assert model._y.shape == (20,)
         assert model._X.shape == (20, 2)
 
@@ -256,24 +241,24 @@ class TestSEMConstruction:
         _, X, W = _binary_data()
         y_bad = np.array([0.0, 0.5, 1.0, 2.0] * 5)
         with pytest.raises(ValueError, match="binary"):
-            SEMSpatialLogit(y=y_bad, X=X, W=W)
+            SEMLogit(y=y_bad, X=X, W=W)
 
     def test_rejects_robust(self):
         """robust=True should raise NotImplementedError."""
         y, X, W = _binary_data()
         with pytest.raises(NotImplementedError, match="robust"):
-            SEMSpatialLogit(y=y, X=X, W=W, robust=True)
+            SEMLogit(y=y, X=X, W=W, robust=True)
 
     def test_priors_cls(self):
-        """Model should use SEMSpatialLogitPriors."""
+        """Model should use SEMLogitPriors."""
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
-        assert model._priors_cls is SEMSpatialLogitPriors
+        model = SEMLogit(y=y, X=X, W=W)
+        assert model._priors_cls is SEMLogitPriors
 
     def test_spatial_params(self):
         """Model should declare lam as spatial parameter."""
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         assert model._spatial_params == ("lam",)
         assert model._jacobian_param == "lam"
         assert model._model_type == "sem_logit"
@@ -285,7 +270,7 @@ class TestSEMBuildPyMCModel:
     def test_raises(self):
         """Gibbs-only model should not build a PyMC model."""
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         with pytest.raises(NotImplementedError, match="Gibbs"):
             model._build_pymc_model()
 
@@ -295,13 +280,13 @@ class TestSEMFitKwargRejection:
 
     def test_rejects_nuts_sampler(self):
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         with pytest.raises(TypeError, match="nuts_sampler"):
             model.fit(nuts_sampler="numpyro")
 
     def test_rejects_target_accept(self):
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         with pytest.raises(TypeError, match="target_accept"):
             model.fit(target_accept=0.95)
 
@@ -311,7 +296,7 @@ class TestSEMFittedProbabilities:
 
     def test_output_range(self):
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         n = X.shape[0]
         model._idata = _idata(
             {
@@ -328,34 +313,6 @@ class TestSEMFittedProbabilities:
 
 class TestSEMSpatialEffects:
     """spatial_effects should compute direct/indirect/total impacts."""
-
-    def test_effects_keys(self):
-        y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
-        model._idata = _idata(
-            {
-                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
-                "lam": np.array([0.15, 0.16]),
-            }
-        )
-        effects = model._compute_spatial_effects()
-        assert "direct" in effects
-        assert "indirect" in effects
-        assert "total" in effects
-        assert "feature_names" in effects
-
-    def test_sem_indirect_zero(self):
-        """For SEM, indirect effects should be zero."""
-        y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
-        model._idata = _idata(
-            {
-                "beta": np.stack([np.array([0.2, 0.7]), np.array([0.21, 0.71])]),
-                "lam": np.array([0.15, 0.16]),
-            }
-        )
-        effects = model._compute_spatial_effects()
-        assert np.allclose(effects["indirect"], 0.0)
 
 
 class TestSEMDGPIntegration:
@@ -375,17 +332,17 @@ class TestSEMDGPIntegration:
     def test_model_from_dgp(self):
         """Model should accept data from simulate_sem_logit."""
         out = dgp.simulate_sem_logit(n=5, lam=0.3, seed=42)
-        model = SEMSpatialLogit(y=out["y"], X=out["X"], W=out["W_graph"])
+        model = SEMLogit(y=out["y"], X=out["X"], W=out["W_graph"])
         assert model._y.shape == (25,)
 
 
 class TestSEMFitIntegration:
-    """SEMSpatialLogit.fit() should produce valid InferenceData."""
+    """SEMLogit.fit() should produce valid InferenceData."""
 
     def test_fit_small(self):
         """Fit on small DGP data should return valid InferenceData."""
         out = dgp.simulate_sem_logit(n=5, lam=0.3, seed=42)
-        model = SEMSpatialLogit(y=out["y"], X=out["X"], W=out["W_graph"])
+        model = SEMLogit(y=out["y"], X=out["X"], W=out["W_graph"])
         idata = model.fit(draws=50, tune=50, chains=2, random_seed=42)
         assert "lam" in idata.posterior
         assert "beta" in idata.posterior
@@ -397,9 +354,9 @@ class TestProgressForwarding:
     """Progress callbacks should be forwarded into logit chain runners."""
 
     def test_sar_fit_forwards_progress_manager(self, monkeypatch):
-        """SARSpatialLogit.fit should pass progress_manager through to run_chain."""
+        """SARLogit.fit should pass progress_manager through to run_chain."""
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         seen: dict[str, object] = {}
 
         def _fake_run_chain(
@@ -429,7 +386,7 @@ class TestProgressForwarding:
             }
 
         monkeypatch.setattr(
-            "bayespecon.models.cross_section.spatial_logit.run_chain",
+            "bayespecon.models.cross_section.sar_logit.run_chain",
             _fake_run_chain,
         )
 
@@ -440,16 +397,16 @@ class TestProgressForwarding:
             random_seed=0,
             n_jobs=1,
             progressbar=True,
-            gibbs_method="factorize",
+            gibbs_backend="numpy",
         )
 
         assert seen["progress_manager"] is not None
         assert seen["chain_id"] == 0
 
     def test_sem_fit_forwards_progress_manager(self, monkeypatch):
-        """SEMSpatialLogit.fit should pass progress_manager through to run_chain_sem."""
+        """SEMLogit.fit should pass progress_manager through to run_chain_sem."""
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         seen: dict[str, object] = {}
 
         def _fake_run_chain_sem(
@@ -479,7 +436,7 @@ class TestProgressForwarding:
             }
 
         monkeypatch.setattr(
-            "bayespecon.models.cross_section.sem_spatial_logit.run_chain_sem",
+            "bayespecon.models.cross_section.sem_logit.run_chain_sem",
             _fake_run_chain_sem,
         )
 
@@ -490,7 +447,7 @@ class TestProgressForwarding:
             random_seed=0,
             n_jobs=1,
             progressbar=True,
-            gibbs_method="factorize",
+            gibbs_backend="numpy",
         )
 
         assert seen["progress_manager"] is not None
@@ -498,7 +455,7 @@ class TestProgressForwarding:
 
 
 # ---------------------------------------------------------------------------
-# JAX vmap (gibbs_method="jax_dense") path
+# JAX vmap (gibbs_backend="jax") path
 # ---------------------------------------------------------------------------
 
 
@@ -510,7 +467,7 @@ class TestJaxVectorizedFit:
 
     def test_sar_jax_dense_runs_and_shapes(self):
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         idata = model.fit(
             draws=20,
             tune=10,
@@ -518,7 +475,7 @@ class TestJaxVectorizedFit:
             random_seed=0,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax_dense",
+            gibbs_backend="jax",
         )
         rho = idata.posterior["rho"].values
         beta = idata.posterior["beta"].values
@@ -529,7 +486,7 @@ class TestJaxVectorizedFit:
 
     def test_sar_jax_dense_rejects_return_eta(self):
         y, X, W = _binary_data()
-        model = SARSpatialLogit(y=y, X=X, W=W)
+        model = SARLogit(y=y, X=X, W=W)
         with pytest.raises(NotImplementedError, match="return_eta"):
             model.fit(
                 draws=4,
@@ -538,13 +495,13 @@ class TestJaxVectorizedFit:
                 random_seed=0,
                 n_jobs=1,
                 progressbar=False,
-                gibbs_method="jax_dense",
+                gibbs_backend="jax",
                 return_eta=True,
             )
 
     def test_sem_jax_dense_runs_and_shapes(self):
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         idata = model.fit(
             draws=20,
             tune=10,
@@ -552,7 +509,7 @@ class TestJaxVectorizedFit:
             random_seed=0,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax_dense",
+            gibbs_backend="jax",
         )
         lam = idata.posterior["lam"].values
         beta = idata.posterior["beta"].values
@@ -562,7 +519,7 @@ class TestJaxVectorizedFit:
 
     def test_sem_jax_dense_rejects_return_eta(self):
         y, X, W = _binary_data()
-        model = SEMSpatialLogit(y=y, X=X, W=W)
+        model = SEMLogit(y=y, X=X, W=W)
         with pytest.raises(NotImplementedError, match="return_eta"):
             model.fit(
                 draws=4,
@@ -571,6 +528,6 @@ class TestJaxVectorizedFit:
                 random_seed=0,
                 n_jobs=1,
                 progressbar=False,
-                gibbs_method="jax_dense",
+                gibbs_backend="jax",
                 return_eta=True,
             )

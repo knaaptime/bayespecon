@@ -14,12 +14,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bayespecon import SAR, SDEM, SDM, SEM, SLX
 from bayespecon.diagnostics.spatial_effects import (
     _build_effects_dataframe,
     _compute_bayesian_pvalue,
     _compute_ci,
 )
+from bayespecon.models import SAR, SDEM, SDM, SEM, SLX
 
 # ------------------------------------------------------------------
 # Helpers
@@ -197,19 +197,6 @@ class TestSARSpatialEffectsPosterior:
         # Verify that indirect = total - direct
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
 
-        # Verify that posterior mean is close to existing computation
-        # (within Monte Carlo error for 100 draws)
-        rho_mean = float(np.mean(rho_draws))
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean, rho=rho_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,  # Allow MC error
-        )
-
     def test_spatial_effects_result(self):
         """Test that spatial_effects() returns a DataFrame."""
         n = 5
@@ -315,17 +302,92 @@ class TestSDMSpatialEffectsPosterior:
 
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
 
-        # Compare with existing
-        rho_mean = float(np.mean(rho_draws))
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean, rho=rho_mean)
-        existing = model._compute_spatial_effects()
 
+# ------------------------------------------------------------------
+# Resolvent-based direct effects (no eigendecomposition)
+# ------------------------------------------------------------------
+
+
+def _rook_grid_W(side: int) -> np.ndarray:
+    """Row-standardised rook-contiguity W on a side×side lattice."""
+    n = side * side
+    A = np.zeros((n, n))
+    for r in range(side):
+        for c in range(side):
+            i = r * side + c
+            for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                rr, cc = r + dr, c + dc
+                if 0 <= rr < side and 0 <= cc < side:
+                    A[i, rr * side + cc] = 1.0
+    return A / A.sum(axis=1, keepdims=True)
+
+
+class TestResolventDirectEffects:
+    """The direct-effect traces come from the logdet gradient, not eigenvalues."""
+
+    def test_mean_diag_matches_eigenvalue_reference(self):
+        """tr(S)/n and tr(SW)/n via the resolvent match the eigenvalue form."""
+        from bayespecon.diagnostics.spatial_effects import _chunked_eig_means
+
+        W = _rook_grid_W(8)  # n=64
+        n = W.shape[0]
+        X = np.column_stack([np.ones(n), np.linspace(-1, 1, n)])
+        y = np.zeros(n)
+        rho = np.random.default_rng(0).uniform(0.05, 0.9, size=2000)
+
+        # Force the surrogate (not eigenvalue) logdet method.
+        model = SAR(y=y, X=X, W=_W_to_graph(W), logdet_method="cheb_cholesky")
+        eigs = model._W_eigs  # reference eigendecomposition
+
+        md_res = model._batch_mean_diag(rho)
+        md_eig = _chunked_eig_means(rho, eigs)
+        np.testing.assert_allclose(md_res, md_eig, atol=1e-4, rtol=1e-4)
+
+        mdw_res = model._batch_mean_diag_MW(rho)
+        mdw_eig = _chunked_eig_means(rho, eigs, weights=eigs)
+        np.testing.assert_allclose(mdw_res, mdw_eig, atol=1e-4, rtol=1e-4)
+
+    def test_eigenvalue_identity_is_exact(self):
+        """When the method IS eigenvalue, tr(S)/n = 1 − (ρ/n)g holds exactly."""
+        from bayespecon.diagnostics.spatial_effects import _chunked_eig_means
+
+        W = _rook_grid_W(6)  # n=36 → eigenvalue method
+        n = W.shape[0]
+        X = np.column_stack([np.ones(n), np.linspace(-1, 1, n)])
+        model = SAR(y=np.zeros(n), X=X, W=_W_to_graph(W), logdet_method="eigenvalue")
+        rho = np.linspace(-0.9, 0.9, 50)
         np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,
+            model._batch_mean_diag(rho),
+            _chunked_eig_means(rho, model._W_eigs),
+            atol=1e-12,
         )
+
+    def test_spatial_effects_uses_no_eigendecomposition(self):
+        """A row-standardised chol-cheb SAR computes impacts without any eig call."""
+        W = _rook_grid_W(8)
+        n = W.shape[0]
+        X = np.column_stack([np.ones(n), np.linspace(-1, 1, n)])
+        model = SAR(y=np.zeros(n), X=X, W=_W_to_graph(W), logdet_method="cheb_cholesky")
+        G = 200
+        beta_draws = np.random.default_rng(1).standard_normal((G, 2))
+        rho_draws = np.random.default_rng(2).uniform(0.0, 0.9, G)
+        _set_posterior_draws(model, beta_draws, rho_draws)
+
+        # Poison the dense eigendecomposition — impacts must not touch it.
+        orig_eig, orig_eigvals = np.linalg.eig, np.linalg.eigvals
+
+        def _boom(*a, **k):
+            raise AssertionError("eigendecomposition was triggered")
+
+        np.linalg.eig = _boom
+        np.linalg.eigvals = _boom
+        try:
+            result = model.spatial_effects()
+        finally:
+            np.linalg.eig, np.linalg.eigvals = orig_eig, orig_eigvals
+
+        assert "direct" in result.columns
+        assert np.all(np.isfinite(result["direct"].to_numpy()))
 
 
 # ------------------------------------------------------------------
@@ -354,17 +416,6 @@ class TestSLXSpatialEffectsPosterior:
         assert direct_samples.shape == (G, 1)
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
 
-        # Compare with existing
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,
-        )
-
 
 # ------------------------------------------------------------------
 # Tests for SDEM spatial effects posterior
@@ -391,16 +442,6 @@ class TestSDEMSpatialEffectsPosterior:
 
         assert direct_samples.shape == (G, 1)
         np.testing.assert_allclose(indirect_samples, total_samples - direct_samples)
-
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,
-        )
 
 
 # ------------------------------------------------------------------
@@ -431,16 +472,6 @@ class TestSEMSpatialEffectsPosterior:
         # SEM: indirect = 0, total = direct
         np.testing.assert_allclose(indirect_samples, 0.0)
         np.testing.assert_allclose(total_samples, direct_samples)
-
-        beta_mean = np.mean(beta_draws, axis=0)
-        _set_posterior_means(model, beta=beta_mean)
-        existing = model._compute_spatial_effects()
-
-        np.testing.assert_allclose(
-            np.mean(direct_samples, axis=0),
-            existing["direct"],
-            atol=0.15,
-        )
 
 
 # ------------------------------------------------------------------

@@ -48,9 +48,10 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
+from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 from ..._jax_dispatch import _eqx_available
+from ...models.priors import GibbsPriors
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (
     SliceWidthState,
@@ -146,24 +147,6 @@ else:
             )
 
 
-@dataclass
-class GibbsPriors:
-    """Prior hyperparameters for the SAR-NB Gibbs sampler.
-
-    All priors are weakly informative by default, matching the
-    ``GaussianGibbsPriors`` convention.
-    """
-
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
-    sigma2_alpha: float = 2.0  # InverseGamma shape for σ²
-    sigma2_beta: float = 1.0  # InverseGamma scale for σ²
-    alpha_sigma: float = 10.0  # HalfNormal scale for α
-    alpha_nu: float = 3.0  # Half-Student-t degrees of freedom for α
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
-
-
 class GibbsCache(NamedTuple):
     """Precomputed data that doesn't change across sweeps.
 
@@ -202,9 +185,9 @@ class GibbsCache(NamedTuple):
     cholmod_factor: CholmodFactor | None = None
     W_sym_over_s2: sp.csr_matrix | None = None  # (W + W^T), divided by σ² at runtime
     WtW_over_s2: sp.csr_matrix | None = None  # W^T W, divided by σ² at runtime
-    solve_method: str = "cholmod"  # "cholmod" | "splu" | "cg" | "jax_dense"
+    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense"
     logdet_P_method: str = "cholmod"  # "cholmod" | "lanczos" | "jax_dense"
-    sample_method: str = "cholmod"  # "cholmod" | "splu" | "chebyshev" | "jax_dense"
+    sample_method: str = "cholmod"  # "cholmod" | "chebyshev" | "jax_dense"
     lanczos_n_probes: int = 10  # probe vectors for Lanczos logdet
     lanczos_deg: int = 30  # Lanczos iteration depth
     chebyshev_degree: int = 30  # Chebyshev polynomial degree for η draw
@@ -267,7 +250,7 @@ def _sample_eta(
     *,
     rng: np.random.Generator,
     cache: GibbsCache | None = None,
-) -> tuple[np.ndarray, CholmodFactor | spla.SuperLU]:
+) -> tuple[np.ndarray, CholmodFactor]:
     """Block 2: Draw η | ω, ρ, β, σ² — spatial-normal draw.
 
     The conditional posterior is
@@ -297,7 +280,7 @@ def _sample_eta(
     -------
     eta_new : ndarray of shape (n,)
         New draw of the latent field.
-    factor : CholmodFactor or SuperLU
+    factor : CholmodFactor
         Factorisation (for potential reuse within the sweep).
     """
     n = X.shape[0]
@@ -420,14 +403,13 @@ def _sample_beta(
     # Posterior mean: m_beta = Sigma_beta @ (mu_beta / sigma_beta^2 + Xt @ A_rho_eta / sigma2)
     rhs = beta_mu / beta_sigma2 + X.T @ A_rho_eta / sigma2
 
-    # Solve Sigma_beta_inv @ m_beta = rhs for posterior mean
-    m_beta = np.linalg.solve(Sigma_beta_inv, rhs)
-
-    # Sample: beta = m_beta + L^{-T} z where L L^T = Sigma_beta_inv
-    # Cov(beta) = L^{-T} L^{-1} = (L L^T)^{-1} = Sigma_beta_inv^{-1} ✓
-    L = np.linalg.cholesky(Sigma_beta_inv)
+    # One Cholesky of the SPD precision, reused for both the posterior mean
+    # and the sample: beta = m_beta + L^{-T} z where L L^T = Sigma_beta_inv,
+    # so Cov(beta) = L^{-T} L^{-1} = Sigma_beta_inv^{-1} ✓.
+    L, lower = cho_factor(Sigma_beta_inv, lower=True)
+    m_beta = cho_solve((L, lower), rhs)
     z = rng.standard_normal(k)
-    beta_new = m_beta + np.linalg.solve(L.T, z)
+    beta_new = m_beta + solve_triangular(L, z, lower=lower, trans="T")
 
     return beta_new
 
@@ -718,9 +700,14 @@ def _sample_rho(
         """Collapsed log-density of ρ (η integrated out)."""
         if use_jax:
             # --- JAX dense path (JIT-compiled) ---
-            # Split key for this evaluation (deterministic from rho)
-            _jax_key_step = jax.random.fold_in(_jax_key, hash(rho) % (2**31))
-            result = _jax_logdens_fn(jnp.float64(rho), _jax_key_step)
+            # Fixed key for the whole slice step: every ρ candidate sees the
+            # same Lanczos probes, so the density is a smooth deterministic
+            # surface during stepping-out/shrinkage.  (Keying on hash(ρ)
+            # made the stochastic-logdet noise a function of the ρ value —
+            # jittering the surface point-to-point within a step.)  A fresh
+            # _jax_key is drawn each Gibbs iteration, so the probe noise
+            # still averages out across the chain.
+            result = _jax_logdens_fn(jnp.float64(rho), _jax_key)
             return float(result)
 
         # --- scipy sparse path ---
@@ -746,30 +733,15 @@ def _sample_rho(
                 lanczos_deg=cache.lanczos_deg,
                 rng=_lanczos_rng,
             )
-        elif cholmod_factor is not None:
+        else:
             cholmod_factor.factorize(P)
             log_det_P = cholmod_factor.logdet()
-        else:
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            log_det_P = np.sum(np.log(np.abs(lu.U.diagonal())))
 
         # --- Solve P m = rhs ---
         if solve_method == "cg":
             m = cg_solve(P, rhs)
-        elif cholmod_factor is not None and solve_method == "cholmod":
-            m = cholmod_factor.solve(rhs)
-        elif solve_method == "splu":
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            m = lu.solve(rhs)
         else:
-            if logdet_P_method != "lanczos" and cholmod_factor is not None:
-                m = cholmod_factor.solve(rhs)
-            else:
-                P_csc = sp.csc_matrix(P)
-                lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-                m = lu.solve(rhs)
+            m = cholmod_factor.solve(rhs)
 
         # Quadratic form: rhs^T P^{-1} rhs = rhs^T m
         quad = float(rhs @ m)
@@ -1119,6 +1091,9 @@ def run_chain(
                 eta_norm_samples[idx] = float(state.eta @ state.eta)
                 if return_eta:
                     eta_samples[idx] = state.eta
+
+        if progress_manager is not None:
+            progress_manager.update(chain_id, i, tuning=i < tune, accept=None)
 
     result = {
         "rho": rho_samples,

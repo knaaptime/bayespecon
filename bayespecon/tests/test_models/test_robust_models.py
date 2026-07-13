@@ -4,7 +4,7 @@ Each test verifies that:
 1. ``robust=True`` builds and samples without error
 2. ``nu`` (degrees of freedom) appears in the posterior
 3. ``robust=False`` (default) still works (backward compatibility)
-4. SpatialProbit raises ``NotImplementedError`` when ``robust=True``
+4. SARProbit raises ``NotImplementedError`` when ``robust=True``
 
 Run with::
 
@@ -16,7 +16,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bayespecon import (
+from bayespecon.dgp import simulate_sar, simulate_sem
+from bayespecon.models import (
     OLS,
     SAR,
     SDEM,
@@ -28,6 +29,7 @@ from bayespecon import (
     SARPanelFE,
     SARPanelRE,
     SARPanelTobit,
+    SARProbit,
     SARTobit,
     SDEMPanelFE,
     SDMPanelFE,
@@ -37,9 +39,7 @@ from bayespecon import (
     SEMPanelTobit,
     SEMTobit,
     SLXPanelFE,
-    SpatialProbit,
 )
-from bayespecon.dgp import simulate_sar, simulate_sem
 from bayespecon.tests.helpers import (
     PANEL_N,
     PANEL_T,
@@ -258,12 +258,12 @@ class TestRobustTobit:
 
 
 # ---------------------------------------------------------------------------
-# SpatialProbit — should raise NotImplementedError
+# SARProbit — should raise NotImplementedError
 # ---------------------------------------------------------------------------
 
 
 class TestRobustSpatialProbit:
-    """SpatialProbit should raise NotImplementedError when robust=True."""
+    """SARProbit should raise NotImplementedError when robust=True."""
 
     def test_spatial_probit_raises(self, rng):
         W = make_line_W(6)
@@ -273,9 +273,9 @@ class TestRobustSpatialProbit:
         n = m * 3
         X = rng.standard_normal((n, 2))
         y = rng.binomial(1, 0.5, size=n).astype(float)
-        model = SpatialProbit(y=y, X=X, W=W_graph, region_ids=region_ids, robust=True)
+        model = SARProbit(y=y, X=X, W=W_graph, region_ids=region_ids, robust=True)
         with pytest.raises(
-            NotImplementedError, match="Robust.*not supported.*SpatialProbit"
+            NotImplementedError, match="Robust.*not supported.*SARProbit"
         ):
             model._build_pymc_model()
 

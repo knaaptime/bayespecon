@@ -91,21 +91,21 @@ _register("bayespecon.models.cross_section.tobit.SDMTobit", SDM_TOBIT_SUITE)
 _register("bayespecon.models.cross_section.sar_negbin.SARNegBin", NEGBIN_SUITE)
 
 _register(
-    "bayespecon.models.cross_section.sar_negbin_latent.SARNegBinStructural",
+    "bayespecon.models.cross_section.sar_negbin_structural.SARNegBinStructural",
     SAR_NEGBIN_SUITE,
 )
 
 # Non-spatial GLM baselines
 _register("bayespecon.models.cross_section.logit.Logit", LOGIT_SUITE)
-_register("bayespecon.models.cross_section.negbin.NegativeBinomial", NEGBIN_SUITE)
+_register("bayespecon.models.cross_section.negbin.NegBin", NEGBIN_SUITE)
 
 # Flow (cross-sectional)
 _register("bayespecon.models.flow._flow.SARFlow", FLOW_SUITE)
 _register("bayespecon.models.flow._flow.SARFlowSeparable", FLOW_SUITE)
-_register("bayespecon.models.flow._flow.NegativeBinomialSARFlow", FLOW_SUITE)
-_register("bayespecon.models.flow._flow.NegativeBinomialSARFlowSeparable", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.SARNegBinFlow", FLOW_SUITE)
+_register("bayespecon.models.flow._flow.SARNegBinFlowSeparable", FLOW_SUITE)
 _register("bayespecon.models.flow._flow.OLSFlow", FLOW_INTRA_SUITE)
-_register("bayespecon.models.flow._flow.NegativeBinomialFlow", FLOW_INTRA_SUITE)
+_register("bayespecon.models.flow._flow.NegBinFlow", FLOW_INTRA_SUITE)
 _register("bayespecon.models.flow._flow.SEMFlow", FLOW_SUITE)
 _register("bayespecon.models.flow._flow.SEMFlowSeparable", FLOW_SUITE)
 

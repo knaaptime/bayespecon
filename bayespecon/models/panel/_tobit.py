@@ -39,11 +39,12 @@ Association*, 88(422), 669–679.
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
-from .._base._shared import _write_log_likelihood_to_idata
+from ..._backends.sampler_helpers import use_jax_likelihood
+from ..._lazy_deps import az, pm
+from .._base._shared import _tobit_pointwise_loglik, _write_log_likelihood_to_idata
 from ..panel_base import SpatialPanelModel
 from ..priors import PanelSARTobitPriors, PanelSEMTobitPriors
 
@@ -79,12 +80,6 @@ class _PanelTobitBase(SpatialPanelModel):
                 gap_hat, dtype=float
             )
         return y_lat
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects at posterior mean."""
-        raise NotImplementedError(
-            "Spatial effects not yet implemented for panel Tobit models."
-        )
 
     def _compute_spatial_effects_posterior(
         self,
@@ -135,89 +130,35 @@ class SARPanelTobit(_PanelTobitBase):
         y_lat = self._posterior_latent_y_mean()
         return rho * self._sparse_panel_lag(y_lat) + self._X @ beta
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
+    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
+        """Attach the complete pointwise Tobit log-likelihood for IC metrics.
 
-        The SAR panel Tobit model uses ``pm.Potential`` for both the
-        residual log-likelihood and the Jacobian, so nothing is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, using the Tobit censoring formula:
-
-        - Uncensored: log N(y | mu, sigma^2)
-        - Censored:   log Phi((c - mu) / sigma)
-
-        where mu = rho*Wy* + X@beta.
+        The SAR panel Tobit model expresses both the residual log-likelihood
+        and the Jacobian via ``pm.Potential``, so PyMC captures no pointwise
+        ``log_likelihood``.  We rebuild it here from the Tobit censoring
+        formula with latent mean :math:`\\mu = \\rho W y^* + X\\beta`; the
+        per-period Jacobian is scaled by ``T``.
         """
-        idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
-        )
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
-        from scipy.stats import norm
-
         rho = idata.posterior["rho"].values
         beta = idata.posterior["beta"].values
         sigma = idata.posterior["sigma"].values
         c, d = rho.shape
         s = c * d
         n = self._y.shape[0]
-        X = self._X
-        censored = self._censored_mask
-        censoring = self.censoring
         rho_f = rho.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
         y_lat = self._posterior_latent_y_mean()
         Wy_lat = self._sparse_panel_lag(y_lat)
-        mu = rho_f[:, None] * Wy_lat[None, :] + beta_f @ X.T
-        ll = np.empty((s, n), dtype=np.float64)
-        uncens = ~censored
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-            from scipy.stats import t as t_dist
-
-            ll[:, uncens] = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - (nu_f[:, None] + 1)
-                / 2
-                * np.log1p(
-                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                    / nu_f[:, None]
-                )
-            )
-            ll[:, censored] = t_dist.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None]
-            )
-        else:
-            ll[:, uncens] = -0.5 * (
-                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
-            )
-            ll[:, censored] = norm.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None]
-            )
+        mu = rho_f[:, None] * Wy_lat[None, :] + beta_f @ self._X.T
+        nu_f = idata.posterior["nu"].values.reshape(s) if self.robust else None
+        ll = _tobit_pointwise_loglik(
+            self._y, mu, sigma_f, self._censored_mask, self.censoring, nu_f
+        )
         jac = self._logdet_numpy_vec_fn(rho_f) * self._T
-        ll = ll + jac[:, None] / n
-        ll = ll.reshape(c, d, n)
+        ll = (ll + jac[:, None] / n).reshape(c, d, n)
         _write_log_likelihood_to_idata(idata, ll)
         return idata
 
@@ -236,7 +177,7 @@ class SEMPanelTobit(_PanelTobitBase):
         W_pt = self._W_pt_sparse
         n_obs = int(self._y.shape[0])
         inv_n = 1.0 / n_obs
-        jax_logp = self.backend.use_jax_likelihood(nuts_sampler)
+        jax_logp = use_jax_likelihood(nuts_sampler)
         n_cens = int(self._censored_idx.size)
         with pm.Model(coords=self._model_coords()) as model:
             lam = pm.Uniform("lam", lower=lam_lower, upper=lam_upper)
@@ -358,87 +299,33 @@ class SEMPanelTobit(_PanelTobitBase):
         beta = self._posterior_mean("beta")
         return self._X @ beta
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
+    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
+        """Attach the complete pointwise Tobit log-likelihood for IC metrics.
 
-        The SEM panel Tobit model uses ``pm.Potential`` for both the error
-        log-likelihood and the Jacobian, so nothing is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, using the Tobit censoring formula:
-
-        - Uncensored: log N(y | mu, sigma^2)
-        - Censored:   log Phi((c - mu) / sigma)
-
-        where mu = X@beta and the spatial filtering is absorbed into
-        the Jacobian.
+        The SEM panel Tobit model expresses both the error log-likelihood and
+        the Jacobian via ``pm.Potential`` (NumPy path); on JAX backends the
+        ``obs`` CustomDist already carries a complete ``log_likelihood`` and we
+        return early.  Otherwise we rebuild it from the Tobit censoring formula
+        with latent mean :math:`\\mu = X\\beta` (the spatial filter is absorbed
+        into the ``T``-scaled Jacobian).
         """
-        idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
-        )
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
-        from scipy.stats import norm
-
         lam = idata.posterior["lam"].values
         beta = idata.posterior["beta"].values
         sigma = idata.posterior["sigma"].values
         c, d = lam.shape
         s = c * d
         n = self._y.shape[0]
-        X = self._X
-        censored = self._censored_mask
-        censoring = self.censoring
         lam_f = lam.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
-        mu = beta_f @ X.T
-        ll = np.empty((s, n), dtype=np.float64)
-        uncens = ~censored
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-            from scipy.stats import t as t_dist
-
-            ll[:, uncens] = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - (nu_f[:, None] + 1)
-                / 2
-                * np.log1p(
-                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                    / nu_f[:, None]
-                )
-            )
-            ll[:, censored] = t_dist.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None]
-            )
-        else:
-            ll[:, uncens] = -0.5 * (
-                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
-            )
-            ll[:, censored] = norm.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None]
-            )
+        mu = beta_f @ self._X.T
+        nu_f = idata.posterior["nu"].values.reshape(s) if self.robust else None
+        ll = _tobit_pointwise_loglik(
+            self._y, mu, sigma_f, self._censored_mask, self.censoring, nu_f
+        )
         jac = self._logdet_numpy_vec_fn(lam_f) * self._T
-        ll = ll + jac[:, None] / n
-        ll = ll.reshape(c, d, n)
+        ll = (ll + jac[:, None] / n).reshape(c, d, n)
         _write_log_likelihood_to_idata(idata, ll)
         return idata

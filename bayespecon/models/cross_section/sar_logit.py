@@ -27,13 +27,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
+from ..._lazy_deps import az
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers._utils._spatial_normal import CholmodFactor
 from ...samplers.gaussian._chain_runner import run_chains
 from ...samplers.logit import (
     LogitGibbsCache,
@@ -43,10 +43,10 @@ from ...samplers.logit import (
 )
 from ...samplers.logit._jax import run_chains_jax_vectorized
 from ..base import SpatialModel
-from ..priors import SpatialLogitPriors, resolve_priors
+from ..priors import SARLogitPriors, resolve_priors
 
 
-class SARSpatialLogit(SpatialModel):
+class SARLogit(SpatialModel):
     """Bayesian structural-form SAR-logit with Pólya–Gamma Gibbs sampler.
 
     Parameters
@@ -64,7 +64,7 @@ class SARSpatialLogit(SpatialModel):
         Design matrix. Required in matrix mode.
     W : libpysal.graph.Graph or scipy.sparse matrix
         Spatial weights of shape ``(n, n)``.
-    priors : dict or SpatialLogitPriors, optional
+    priors : dict or SARLogitPriors, optional
         Override default priors. Supported keys:
 
         - ``rho_lower`` (float, default -0.999): Lower bound of the
@@ -109,15 +109,15 @@ class SARSpatialLogit(SpatialModel):
     _jacobian_param: str | None = "rho"
     _gibbs_class: str | None = None  # Gibbs-only, no NUTS
     _model_type: str = "sar_logit"
-    _priors_cls = SpatialLogitPriors
+    _likelihood: str = "binary"
+    _gibbs_key: tuple[str, str] | None = ("binary", "cross_section")
+    _priors_cls = SARLogitPriors
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         if self.robust:
-            raise NotImplementedError(
-                "robust=True is not supported for SARSpatialLogit."
-            )
+            raise NotImplementedError("robust=True is not supported for SARLogit.")
 
         # Validate y is binary
         if not np.isin(self._y, [0.0, 1.0]).all():
@@ -207,80 +207,59 @@ class SARSpatialLogit(SpatialModel):
             omega=omega_init,
         )
 
-    def fit(
+    def _fit_gibbs(
         self,
+        *,
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
         random_seed: Optional[int] = None,
         thin: int = 1,
-        return_eta: bool = False,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "auto",
+        backend: str = "numpy",
+        return_eta: bool = False,
         pg_n_terms: int = 25,
         n_probes: int = 5,
         lanczos_deg: int = 15,
-        mala_eps: float = 0.1,
-        **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
 
         Parameters
         ----------
-        draws : int
-            Number of post-warmup draws per chain.
-        tune : int
-            Number of warmup (burn-in) draws per chain.
-        chains : int
-            Number of independent chains.
+        draws, tune, chains : int
+            Post-warmup draws, warmup draws, and number of chains.
         random_seed : int or None
             Seed for reproducibility.
         thin : int
             Keep every ``thin``-th draw. Default 1 (no thinning).
-        return_eta : bool
-            If True, store the full latent field η in the posterior.
-            Default False — η is n × draws × chains, which can be large.
         n_jobs : int
             Number of parallel chains. -1 = all CPUs.
         progressbar : bool
             Show per-chain progress bars.
-        gibbs_method : str, default "auto"
-            Which Gibbs sampler path to use:
-
-            - ``"auto"``: select based on JAX availability and CHOLMOD.
-            - ``"factorize"``: force factorisation-based path (CHOLMOD if
-              available, else ``scipy.sparse.linalg.splu``).
-            - ``"jax_dense"``: force JAX-accelerated path.  Requires
-              JAX with float64 enabled.  Viable for n ≤ ~10 000.
+        backend : {"numpy", "jax"}
+            Execution backend.  ``"numpy"`` uses the CHOLMOD factorisation
+            path (the default); ``"jax"`` uses the JAX-accelerated dense path
+            (requires float64; viable for n ≲ 10 000).
+        return_eta : bool
+            If True, store the full latent field η in the posterior.
+            Default False — η is n × draws × chains, which can be large.
         pg_n_terms : int, default 25
             Ignored (kept for API compatibility).  PG draws now use the
             exact sum-of-exponentials method which does not require
-            truncation.  Only relevant when ``gibbs_method="jax_dense"``.
+            truncation.  Only relevant on the JAX path.
         n_probes : int, default 5
             Number of Lanczos probe vectors for stochastic log|P|
-            estimation.  Only used when ``gibbs_method="jax_dense"``.
+            estimation.  Only used on the JAX path.
         lanczos_deg : int, default 15
             Lanczos iteration depth for log|P| estimation.  Only used
-            when ``gibbs_method="jax_dense"``.
+            on the JAX path.
+
         Returns
         -------
         az.InferenceData
             With posterior, log_likelihood, and observed_data groups.
-
-        Raises
-        ------
-        TypeError
-            If NUTS-specific kwargs (nuts_sampler, target_accept) are passed.
         """
-        # Reject NUTS-specific kwargs
-        for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
-            if bad_kwarg in kwargs:
-                raise TypeError(
-                    f"SARSpatialLogit.fit() does not accept '{bad_kwarg}'. "
-                    f"This model uses a Gibbs sampler, not NUTS."
-                )
-
         y = self._y
         X = self._X
         W_sparse = self._W_sparse
@@ -289,9 +268,9 @@ class SARSpatialLogit(SpatialModel):
         # Build priors from the typed priors object
         priors_obj = resolve_priors(
             self.priors if isinstance(self.priors, dict) else None,
-            SpatialLogitPriors,
+            SARLogitPriors,
         )
-        if isinstance(self.priors, SpatialLogitPriors):
+        if isinstance(self.priors, SARLogitPriors):
             priors_obj = self.priors
 
         priors = LogitGibbsPriors(
@@ -310,49 +289,18 @@ class SARSpatialLogit(SpatialModel):
         WtW = W_sparse.T @ W_sparse
 
         # Create CHOLMOD factor for the precision matrix sparsity pattern.
-        if has_cholmod():
-            _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
-            cholmod_factor = CholmodFactor(_P0)
-        else:
-            cholmod_factor = None
+        _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
+        cholmod_factor = CholmodFactor(_P0)
 
-        # Resolve Gibbs method
-        _valid_methods = {"auto", "factorize", "jax_dense"}
-        if gibbs_method not in _valid_methods:
-            raise ValueError(
-                f"gibbs_method must be one of {_valid_methods}, got '{gibbs_method}'"
-            )
-
-        import importlib.util
-
-        _jax_available = importlib.util.find_spec("jax") is not None
-
-        if gibbs_method == "jax_dense" and not _jax_available:
-            raise ImportError(
-                "gibbs_method='jax_dense' requires JAX. Install with: pip install jax"
-            )
-
-        if gibbs_method == "factorize":
-            solve_method = "cholmod" if cholmod_factor is not None else "splu"
-            logdet_P_method = "cholmod"
-            sample_method = "cholmod" if cholmod_factor is not None else "splu"
-        elif gibbs_method == "jax_dense":
+        # Map the resolved backend onto the sampler's solve/logdet/sample paths.
+        if backend == "jax":
             solve_method = "jax_dense"
             logdet_P_method = "jax_dense"
             sample_method = "jax_dense"
-        else:  # "auto"
-            if cholmod_factor is not None:
-                solve_method = "cholmod"
-                logdet_P_method = "cholmod"
-                sample_method = "cholmod"
-            elif _jax_available and n <= self._JAX_DENSE_THRESHOLD:
-                solve_method = "jax_dense"
-                logdet_P_method = "jax_dense"
-                sample_method = "jax_dense"
-            else:
-                solve_method = "splu"
-                logdet_P_method = "cholmod"
-                sample_method = "splu"
+        else:  # "numpy" → CHOLMOD factorisation
+            solve_method = "cholmod"
+            logdet_P_method = "cholmod"
+            sample_method = "cholmod"
 
         # Precompute JAX dense components if using jax_dense path
         W_sym_dense = None
@@ -436,7 +384,6 @@ class SARSpatialLogit(SpatialModel):
                 pg_n_terms=pg_n_terms,
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
-                mala_eps=mala_eps,
                 progressbar=progressbar,
             )
         else:
@@ -516,9 +463,9 @@ class SARSpatialLogit(SpatialModel):
         return idata
 
     def _build_pymc_model(self):
-        """Not supported — SARSpatialLogit uses a Gibbs sampler, not NUTS."""
+        """Not supported — SARLogit uses a Gibbs sampler, not NUTS."""
         raise NotImplementedError(
-            "SARSpatialLogit does not build a PyMC model. "
+            "SARLogit does not build a PyMC model. "
             "Use the fit() method for Gibbs sampling."
         )
 
@@ -550,38 +497,17 @@ class SARSpatialLogit(SpatialModel):
         """
         return self.fitted_probabilities()
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute average direct/indirect/total impacts on the log-odds scale."""
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        eigs = self._W_eigs
-        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        ni = self._nonintercept_indices
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        indirect = total - direct
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior impacts on the log-odds scale for each draw."""
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs
-        mean_diag = _chunked_eig_means(rho_draws, eigs)
+        mean_diag = self._batch_mean_diag(rho_draws)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
         ni = self._nonintercept_indices
@@ -718,7 +644,7 @@ class SARSpatialLogit(SpatialModel):
         with the count-mean weight :math:`\mu` replaced by the Bernoulli
         variance :math:`p(1-p)`.
         """
-        from ..._ops import _make_cached_umfpack_solver
+        from ..._ops import _make_cached_sparse_solver
 
         W = self._W_sparse
         I_n = sp.eye(n, format="csr", dtype=np.float64)
@@ -740,7 +666,8 @@ class SARSpatialLogit(SpatialModel):
             rho_f = float(rho)
             A = (I_n - rho_f * W).tocsc()
 
-            solver = _make_cached_umfpack_solver(A)
+            # KLU/UMFPACK reusable factor when available, else scipy SuperLU.
+            solver = _make_cached_sparse_solver(A)
             if solver is None:
                 solver = sp.linalg.splu(A)
 

@@ -10,7 +10,7 @@ import pymc as pm
 import pytest
 from libpysal.graph import Graph
 
-from bayespecon import (
+from bayespecon.models import (
     OLSPanelFE,
     SARPanelFE,
     SDEMPanelFE,

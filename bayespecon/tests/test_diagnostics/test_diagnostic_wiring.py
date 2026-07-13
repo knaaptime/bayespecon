@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bayespecon import (
+from bayespecon.models import (
     OLS,
     SAR,
     SDEM,
@@ -52,12 +52,7 @@ def test_panel_models_no_frequentist_diagnostics():
         assert not hasattr(cls, "hausman_test")
 
 
-from bayespecon import (
-    SDEMPanelFE,
-    SDEMPanelRE,
-    SDMPanelFE,
-    SLXPanelFE,
-)
+from bayespecon.models import SDEMPanelFE, SDEMPanelRE, SDMPanelFE, SLXPanelFE
 from bayespecon.models.flow import OLSFlow, SARFlow
 from bayespecon.models.flow_panel import OLSFlowPanel
 

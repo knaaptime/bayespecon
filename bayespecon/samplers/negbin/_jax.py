@@ -14,9 +14,11 @@ Architecture
 ------------
 The sampler uses:
 
-- **PG sampling**: Alternating-series method with K=10 terms using
-  ``jax.random.gamma`` for Gamma(h, 1) draws, preserving the correct
-  variance (Var[PG] ∝ h, not h²).  Fully JIT-compatible.
+- **PG sampling**: Truncated alternating-series method (K=``pg_n_terms``)
+  using ``jax.random.gamma`` for Gamma(h, 1) draws — correct variance
+  (Var[PG] ∝ h, not h²) — plus a closed-form tail-mean correction that
+  makes the sample mean exact (see :func:`_pg_gamma_series_draw`).
+  Fully JIT-compatible.
 - **η and β draws**: Dense Cholesky factorisation via ``jnp.linalg.cholesky``
   and ``jnp.linalg.solve``.  O(n³) but fast for n ≤ ~2000.
 - **σ² draw**: Conjugate inverse-Gamma (direct, no solve needed).
@@ -32,7 +34,8 @@ The sampler uses:
 Limitations
 -----------
 - O(n³) dense Cholesky limits scalability to n ≤ ~2000.
-- PG sum-of-exponentials has ~2% mean bias (acceptable for MCMC).
+- The PG draw's neglected tail *variance* is O(1/K³) (its mean is exact
+  after the tail correction).
 - Lanczos log|P| estimation is stochastic but uses a fixed key within
   each slice step for consistency.
 
@@ -50,6 +53,68 @@ from __future__ import annotations
 import numpy as np
 
 from ._core import JAXGibbsState
+
+
+def _pg_gamma_series_draw(key, h, z, n_terms: int):
+    r"""Draw PG(h, z) via the truncated Gamma series with tail-mean correction.
+
+    .. math::
+
+        \mathrm{PG}(h, z) = \frac{1}{2\pi^2} \sum_{k \ge 0}
+            \frac{g_k}{(k + 1/2)^2 + c^2},
+        \quad g_k \sim \Gamma(h, 1),\; c = \frac{|z|}{2\pi}.
+
+    Truncating at ``K = n_terms`` drops a tail whose *mean* is
+    deterministic and available in closed form via
+    :math:`\sum_{k \ge 0} 1/((k+1/2)^2 + c^2) = \pi \tanh(\pi c)/(2c)`:
+    adding ``h * (S_inf(c) - S_K(c)) / (2 pi^2)`` back makes the sample
+    mean exactly :math:`E[\mathrm{PG}(h,z)] = h \tanh(z/2)/(2z)`.  The
+    neglected tail *variance* is :math:`O(1/K^3)` — negligible at K=25.
+
+    Without the correction the truncated series has a systematic −0.8%
+    to −1.7% mean bias at K=25 (the bias for which ``method="gamma"``
+    was removed from ``_utils/_jax_polyagamma.py`` — see that module's
+    docstring; this function is the scan-compatible replacement).
+
+    Parameters
+    ----------
+    key : jax.random.PRNGKey
+        PRNG key for the Gamma draws.
+    h : jax.numpy.ndarray of shape (n,)
+        Shape parameters (NB augmentation: ``h = y + alpha``); may be
+        non-integer.
+    z : jax.numpy.ndarray of shape (n,)
+        Tilting parameters.
+    n_terms : int
+        Number of series terms K (static under ``jit``).
+
+    Returns
+    -------
+    jax.numpy.ndarray of shape (n,)
+        PG(h, z) draws, mean-exact, all elements positive.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    pi = jnp.pi
+    pi2 = pi * pi
+    k_idx = jnp.arange(n_terms, dtype=jnp.float64)
+
+    c = jnp.abs(z) / (2.0 * pi)  # (n,)
+    denominators = (k_idx + 0.5) ** 2 + c[:, None] ** 2  # (n, K)
+
+    g = jax.random.gamma(
+        key, h[:, None] * jnp.ones((1, n_terms)), dtype=jnp.float64
+    )  # (n, K) Gamma(h, 1) draws
+    series = jnp.sum(g / denominators, axis=1) / (2.0 * pi2)  # (n,)
+
+    # Closed-form tail mean: S_inf(c) = pi*tanh(pi*c)/(2c), S_inf(0) = pi^2/2.
+    safe_c = jnp.where(c < 1e-12, 1.0, c)
+    s_inf = jnp.where(c < 1e-12, pi2 / 2.0, pi * jnp.tanh(pi * safe_c) / (2.0 * safe_c))
+    s_partial = jnp.sum(1.0 / denominators, axis=1)  # (n,)
+    tail_mean = h * (s_inf - s_partial) / (2.0 * pi2)
+
+    return jnp.maximum(series + tail_mean, 1e-6)
 
 
 def _check_jax_available() -> None:
@@ -80,15 +145,13 @@ def _make_gibbs_step_with_data(
     XtX_jax,
     priors,
     pg_n_terms,
-    mh_proposal_sd,
     n_probes,
     lanczos_deg,
-    use_mala: bool = True,
 ):
     """Build a JIT-compiled Gibbs step with data bound into the closure.
 
     This function creates a ``@jax.jit``-compiled function that performs
-    one complete Gibbs sweep (ω, η, β, σ², ρ MALA/RW-MH) in a single XLA
+    one complete Gibbs sweep (ω, η, β, σ², ρ slice) in a single XLA
     kernel call, eliminating all Python→JAX dispatch overhead.
 
     Parameters
@@ -118,18 +181,13 @@ def _make_gibbs_step_with_data(
     priors : GibbsPriors
         Prior hyperparameters.
     pg_n_terms : int
-        Number of alternating-series terms for the PG approximation.
-        Values below 20 can cause the Gibbs chain to diverge.
-    mh_proposal_sd : float
-        Ignored (kept for API compatibility). The ρ update now uses
-        slice sampling with a fixed step-out width of 0.2.
+        Number of alternating-series terms for the PG draw (mean-exact
+        via tail correction; see :func:`_pg_gamma_series_draw`).
+        Values below 20 can destabilize the Gibbs chain.
     n_probes : int
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int
         Lanczos iteration depth.
-    use_mala : bool
-        Ignored (kept for API compatibility). The ρ update now uses
-        slice sampling unconditionally.
 
     Returns
     -------
@@ -166,11 +224,6 @@ def _make_gibbs_step_with_data(
     # Prior precision for beta
     beta_prior_prec = jnp.diag(1.0 / beta_sigma2_jax)
 
-    # PG term indices
-    k_idx = jnp.arange(pg_n_terms, dtype=jnp.float64)
-    pi = jnp.pi
-    pi2 = pi * pi
-
     @eqx.filter_jit
     def gibbs_step(state, key):
         """One complete Gibbs sweep: ω → η → β → σ² → ρ (slice) → α (slice).
@@ -193,24 +246,14 @@ def _make_gibbs_step_with_data(
         beta = state.beta
         sigma2 = state.sigma2
         rho = state.rho
-        state.omega
         alpha = state.alpha
 
         key_omega, key_eta, key_beta, key_sigma2, key_rho = jax.random.split(key, 5)
 
-        # ── Block 1: ω ~ PG(y + α, η) — alternating-series with Gamma draws ──
-        # PG(h, z) = (1/(2π²)) Σ_{k=0}^{K-1} g_k / ((k+0.5)² + z²/(4π²))
-        # where g_k ~ Gamma(h, 1).  Using Gamma(h,1) instead of h·Exp(1)
-        # preserves the correct variance (Var[PG] ∝ h, not h²).
-        h = y_jax + alpha  # shape parameters
-        z = eta  # tilting parameters
-        Z = jnp.abs(z) / 2.0
-        denominators = (k_idx + 0.5) ** 2 + (Z[:, None] / pi) ** 2  # (n, K)
-        g = jax.random.gamma(
-            key_omega, h[:, None] * jnp.ones((1, pg_n_terms)), dtype=jnp.float64
-        )  # (n, K) Gamma(h, 1) draws
-        pg1 = jnp.sum(g / denominators, axis=1) / (2.0 * pi2)  # (n,)
-        omega_new = jnp.maximum(pg1, 1e-6)
+        # ── Block 1: ω ~ PG(y + α, η) — Gamma series + tail-mean correction ──
+        # Gamma(h,1) per-term draws give the correct variance (Var[PG] ∝ h,
+        # not h²); the closed-form tail correction makes the mean exact.
+        omega_new = _pg_gamma_series_draw(key_omega, y_jax + alpha, eta, pg_n_terms)
 
         # ── Block 2: η | ω, ρ, β, σ² — dense Cholesky solve ──
         inv_s2 = 1.0 / sigma2
@@ -642,11 +685,9 @@ def run_chain_jax(
     thin: int = 1,
     return_eta: bool = False,
     rng=None,
-    mh_proposal_sd: float = 0.05,
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    use_mala: bool = True,
 ):
     """Run one chain of the full-JIT JAX Gibbs sampler.
 
@@ -684,19 +725,14 @@ def run_chain_jax(
         If True, store the full latent field η.
     rng : numpy.random.Generator, optional
         Random state.
-    mh_proposal_sd : float
-        Ignored (kept for API compatibility). The ρ update now uses
-        slice sampling with a fixed step-out width of 0.2.
     pg_n_terms : int
-        Number of alternating-series terms for the PG approximation.
-        Values below 20 can cause the Gibbs chain to diverge.
+        Number of alternating-series terms for the PG draw (mean-exact
+        via tail correction; see :func:`_pg_gamma_series_draw`).
+        Values below 20 can destabilize the Gibbs chain.
     n_probes : int
         Number of Lanczos probes for log|P| estimation.
     lanczos_deg : int
         Lanczos iteration depth.
-    use_mala : bool
-        Ignored (kept for API compatibility). The ρ update now uses
-        slice sampling unconditionally.
 
     Returns
     -------
@@ -758,10 +794,8 @@ def run_chain_jax(
         XtX_jax=XtX_jax,
         priors=priors,
         pg_n_terms=pg_n_terms,
-        mh_proposal_sd=mh_proposal_sd,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
-        use_mala=use_mala,
     )
 
     # Warmup the JIT function (first call triggers compilation)
@@ -911,11 +945,9 @@ def run_chains_jax_vectorized(
     tune: int,
     thin: int = 1,
     jax_seeds: list[int] | None = None,
-    mh_proposal_sd: float = 0.05,
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    use_mala: bool = True,
     progressbar: bool = True,
 ) -> list[dict]:
     """Run multiple SAR-NB Gibbs chains in parallel via ``jax.vmap``.
@@ -960,10 +992,8 @@ def run_chains_jax_vectorized(
         XtX_jax=XtX_jax,
         priors=priors,
         pg_n_terms=pg_n_terms,
-        mh_proposal_sd=mh_proposal_sd,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
-        use_mala=use_mala,
     )
 
     init_states = _stack_nb_inits(inits)

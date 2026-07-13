@@ -3,10 +3,17 @@
 Mirrors the PyTensor symbolic functions but uses ``jax.numpy`` so the
 returned callables are compatible with ``jax.jit`` and ``jax.grad``.
 
-Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``, and
-``"slq"``.  The stochastic Chebyshev method precomputes moments in numpy
-and evaluates via JAX-native Clenshaw.  SLQ uses JAX-native Arnoldi
-iteration via ``jax.lax.scan`` for the Krylov loop.
+Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``,
+``"cheb_cholesky"``, ``"aaa"``, and ``"slq"``.  The stochastic Chebyshev
+method precomputes moments in numpy and evaluates via JAX-native Clenshaw.
+SLQ consumes the numpy :func:`slq_logdet_precompute` quadrature rules
+(sparse batched D-symmetrised Lanczos, canonical ``n·v₁²`` weights; complex
+bilinear ``γ`` for the directed-``W`` Arnoldi fallback) and evaluates the
+ρ-dependent quadrature in JAX — differentiable and JIT-compatible, with no
+dense ``W`` materialisation.  ``cheb_cholesky`` precomputes Chebyshev
+coefficients via sparse Cholesky in numpy and evaluates via JAX-native
+Clenshaw.  ``aaa`` precomputes support points and barycentric weights via
+sparse LU in numpy and evaluates via JAX-native barycentric formula.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ from ._cheb_stochastic import (
 )
 from ._chebyshev import chebyshev
 from ._config import resolve_logdet_method
+from ._slq import slq_logdet_precompute
 
 
 def jax_logdet_chebyshev(
@@ -52,119 +60,6 @@ def jax_logdet_chebyshev(
     return c[0] + x * b_curr - b_next
 
 
-# ---------------------------------------------------------------------------
-# JAX-native Arnoldi iteration for SLQ
-# ---------------------------------------------------------------------------
-
-
-def _jax_arnoldi_probe(W_dense, z_raw, k):
-    """Single Arnoldi probe on non-symmetric W: returns Ritz values and e₁² weights.
-
-    Runs k steps of Arnoldi on W starting from z/||z||, builds the
-    upper Hessenberg matrix H_k, eigendecomposes it, and returns
-    (theta, |v_{1,:}|², ||z||²) where theta are the Ritz values
-    (complex for non-symmetric W).
-
-    Designed to be vmapped over probes.
-    """
-    import jax
-    import jax.numpy as jnp
-
-    n = W_dense.shape[0]
-    z_norm = jnp.linalg.norm(z_raw)
-    q = z_raw / jnp.where(z_norm < 1e-15, 1.0, z_norm)
-
-    # Pre-allocate Q (n × k) and H (k × k)
-    Q = jnp.zeros((n, k))
-    Q = Q.at[:, 0].set(q)
-    H = jnp.zeros((k, k))
-
-    # First step
-    w = W_dense @ q
-    h00 = jnp.dot(q, w)
-    w = w - h00 * q
-    H = H.at[0, 0].set(h00)
-
-    # Arnoldi iteration via lax.scan
-    def body(carry, i):
-        Q, H, w = carry
-        beta = jnp.linalg.norm(w)
-        q_new = w / jnp.where(beta < 1e-15, 1.0, beta)
-        Q = Q.at[:, i].set(q_new)
-        w = W_dense @ q_new
-
-        # Full reorthogonalisation against all Q columns.
-        # Columns beyond i are zero, so Q @ (Q.T @ w) is equivalent
-        # to projecting out Q[:, :i+1] but with static shapes.
-        h_col = Q.T @ w  # (k,) — only first i+1 entries are nonzero
-        w = w - Q @ h_col
-
-        # Set H entries: subdiagonal + the MGS coefficients
-        H = H.at[i, i - 1].set(beta)
-        H = H.at[:, i].set(h_col)
-
-        return (Q, H, w), None
-
-    (Q, H, _), _ = jax.lax.scan(
-        body,
-        (Q, H, w),
-        jnp.arange(1, k),
-    )
-
-    # Eigendecompose H_k (non-symmetric → eig, complex Ritz values)
-    theta, eigvecs = jnp.linalg.eig(H)
-    e1_sq = jnp.abs(eigvecs[0, :]) ** 2
-    return theta, e1_sq, z_norm**2
-
-
-def jax_slq_logdet_precompute(
-    W_dense: np.ndarray,
-    *,
-    n_probes: int = 10,
-    lanczos_deg: int = 30,
-    seed: int = 0,
-) -> dict:
-    """JAX-native SLQ precompute: Arnoldi on W, return quadrature rules.
-
-    Parameters
-    ----------
-    W_dense : np.ndarray or jax.numpy.ndarray, shape (n, n)
-        Dense spatial weights matrix.
-    n_probes : int, default 10
-    lanczos_deg : int, default 30
-    seed : int, default 0
-
-    Returns
-    -------
-    dict with keys:
-        - ``nodes``: (n_probes, k) complex Ritz values
-        - ``weights``: (n_probes, k) float weights (||z||² · |e₁|²)
-        - ``n_probes``: int
-    """
-    import jax
-    import jax.numpy as jnp
-
-    n = W_dense.shape[0]
-    W_jax = jnp.asarray(W_dense, dtype=jnp.float64)
-
-    key = jax.random.PRNGKey(seed)
-    keys = jax.random.split(key, n_probes)
-    z_all = jax.vmap(lambda k: jax.random.normal(k, shape=(n,)))(keys)
-
-    # vmap Arnoldi over all probes
-    theta_all, e1_sq_all, z_norm_sq_all = jax.vmap(
-        lambda z: _jax_arnoldi_probe(W_jax, z, lanczos_deg)
-    )(z_all)
-
-    weights = z_norm_sq_all[:, None] * e1_sq_all  # (n_probes, k)
-
-    return {
-        "nodes": np.asarray(theta_all),
-        "weights": np.asarray(weights),
-        "n_probes": n_probes,
-    }
-
-
 def make_logdet_jax_fn(
     W,
     method: str | None = None,
@@ -192,7 +87,9 @@ def make_logdet_jax_fn(
             n = W_arr.shape[0]
             W_sparse = sp.csr_matrix(W_arr)
 
-    method = resolve_logdet_method(method, n=n)
+    method = resolve_logdet_method(
+        method, n=n, W=W_sparse if "W_sparse" in dir() else W_arr
+    )
 
     if method == "eigenvalue":
         if eigs is None:
@@ -255,40 +152,93 @@ def make_logdet_jax_fn(
         return _jax_cheb_stochastic
 
     if method == "slq":
-        # JAX-native Arnoldi precompute
         if eigs is not None:
-            # If eigenvalues are supplied, materialize W for Arnoldi
-            # (shouldn't happen — SLQ is for when eigvals are unavailable)
-            W_dense = np.eye(n)  # fallback: can't run Arnoldi on eigenvalues
-        else:
-            W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
+            raise ValueError(
+                "SLQ requires the weight matrix W, not a 1-D eigenvalue array."
+            )
+        # Consume the numpy sparse SLQ rules: batched D-symmetrised Lanczos
+        # (real nodes θ and real n·v₁² weights) for undirected W, or Arnoldi
+        # (complex Ritz values θ and complex bilinear weights γ) for directed
+        # W.  Evaluate the ρ-dependent quadrature in JAX via the complex log;
+        # the Lanczos case is the zero-imaginary special case of the same
+        # formula.  No dense W is materialised — the precompute is matvec-only.
+        pre = slq_logdet_precompute(W_sparse)
+        nodes = np.asarray(pre.nodes)
+        weights = np.asarray(pre.weights)
+        n_probes = pre.n_probes
 
-        pre = jax_slq_logdet_precompute(W_dense, n_probes=10, lanczos_deg=30, seed=0)
-        nodes = pre["nodes"]  # (n_probes, k) complex
-        weights = pre["weights"]  # (n_probes, k) float
-        n_probes = pre["n_probes"]
-
-        # Store real/imag separately for JAX compatibility
         nodes_real = np.ascontiguousarray(nodes.real.astype(np.float64))
         nodes_imag = np.ascontiguousarray(nodes.imag.astype(np.float64))
+        w_real = np.ascontiguousarray(weights.real.astype(np.float64))
+        w_imag = np.ascontiguousarray(weights.imag.astype(np.float64))
 
         def _jax_slq(rho):
             import jax.numpy as jnp
 
             nr = jnp.asarray(nodes_real)
             ni = jnp.asarray(nodes_imag)
-            w = jnp.asarray(weights)
-            # |1 - ρθ|² = (1 - ρ·Re(θ))² + (ρ·Im(θ))²
+            wr = jnp.asarray(w_real)
+            wi = jnp.asarray(w_imag)
+            # 1 - ρθ = (1 - ρ·Re θ) + i(-ρ·Im θ)
+            # log(1 - ρθ) = 0.5·log|1-ρθ|² + i·atan2(Im, Re)
             re = 1.0 - rho * nr
-            im = rho * ni
-            mod_sq = re**2 + im**2
-            safe = jnp.maximum(mod_sq, 1e-300)
-            val = jnp.sum(w * 0.5 * jnp.log(safe)) / n_probes
+            im = -rho * ni
+            log_re = 0.5 * jnp.log(jnp.maximum(re**2 + im**2, 1e-300))
+            log_im = jnp.arctan2(im, re)
+            # Re(Σ γ·log(1-ρθ)) = Σ [Re(γ)·log_re - Im(γ)·log_im]; the second
+            # term vanishes for real (Lanczos) weights but keeps the cross term
+            # that a magnitude-only log would drop for the complex Arnoldi case.
+            val = jnp.sum(wr * log_re - wi * log_im) / n_probes
             return val if T == 1 else T * val
 
         return _jax_slq
 
+    if method == "cheb_cholesky":
+        from ._chol_cheb import chol_cheb_logdet_precompute
+
+        # Precompute Chebyshev coefficients via sparse Cholesky in numpy,
+        # then evaluate via JAX-native Clenshaw (differentiable, JIT-compatible).
+        pre = chol_cheb_logdet_precompute(
+            W_sparse, order=None, rho_min=rho_min, rho_max=rho_max
+        )
+        coeffs = pre.coeffs.astype(np.float64)
+        rmin_cb = float(pre.rho_min)
+        rmax_cb = float(pre.rho_max)
+
+        def _jax_cheb_chol(rho):
+            val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)
+            return val if T == 1 else T * val
+
+        return _jax_cheb_chol
+
+    if method == "aaa":
+        from ._aaa import aaa_logdet_precompute
+
+        # Precompute support points and barycentric weights via sparse LU
+        # in numpy, then evaluate via JAX-native barycentric formula
+        # (differentiable, JIT-compatible).
+        pre = aaa_logdet_precompute(W_sparse, rho_min=rho_min, rho_max=rho_max)
+        sp_z = pre.support_points.astype(np.float64)
+        sp_f = pre.support_values.astype(np.float64)
+        w = pre.weights.astype(np.float64)
+
+        def _jax_aaa(rho):
+            import jax.numpy as jnp
+
+            z_j = jnp.asarray(sp_z)
+            f_j = jnp.asarray(sp_f)
+            w_j = jnp.asarray(w)
+
+            diff = rho - z_j
+            n_val = jnp.sum(w_j * f_j / diff)
+            d_val = jnp.sum(w_j / diff)
+            val = n_val / d_val
+            return val if T == 1 else T * val
+
+        return _jax_aaa
+
     raise ValueError(
         f"Method '{method}' has no JAX implementation. "
-        "Use 'eigenvalue', 'chebyshev', 'cheb_stochastic', or 'slq'."
+        "Use 'eigenvalue', 'chebyshev', 'cheb_stochastic', "
+        "'cheb_cholesky', 'aaa', or 'slq'."
     )

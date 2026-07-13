@@ -127,4 +127,3 @@ from .panel_tobit import (
 from .panel_tobit import (
     simulate_panel_sem_tobit_fe as simulate_panel_sem_tobit_fe,
 )
-from .zinb import simulate_sar_zinb as simulate_sar_zinb

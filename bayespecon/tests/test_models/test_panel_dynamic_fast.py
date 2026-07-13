@@ -7,7 +7,7 @@ import numpy as np
 import pymc as pm
 import pytest
 
-from bayespecon import (
+from bayespecon.models import (
     OLSPanelDynamic,
     SARPanelDynamic,
     SDEMPanelDynamic,

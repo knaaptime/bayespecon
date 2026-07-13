@@ -9,9 +9,7 @@ import numpy as np
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
-from ._chebyshev import _barry_pace_traces, chebyshev
-from ._config import _auto_logdet_method
-from ._pytensor import logdet_chebyshev, logdet_eigenvalue
+from ._chebyshev import _barry_pace_traces
 
 
 def compute_flow_traces(
@@ -22,10 +20,15 @@ def compute_flow_traces(
 ) -> np.ndarray:
     """Estimate tr(W^k) for k=1..miter via Barry-Pace stochastic traces.
 
-    Thin public wrapper around :func:`_barry_pace_traces`, mirroring
-    ``ftrace1.m`` from the LeSage spatial flows toolbox.  Used by
-    :func:`_flow_logdet_poly_coeffs` to pre-compute trace products for the
-    flow log-determinant.
+    .. deprecated::
+        The ``"traces"`` log-determinant path is being retired: for large
+        directed flow ``W`` the multinomial trace *value* amplifies Hutchinson
+        noise (>100% error at scale).  The unrestricted flow logdet now uses the
+        resolvent-Kronecker **gradient** (see
+        :mod:`bayespecon._logdet._flow_resolvent`), which is eigenvalue-free and
+        whose relative error *improves* with the flow sample size ``N``.
+
+    Mirrors ``ftrace1.m`` from the LeSage spatial flows toolbox.
 
     Parameters
     ----------
@@ -33,8 +36,7 @@ def compute_flow_traces(
         Row-standardised n×n spatial weights matrix.
     miter : int, default=30
         Number of trace orders to estimate (``traces[k-1] ≈ tr(W^k)`` for
-        k=1..miter).  Higher values improve the polynomial approximation;
-        30–50 is usually sufficient with ``titer=800`` for the geometric tail.
+        k=1..miter).
     riter : int, default=50
         Number of Monte Carlo probe vectors for trace estimation.
     random_state : int, optional
@@ -328,6 +330,13 @@ def flow_logdet_numpy(
     return poly_part - trace_last * tail_sum
 
 
+def _as_flow_csr(W_sparse):
+    """Coerce ``W_sparse`` to a float64 CSR matrix."""
+    if sp.issparse(W_sparse):
+        return W_sparse.tocsr().astype(np.float64)
+    return sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
+
+
 def make_flow_separable_logdet(
     W_sparse,
     n: int,
@@ -346,6 +355,13 @@ def make_flow_separable_logdet(
         \log|L_o \otimes L_d|
         = n\,\log|I_n - \rho_d W| + n\,\log|I_n - \rho_o W|
 
+    Both halves are the ordinary single-parameter logdet, so this delegates to
+    the general :func:`~bayespecon._logdet._factories.make_logdet_fn` factory —
+    unlocking every method it supports (``eigenvalue``, ``chebyshev``,
+    ``cheb_cholesky``, ``aaa``, ``cheb_stochastic``) with a single differentiable
+    precompute reused for both :math:`\rho` components.  ``aaa`` is the
+    auto-selected method for directed (non-symmetric) flow ``W``.
+
     Returns a closure ``fn(rho_d, rho_o) -> pt.TensorVariable`` suitable for
     ``pm.Potential``.
 
@@ -355,40 +371,26 @@ def make_flow_separable_logdet(
         Row-standardised :math:`n \times n` spatial weights matrix.
     n : int
         Number of spatial units.
-    method : str, default ``"eigenvalue"``
-        ``"eigenvalue"`` or ``"chebyshev"``.
+    method : str, optional
+        Any logdet method understood by :func:`make_logdet_fn`, or ``None`` for
+        auto-selection.
     rho_min, rho_max : float
-        Bounds for the Chebyshev interval.
+        Bounds for the approximation interval.
     cheb_order : int, default 20
-        Chebyshev polynomial order.
+        Accepted for backward compatibility; ignored (the general factory uses
+        the package-standard order).
     """
-    if sp.issparse(W_sparse):
-        W_dense = np.asarray(W_sparse.toarray(), dtype=np.float64)
-    else:
-        W_dense = np.asarray(W_sparse, dtype=np.float64)
+    from ._factories import make_logdet_fn
 
-    if method is None:
-        method = _auto_logdet_method(n)
-
-    if method == "eigenvalue":
-        eigs = np.linalg.eigvals(W_dense)
-        return lambda rho_d, rho_o: (
-            n * logdet_eigenvalue(rho_d, eigs) + n * logdet_eigenvalue(rho_o, eigs)
-        )
-    elif method == "chebyshev":
-        out = chebyshev(W_dense, order=cheb_order, rmin=rho_min, rmax=rho_max)
-        coeffs = out["coeffs"]
-        rmin_cb = out["rmin"]
-        rmax_cb = out["rmax"]
-        return lambda rho_d, rho_o: (
-            n * logdet_chebyshev(rho_d, coeffs, rmin=rmin_cb, rmax=rmax_cb)
-            + n * logdet_chebyshev(rho_o, coeffs, rmin=rmin_cb, rmax=rmax_cb)
-        )
-    else:
-        raise ValueError(
-            f"make_flow_separable_logdet: method={method!r} not recognised. "
-            "Choose one of: 'eigenvalue', 'chebyshev'."
-        )
+    # Single-parameter differentiable log|I_n - rho W|, scaled by n via T=n.
+    single = make_logdet_fn(
+        _as_flow_csr(W_sparse),
+        method=method,
+        rho_min=rho_min,
+        rho_max=rho_max,
+        T=n,
+    )
+    return lambda rho_d, rho_o: single(rho_d) + single(rho_o)
 
 
 def make_flow_separable_logdet_numpy(
@@ -406,28 +408,20 @@ def make_flow_separable_logdet_numpy(
     .. math::
 
         n\,\log|I_n - \rho_d W| + n\,\log|I_n - \rho_o W|
+
+    Delegates to :func:`~bayespecon._logdet._factories.make_logdet_numpy_vec_fn`,
+    which supports every method and auto-resolves ``None`` (computing eigenvalues
+    only if it lands on the ``eigenvalue`` method).  ``cheb_order`` is accepted
+    for backward compatibility but ignored.
     """
     from ._factories import make_logdet_numpy_vec_fn
 
-    if sp.issparse(W_sparse):
-        W_sp = W_sparse.tocsr().astype(np.float64)
-    else:
-        W_sp = sp.csr_matrix(np.asarray(W_sparse, dtype=np.float64))
-
-    if method is None:
-        method = _auto_logdet_method(n)
-    if method not in {"eigenvalue", "chebyshev"}:
-        raise ValueError(
-            f"make_flow_separable_logdet_numpy: method={method!r} not recognised. "
-            "Choose one of: 'eigenvalue', 'chebyshev'."
-        )
-
-    eigs = None
-    if method == "eigenvalue":
-        eigs = np.linalg.eigvals(np.asarray(W_sp.toarray(), dtype=np.float64))
-
     logdet_vec = make_logdet_numpy_vec_fn(
-        W_sp, eigs, method=method, rho_min=rho_min, rho_max=rho_max
+        _as_flow_csr(W_sparse),
+        eigs=None,
+        method=method,
+        rho_min=rho_min,
+        rho_max=rho_max,
     )
 
     def _eval(rho_d, rho_o) -> np.ndarray:

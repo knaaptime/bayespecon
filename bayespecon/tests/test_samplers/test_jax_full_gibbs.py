@@ -131,7 +131,6 @@ class TestMakeGibbsStepWithData:
             XtX_jax=XtX_jax,
             priors=priors,
             pg_n_terms=20,
-            mh_proposal_sd=0.05,
             n_probes=10,
             lanczos_deg=30,
         )
@@ -160,7 +159,6 @@ class TestMakeGibbsStepWithData:
             XtX_jax=XtX_jax,
             priors=priors,
             pg_n_terms=20,
-            mh_proposal_sd=0.05,
             n_probes=10,
             lanczos_deg=30,
         )
@@ -208,7 +206,6 @@ class TestMakeGibbsStepWithData:
             XtX_jax=XtX_jax,
             priors=priors,
             pg_n_terms=20,
-            mh_proposal_sd=0.05,
             n_probes=10,
             lanczos_deg=30,
         )
@@ -258,7 +255,6 @@ class TestMakeGibbsStepWithData:
             XtX_jax=XtX_jax,
             priors=priors,
             pg_n_terms=20,
-            mh_proposal_sd=0.05,
             n_probes=10,
             lanczos_deg=30,
         )

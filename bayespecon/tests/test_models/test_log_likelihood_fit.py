@@ -20,7 +20,7 @@ import arviz as az
 import numpy as np
 import pytest
 
-from bayespecon import (
+from bayespecon.models import (
     OLS,
     SAR,
     SDEM,
@@ -498,11 +498,13 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -524,11 +526,13 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -550,11 +554,13 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -576,11 +582,13 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -594,7 +602,7 @@ class TestLogLikelihoodStructureFast:
         """SEMPanelFE fit() should add log_likelihood computed from Potential."""
         y, X, W, W_dense, N, T, n = _panel_data()
         model = SEMPanelFE(
-            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
+            y=y, X=X, W=W, N=N, T=T, effects=0, logdet_method="eigenvalue"
         )
 
         posterior = {
@@ -604,11 +612,19 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
-        out = model.fit(draws=2, tune=1, chains=1, progressbar=False)
+        monkeypatch.setattr(SpatialPanelModel, "_fit_nuts", _fake_fit_nuts)
+        out = model.fit(
+            sampler="nuts",
+            draws=2,
+            tune=1,
+            chains=1,
+            progressbar=False,
+            idata_kwargs={"log_likelihood": True},
+        )
 
         _assert_valid_log_likelihood(out, n, "SEMPanelFE")
 
@@ -616,7 +632,7 @@ class TestLogLikelihoodStructureFast:
         """SDEMPanelFE fit() should add log_likelihood computed from Potential."""
         y, X, W, W_dense, N, T, n = _panel_data()
         model = SDEMPanelFE(
-            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
+            y=y, X=X, W=W, N=N, T=T, effects=0, logdet_method="eigenvalue"
         )
 
         posterior = {
@@ -626,11 +642,19 @@ class TestLogLikelihoodStructureFast:
         }
         fake_idata = az.from_dict(posterior=posterior)
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
-        out = model.fit(draws=2, tune=1, chains=1, progressbar=False)
+        monkeypatch.setattr(SpatialPanelModel, "_fit_nuts", _fake_fit_nuts)
+        out = model.fit(
+            sampler="nuts",
+            draws=2,
+            tune=1,
+            chains=1,
+            progressbar=False,
+            idata_kwargs={"log_likelihood": True},
+        )
 
         _assert_valid_log_likelihood(out, n, "SDEMPanelFE")
 
@@ -638,7 +662,7 @@ class TestLogLikelihoodStructureFast:
         """SARPanelFE fit() should add Jacobian-corrected log_likelihood."""
         y, X, W, W_dense, N, T, n = _panel_data()
         model = SARPanelFE(
-            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
+            y=y, X=X, W=W, N=N, T=T, effects=0, logdet_method="eigenvalue"
         )
 
         # SARPanelFE uses pm.Normal("obs") which auto-captures, so we need
@@ -656,11 +680,13 @@ class TestLogLikelihoodStructureFast:
             log_likelihood={"obs": log_lik},
         )
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialPanelModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -674,7 +700,7 @@ class TestLogLikelihoodStructureFast:
         """SDMPanelFE fit() should add Jacobian-corrected log_likelihood."""
         y, X, W, W_dense, N, T, n = _panel_data()
         model = SDMPanelFE(
-            y=y, X=X, W=W, N=N, T=T, effects=1, logdet_method="eigenvalue"
+            y=y, X=X, W=W, N=N, T=T, effects=0, logdet_method="eigenvalue"
         )
 
         n_obs = n
@@ -689,11 +715,13 @@ class TestLogLikelihoodStructureFast:
             log_likelihood={"obs": log_lik},
         )
 
-        def _fake_super_fit(self, **kwargs):
-            return fake_idata
+        def _fake_fit_nuts(self, **kwargs):
+            self._idata = fake_idata
+            return fake_idata, True
 
-        monkeypatch.setattr(SpatialPanelModel, "fit", _fake_super_fit)
+        monkeypatch.setattr(SpatialPanelModel, "_fit_nuts", _fake_fit_nuts)
         out = model.fit(
+            sampler="nuts",
             draws=2,
             tune=1,
             chains=1,
@@ -795,6 +823,7 @@ class TestJaxLogLikelihoodCapture:
         y, X, W, _, n = _cross_section_data()
         model = SEM(y=y, X=X, W=W, logdet_method="eigenvalue")
         idata = model.fit(
+            sampler="nuts",
             draws=20,
             tune=20,
             chains=1,
@@ -810,6 +839,7 @@ class TestJaxLogLikelihoodCapture:
         y, X, W, _, n = _cross_section_data()
         model = SDEM(y=y, X=X, W=W, logdet_method="eigenvalue")
         idata = model.fit(
+            sampler="nuts",
             draws=20,
             tune=20,
             chains=1,
@@ -838,6 +868,7 @@ class TestJaxLogLikelihoodCapture:
             chains=1,
             random_seed=0,
             progressbar=False,
+            sampler="nuts",
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )
@@ -861,6 +892,7 @@ class TestJaxLogLikelihoodCapture:
             chains=1,
             random_seed=0,
             progressbar=False,
+            sampler="nuts",
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )
@@ -878,6 +910,7 @@ class TestJaxLogLikelihoodCapture:
             chains=1,
             random_seed=0,
             progressbar=False,
+            sampler="nuts",
             nuts_sampler="numpyro",
             idata_kwargs={"log_likelihood": True},
         )

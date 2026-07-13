@@ -5,14 +5,14 @@ from __future__ import annotations
 import pytest
 
 from bayespecon.models.flow._flow import (
-    NegativeBinomialFlow,
-    NegativeBinomialSARFlow,
-    NegativeBinomialSARFlowSeparable,
+    NegBinFlow,
+    SARNegBinFlow,
+    SARNegBinFlowSeparable,
 )
 from bayespecon.models.flow_panel._panel import (
-    NegativeBinomialFlowPanel,
-    NegativeBinomialSARFlowPanel,
-    NegativeBinomialSARFlowSeparablePanel,
+    NegBinFlowPanel,
+    SARNegBinFlowPanel,
+    SARNegBinFlowSeparablePanel,
 )
 
 
@@ -31,7 +31,7 @@ def _small_panel_negbin_flow(seed: int = 0):
 class TestNegativeBinomialFlowConstruction:
     def test_negbin_sar_flow_builds(self):
         data = _small_negbin_flow(seed=1)
-        model = NegativeBinomialSARFlow(
+        model = SARNegBinFlow(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -45,7 +45,7 @@ class TestNegativeBinomialFlowConstruction:
 
     def test_negbin_sar_flow_separable_builds(self):
         data = _small_negbin_flow(seed=2)
-        model = NegativeBinomialSARFlowSeparable(
+        model = SARNegBinFlowSeparable(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -57,7 +57,7 @@ class TestNegativeBinomialFlowConstruction:
 
     def test_negbin_flow_builds(self):
         data = _small_negbin_flow(seed=3)
-        model = NegativeBinomialFlow(
+        model = NegBinFlow(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -70,7 +70,7 @@ class TestNegativeBinomialFlowConstruction:
 class TestNegativeBinomialPanelFlowConstruction:
     def test_negbin_panel_builds(self):
         data = _small_panel_negbin_flow(seed=4)
-        model = NegativeBinomialSARFlowPanel(
+        model = SARNegBinFlowPanel(
             y=data["y"],
             G=data["G"],
             X=data["X"],
@@ -86,7 +86,7 @@ class TestNegativeBinomialPanelFlowConstruction:
 
     def test_negbin_panel_separable_builds(self):
         data = _small_panel_negbin_flow(seed=5)
-        model = NegativeBinomialSARFlowSeparablePanel(
+        model = SARNegBinFlowSeparablePanel(
             y=data["y"],
             G=data["G"],
             X=data["X"],
@@ -100,7 +100,7 @@ class TestNegativeBinomialPanelFlowConstruction:
 
     def test_negbin_panel_aspatial_builds(self):
         data = _small_panel_negbin_flow(seed=6)
-        model = NegativeBinomialFlowPanel(
+        model = NegBinFlowPanel(
             y=data["y"],
             G=data["G"],
             X=data["X"],
@@ -114,7 +114,7 @@ class TestNegativeBinomialPanelFlowConstruction:
     def test_negbin_panel_requires_model_zero(self):
         data = _small_panel_negbin_flow(seed=7)
         with pytest.raises(ValueError, match="effects=0 only"):
-            NegativeBinomialSARFlowPanel(
+            SARNegBinFlowPanel(
                 y=data["y"],
                 G=data["G"],
                 X=data["X"],
@@ -179,7 +179,7 @@ class TestNegativeBinomialFlowRecovery:
             alpha=alpha_true,
             seed=42,
         )
-        model = NegativeBinomialSARFlow(
+        model = SARNegBinFlow(
             out["y_vec"],
             out["G"],
             out["X"],
@@ -234,7 +234,7 @@ class TestNegativeBinomialFlowRecovery:
             alpha=alpha_true,
             seed=43,
         )
-        model = NegativeBinomialSARFlowSeparable(
+        model = SARNegBinFlowSeparable(
             out["y_vec"],
             out["G"],
             out["X"],
@@ -292,7 +292,7 @@ class TestNegativeBinomialPanelFlowRecovery:
             alpha=alpha_true,
             seed=44,
         )
-        model = NegativeBinomialSARFlowPanel(
+        model = SARNegBinFlowPanel(
             y=out["y"],
             G=out["G"],
             X=out["X"],
@@ -350,7 +350,7 @@ class TestNegativeBinomialPanelFlowRecovery:
             alpha=alpha_true,
             seed=45,
         )
-        model = NegativeBinomialSARFlowSeparablePanel(
+        model = SARNegBinFlowSeparablePanel(
             y=out["y"],
             G=out["G"],
             X=out["X"],

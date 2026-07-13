@@ -36,6 +36,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
+from ...models.priors import GaussianGibbsPriors
 from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d_adaptive,
@@ -63,44 +64,6 @@ class GaussianGibbsState:
     beta: np.ndarray
     sigma2: float
     rho: float
-
-
-@dataclass
-class GaussianGibbsPriors:
-    """Prior hyperparameters for Gaussian spatial Gibbs.
-
-    Parameters
-    ----------
-    beta_mu : float or ndarray
-        Prior mean for β.  Scalar is broadcast to all coefficients.
-    beta_sigma : float or ndarray
-        Prior standard deviation for β.  Scalar is broadcast.
-    sigma2_alpha : float
-        Shape hyperparameter of the ``InverseGamma(sigma2_alpha,
-        sigma2_beta)`` prior on σ².  Matches the NUTS path exactly so
-        that posteriors — and therefore LOO/WAIC — agree between the two
-        samplers.  Conjugate with the Gaussian likelihood, so the σ²
-        block is an exact closed-form draw (LeSage 2009 convention).
-    sigma2_beta : float
-        Scale (rate) hyperparameter of the InverseGamma prior on σ².
-        Models typically resolve this to ``Var(y)`` at construction so
-        the prior mean is scale-aware.
-    rho_lower : float
-        Lower bound for ρ/λ (from spectral stability).
-    rho_upper : float
-        Upper bound for ρ/λ (from spectral stability).
-    """
-
-    beta_mu: float | np.ndarray = 0.0
-    beta_sigma: float | np.ndarray = 1e6
-    sigma2_alpha: float = 2.0
-    sigma2_beta: float = 1.0
-    rho_lower: float = -0.999
-    rho_upper: float = 0.999
-    # Accepted for backward compatibility with callers that still pass
-    # ``sigma_sigma=...`` (e.g. panel models).  Ignored by the sampler;
-    # use ``sigma2_alpha`` / ``sigma2_beta`` instead.
-    sigma_sigma: float = 10.0
 
 
 @dataclass
@@ -453,10 +416,7 @@ def _sar_collapsed_log_density(
 
 def _sem_collapsed_log_density(
     lam: float,
-    y: np.ndarray,
-    X: np.ndarray,
-    W_sparse: sp.csr_matrix,
-    logdet_fn: Callable[[float], float],
+    cache: GaussianGibbsCache,
     n: int,
     k: int,
 ) -> float:
@@ -471,21 +431,23 @@ def _sem_collapsed_log_density(
     where y* = (I - λW)y, X* = (I - λW)X, and
     RSS(λ) = y*^T y* - y*^T X* (X*^T X*)^{-1} X*^T y*.
 
-    The extra term -(1/2) log|X*^T X*| appears because X* depends on λ
-    (unlike SAR where X is fixed).
+    The λ-dependent cross-products are expanded as quadratics in λ from the
+    λ-independent terms precomputed on ``GaussianGibbsCache`` (``WX = W X``):
+
+        X*^T X*(λ) = XtX − λ(XtWX + XtWXᵀ) + λ² WXtWX
+        X*^T y*(λ) = XTy − λ(XTWy + WXTy) + λ² WXTWy
+        y*^T y*(λ) = yty − 2λ yTWy + λ² WyTWy
+
+    so each evaluation is ``O(k³)`` (a k×k Cholesky) instead of ``O(n·k²)``.
+    The slice sampler makes several such evaluations per Gibbs sweep.
 
     Parameters
     ----------
     lam : float
         Spatial error parameter.
-    y : ndarray of shape (n,)
-        Response vector.
-    X : ndarray of shape (n, k)
-        Design matrix.
-    W_sparse : csr_matrix
-        Sparse spatial weights matrix.
-    logdet_fn : callable
-        log|I - lam*W| callable.
+    cache : GaussianGibbsCache
+        Carries the precomputed λ-independent cross-products and
+        ``logdet_fn`` (log|I - λW|).
     n : int
         Number of observations.
     k : int
@@ -496,14 +458,11 @@ def _sem_collapsed_log_density(
     log_density : float
         Collapsed log-density of λ (up to a constant).
     """
-    # Transform y and X by (I - λW)
-    y_star = y - lam * (W_sparse @ y)
-    X_star = X - lam * (W_sparse @ X)
-
-    # Compute RSS(λ) using Woodbury form
-    XtX_star = X_star.T @ X_star
-    Xty_star = X_star.T @ y_star
-    yty_star = np.dot(y_star, y_star)
+    lam2 = lam * lam
+    XtWX = cache.XtWX
+    XtX_star = cache.XtX - lam * (XtWX + XtWX.T) + lam2 * cache.WXtWX
+    Xty_star = cache.XTy - lam * (cache.XTWy + cache.WXTy) + lam2 * cache.WXTWy
+    yty_star = cache.yty - 2.0 * lam * cache.yTWy + lam2 * cache.WyTWy
 
     # RSS = y*^T y* - y*^T X* (X*^T X*)^{-1} X*^T y*
     # Use Cholesky for the SPD happy path; fall back to pinv for
@@ -518,61 +477,10 @@ def _sem_collapsed_log_density(
         rss = yty_star - Xty_star @ XtX_star_inv @ Xty_star
     rss = max(rss, 1e-300)  # Prevent log(0)
 
-    logdet = logdet_fn(lam)
+    logdet = cache.logdet_fn(lam)
     logdet_XtX = np.linalg.slogdet(XtX_star)[1]
 
     return logdet - 0.5 * logdet_XtX - 0.5 * (n - k) * np.log(rss)
-
-
-# ---------------------------------------------------------------------------
-# Un-collapsed λ log-density (SEM/SDEM) — kept for backward compatibility
-# ---------------------------------------------------------------------------
-
-
-def _sem_conditional_log_density(
-    lam: float,
-    beta: np.ndarray,
-    sigma2: float,
-    y: np.ndarray,
-    X: np.ndarray,
-    W_sparse: sp.csr_matrix,
-    logdet_fn: Callable[[float], float],
-) -> float:
-    """Conditional log p(λ | β, σ², y) for SEM/SDEM Gaussian model.
-
-    Uses the un-collapsed approach: condition on current β and σ².
-
-        log p(λ | β, σ², y) = log|I - λW| - 1/(2σ²) ||ε||² + const
-
-    where ε = (I - λW)(y - Xβ).
-
-    Parameters
-    ----------
-    lam : float
-        Spatial error parameter.
-    beta : ndarray of shape (k,)
-        Current regression coefficients.
-    sigma2 : float
-        Current residual variance.
-    y : ndarray of shape (n,)
-        Response vector.
-    X : ndarray of shape (n, k)
-        Design matrix.
-    W_sparse : csr_matrix
-        Sparse spatial weights matrix.
-    logdet_fn : callable
-        log|I - lam*W| callable.
-
-    Returns
-    -------
-    log_density : float
-        Conditional log-density of λ (up to a constant).
-    """
-    resid = y - X @ beta
-    eps = resid - lam * (W_sparse @ resid)
-    ss = np.dot(eps, eps)
-    logdet = logdet_fn(lam)
-    return logdet - 0.5 * ss / sigma2
 
 
 # ---------------------------------------------------------------------------
@@ -656,8 +564,6 @@ def _sample_lam_sem_collapsed(
     state: GaussianGibbsState,
     cache: GaussianGibbsCache,
     priors: GaussianGibbsPriors,
-    y: np.ndarray,
-    X: np.ndarray,
     n: int,
     k: int,
     rng: np.random.Generator,
@@ -677,10 +583,6 @@ def _sample_lam_sem_collapsed(
         Precomputed data.
     priors : GaussianGibbsPriors
         Prior hyperparameters.
-    y : ndarray of shape (n,)
-        Response vector.
-    X : ndarray of shape (n, k)
-        Design matrix.
     n : int
         Number of observations.
     k : int
@@ -701,15 +603,7 @@ def _sample_lam_sem_collapsed(
     """
 
     def log_density(lam_val):
-        return _sem_collapsed_log_density(
-            lam_val,
-            y,
-            X,
-            cache.W_sparse,
-            cache.logdet_fn,
-            n,
-            k,
-        )
+        return _sem_collapsed_log_density(lam_val, cache, n, k)
 
     lam_new, log_density_new, _, _ = slice_sample_1d_adaptive(
         log_density,
@@ -912,8 +806,6 @@ def run_gaussian_chain(
                 state,
                 cache,
                 priors,
-                y,
-                X,
                 n,
                 k,
                 rng,

@@ -13,13 +13,25 @@ Five methods:
 Auto-selection: ``"eigenvalue"`` for n ≤ 500, ``"cheb_stochastic"`` otherwise.
 """
 
+from ._aaa import (
+    AAAPrecompute,
+    aaa_logdet_eval,
+    aaa_logdet_eval_vec,
+    aaa_logdet_precompute,
+)
 from ._cheb_stochastic import (
     ChebStochasticPrecompute,
     cheb_stochastic_logdet_eval,
     cheb_stochastic_logdet_eval_vec,
     cheb_stochastic_logdet_precompute,
 )
-from ._chebyshev import chebyshev, clear_chebyshev_cache
+from ._chebyshev import chebyshev
+from ._chol_cheb import (
+    CholChebPrecompute,
+    chol_cheb_logdet_eval,
+    chol_cheb_logdet_eval_vec,
+    chol_cheb_logdet_precompute,
+)
 from ._config import (
     VALID_LOGDET_METHODS,
     LogdetBounds,
@@ -32,6 +44,8 @@ from ._factories import (
     clear_logdet_fn_cache,
     get_cached_logdet_fn,
     make_logdet_fn,
+    make_logdet_grad_numpy_fn,
+    make_logdet_grad_numpy_vec_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
@@ -42,8 +56,21 @@ from ._flow import (
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from ._jax import jax_logdet_chebyshev, jax_slq_logdet_precompute, make_logdet_jax_fn
+from ._flow_resolvent import (
+    FlowKron,
+    flow_logdet_grad,
+    flow_logdet_grad_exact,
+    flow_logdet_value,
+    flow_logdet_value_and_grad,
+)
+from ._jax import jax_logdet_chebyshev, make_logdet_jax_fn
 from ._pytensor import logdet_chebyshev, logdet_eigenvalue
+from ._resolvent import (
+    logdet_grad_aaa,
+    logdet_grad_chebyshev,
+    logdet_grad_eigenvalue,
+    logdet_grad_slq,
+)
 from ._slq import (
     SLQPrecompute,
     slq_logdet_eval,
@@ -70,17 +97,29 @@ __all__ = [
     "make_logdet_fn",
     "make_logdet_numpy_fn",
     "make_logdet_numpy_vec_fn",
+    "make_logdet_grad_numpy_fn",
+    "make_logdet_grad_numpy_vec_fn",
     "get_cached_logdet_fn",
     "clear_logdet_fn_cache",
+    # Resolvent trace / logdet gradient core
+    "logdet_grad_eigenvalue",
+    "logdet_grad_chebyshev",
+    "logdet_grad_aaa",
+    "logdet_grad_slq",
     # Flow
     "flow_logdet_pytensor",
     "flow_logdet_numpy",
     "compute_flow_traces",
     "make_flow_separable_logdet",
     "make_flow_separable_logdet_numpy",
+    # Flow resolvent-Kronecker gradient (scalable, eigenvalue-free)
+    "FlowKron",
+    "flow_logdet_grad",
+    "flow_logdet_grad_exact",
+    "flow_logdet_value",
+    "flow_logdet_value_and_grad",
     # Chebyshev
     "chebyshev",
-    "clear_chebyshev_cache",
     # SLQ
     "SLQPrecompute",
     "slq_logdet_precompute",

@@ -15,6 +15,27 @@ from bayespecon._logdet._cheb_stochastic import (
     cheb_stochastic_logdet_precompute,
 )
 
+
+def _weighted_ring_W(n, k=3, seed=0):
+    """Row-standardised W of an undirected weighted ring (symmetrizable).
+
+    Kernel-like weights make ``W = D⁻¹A`` non-binary, so the D-symmetrisation
+    used by deflation is genuinely exercised (unlike a binary rook lattice).
+    """
+    rng = np.random.default_rng(seed)
+    rows, cols, vals = [], [], []
+    for i in range(n):
+        for d in range(1, k + 1):
+            for j in (i - d, i + d):
+                rows.append(i)
+                cols.append(j % n)
+                vals.append(rng.uniform(0.5, 2.0))
+    A = sp.csr_matrix((vals, (rows, cols)), shape=(n, n))
+    A = A.maximum(A.T)  # undirected (symmetric) adjacency
+    deg = np.asarray(A.sum(axis=1)).ravel()
+    return (sp.diags(1.0 / deg) @ A).tocsr()
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -197,7 +218,7 @@ class TestFactoryIntegration:
         """For large n, auto-select should pick cheb_stochastic."""
         from bayespecon._logdet import resolve_logdet_method
 
-        assert resolve_logdet_method(None, n=10000) == "cheb_stochastic"
+        assert resolve_logdet_method(None, n=50000) == "cheb_stochastic"
 
     def test_eval_speed(self, small_W):
         """Eval should be O(20) Clenshaw, ~2μs per call."""
@@ -259,3 +280,89 @@ class TestConvergence:
         std_low = np.std(errors_low)
         std_high = np.std(errors_high)
         assert std_high < std_low, f"std_high={std_high} should be < std_low={std_low}"
+
+
+# ---------------------------------------------------------------------------
+# Eigen-deflation (symmetrizable W only)
+# ---------------------------------------------------------------------------
+
+
+class TestDeflation:
+    """Correctness of the matrix-free eigen-deflation path.
+
+    The previous implementation deflated via randomized SVD, which (a)
+    materialised a dense ``n × n`` residual (OOM at scale) and (b) treated
+    singular values as eigenvalues — a non-invariant split that biased the
+    Chebyshev moments of the indefinite ``W̃``.  These tests pin the fixed
+    behaviour: an eigenpair split that is exact in the full-deflation limit,
+    never densifies, and is confined to symmetrizable (undirected) graphs.
+    """
+
+    def test_full_deflation_is_exact(self):
+        """Deflating all but two eigenpairs → logdet ≈ dense slogdet.
+
+        With almost every eigenpair captured exactly, the residual is nearly
+        zero and the result is accurate regardless of probe count — a direct
+        check that the eigenpair decomposition (not the old SVD split) is
+        used.
+        """
+        n = 60
+        W = _weighted_ring_W(n, k=3, seed=1)
+        Wd = W.toarray()
+        pre = cheb_stochastic_logdet_precompute(
+            W, order=14, n_probes=4, n_deflate=n - 2, rng=np.random.default_rng(3)
+        )
+        for rho in (0.3, 0.6, 0.85):
+            est = cheb_stochastic_logdet_eval(pre, rho)
+            _, exact = np.linalg.slogdet(np.eye(n) - rho * Wd)
+            assert abs(est - exact) < 5e-3, f"rho={rho}: {est} vs {exact}"
+
+    def test_deflation_matches_dense_at_operating_point(self):
+        """Modest deflation stays within the stochastic tolerance of truth."""
+        n = 60
+        W = _weighted_ring_W(n, k=3, seed=2)
+        eigs = np.linalg.eigvals(W.toarray())
+        pre = cheb_stochastic_logdet_precompute(
+            W, order=20, n_probes=200, n_deflate=6, rng=np.random.default_rng(0)
+        )
+        for rho in (0.5, 0.9):
+            exact = np.sum(np.log(np.abs(1.0 - rho * eigs)))
+            est = cheb_stochastic_logdet_eval(pre, rho)
+            assert abs(est - exact) / abs(exact) < 0.05, f"rho={rho}"
+
+    def test_deflation_does_not_densify(self):
+        """n≈5000 deflation runs fast and finite (old code allocated dense n×n)."""
+        import time
+
+        W = _weighted_ring_W(5000, k=4, seed=0)
+        t0 = time.perf_counter()
+        pre = cheb_stochastic_logdet_precompute(
+            W, order=15, n_probes=20, n_deflate=5, rng=np.random.default_rng(0)
+        )
+        elapsed = time.perf_counter() - t0
+        assert np.all(np.isfinite(pre.moments))
+        # A dense n×n residual at n=5000 would be ~200 MB + O(n²) work; the
+        # matrix-free path is comfortably under a few seconds.
+        assert elapsed < 20.0, f"elapsed={elapsed:.1f}s (densification regression?)"
+
+    def test_directed_W_warns_and_falls_back(self):
+        """Asymmetric-pattern (directed) W: warn and ignore deflation."""
+        n = 50
+        rows, cols = [], []
+        for i in range(n):  # forward-only edges → asymmetric sparsity pattern
+            rows += [i, i]
+            cols += [(i + 1) % n, (i + 2) % n]
+        A = sp.csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n))
+        deg = np.asarray(A.sum(axis=1)).ravel()
+        W = (sp.diags(1.0 / deg) @ A).tocsr()
+
+        with pytest.warns(UserWarning, match="symmetrizable"):
+            deflated = cheb_stochastic_logdet_precompute(
+                W, order=12, n_probes=16, n_deflate=4, rng=np.random.default_rng(7)
+            )
+        plain = cheb_stochastic_logdet_precompute(
+            W, order=12, n_probes=16, n_deflate=0, rng=np.random.default_rng(7)
+        )
+        # Fallback runs the identical plain path → identical moments.
+        np.testing.assert_allclose(deflated.moments, plain.moments)
+        assert np.all(np.isfinite(deflated.moments))

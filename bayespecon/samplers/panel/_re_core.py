@@ -112,7 +112,8 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
-from .._utils._base import GibbsBasePriors, GibbsBaseState
+from ...models.priors import REGibbsPriors
+from .._utils._base import GibbsBaseState
 from .._utils._slice import (
     SliceWidthState,
     slice_sample_1d_adaptive,
@@ -144,34 +145,6 @@ class REGibbsState(GibbsBaseState):
     sigma2: float = 1.0
     alpha: np.ndarray = None
     sigma_alpha2: float = 1.0
-
-
-@dataclass
-class REGibbsPriors(GibbsBasePriors):
-    """Prior hyperparameters for RE panel Gibbs sampler.
-
-    Parameters
-    ----------
-    beta_mu : float or ndarray
-        Prior mean for β.  Scalar is broadcast to all coefficients.
-    beta_sigma : float or ndarray
-        Prior standard deviation for β.  Scalar is broadcast.
-    sigma_sigma : float
-        **Deprecated / unused.**  The σ² block uses a weakly informative
-        Jeffreys prior p(σ²) ∝ 1/σ² (approximated as Inv-Γ(ε, ε) with
-        ε = 1e-3).  Kept for backward compatibility.
-    sigma_alpha_sigma : float
-        **Deprecated / unused.**  The σ_α² block uses a weakly informative
-        Jeffreys prior p(σ_α²) ∝ 1/σ_α² (approximated as Inv-Γ(ε, ε)
-        with ε = 1e-3).  Kept for backward compatibility.
-    rho_lower : float
-        Lower bound for ρ/λ (from spectral stability).
-    rho_upper : float
-        Upper bound for ρ/λ (from spectral stability).
-    """
-
-    sigma_sigma: float = 10.0
-    sigma_alpha_sigma: float = 10.0
 
 
 @dataclass
@@ -222,6 +195,10 @@ class REGibbsCache:
     N: int = 1
     T: int = 1
     unit_idx: np.ndarray | None = None
+    # SEM-RE only: λ-independent terms of BᵀB = DᵀAᵀAD, precomputed once
+    # (M1 = DᵀWD, M2 = DᵀWᵀWD).  See ``_sem_re_BtB``.
+    sem_BtB_M1: np.ndarray | None = None
+    sem_BtB_M2: np.ndarray | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +353,39 @@ def _sample_sigma2_re(
     return sigma2
 
 
+def _sem_re_unit_aggregated_terms(
+    W_sparse: sp.csr_matrix, unit_idx: np.ndarray, N: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Precompute the λ-independent terms of ``BᵀB = DᵀAᵀAD`` for SEM-RE.
+
+    With ``A = I - λW`` and ``D`` the ``(NT × N)`` unit-indicator matrix,
+
+        BᵀB(λ) = DᵀD − λ(DᵀWD + DᵀWᵀD) + λ² DᵀWᵀWD
+
+    For a balanced panel ``DᵀD = T·I_N``.  This returns ``(M1, M2)`` with
+    ``M1 = DᵀWD`` and ``M2 = DᵀWᵀWD`` (dense ``N × N``), so that
+
+        BᵀB(λ) = T·I_N − λ(M1 + M1ᵀ) + λ² M2.
+
+    Both terms depend only on ``W`` and the panel structure, so they are
+    computed once (at cache build time) instead of rebuilding the dense
+    ``NT × N`` matrix ``B`` on every Gibbs sweep (``O(N²·NT)`` → ``O(N²)``).
+    """
+    n = len(unit_idx)
+    D = sp.csr_matrix((np.ones(n), (np.arange(n), unit_idx)), shape=(n, N))
+    M1 = np.asarray((D.T @ W_sparse @ D).todense())
+    WD = W_sparse @ D
+    M2 = np.asarray((WD.T @ WD).todense())
+    return M1, M2
+
+
+def _sem_re_BtB(
+    lam: float, M1: np.ndarray, M2: np.ndarray, T: int, N: int
+) -> np.ndarray:
+    """Closed-form ``BᵀB(λ) = T·I_N − λ(M1 + M1ᵀ) + λ² M2`` (see above)."""
+    return T * np.eye(N) - lam * (M1 + M1.T) + (lam * lam) * M2
+
+
 def _sample_alpha_re(
     rho: float,
     beta: np.ndarray,
@@ -391,6 +401,8 @@ def _sample_alpha_re(
     priors: REGibbsPriors,
     model_type: str,
     rng: np.random.Generator,
+    M1: np.ndarray | None = None,
+    M2: np.ndarray | None = None,
 ) -> np.ndarray:
     """Sample α (unit random effects) from conditional posterior.
 
@@ -473,25 +485,13 @@ def _sample_alpha_re(
     # D^T @ AtAr: sum AtAr values by unit
     DtAtAr = np.bincount(unit_idx, weights=AtAr, minlength=N)
 
-    # Compute B = A @ D (NT × N), where D is unit indicator matrix
-    # B[:, i] = A @ D[:, i] = A @ e_i_expanded
-    # where e_i_expanded[nt] = 1 if unit_idx[nt] == i
-    # B[:, i] = e_i_expanded - λ W @ e_i_expanded
-    # D^T A^T A D = B^T B (N × N)
-    #
-    # For moderate N, compute B explicitly and form B^T B.
-    # B is NT × N but very sparse (each column has T ones in D,
-    # plus the spatial lag contributions).
-    B = np.zeros((len(y), N))
-    for i in range(N):
-        # D column for unit i: indicator vector
-        mask = unit_idx == i
-        e_i = np.zeros(len(y))
-        e_i[mask] = 1.0
-        # A @ e_i = e_i - λ W @ e_i
-        B[:, i] = e_i - lam * (W_sparse @ e_i)
-
-    BtB = B.T @ B  # N × N
+    # B^T B = D^T A^T A D, evaluated via the closed form in λ from the
+    # precomputed λ-independent terms M1 = D^T W D, M2 = D^T W^T W D:
+    #   B^T B(λ) = T·I_N − λ(M1 + M1ᵀ) + λ² M2
+    # (avoids rebuilding the dense NT × N matrix B every sweep).
+    if M1 is None or M2 is None:
+        M1, M2 = _sem_re_unit_aggregated_terms(W_sparse, unit_idx, N)
+    BtB = _sem_re_BtB(lam, M1, M2, T, N)  # N × N
     # Precision matrix
     prec_alpha = (1.0 / sigma2) * BtB + (1.0 / sigma_alpha2) * np.eye(N)
     # Cholesky factorisation: prec_alpha = L Lᵀ (SPD, lower-triangular L)
@@ -635,6 +635,8 @@ def _sem_re_marginalized_log_density(
     N: int,
     T: int,
     unit_idx: np.ndarray,
+    M1: np.ndarray | None = None,
+    M2: np.ndarray | None = None,
 ) -> float:
     """Marginalized log p(λ | β, σ², σ_α², y) for SEM-RE model.
 
@@ -700,17 +702,12 @@ def _sem_re_marginalized_log_density(
     # D^T A^T A r: sum A^T A r values by unit
     DtAtAr = np.bincount(unit_idx, weights=AtAr, minlength=N)
 
-    # Compute B = A @ D (NT × N)
-    # B[:, i] = (I - λW) @ e_i_expanded
-    # where e_i_expanded[nt] = 1 if unit_idx[nt] == i
-    B = np.zeros((n, N))
-    for i in range(N):
-        mask = unit_idx == i
-        e_i = np.zeros(n)
-        e_i[mask] = 1.0
-        B[:, i] = e_i - lam * (W_sparse @ e_i)
-
-    BtB = B.T @ B  # N × N
+    # B^T B = D^T A^T A D via the closed form in λ (see _sem_re_BtB):
+    #   B^T B(λ) = T·I_N − λ(M1 + M1ᵀ) + λ² M2
+    # from the precomputed λ-independent M1 = D^T W D, M2 = D^T W^T W D.
+    if M1 is None or M2 is None:
+        M1, M2 = _sem_re_unit_aggregated_terms(W_sparse, unit_idx, N)
+    BtB = _sem_re_BtB(lam, M1, M2, T, N)  # N × N
 
     # Precision and covariance of α
     prec_alpha = (1.0 / sigma2) * BtB + (1.0 / sigma_alpha2) * np.eye(N)
@@ -843,6 +840,8 @@ def _sample_lam_re_sem(
         N,
         T,
         unit_idx,
+        cache.sem_BtB_M1,
+        cache.sem_BtB_M2,
     )
 
     new_lam, new_log_density, _, _ = slice_sample_1d_adaptive(
@@ -860,6 +859,8 @@ def _sample_lam_re_sem(
             N,
             T,
             unit_idx,
+            cache.sem_BtB_M1,
+            cache.sem_BtB_M2,
         ),
         state.rho,
         lower=cache.rho_lower,
@@ -1096,6 +1097,8 @@ def run_re_chain(
             priors,
             model_type,
             rng,
+            cache.sem_BtB_M1,
+            cache.sem_BtB_M2,
         )
 
         # --- Block 4: σ_α² | α ---

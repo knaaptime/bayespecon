@@ -25,13 +25,13 @@ from __future__ import annotations
 import warnings
 from typing import Optional
 
-import arviz as az
 import numpy as np
 import scipy.sparse as sp
 
+from ..._lazy_deps import az
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers._utils._spatial_normal import CholmodFactor
 from ...samplers.gaussian._chain_runner import run_chains
 from ...samplers.negbin import GibbsCache, GibbsPriors, GibbsState, run_chain
 from ...samplers.negbin._jax import run_chains_jax_vectorized
@@ -70,6 +70,8 @@ class SARNegBinStructural(SpatialModel):
     """
 
     _priors_cls = SARNegBinPriors
+    _likelihood: str = "count"
+    _gibbs_key: tuple[str, str] | None = ("count_structural", "cross_section")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -161,103 +163,66 @@ class SARNegBinStructural(SpatialModel):
             omega=omega_init,
         )
 
-    def fit(
+    def _fit_gibbs(
         self,
+        *,
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
         random_seed: Optional[int] = None,
         thin: int = 1,
-        return_eta: bool = False,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "auto",
+        backend: str = "numpy",
+        return_eta: bool = False,
         pg_n_terms: int = 25,
         n_probes: int = 5,
         lanczos_deg: int = 15,
-        mh_proposal_sd: float = 0.05,
-        use_mala: bool = True,
-        mala_eps: float = 0.01,
-        **kwargs,
     ) -> az.InferenceData:
         """Sample posterior via Pólya–Gamma block Gibbs.
 
         Parameters
         ----------
-        draws : int
-            Number of post-warmup draws per chain.
-        tune : int
-            Number of warmup (burn-in) draws per chain.
-        chains : int
-            Number of independent chains.
+        draws, tune, chains : int
+            Post-warmup draws, warmup draws, and number of chains.
         random_seed : int or None
             Seed for reproducibility.
         thin : int
             Keep every ``thin``-th draw. Default 1 (no thinning).
             Thinning is for memory management, not statistical efficiency.
-        return_eta : bool
-            If True, store the full latent field η in the posterior.
-            Default False — η is n × draws × chains, which can be large.
-            A scalar summary ||η||² is always stored.
         n_jobs : int
             Number of parallel chains. -1 = all CPUs.
         progressbar : bool
             Show per-chain progress bars.
-        gibbs_method : str, default "auto"
-            Which Gibbs sampler path to use:
-
-            - ``"auto"``: select based on JAX availability and CHOLMOD.
-              When CHOLMOD is available, uses ``"factorize"`` (fastest
-              on CPU for sparse W).  When CHOLMOD is unavailable but
-              JAX is installed and n ≤ 10 000, uses ``"jax_dense"``.
-              Otherwise falls back to SPLU factorisation.
-            - ``"factorize"``: force factorisation-based path (CHOLMOD if
-              available, else ``scipy.sparse.linalg.splu``). Exact but
-              O(nnz^{1.5}) for the factorisation step.
-            - ``"jax_dense"``: force JAX-accelerated path (dense matvec
-              + vmap over Lanczos probes and Chebyshev draws).  Requires
-              JAX with float64 enabled.  Viable for n ≤ ~10 000 on
-              machines with ≥ 32 GB RAM (the dense matrices need
-              ~800 MB at n = 10 000).
+        backend : {"numpy", "jax"}
+            Execution backend.  ``"numpy"`` uses the CHOLMOD ``factorize``
+            path (the default — fastest on CPU for sparse W); ``"jax"`` uses
+            the JAX-accelerated dense path (dense matvec + vmap over Lanczos
+            probes and Chebyshev draws; requires float64; viable for
+            n ≲ 10 000 on machines with ≥ 32 GB RAM).
+        return_eta : bool
+            If True, store the full latent field η in the posterior.
+            Default False — η is n × draws × chains, which can be large.
+            A scalar summary ||η||² is always stored.
         pg_n_terms : int, default 25
             Number of alternating-series terms for the JAX Pólya–Gamma
-            sampler.  Higher values reduce bias at the cost of more compute.
-            Values below 20 can cause the Gibbs chain to diverge due to
-            excessive variance in the PG approximation.  Only used when
-            ``gibbs_method="jax_dense"``.
-        n_probes : int, default 10
+            sampler.  The draw's mean is exact at any K (a closed-form
+            tail-mean correction is applied); higher values reduce the
+            residual O(1/K³) tail-variance deficit at the cost of more
+            compute.  Values below 20 can destabilize the Gibbs chain.
+            Only used on the JAX path.
+        n_probes : int, default 5
             Number of Lanczos probe vectors for stochastic log|P|
-            estimation.  Only used when ``gibbs_method="jax_dense"``.
-        lanczos_deg : int, default 30
+            estimation.  Only used on the JAX path.
+        lanczos_deg : int, default 15
             Lanczos iteration depth for log|P| estimation.  Only used
-            when ``gibbs_method="jax_dense"``.
-        mh_proposal_sd : float, default 0.05
-            Standard deviation of the random-walk MH proposal for ρ.
-            Only used when ``use_mala=False``.
-        use_mala : bool, default True
-            If True, use MALA (gradient-guided proposals) for the ρ
-            update.  If False, use random-walk Metropolis–Hastings.
-            Only used when ``gibbs_method="jax_dense"``.
+            on the JAX path.
 
         Returns
         -------
         az.InferenceData
             With posterior, log_likelihood, and observed_data groups.
-
-        Raises
-        ------
-        TypeError
-            If NUTS-specific kwargs (nuts_sampler, target_accept) are passed.
         """
-        # Reject NUTS-specific kwargs
-        for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
-            if bad_kwarg in kwargs:
-                raise TypeError(
-                    f"SARNegBinStructural.fit() does not accept '{bad_kwarg}'. "
-                    f"This model uses a Gibbs sampler, not NUTS. "
-                    f"Use SARNegBin for NUTS-based sampling."
-                )
-
         y = self._y
         X = self._X
         W_sparse = self._W_sparse
@@ -317,55 +282,20 @@ class SARNegBinStructural(SpatialModel):
         # workers gives no savings, and the concurrent symbolic-analysis
         # calls at unpickle time can deadlock on macOS + Accelerate.
         # Building per-chain isolates each chain's CHOLMOD state.
-        _have_cholmod = has_cholmod()
-        if _have_cholmod:
-            # Any ρ≠0 gives the correct pattern; ρ=0.5 is arbitrary.
-            _cholmod_pattern = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
-        else:
-            _cholmod_pattern = None
+        # Any ρ≠0 gives the correct pattern; ρ=0.5 is arbitrary.
+        _cholmod_pattern = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
 
-        # Resolve Gibbs method based on user choice or auto-selection
-        _valid_methods = {"auto", "factorize", "jax_dense"}
-        if gibbs_method not in _valid_methods:
-            raise ValueError(
-                f"gibbs_method must be one of {_valid_methods}, got '{gibbs_method}'"
-            )
-
-        # Check JAX availability for jax_dense path
-        import importlib.util
-
-        _jax_available = importlib.util.find_spec("jax") is not None
-
-        if gibbs_method == "jax_dense" and not _jax_available:
-            raise ImportError(
-                "gibbs_method='jax_dense' requires JAX. Install with: pip install jax"
-            )
-
-        if gibbs_method == "factorize":
-            solve_method = "cholmod" if _have_cholmod else "splu"
-            logdet_P_method = "cholmod"
-            sample_method = "cholmod" if _have_cholmod else "splu"
-        elif gibbs_method == "jax_dense":
+        # Map the resolved backend onto the sampler's solve/logdet/sample paths.
+        # ``auto`` prefers exact CHOLMOD factorisation (3× faster than jax_dense
+        # at n=2500 on CPU); ``jax`` is the opt-in dense path.
+        if backend == "jax":
             solve_method = "jax_dense"
             logdet_P_method = "jax_dense"
             sample_method = "jax_dense"
-        else:  # "auto"
-            # Prefer exact factorisation when CHOLMOD is available.
-            # CHOLMOD is 3× faster than jax_dense at n=2500 on CPU.
-            # JAX dense wins on GPU or when CHOLMOD is unavailable.
-            if _have_cholmod:
-                solve_method = "cholmod"
-                logdet_P_method = "cholmod"
-                sample_method = "cholmod"
-            elif _jax_available and n <= self._JAX_DENSE_THRESHOLD:
-                solve_method = "jax_dense"
-                logdet_P_method = "jax_dense"
-                sample_method = "jax_dense"
-            else:
-                # Fallback: SPLU (no CHOLMOD, no JAX)
-                solve_method = "splu"
-                logdet_P_method = "cholmod"  # same code path via splu
-                sample_method = "splu"
+        else:  # "numpy" → CHOLMOD factorisation
+            solve_method = "cholmod"
+            logdet_P_method = "cholmod"
+            sample_method = "cholmod"
 
         # Precompute JAX dense components if using jax_dense path
         W_sym_dense = None
@@ -456,11 +386,9 @@ class SARNegBinStructural(SpatialModel):
                 tune=tune,
                 thin=thin,
                 jax_seeds=seeds,
-                mh_proposal_sd=mh_proposal_sd,
                 pg_n_terms=pg_n_terms,
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
-                use_mala=use_mala,
                 progressbar=progressbar,
             )
         else:
@@ -582,38 +510,17 @@ class SARNegBinStructural(SpatialModel):
         )
         return np.exp(A_rho_inv)
 
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute average direct/indirect/total impacts on the log-mean scale."""
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        eigs = self._W_eigs
-        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        ni = self._nonintercept_indices
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        indirect = total - direct
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior impacts on the log-mean scale for each draw."""
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs
-        mean_diag = _chunked_eig_means(rho_draws, eigs)
+        mean_diag = self._batch_mean_diag(rho_draws)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
         ni = self._nonintercept_indices

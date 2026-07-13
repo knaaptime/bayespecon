@@ -6,33 +6,12 @@ Two computation strategies:
   at Chebyshev nodes via eigendecomposition, then DCT-I for coefficients.
 * **Monte-Carlo trace-based** (n > 2000): Barry-Pace Hutchinson probes
   (:cite:t:`barry1999MonteCarlo`) estimate tr(W^k), avoiding O(n³).
-
-Coefficients are cached per (W, order, bounds) so repeated calls with the
-same matrix are free.
 """
 
 from __future__ import annotations
 
-import weakref
-from collections import OrderedDict
-
 import numpy as np
 import scipy.sparse as sp
-
-# ---------------------------------------------------------------------------
-# Chebyshev coefficient cache
-# ---------------------------------------------------------------------------
-
-_CHEBYSHEV_COEFF_CACHE: "weakref.WeakValueDictionary[int, OrderedDict]" = (
-    weakref.WeakValueDictionary()
-)
-_CHEBYSHEV_CACHE_MAXSIZE = 32
-
-
-def clear_chebyshev_cache() -> None:
-    """Clear the Chebyshev coefficient cache."""
-    _CHEBYSHEV_COEFF_CACHE.clear()
-
 
 # ---------------------------------------------------------------------------
 # Barry-Pace trace estimation (shared core)
@@ -124,15 +103,6 @@ def chebyshev(
     if rmax <= rmin:
         raise ValueError("rmax must be greater than rmin.")
 
-    # --- Cache lookup ---
-    cache_obj = eigs if eigs is not None else W
-    cache_key = (id(cache_obj), order, rmin, rmax)
-    bucket = _CHEBYSHEV_COEFF_CACHE.get(id(cache_obj))
-    if bucket is not None:
-        cached = bucket.get(cache_key)
-        if cached is not None:
-            return dict(cached)
-
     if eigs is not None:
         eigs_arr = np.asarray(eigs, dtype=np.complex128)
         n = int(eigs_arr.shape[0])
@@ -184,18 +154,5 @@ def chebyshev(
         "order": order,
         "method": method_used,
     }
-
-    # --- Cache store ---
-    obj_id = id(cache_obj)
-    bucket = _CHEBYSHEV_COEFF_CACHE.get(obj_id)
-    if bucket is None:
-        bucket = OrderedDict()
-        try:
-            _CHEBYSHEV_COEFF_CACHE[obj_id] = bucket
-        except TypeError:
-            return result
-    bucket[cache_key] = result
-    while len(bucket) > _CHEBYSHEV_CACHE_MAXSIZE:
-        bucket.popitem(last=False)
 
     return result

@@ -11,9 +11,9 @@ static type checkers and IDE autocomplete.
 
 Examples
 --------
-Import a model class directly from the package namespace::
+Import a model class from the ``models`` submodule::
 
-        from bayespecon import SAR
+        from bayespecon.models import SAR
 """
 
 import contextlib

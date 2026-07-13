@@ -35,8 +35,9 @@ import warnings
 from dataclasses import dataclass, field
 from typing import ClassVar, Optional
 
-import arviz as az
 import numpy as np
+
+from .._lazy_deps import az
 
 
 @dataclass
@@ -259,7 +260,7 @@ def spatial_mcmc_diagnostic(
 
     Examples
     --------
-    >>> from bayespecon import SAR
+    >>> from bayespecon.models import SAR
     >>> from bayespecon.diagnostics import spatial_mcmc_diagnostic
     >>> model = SAR(y, X, W=W).fit(draws=2000, tune=1000)  # doctest: +SKIP
     >>> report = spatial_mcmc_diagnostic(model)            # doctest: +SKIP

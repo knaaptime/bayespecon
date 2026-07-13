@@ -19,7 +19,7 @@ import pytest
 import scipy.sparse as sp
 
 from bayespecon.samplers._utils._slice import SliceWidthState
-from bayespecon.samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from bayespecon.samplers._utils._spatial_normal import CholmodFactor
 from bayespecon.samplers.logit._core import (
     LogitGibbsCache,
     LogitGibbsPriors,
@@ -93,10 +93,8 @@ def _make_cache(W_sparse, n, priors=None):
     def logdet_fn(rho):
         return float(np.sum(np.log(np.maximum(1.0 - rho * W_eigs, 1e-300))))
 
-    cholmod_factor = None
-    if has_cholmod():
-        _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
-        cholmod_factor = CholmodFactor(_P0)
+    _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
+    cholmod_factor = CholmodFactor(_P0)
 
     return LogitGibbsCache(
         W_sparse=W_sparse,
@@ -107,9 +105,9 @@ def _make_cache(W_sparse, n, priors=None):
         cholmod_factor=cholmod_factor,
         W_sym=W_sym,
         WtW=WtW,
-        solve_method="cholmod" if cholmod_factor else "splu",
+        solve_method="cholmod",
         logdet_P_method="cholmod",
-        sample_method="cholmod" if cholmod_factor else "splu",
+        sample_method="cholmod",
         rho_adaptive_width=True,
         rho_slice_width_state=SliceWidthState(w=0.2),
     )
@@ -448,10 +446,8 @@ def _make_sem_cache(W_sparse, n, priors=None):
     def logdet_fn(lam):
         return float(np.sum(np.log(np.maximum(1.0 - lam * W_eigs, 1e-300))))
 
-    cholmod_factor = None
-    if has_cholmod():
-        _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
-        cholmod_factor = CholmodFactor(_P0)
+    _P0 = sp.eye(n, format="csr") + 0.5 * W_sym + 0.25 * WtW
+    cholmod_factor = CholmodFactor(_P0)
 
     return SEMLogitGibbsCache(
         W_sparse=W_sparse,
@@ -462,9 +458,9 @@ def _make_sem_cache(W_sparse, n, priors=None):
         cholmod_factor=cholmod_factor,
         W_sym=W_sym,
         WtW=WtW,
-        solve_method="cholmod" if cholmod_factor else "splu",
+        solve_method="cholmod",
         logdet_P_method="cholmod",
-        sample_method="cholmod" if cholmod_factor else "splu",
+        sample_method="cholmod",
         lam_adaptive_width=True,
         lam_slice_width_state=SliceWidthState(w=0.2),
     )

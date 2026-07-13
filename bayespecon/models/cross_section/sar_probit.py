@@ -17,20 +17,18 @@ from __future__ import annotations
 
 from typing import Any, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm
 import pytensor.tensor as pt
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
-from ..._backends import resolve_backend
 from ..._backends.sampler_helpers import prepare_compile_kwargs, prepare_idata_kwargs
-from ..priors import SpatialProbitPriors, priors_as_dict, resolve_priors
+from ..._lazy_deps import az, pm
+from ..priors import SARProbitPriors, priors_as_dict, resolve_priors
 
 
-class SpatialProbit:
+class SARProbit:
     """Bayesian spatial probit with regional random effects.
 
     A binary-response model in which the latent utility includes a
@@ -106,7 +104,7 @@ class SpatialProbit:
 
     **Robust regression**
 
-    ``robust=True`` is not supported for SpatialProbit. The probit link
+    ``robust=True`` is not supported for SARProbit. The probit link
     function uses a Normal CDF; a robust version would require a Student-t
     CDF link, which is not yet implemented. Use ``robust=True`` with
     Gaussian models (OLS, SAR, SEM, etc.) instead.
@@ -128,14 +126,12 @@ class SpatialProbit:
         if W is None:
             raise ValueError("W is required.")
 
-        # Resolve typed priors and backend.
-        self.priors_obj = resolve_priors(priors, SpatialProbitPriors)
+        # Resolve typed priors.
+        self.priors_obj = resolve_priors(priors, SARProbitPriors)
         self.priors = priors_as_dict(self.priors_obj)
         self.robust = robust
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
-        self.backend = resolve_backend(None)
-        self.backend_name = self.backend.name
 
         self._W_dense = self._as_dense_region_W(W)
         self._m = self._W_dense.shape[0]
@@ -280,7 +276,7 @@ class SpatialProbit:
         if self.robust:
             raise NotImplementedError(
                 "Robust (Student-t) error distribution is not supported for "
-                "SpatialProbit. The probit link function uses a Normal CDF; "
+                "SARProbit. The probit link function uses a Normal CDF; "
                 "a robust version would require a t-link (Student-t CDF) which "
                 "is not yet implemented. Use robust=True with Gaussian models "
                 "(OLS, SAR, SEM, etc.) instead."

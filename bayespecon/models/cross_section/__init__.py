@@ -1,24 +1,24 @@
 """Cross-sectional spatial regression models."""
 
 from .logit import Logit
-from .negbin import NegativeBinomial
+from .negbin import NegBin
 from .ols import OLS
 from .sar import SAR
+from .sar_logit import SARLogit
 from .sar_negbin import SARNegBin
-from .sar_negbin_latent import SARNegBinStructural
+from .sar_negbin_structural import SARNegBinStructural
+from .sar_probit import SARProbit
+from .sar_zinb import SARZINB
 from .sdem import SDEM
 from .sdm import SDM
 from .sem import SEM
-from .sem_spatial_logit import SEMSpatialLogit
+from .sem_logit import SEMLogit
 from .slx import SLX
-from .spatial_logit import SARSpatialLogit
-from .spatial_probit import SpatialProbit
 from .tobit import SARTobit, SDMTobit, SEMTobit
-from .zinb import ZINBSAR
 
 __all__ = [
     "Logit",
-    "NegativeBinomial",
+    "NegBin",
     "OLS",
     "SAR",
     "SDEM",
@@ -28,11 +28,11 @@ __all__ = [
     "SARNegBin",
     "SARNegBinStructural",
     "SARNegBinStructural",
-    "SEMSpatialLogit",
-    "SARSpatialLogit",
-    "SpatialProbit",
+    "SEMLogit",
+    "SARLogit",
+    "SARProbit",
     "SARTobit",
     "SDMTobit",
     "SEMTobit",
-    "ZINBSAR",
+    "SARZINB",
 ]

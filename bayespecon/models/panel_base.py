@@ -5,36 +5,32 @@ from __future__ import annotations
 import inspect
 import warnings
 from abc import ABC, abstractmethod
-from functools import cached_property
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm
 import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
-if TYPE_CHECKING:
-    from .._backends import ProbabilisticBackend
-
 from .._backends.sampler_helpers import (
+    jax_available,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
     use_jax_likelihood,
 )
+from .._lazy_deps import az, pm
 from .._logdet import (
     make_logdet_fn,
+    make_logdet_grad_numpy_vec_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
 )
-from .._logdet._config import _auto_logdet_method
-from ._base._shared import _is_row_standardized_csr
+from ._base._shared import SharedSpatialMethods, _is_row_standardized_csr
+from ._base._structure import PanelStructure
 from .base import (
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
-    gelman_default_beta_prior,
 )
 
 # ---------------------------------------------------------------------------
@@ -258,7 +254,7 @@ def _parse_panel_W(
     return W_csr, row_std
 
 
-class SpatialPanelModel(ABC):
+class SpatialPanelModel(SharedSpatialMethods, ABC):
     """Base class for static spatial panel models with FE transforms.
 
     Holds the within-transformation, panel-aware sorting, and weights
@@ -336,6 +332,16 @@ class SpatialPanelModel(ABC):
     # "rho" (spatial lag) or "lam" (spatial error).  OLS/SLX leave it None.
     _jacobian_param: str | None = None
 
+    # Sampler-registry wiring (mirrors ``SpatialModel``).  Gaussian FE
+    # subclasses set ``_likelihood="gaussian"``, ``_gibbs_key=("gaussian",
+    # "panel_fe")`` and the ``_gibbs_class``/``_model_type`` the generic
+    # ``_fit_gibbs`` resolves at runtime.  OLS/SLX are NUTS-only (no
+    # ``_gibbs_key``).
+    _likelihood: str = ""
+    _gibbs_key: tuple[str, str] | None = None
+    _gibbs_class: str | None = None
+    _model_type: str = ""
+
     def __init__(
         self,
         formula: Optional[str] = None,
@@ -352,7 +358,6 @@ class SpatialPanelModel(ABC):
         logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
-        backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
     ):
         if W is None:
             raise ValueError("W is required.")
@@ -370,12 +375,6 @@ class SpatialPanelModel(ABC):
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
         self._W_dense_cache: Optional[np.ndarray] = None
-
-        # Resolve probabilistic backend.
-        from .._backends import resolve_backend
-
-        self.backend = resolve_backend(backend)
-        self.backend_name = self.backend.name
 
         if formula is not None:
             if data is None:
@@ -445,9 +444,11 @@ class SpatialPanelModel(ABC):
 
         # Validate W and store as N×N CSR. Dense expansion is deferred.
         self._W_sparse, self._is_row_std = _parse_panel_W(W, self._N, self._T)
+        self._structure = PanelStructure(self._W_sparse, self._N, self._T)
         # Eigenvalues of the N×N matrix are deferred — see ``_W_eigs`` property.
 
-        # Resolve rho/lambda bounds from method and priors.
+        # Resolve the logdet method and rho/lambda bounds exactly once,
+        # passing the N×N W so auto-selection can honour graph directedness.
         # For row-standardised W the spectral stability interval is
         # always approximately (-1, 1), so no eigenvalue computation
         # is needed here.
@@ -457,7 +458,9 @@ class SpatialPanelModel(ABC):
             self.logdet_method,
             n=self._W_sparse.shape[0],
             priors=self.priors,
+            W=self._W_sparse,
         )
+        self._resolved_logdet_method = self._logdet_bounds.method
 
         self._y, self._X = _demean_panel(
             self._y_raw, self._X_raw, self._N, self._T, self.model
@@ -485,13 +488,6 @@ class SpatialPanelModel(ABC):
                     self._feature_names[j] for j in self._wx_column_indices
                 ]
 
-        # Resolve the logdet method up-front so the lazy property accessors
-        # know whether eigenvalues are required.
-        self._resolved_logdet_method = (
-            self.logdet_method
-            if self.logdet_method is not None
-            else _auto_logdet_method(self._W_sparse.shape[0])
-        )
         # Logdet builders are constructed lazily on first access — see the
         # ``_logdet_numpy_fn``, ``_logdet_numpy_vec_fn`` and
         # ``_logdet_pytensor_fn`` properties.  Caches are seeded as None so
@@ -499,6 +495,7 @@ class SpatialPanelModel(ABC):
         # methods that do not need it (chebyshev, sparse_grid, etc.).
         self._logdet_numpy_fn_cache = None
         self._logdet_numpy_vec_fn_cache = None
+        self._logdet_grad_numpy_vec_fn_cache = None
         self._logdet_pytensor_fn_cache = None
         self._W_for_logdet_cache = None
 
@@ -511,49 +508,15 @@ class SpatialPanelModel(ABC):
         else:
             self._WX = np.empty((self._X.shape[0], 0), dtype=float)
 
-    def _gelman_default_beta_prior(
-        self,
-        design: np.ndarray,
-        feature_names: list[str],
-        scale: float = 2.5,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Weakly-informative default Gaussian prior on regression coefficients.
-
-        Thin wrapper around :func:`bayespecon.models.base.gelman_default_beta_prior`
-        that uses ``self._y`` as the response.
-        """
-        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
-
-    def _spatial_lag(self, v: np.ndarray) -> np.ndarray:
-        """Spatial lag hook — delegates to panel-aware implementation."""
-        return self._sparse_panel_lag(v)
-
     def _sparse_panel_lag(self, v: np.ndarray) -> np.ndarray:
-        """Apply the panel spatial lag W⊗I_T to a stacked vector or matrix.
+        """Apply the panel spatial lag ``W ⊗ I_T`` to a stacked vector/matrix.
 
-        Accepts either a 1-D stacked vector of length ``N*T`` or a 2-D matrix
-        ``(N*T, k)`` whose columns will all be lagged in a single batched
-        sparse multiply.  Stays sparse until the final reshape.
+        Thin delegator to :meth:`PanelStructure.spatial_lag` (kept as a method
+        because samplers and diagnostics call ``model._sparse_panel_lag``).
+        Accepts a 1-D stacked vector of length ``N*T`` or a 2-D ``(N*T, k)``
+        matrix whose columns are all lagged in one batched sparse multiply.
         """
-        W = self._W_sparse
-        N, T = self._N, self._T
-        v = np.asarray(v, dtype=float)
-        if W.shape[0] == N:
-            if v.ndim == 1:
-                # Stack ordered (T, N); apply W per period in one matmul.
-                chunks = v.reshape(T, N)  # (T, N)
-                return np.asarray((W @ chunks.T).T, dtype=float).ravel()
-            # 2-D path: (N*T, k) → reshape so all periods/columns become a
-            # single dense block, perform ONE sparse matmul, then reshape back.
-            k = v.shape[1]
-            chunks = v.reshape(T, N, k)  # (T, N, k)
-            mat = chunks.transpose(1, 0, 2).reshape(N, T * k)
-            out = np.asarray(W @ mat, dtype=float)  # (N, T*k)
-            return out.reshape(N, T, k).transpose(1, 0, 2).reshape(T * N, k)
-        # Full (N*T)×(N*T) block matrix provided.
-        if v.ndim == 1:
-            return np.asarray(W @ v, dtype=float)
-        return np.asarray(W @ v, dtype=float)
+        return self._structure.spatial_lag(v)
 
     def _batch_sparse_lag(
         self,
@@ -562,74 +525,12 @@ class SpatialPanelModel(ABC):
     ) -> np.ndarray:
         """Apply panel spatial lag to a batch of stacked residual draws.
 
-        Parameters
-        ----------
-        resid : np.ndarray
-            Residual draws with shape ``(n_draws, N*T_eff)``.
-        T_eff : int, optional
-            Effective time periods in the stacked residual layout. Defaults to
-            ``self._T``. Dynamic panel paths may pass ``T-1``.
-
-        Returns
-        -------
-        np.ndarray
-            Spatially lagged residuals with the same shape as ``resid``.
+        Thin delegator to :meth:`PanelStructure.batch_spatial_lag` (kept as a
+        method because samplers call ``model._batch_sparse_lag``).  ``resid``
+        has shape ``(n_draws, N*T_eff)`` (``T_eff`` defaults to ``T``; dynamic
+        panels pass ``T-1``) and the result has the same shape.
         """
-        R = np.asarray(resid, dtype=np.float64)
-        if R.ndim != 2:
-            raise ValueError(
-                f"resid must be 2D (n_draws, N*T_eff), got shape {R.shape}."
-            )
-
-        N = int(self._N)
-        Te = int(self._T if T_eff is None else T_eff)
-        expected = N * Te
-        if R.shape[1] != expected:
-            raise ValueError(
-                "resid second dimension must equal N*T_eff; "
-                f"got {R.shape[1]} and expected {expected} (N={N}, T_eff={Te})."
-            )
-
-        W = self._W_sparse
-        if W.shape[0] == N:
-            # Reshape (draws, N*T_eff) -> (draws*T_eff, N), apply one sparse
-            # matrix multiply, then reshape back.
-            draws = R.shape[0]
-            R_flat = R.reshape(draws * Te, N)
-            WR_flat = np.asarray(W @ R_flat.T, dtype=np.float64).T
-            return WR_flat.reshape(draws, Te * N)
-
-        # Full panel matrix path (N*T x N*T) if supplied by caller.
-        if W.shape[0] != expected:
-            raise ValueError(
-                f"W has shape {W.shape}; expected ({N},{N}) or ({expected},{expected}) "
-                "for the provided N and T_eff."
-            )
-        return np.asarray(W @ R.T, dtype=np.float64).T
-
-    @cached_property
-    def _W_eigs(self) -> np.ndarray:
-        """Eigenvalues of the N×N spatial weights matrix, computed lazily.
-
-        Cached on first access to keep init O(n²) when chebyshev / sparse-grid
-        log-determinants are used (those methods do not need the full
-        eigendecomposition).
-        """
-        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
-
-    @property
-    def _W_for_logdet(self):
-        """Argument passed to ``make_logdet_fn`` — eigenvalues or sparse W.
-
-        Computed lazily so that init never forces an eigendecomposition for
-        chebyshev / sparse-grid methods.
-        """
-        if self._W_for_logdet_cache is None:
-            if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs
-            else:
-                self._W_for_logdet_cache = self._W_sparse
-        return self._W_for_logdet_cache
+        return self._structure.batch_spatial_lag(resid, T_eff)
 
     @property
     def _logdet_numpy_fn(self):
@@ -660,6 +561,44 @@ class SpatialPanelModel(ABC):
                 T=self._T,
             )
         return self._logdet_numpy_vec_fn_cache
+
+    @property
+    def _logdet_grad_numpy_vec_fn(self):
+        """Vectorised ``(rho_arr) -> g(ρ)`` gradient of the **N×N** logdet (lazy).
+
+        Built with ``T=1`` — the direct-effect trace is a per-period property of
+        the N×N spatial multiplier, independent of the number of periods.
+        """
+        if self._logdet_grad_numpy_vec_fn_cache is None:
+            eigs = (
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
+            )
+            self._logdet_grad_numpy_vec_fn_cache = make_logdet_grad_numpy_vec_fn(
+                self._W_sparse,
+                eigs,
+                method=self.logdet_method,
+                T=1,
+            )
+        return self._logdet_grad_numpy_vec_fn_cache
+
+    def _batch_mean_diag(self, rho_draws: np.ndarray) -> np.ndarray:
+        """``(1/N) tr((I - ρW)⁻¹)`` per draw via the resolvent identity.
+
+        ``tr(S)/N = 1 − (ρ/N)·g(ρ)`` with ``g = d/dρ log|I − ρW|``, so the
+        direct-effect trace rides the fast logdet surrogate and needs no
+        O(N³) eigendecomposition (unless the method is already eigenvalue).
+        """
+        rho_draws = np.asarray(rho_draws, dtype=np.float64)
+        N = int(self._W_sparse.shape[0])
+        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
+        return 1.0 - (rho_draws / N) * g
+
+    def _batch_mean_diag_MW(self, rho_draws: np.ndarray) -> np.ndarray:
+        """``(1/N) tr((I - ρW)⁻¹ W)`` per draw — equals ``−g(ρ)/N``."""
+        rho_draws = np.asarray(rho_draws, dtype=np.float64)
+        N = int(self._W_sparse.shape[0])
+        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
+        return -g / N
 
     @property
     def _logdet_pytensor_fn(self):
@@ -698,52 +637,19 @@ class SpatialPanelModel(ABC):
     def _W_sparse_NT(self) -> "sp.csr_matrix":
         """Sparse (N*T)×(N*T) Kronecker-block weight matrix ``I_T ⊗ W_n``.
 
-        Cached on first access. Used by symbolic (PyMC/PyTensor) likelihoods
-        to avoid the O((N*T)²) memory footprint of :attr:`_W_dense` while
-        still exposing a single linear operator that can be applied to a
-        stacked panel residual vector.
+        Delegates to :meth:`PanelStructure.W_sparse_NT` (kept as a property
+        because RE/dynamic samplers read ``model._W_sparse_NT``).
         """
-        if not hasattr(self, "_W_sparse_NT_cache") or self._W_sparse_NT_cache is None:
-            W = self._W_sparse
-            if W.shape[0] == self._N:
-                # Force ``csr_matrix`` (not ``csr_array``) so the result is
-                # accepted by :mod:`pytensor.sparse`, which currently only
-                # supports the legacy ``scipy.sparse`` matrix API.
-                self._W_sparse_NT_cache = sp.csr_matrix(
-                    sp.kron(sp.eye(self._T, format="csr"), W, format="csr")
-                )
-            else:
-                # Caller already supplied a full (N*T)×(N*T) matrix.
-                self._W_sparse_NT_cache = sp.csr_matrix(W)
-        return self._W_sparse_NT_cache
+        return self._structure.W_sparse_NT()
 
     @property
     def _W_pt_sparse(self):
-        """PyTensor sparse variable wrapping :attr:`_W_sparse_NT`.
+        """PyTensor sparse operator for the PyMC model (delegates to structure).
 
-        Cached so that repeated PyMC model builds reuse the same symbolic
-        sparse weight operator, avoiding redundant ``as_sparse_variable`` calls.
+        Structure-cached so repeated PyMC model builds reuse the same symbolic
+        sparse weight operator.
         """
-        if not hasattr(self, "_W_pt_sparse_cache") or self._W_pt_sparse_cache is None:
-            from pytensor import sparse as pts
-
-            self._W_pt_sparse_cache = pts.as_sparse_variable(
-                sp.csc_matrix(self._W_sparse_NT)
-            )
-        return self._W_pt_sparse_cache
-
-    @property
-    def _T_ww(self) -> float:
-        """Trace of W'W + W², cached on first access.
-
-        Computed as ``||W||_F² + sum(W * W')`` using sparse operations,
-        which is O(nnz) rather than O(n²).
-        """
-        if not hasattr(self, "_T_ww_cache"):
-            from ..graph import sparse_trace_WtW_plus_WW
-
-            self._T_ww_cache = sparse_trace_WtW_plus_WW(self._W_sparse)
-        return self._T_ww_cache
+        return self._structure.W_pt_sparse()
 
     def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
@@ -828,38 +734,6 @@ class SpatialPanelModel(ABC):
         return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
 
     @property
-    def _nonintercept_indices(self) -> list[int]:
-        """Return indices of non-constant (non-intercept) columns in X.
-
-        This is used to exclude the intercept from impact measures, since
-        the intercept has no meaningful spatial effect interpretation.
-
-        Returns
-        -------
-        list[int]
-            Column indices of X that are not constant/intercept columns.
-        """
-        indices: list[int] = []
-        for j, name in enumerate(self._feature_names):
-            column = self._X[:, j]
-            is_named_intercept = name.lower() == "intercept"
-            is_constant = np.allclose(column, column[0])
-            if not (is_named_intercept or is_constant):
-                indices.append(j)
-        return indices
-
-    @property
-    def _nonintercept_feature_names(self) -> list[str]:
-        """Return feature names for non-intercept columns.
-
-        Returns
-        -------
-        list[str]
-            Feature names excluding intercept/constant columns.
-        """
-        return [self._feature_names[i] for i in self._nonintercept_indices]
-
-    @property
     def _intercept_dropped(self) -> bool:
         """Whether the intercept column was dropped from the posterior beta.
 
@@ -921,66 +795,11 @@ class SpatialPanelModel(ABC):
         n_const = ni[0] if ni else 0
         return [i - n_const for i in self._wx_column_indices]
 
-    @staticmethod
-    def _spatial_lag_column_indices(
-        X: np.ndarray, feature_names: list[str]
-    ) -> list[int]:
-        """Return indices of regressors that should receive spatial lags.
-
-        Constant columns are treated as intercept-like and excluded, which
-        avoids adding redundant ``W * intercept`` terms to SLX/Durbin models.
-
-        Parameters
-        ----------
-        X : np.ndarray
-            Raw panel design matrix before FE transformation.
-        feature_names : list[str]
-            Column labels aligned with ``X``.
-
-        Returns
-        -------
-        list[int]
-            Column indices eligible for spatial lags.
-        """
-        indices: list[int] = []
-        for j, name in enumerate(feature_names):
-            column = X[:, j]
-            is_named_intercept = name.lower() == "intercept"
-            is_constant = np.allclose(column, column[0])
-            if not (is_named_intercept or is_constant):
-                indices.append(j)
-        return indices
-
-    def _add_nu_prior(self, model: pm.Model) -> pm.Model:
-        """Add the degrees-of-freedom prior for robust (Student-t) models.
-
-        Called inside ``_build_pymc_model`` when ``self.robust`` is True.
-        Uses an :math:`\\mathrm{Exp}(\\lambda_\\nu)` prior on ``nu`` with rate ``nu_lam`` (default
-        1/30, giving mean ≈ 30, favouring near-Normal tails). A lower
-        bound of 2 is enforced so that the variance exists.
-
-        Parameters
-        ----------
-        model : pymc.Model
-            The model context in which to add the ``nu`` prior.
-
-        Returns
-        -------
-        pymc.Model
-            The same model context (``nu`` is added as a side effect).
-        """
-        nu_lam = self.priors.get("nu_lam", 1.0 / 30.0)
-        pm.Truncated("nu", pm.Exponential.dist(lam=nu_lam), lower=2.0)
-        return model
-
     @abstractmethod
     def _build_pymc_model(self) -> pm.Model:
         """Construct and return a pm.Model."""
 
     @abstractmethod
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects at posterior mean."""
-
     @abstractmethod
     def _compute_spatial_effects_posterior(
         self,
@@ -998,131 +817,246 @@ class SpatialPanelModel(ABC):
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values on transformed scale."""
 
-    def _beta_names(self) -> list[str]:
-        """Return coefficient labels used for posterior summaries.
-
-        Returns
-        -------
-        list[str]
-            Coefficient labels aligned with the ``beta`` parameter.
-        """
-        return list(self._feature_names)
-
-    def _model_coords(self) -> dict[str, list[str]]:
-        """Return PyMC coordinate labels for named dimensions.
-
-        Returns
-        -------
-        dict[str, list[str]]
-            Coordinates passed to :class:`pymc.Model`.
-        """
-        return {"coefficient": self._beta_names()}
-
-    @staticmethod
-    def _rename_summary_index(summary_df: pd.DataFrame) -> pd.DataFrame:
-        """Strip the ``beta[...]`` wrapper from coefficient row labels.
-
-        Parameters
-        ----------
-        summary_df : pandas.DataFrame
-            ArviZ summary output.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Summary with human-readable coefficient row labels.
-        """
-        renamed = []
-        for label in summary_df.index.astype(str):
-            if label.startswith("beta[") and label.endswith("]"):
-                renamed.append(label[5:-1])
-            else:
-                renamed.append(label)
-        out = summary_df.copy()
-        out.index = renamed
-        return out
-
     def fit(
         self,
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
+        sampler: str | None = None,
+        gibbs_backend: str = "auto",
+        thin: int = 1,
+        n_jobs: int = -1,
+        idata_kwargs: dict[str, Any] | None = None,
         **sample_kwargs,
     ) -> az.InferenceData:
-        """Sample the posterior for the panel model.
+        """Draw samples from the posterior for the panel model.
+
+        Mirrors :meth:`SpatialModel.fit`: dispatches to this model's Gibbs
+        sampler (``sampler="gibbs"``) or NUTS (``sampler="nuts"``).  When
+        ``sampler`` is ``None`` (default), Gibbs is used if the model has a
+        registered Gibbs sampler (Gaussian FE families), otherwise NUTS.  (The
+        two ``fit`` bodies are duplicated across the cross-section and panel
+        base classes until Phase 5c collapses the hierarchies.)
 
         Parameters
         ----------
-        draws : int, default=2000
-            Number of post-tuning draws per chain.
-        tune : int, default=1000
-            Number of tuning draws per chain.
-        chains : int, default=4
-            Number of chains.
-        target_accept : float, default=0.9
-            NUTS target acceptance probability.
+        draws, tune, chains : int
+            Post-warmup draws, warmup steps, and number of chains.
         random_seed : int, optional
-            Random seed used by PyMC.
+            Seed for reproducibility.
         progressbar : bool, default True
-            Show progress bar during sampling.
+            Show progress bar(s) during sampling.
+        sampler : {"gibbs", "nuts", None}, default None
+            Sampling method.  ``None`` auto-selects Gibbs when this model has
+            one, else NUTS.
+        gibbs_backend : {"auto", "jax", "numpy"}, default "auto"
+            Execution backend for the Gibbs sampler.  ``"auto"`` uses JAX when
+            installed and supported, otherwise NumPy.  Ignored for NUTS.
+        thin : int, default 1
+            Keep every ``thin``-th post-warmup Gibbs draw (Gibbs only).
+        n_jobs : int, default -1
+            Parallel workers for the NumPy Gibbs path (Gibbs only).
+        idata_kwargs : dict, optional
+            Passed to ``pm.sample`` (NUTS only).  ``{"log_likelihood": True}``
+            reconstructs the complete Jacobian-corrected pointwise
+            log-likelihood.
         **sample_kwargs
-            Extra keyword arguments forwarded to :func:`pymc.sample`.  Pass
-            ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
-            select an alternative NUTS backend; defaults to PyMC's built-in
-            sampler.
+            For NUTS, forwarded to ``pm.sample`` (``target_accept``,
+            ``nuts_sampler="blackjax"``/``"numpyro"``/``"nutpie"``, ...).  For
+            Gibbs, the family's declared options (``slice_width``, ...); an
+            unsupported key raises.
 
         Returns
         -------
         arviz.InferenceData
             Posterior samples and diagnostics.
         """
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        try:
-            model = self._build_pymc_model(nuts_sampler=nuts_sampler)
-        except TypeError:
-            # Subclasses that don't accept ``nuts_sampler`` build the same
-            # model on every backend.
-            model = self._build_pymc_model()
-        self._pymc_model = model
-        if "idata_kwargs" in sample_kwargs:
-            sample_kwargs["idata_kwargs"] = prepare_idata_kwargs(
-                sample_kwargs["idata_kwargs"], model, nuts_sampler
-            )
-        sample_kwargs = prepare_compile_kwargs(sample_kwargs, nuts_sampler)
-        with model:
-            self._idata = pm.sample(
+        from ..samplers._registry import pop_options, resolve, resolve_backend
+
+        entry = resolve(*self._gibbs_key) if self._gibbs_key is not None else None
+        if sampler is None:
+            sampler = "gibbs" if entry is not None else "nuts"
+
+        if sampler == "gibbs":
+            if entry is None:
+                raise NotImplementedError(
+                    f"{type(self).__name__} has no Gibbs sampler. "
+                    "Use sampler='nuts' (the default)."
+                )
+            if self.robust and not entry.supports_robust:
+                raise NotImplementedError(
+                    "Gibbs sampling is not supported for robust (Student-t) "
+                    "models. Use sampler='nuts'."
+                )
+            backend = resolve_backend(gibbs_backend, entry, jax_ok=jax_available())
+            family_opts = pop_options(sample_kwargs, entry)
+            self._idata = entry.run(
+                self,
                 draws=draws,
                 tune=tune,
                 chains=chains,
-                target_accept=target_accept,
                 random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
                 progressbar=progressbar,
-                nuts_sampler=nuts_sampler,
-                **sample_kwargs,
+                backend=backend,
+                **family_opts,
             )
-        return self._idata
+            return self._postprocess_idata(self._idata)
 
-    def _fit_gibbs_dispatch(
+        if sampler != "nuts":
+            raise ValueError(
+                f"sampler must be 'gibbs', 'nuts', or None, got {sampler!r}"
+            )
+
+        idata = self._fit_nuts_and_reconstruct(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            idata_kwargs=idata_kwargs,
+            sample_kwargs=sample_kwargs,
+        )
+        return self._postprocess_idata(idata)
+
+    def _fit_nuts_and_reconstruct(
         self,
         *,
         draws: int,
         tune: int,
         chains: int,
         random_seed: Optional[int],
-        thin: int,
-        n_jobs: int,
         progressbar: bool,
-        sample_kwargs: dict[str, Any] | None = None,
+        idata_kwargs: dict[str, Any] | None,
+        sample_kwargs: dict[str, Any],
     ) -> az.InferenceData:
-        """Dispatch a ``fit(..., sampler='gibbs')`` call to :meth:`_fit_gibbs.
+        """Shared NUTS path for panel models: sample, then reconstruct log-lik.
 
-        Centralizes how Gibbs-specific kwargs are popped from ``sample_kwargs``.
+        The Jacobian-corrected pointwise log-likelihood is reconstructed only
+        for Gaussian spatial-lag/error panel families (``_likelihood ==
+        "gaussian"`` with a ``rho``/``lam`` Jacobian).  OLS/SLX capture it
+        natively and non-Gaussian panels (e.g. Tobit) reconstruct in their own
+        ``fit``.
         """
-        sample_kwargs = dict(sample_kwargs or {})
-        return self._fit_gibbs(
+        sample_kwargs = dict(sample_kwargs)
+        target_accept = sample_kwargs.pop("target_accept", 0.9)
+        idata_kwargs = dict(idata_kwargs or {})
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
+
+        if (
+            compute_log_likelihood
+            and self._likelihood == "gaussian"
+            and self._jacobian_param in {"rho", "lam"}
+        ):
+            self._reconstruct_panel_log_likelihood(
+                spatial_param=self._jacobian_param,
+                nuts_sampler=nuts_sampler,
+                T_eff=self._T,
+            )
+
+        return self._idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        thin: int = 1,
+        n_jobs: int = -1,
+        progressbar: bool = True,
+        gibbs_method: str = "numpy",
+        slice_width: float | None = None,
+        chain_method: str | None = None,
+    ) -> az.InferenceData:
+        """Sample a Gaussian FE panel posterior via 3-block Gaussian Gibbs.
+
+        Generic over the FE families: resolves the Gibbs class from
+        ``_gibbs_class``, builds the ``[X, WX]`` design when ``_has_wx_in_beta``,
+        and passes ``T`` and the block-diagonal ``W_sparse_NT``.  SAR/SDM
+        (``_jacobian_param == "rho"``) additionally pass ``Wy``.  Mirrors
+        :meth:`SpatialModel._fit_gibbs` with panel-specific inputs.
+        """
+        if self._gibbs_class is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} does not support Gibbs sampling. "
+                "Use sampler='nuts' (the default)."
+            )
+        if self.robust:
+            raise NotImplementedError(
+                "Gibbs sampling is not yet supported for robust (Student-t) "
+                "models. Use sampler='nuts' (the default)."
+            )
+
+        import importlib
+
+        from ..samplers.gaussian import GaussianGibbsPriors
+
+        gibbs_module = importlib.import_module(
+            "..samplers.gaussian", package=__package__
+        )
+        GibbsClass = getattr(gibbs_module, self._gibbs_class)
+
+        if self._has_wx_in_beta:
+            Z = np.hstack([self._X, self._WX])
+            feature_names = list(self._feature_names) + [
+                f"W*{name}" for name in self._wx_feature_names
+            ]
+        else:
+            Z = self._X
+            feature_names = list(self._feature_names)
+
+        default_beta_mu, default_beta_sigma = self._gelman_default_beta_prior(
+            Z, feature_names
+        )
+        priors = GaussianGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            sigma2_alpha=self.priors.get("sigma2_alpha", 2.0),
+            sigma2_beta=self.priors.get("sigma2_beta", float(np.var(self._y))),
+            rho_lower=self._logdet_bounds.rho_min,
+            rho_upper=self._logdet_bounds.rho_max,
+        )
+
+        gibbs_kwargs: dict[str, Any] = dict(
+            y=self._y,
+            X=Z,
+            W_sparse=self._W_sparse_NT,
+            priors=priors,
+            logdet_fn=self._logdet_numpy_fn,
+            logdet_vec_fn=self._logdet_numpy_vec_fn,
+            feature_names=feature_names,
+            model_type=self._model_type,
+            W_eigs=self._W_eigs
+            if self._resolved_logdet_method == "eigenvalue"
+            else None,
+            logdet_method=self.logdet_method,
+            T=self._T,
+        )
+        # SAR/SDM need Wy; SEM/SDEM do not.
+        if self._jacobian_param == "rho":
+            gibbs_kwargs["Wy"] = self._Wy
+
+        gibbs = GibbsClass(**gibbs_kwargs)
+
+        self._idata = gibbs.fit(
             draws=draws,
             tune=tune,
             chains=chains,
@@ -1130,13 +1064,11 @@ class SpatialPanelModel(ABC):
             thin=thin,
             n_jobs=n_jobs,
             progressbar=progressbar,
-            gibbs_method=sample_kwargs.pop("gibbs_method", "numpy"),
-            mala_step_size=sample_kwargs.pop("mala_step_size", 0.05),
-            use_mala=sample_kwargs.pop("use_mala", True),
-            use_slice=sample_kwargs.pop("use_slice", True),
-            slice_width=sample_kwargs.pop("slice_width", None),
-            chain_method=sample_kwargs.pop("chain_method", None),
+            gibbs_method=gibbs_method,
+            slice_width=slice_width,
+            chain_method=chain_method,
         )
+        return self._idata
 
     def _fit_nuts(
         self,
@@ -1240,87 +1172,6 @@ class SpatialPanelModel(ABC):
             ll_total.reshape(n_chains, n_draws_per_chain, n),
         )
 
-    def _attach_jacobian_corrected_log_likelihood(
-        self,
-        idata: az.InferenceData,
-        spatial_param: str,
-        T: int = 1,
-    ) -> None:
-        """Add Jacobian correction to the auto-captured log-likelihood group.
-
-        For models that use ``pm.Normal("obs", observed=y)`` plus
-        ``pm.Potential("jacobian", logdet_fn(rho))``, PyMC auto-captures
-        the Gaussian part in the ``log_likelihood`` group but the Jacobian
-        term is absent.  This method adds the per-observation Jacobian
-        contribution ``log|I - ρW| * T / n`` to each pointwise LL value.
-
-        Notes
-        -----
-        The full panel log-determinant of the spatial filter is
-        :math:`T \\log|I_N - \\rho W|` because the stacked
-        :math:`(N T) \\times (N T)` filter is
-        :math:`I_T \\otimes (I_N - \\rho W)`, whose determinant is
-        :math:`|I_N - \\rho W|^T` by the Kronecker product rule.  Dividing
-        by :math:`n = N T` distributes that scalar Jacobian uniformly
-        over the per-observation pointwise log-likelihood entries that
-        ArviZ expects, so quantities like LOO and WAIC are computed on a
-        per-observation log density.  For dynamic panels the time
-        dimension is ``T - 1`` (one period is consumed by the lag), so
-        callers pass ``T = T - 1`` here.
-
-        Parameters
-        ----------
-        idata : arviz.InferenceData
-            InferenceData with an existing ``log_likelihood`` group.
-        spatial_param : str
-            Name of the spatial autoregressive parameter (``"rho"`` or
-            ``"lam"``) in the posterior.
-        T : int, default 1
-            Panel time-period multiplier for the Jacobian.
-        """
-        import xarray as xr
-
-        if "log_likelihood" not in idata.groups():
-            return
-
-        n = self._y.shape[0]
-        param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
-
-        # Jacobian: log|I - param*W| * T (pure numpy, respects logdet_method)
-        jacobian = self._logdet_numpy_vec_fn(param_draws) * T  # (n_draws,)
-        ll_jac = jacobian[:, None] / n  # (n_draws, 1)
-
-        # Add Jacobian to each variable in the log_likelihood group
-        n_chains = idata.posterior.sizes["chain"]
-        n_draws_per_chain = idata.posterior.sizes["draw"]
-        ll_jac_3d = ll_jac.reshape(n_chains, n_draws_per_chain, 1)  # broadcast over obs
-
-        new_vars = {}
-        for var_name in list(idata.log_likelihood.data_vars):
-            da = idata.log_likelihood[var_name]
-            # Use numpy addition + broadcast to avoid xarray alignment issues
-            # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
-            new_vals = da.values + ll_jac_3d
-            new_vars[var_name] = xr.DataArray(
-                new_vals,
-                dims=da.dims,
-                coords={k: v for k, v in da.coords.items() if k != da.dims[-1]},
-            )
-
-        idata["log_likelihood"] = xr.Dataset(new_vars)
-
-    @property
-    def inference_data(self) -> Optional[az.InferenceData]:
-        """Return the ArviZ InferenceData from the most recent fit.
-
-        Returns
-        -------
-        arviz.InferenceData or None
-            The inference data object, or ``None`` if the model has not
-            been fit yet.
-        """
-        return self._idata
-
     @property
     def pymc_model(self) -> Optional[pm.Model]:
         """Return the PyMC model object built for the most recent fit.
@@ -1332,54 +1183,6 @@ class SpatialPanelModel(ABC):
             has not been fit yet.
         """
         return self._pymc_model
-
-    def _require_fit(self):
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet. Call .fit() first.")
-
-    def _posterior_mean(self, var: str) -> np.ndarray:
-        return self._idata.posterior[var].mean(("chain", "draw")).to_numpy()
-
-    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
-        """Return posterior summary table.
-
-        Parameters
-        ----------
-        var_names : list, optional
-            Variable names to include.
-        **kwargs
-            Additional arguments passed to :func:`arviz.summary`.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Posterior summary table.
-        """
-        self._require_fit()
-        summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
-        return self._rename_summary_index(summary_df)
-
-    def fitted_values(self) -> np.ndarray:
-        """Return fitted values at posterior mean parameters.
-
-        Returns
-        -------
-        np.ndarray
-            Fitted values on transformed panel scale.
-        """
-        self._require_fit()
-        return self._fitted_mean_from_posterior()
-
-    def residuals(self) -> np.ndarray:
-        """Return transformed residuals ``y - fitted``.
-
-        Returns
-        -------
-        np.ndarray
-            Residual vector on transformed panel scale.
-        """
-        self._require_fit()
-        return self._y - self.fitted_values()
 
     def spatial_diagnostics(self) -> pd.DataFrame:
         """Run Bayesian LM specification tests and return a summary table.
@@ -1531,80 +1334,6 @@ class SpatialPanelModel(ABC):
             fmt=format,
             title=f"{model_type} decision tree (alpha={alpha})",
         )
-
-    def spatial_effects(
-        self, return_posterior_samples: bool = False
-    ) -> "pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]":
-        """Compute Bayesian inference for direct, indirect, and total impacts.
-
-        Computes impact measures for each posterior draw, then summarises
-        the posterior distribution with means, 95% credible intervals, and
-        Bayesian p-values.
-
-        Parameters
-        ----------
-        return_posterior_samples : bool, optional
-            If ``True``, return a ``(DataFrame, dict)`` tuple where the
-            dict contains the full posterior draws under keys
-            ``"direct"``, ``"indirect"``, and ``"total"``.  Default
-            ``False``.
-
-        Returns
-        -------
-        pd.DataFrame or tuple of (pd.DataFrame, dict)
-            If *return_posterior_samples* is ``False`` (default), returns
-            a DataFrame indexed by feature names with columns for posterior
-            means, credible-interval bounds, and Bayesian p-values.
-
-            If *return_posterior_samples* is ``True``, returns
-            ``(DataFrame, dict)`` where the dict has keys
-            ``"direct"``, ``"indirect"``, ``"total"``, each mapping
-            to a ``(G, k)`` array of posterior draws.
-        """
-        from ..diagnostics.spatial_effects import _build_effects_dataframe
-
-        self._require_fit()
-        direct_samples, indirect_samples, total_samples = (
-            self._compute_spatial_effects_posterior()
-        )
-
-        # Determine feature names based on the shape of the posterior samples.
-        # Models with WX terms (SDM, SLX, SDEM) report effects only for
-        # lagged covariates (k_wx columns), while models without WX terms
-        # (SAR, SEM) report effects for non-intercept covariates.
-        k_effects = direct_samples.shape[1]
-        if (
-            hasattr(self, "_wx_feature_names")
-            and len(self._wx_feature_names) == k_effects
-        ):
-            feature_names = list(self._wx_feature_names)
-        elif (
-            hasattr(self, "_nonintercept_feature_names")
-            and len(self._nonintercept_feature_names) == k_effects
-        ):
-            feature_names = list(self._nonintercept_feature_names)
-        else:
-            feature_names = list(self._feature_names[:k_effects])
-
-        # Determine model type label
-        model_type = self.__class__.__name__
-
-        df = _build_effects_dataframe(
-            direct_samples=direct_samples,
-            indirect_samples=indirect_samples,
-            total_samples=total_samples,
-            feature_names=feature_names,
-            model_type=model_type,
-        )
-
-        if return_posterior_samples:
-            posterior_samples = {
-                "direct": direct_samples,
-                "indirect": indirect_samples,
-                "total": total_samples,
-            }
-            return df, posterior_samples
-        return df
 
     def __repr__(self) -> str:
         n, k = self._X.shape

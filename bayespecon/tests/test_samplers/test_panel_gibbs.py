@@ -371,6 +371,7 @@ class TestPanelGibbsVsNUTS:
 
         model_nuts = SARPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, effects=1)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=300,
             tune=300,
             chains=2,
@@ -421,6 +422,7 @@ class TestPanelGibbsVsNUTS:
 
         model_nuts = SEMPanelFE(y=y, X=X, W=W_graph, N=PANEL_N, T=PANEL_T, effects=1)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=300,
             tune=300,
             chains=2,
@@ -463,7 +465,7 @@ class TestPanelGibbsJAX:
     """JAX JIT path for panel Gibbs."""
 
     def test_sar_panel_fe_jax_produces_idata(self):
-        """SARPanelFE Gibbs with gibbs_method='jax' returns valid InferenceData."""
+        """SARPanelFE Gibbs with gibbs_backend='jax' returns valid InferenceData."""
         pytest.importorskip("jax")
         from bayespecon.models.panel._fe import SARPanelFE
 
@@ -487,7 +489,7 @@ class TestPanelGibbsJAX:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "posterior" in idata.groups()
         assert "rho" in idata.posterior.data_vars
@@ -496,7 +498,7 @@ class TestPanelGibbsJAX:
         assert idata.posterior["beta"].shape[-1] == X.shape[1] - 1
 
     def test_sem_panel_fe_jax_produces_idata(self):
-        """SEMPanelFE Gibbs with gibbs_method='jax' returns valid InferenceData."""
+        """SEMPanelFE Gibbs with gibbs_backend='jax' returns valid InferenceData."""
         pytest.importorskip("jax")
         from bayespecon.models.panel._fe import SEMPanelFE
 
@@ -520,7 +522,7 @@ class TestPanelGibbsJAX:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "posterior" in idata.groups()
         assert "lam" in idata.posterior.data_vars
@@ -553,7 +555,7 @@ class TestPanelGibbsJAX:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
             chain_method="vectorized",
         )
         assert idata.posterior["rho"].shape[0] == 2  # 2 chains
@@ -583,7 +585,7 @@ class TestPanelGibbsJAX:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
             chain_method="vectorized",
         )
         assert idata.posterior["lam"].shape[0] == 2  # 2 chains

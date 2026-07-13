@@ -67,10 +67,12 @@ class SAR(GaussianLikelihoodMixin, SpatialModel):
 
     logdet_method : str, optional
         How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
-        auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
-        ``"chebyshev"``. Other options: ``"exact"`` (symbolic det,
-        slow for ``n > 500``), ``"dense_grid"``, ``"sparse_grid"``,
-        ``"spline"``, ``"mc"``, ``"ilu"``.
+        auto-selects by size: ``"eigenvalue"`` for ``n <= 500``; for
+        ``500 < n <= 20000``, ``"cheb_cholesky"`` (exact, sparse Cholesky
+        at Chebyshev nodes) when ``W`` is symmetric else ``"aaa"`` (AAA
+        rational approximation); ``"cheb_stochastic"`` for ``n > 20000``.
+        Explicit opt-ins: ``"chebyshev"`` (Barry-Pace) and ``"slq"``
+        (stochastic Lanczos quadrature).
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
         to heavy-tailed outliers. See *Robust regression* below.
@@ -106,6 +108,42 @@ class SAR(GaussianLikelihoodMixin, SpatialModel):
     _has_wx_in_beta: bool = False
     _gibbs_class: str | None = "GaussianSARGibbs"
     _model_type: str = "sar"
+    _likelihood: str = "gaussian"
+    _gibbs_key: tuple[str, str] | None = ("gaussian", "cross_section")
+
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute direct, indirect, and total effects for each posterior draw.
+
+        For the SAR model the impacts for covariate :math:`k` are
+        :math:`\\text{Direct}_k = \\overline{\\text{diag}}(S)\\,\\beta_k` and
+        :math:`\\text{Total}_k = \\overline{\\text{rowsum}}(S)\\,\\beta_k` with
+        :math:`S = (I - \\rho W)^{-1}`.  The diagonal trace rides the resolvent
+        identity ``tr(S)/n = 1 - (rho/n)*g`` (``g = d/drho log|I - rho W|``),
+        so it needs no O(n³) eigendecomposition.
+
+        Returns
+        -------
+        tuple of np.ndarray
+            ``(direct_samples, indirect_samples, total_samples)``, each of
+            shape ``(G, k)``.
+        """
+        from ...diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
+        beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
+
+        mean_diag = self._batch_mean_diag(rho_draws)  # (G,)
+        mean_row_sum = self._batch_mean_row_sum(rho_draws)  # (G,)
+
+        ni = self._nonintercept_indices
+        direct_samples = mean_diag[:, None] * beta_draws[:, ni]
+        total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
+        indirect_samples = total_samples - direct_samples
+
+        return direct_samples, indirect_samples, total_samples
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean parameters.

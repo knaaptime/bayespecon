@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bayespecon import OLSPanelFE, OLSPanelRE, SARPanelFE, SLXPanelFE
+from bayespecon.models import OLSPanelFE, OLSPanelRE, SARPanelFE, SLXPanelFE
 
 
 def test_panel_models_no_longer_expose_frequentist_diagnostics():

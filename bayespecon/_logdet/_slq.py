@@ -13,17 +13,29 @@ Algorithm (D-symmetrised Lanczos)
 1. Recover D from W's sparsity pattern (O(nnz) BFS).
 2. Form W_sym = D^{1/2} W D^{-1/2} as a LinearOperator (two O(n) scalings
    + one O(nnz) sparse matvec — never materialised).
-3. For each probe z: run k steps of Lanczos on W_sym, build tridiagonal T_k,
-   eigendecompose → (θ_i, v_i).  Gauss weights: w_i = ||z||² · v_{1,i}².
-4. Evaluate: log|I - ρW| ≈ (1/n_probes) Σ_j ||z_j||² Σ_i v_{1,j,i}² · log(1 - ρθ_{j,i})
+3. For each probe z: run k steps of Lanczos on W_sym from the unit start
+   q₁ = z/‖z‖, build tridiagonal T_k, eigendecompose → (θ_i, v_i).  Canonical
+   SLQ (Ubaru–Chen–Saad) weights: w_i = n · v_{1,i}².
+4. Evaluate: log|I - ρW| ≈ (n/n_probes) Σ_j Σ_i v_{1,j,i}² · log(1 - ρθ_{j,i})
 
 Gauss quadrature from k Lanczos steps is exact for polynomials of degree ≤ 2k-1,
 giving 3× more spectral information per Krylov step than the Barry-Pace Taylor
 series (degree k from k trace moments).
+
+The ``n``-scaling (rather than the sample ``‖z‖²``) removes the χ² radial
+fluctuation and makes a constant integrand exact per probe.  Note, however,
+that SLQ estimates the *full* log-integral stochastically and — unlike
+``cheb_stochastic``, which subtracts the exact ``μ₀ = n`` and ``μ₁ = tr(W̃)``
+moments as control variates — carries the full ``‖log(I-ρW_sym)‖_F`` Hutchinson
+variance.  On flat spatial spectra this makes SLQ *less* accurate than
+``cheb_stochastic`` at equal probe counts; the limitation is inherent to the
+per-probe quadrature, not the weight normalization.  SLQ is opt-in, not the
+auto-selected default.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
@@ -40,7 +52,8 @@ class SLQPrecompute:
     nodes : np.ndarray, shape (n_probes, k)
         Gauss quadrature nodes (real for D-symmetrised, complex for Arnoldi).
     weights : np.ndarray, shape (n_probes, k)
-        Quadrature weights (||z||² · |e₁ᵢ|² per probe).
+        Quadrature weights, ``n``-scaled (``Σᵢ weights = n`` per probe): real
+        ``n · v₁ᵢ²`` for Lanczos, complex ``n · γᵢ`` (bilinear) for Arnoldi.
     n : int
         Matrix dimension.
     method : str
@@ -79,17 +92,17 @@ def _recover_symmetrizing_diagonal(W: sp.csr_matrix) -> np.ndarray | None:
         (directed graph — D-symmetrisation not applicable).
     """
     n = W.shape[0]
-    W.tocsc()
 
-    # Check symmetric sparsity pattern
-    pattern_sym = (W != 0).toarray() == (W.T != 0).toarray()
-    if not pattern_sym.all():
+    # Check symmetric sparsity pattern without densifying: the boolean
+    # patterns differ iff their sparse XOR has any stored entries.
+    pattern = (W != 0).tocsr()
+    if (pattern != pattern.T.tocsr()).nnz > 0:
         return None
 
-    # BFS to propagate D[i]/D[j] = W[j,i] / W[i,j]
+    # BFS to propagate D[i]/D[j] = W[j,i] / W[i,j], seeded per connected
+    # component so disconnected graphs get a consistent D on every block.
     D = np.empty(n, dtype=np.float64)
     D[:] = np.nan
-    D[0] = 1.0
 
     # Build adjacency list for BFS
     W_coo = W.tocoo()
@@ -98,54 +111,29 @@ def _recover_symmetrizing_diagonal(W: sp.csr_matrix) -> np.ndarray | None:
         if i != j:
             adj[i].append(j)
 
-    queue = [0]
-    while queue:
-        i = queue.pop(0)
-        for j in adj[i]:
-            if np.isnan(D[j]):
-                # D[i] / D[j] = W[j,i] / W[i,j]
-                wij = W[i, j]
-                wji = W[j, i]
-                if abs(wij) < 1e-300 or abs(wji) < 1e-300:
-                    continue
-                D[j] = D[i] * wij / wji
-                queue.append(j)
+    W_csr = W.tocsr()
+    for seed in range(n):
+        if not np.isnan(D[seed]):
+            continue
+        D[seed] = 1.0
+        queue = deque([seed])
+        while queue:
+            i = queue.popleft()
+            for j in adj[i]:
+                if np.isnan(D[j]):
+                    # D[i] / D[j] = W[j,i] / W[i,j]
+                    wij = W_csr[i, j]
+                    wji = W_csr[j, i]
+                    if abs(wij) < 1e-300 or abs(wji) < 1e-300:
+                        continue
+                    D[j] = D[i] * wij / wji
+                    queue.append(j)
 
-    # Check all nodes reached (connected graph)
+    # Isolated/unreachable-by-value nodes (e.g. zero rows) default to 1
     if np.any(np.isnan(D)):
-        # Disconnected graph — set unreached nodes to 1
         D[np.isnan(D)] = 1.0
 
     return D
-
-
-# ---------------------------------------------------------------------------
-# W_sym LinearOperator
-# ---------------------------------------------------------------------------
-
-
-def _make_sym_operator(W: sp.csr_matrix, D: np.ndarray) -> spla.LinearOperator:
-    """Create a LinearOperator for W_sym = D^{1/2} W D^{-1/2}.
-
-    Matvec: q → D^{1/2} (W (D^{-1/2} q)) — two O(n) scalings + O(nnz) sparse.
-    Handles both 1D vectors and 2D blocks (n, n_probes).
-    """
-    n = W.shape[0]
-    sqrt_D = np.sqrt(D)
-    inv_sqrt_D = 1.0 / sqrt_D
-
-    def _matvec(q):
-        return sqrt_D * (W @ (inv_sqrt_D * q))
-
-    def _rmatvec(q):
-        return inv_sqrt_D * (W.T @ (sqrt_D * q))
-
-    return spla.LinearOperator(
-        shape=(n, n),
-        matvec=_matvec,
-        rmatvec=_rmatvec,
-        dtype=np.float64,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +170,7 @@ def _batched_lanczos(
     -------
     (nodes, weights, z_norms_sq) : tuple
     """
-    # Normalize each probe column
+    # Normalize each probe column (unit starts; canonical SLQ scales by n).
     z_norms = np.linalg.norm(Z, axis=0)  # (n_probes,)
     Q0 = Z / np.where(z_norms < 1e-15, 1.0, z_norms)  # (n, n_probes)
 
@@ -193,6 +181,7 @@ def _batched_lanczos(
     alphas = np.zeros((n_probes, k), dtype=np.float64)
     betas = np.zeros((n_probes, k - 1), dtype=np.float64)
     active = np.ones(n_probes, dtype=bool)  # which probes haven't broken down
+    deg = np.full(n_probes, k, dtype=int)  # effective Lanczos degree per probe
 
     # First matvec (batched)
     R = matvec_fn(Q0)  # (n, n_probes) — ONE batched matvec
@@ -207,8 +196,10 @@ def _batched_lanczos(
         beta = np.linalg.norm(R, axis=0)  # (n_probes,)
         betas[:, i - 1] = beta
 
-        # Mark inactive probes
-        active & (beta < 1e-15)
+        # A probe that breaks down here (β≈0) has an i-dimensional Krylov
+        # subspace; record its effective degree before deactivating it.
+        newly_dead = active & (beta < 1e-15)
+        deg[newly_dead] = i
         active &= beta >= 1e-15
         if not active.any():
             break
@@ -236,81 +227,26 @@ def _batched_lanczos(
         # R -= Q_slice @ proj_coeffs (per-probe)
         R = R - np.einsum("nsj,sj->nj", Q_slice, proj_coeffs)
 
-    # Eigendecompose each probe's tridiagonal (vectorized loop — k×k is tiny)
+    # Eigendecompose each probe's tridiagonal (vectorized loop — k×k is tiny).
+    # Canonical SLQ weight is n·v₁ᵢ² (unit start scaled by n), not ‖z‖²·v₁ᵢ²:
+    # the χ² fluctuation of ‖z‖² is removed and Σᵢ n·v₁ᵢ² = n is exact per
+    # probe (constant integrand recovered exactly).  This matches the
+    # normalization already used by ``slq_to_chebyshev_coeffs``.
     nodes = np.zeros((n_probes, k), dtype=np.float64)
     weights = np.zeros((n_probes, k), dtype=np.float64)
     z_norms_sq = z_norms**2
 
     for j in range(n_probes):
-        # Find actual k for this probe (count active steps)
-        m = k
-        # Check if beta values went to zero
-        for step in range(k - 1):
-            if not active[j] and step >= i:
-                m = step
-                break
+        m = deg[j]
         # Build tridiagonal
         T = np.diag(alphas[j, :m])
         if m > 1:
             T += np.diag(betas[j, : m - 1], 1) + np.diag(betas[j, : m - 1], -1)
         theta, eigvecs = np.linalg.eigh(T)
         nodes[j, :m] = theta
-        weights[j, :m] = z_norms_sq[j] * eigvecs[0, :] ** 2
+        weights[j, :m] = n * eigvecs[0, :] ** 2
 
     return nodes, weights, z_norms_sq
-
-
-def _lanczos_iteration(
-    W_op: spla.LinearOperator,
-    n: int,
-    k: int,
-    z: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, float]:
-    """Run k steps of Lanczos on a symmetric operator starting from z.
-
-    Returns (theta, e1_sq, z_norm) where theta are real eigenvalues of T_k.
-    """
-    z_norm = np.linalg.norm(z)
-    if z_norm == 0:
-        return np.empty(0), np.empty(0), 0.0
-
-    q = z / z_norm
-
-    alpha_vals = np.empty(k)
-    beta_vals = np.empty(k - 1)
-    Q = np.empty((n, k))
-
-    Q[:, 0] = q
-    r = W_op @ q
-    alpha_vals[0] = float(q @ r)
-    r = r - alpha_vals[0] * q
-
-    for i in range(1, k):
-        beta_vals[i - 1] = np.linalg.norm(r)
-        if beta_vals[i - 1] < 1e-15:
-            alpha_vals = alpha_vals[:i]
-            beta_vals = beta_vals[: i - 1] if i > 1 else beta_vals[:0]
-            Q = Q[:, :i]
-            break
-        q_new = r / beta_vals[i - 1]
-        Q[:, i] = q_new
-        r = W_op @ q_new
-        alpha_vals[i] = float(q_new @ r)
-        r = r - alpha_vals[i] * q_new - beta_vals[i - 1] * Q[:, i - 1]
-        # Full reorthogonalization
-        for j in range(i):
-            r = r - float(Q[:, j] @ r) * Q[:, j]
-
-    m = len(alpha_vals)
-    T = np.diag(alpha_vals[:m])
-    if m > 1:
-        T += np.diag(beta_vals[: m - 1], 1) + np.diag(beta_vals[: m - 1], -1)
-
-    # Symmetric → eigh (real eigenvalues, valid Gauss quadrature)
-    theta, eigvecs = np.linalg.eigh(T)
-    e1_sq = eigvecs[0, :] ** 2
-
-    return theta, e1_sq, z_norm
 
 
 # ---------------------------------------------------------------------------
@@ -323,14 +259,23 @@ def _arnoldi_iteration(
     n: int,
     k: int,
     z: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Run k steps of Arnoldi on a non-symmetric operator starting from z.
 
-    Returns (theta, e1_sq, z_norm) where theta are complex Ritz values.
+    Returns ``(theta, gamma)`` where ``theta`` are the complex Ritz values of
+    the Hessenberg ``H`` and ``gamma`` are the **bilinear** quadrature weights
+    for the unit start ``q₁ = e₁``::
+
+        e₁ᵀ f(H) e₁ = Σᵢ γᵢ f(θᵢ),   γᵢ = (e₁ᵀ V)ᵢ (V⁻¹ e₁)ᵢ
+
+    where ``H = V diag(θ) V⁻¹``.  Because ``H`` is non-normal its eigenvectors
+    are not orthogonal, so the symmetric-case rule ``|V[0, i]|²`` is wrong —
+    the left/right (biorthogonal) product ``V[0, i]·(V⁻¹e₁)ᵢ`` is required and
+    is generally complex.
     """
     z_norm = np.linalg.norm(z)
     if z_norm == 0:
-        return np.empty(0, dtype=np.complex128), np.empty(0), 0.0
+        return np.empty(0, dtype=np.complex128), np.empty(0, dtype=np.complex128)
 
     q = z / z_norm
 
@@ -338,6 +283,7 @@ def _arnoldi_iteration(
     H = np.zeros((k, k), dtype=np.float64)
     Q[:, 0] = q
 
+    m = k
     for i in range(k - 1):
         w = W_op @ Q[:, i]
         for j in range(i + 1):
@@ -346,13 +292,17 @@ def _arnoldi_iteration(
         H[i + 1, i] = np.linalg.norm(w)
         if H[i + 1, i] < 1e-15:
             H = H[: i + 1, : i + 1]
+            m = i + 1
             break
         Q[:, i + 1] = w / H[i + 1, i]
 
-    theta, eigvecs = np.linalg.eig(H)
-    e1_sq = np.abs(eigvecs[0, :]) ** 2
+    theta, V = np.linalg.eig(H)
+    e1 = np.zeros(m, dtype=np.complex128)
+    e1[0] = 1.0
+    # γ = V[0, :] ∘ (V⁻¹ e₁): the biorthogonal bilinear-form weights.
+    gamma = V[0, :] * np.linalg.solve(V, e1)
 
-    return theta, e1_sq, z_norm
+    return theta, gamma
 
 
 # ---------------------------------------------------------------------------
@@ -376,12 +326,15 @@ def slq_logdet_precompute(
     ----------
     W : array-like or scipy.sparse matrix
         Spatial weights matrix (dense or sparse).
-    n_probes : int, default 10
+    n_probes : int, default 50
     lanczos_deg : int, default 30
     rng : np.random.Generator, optional
+        Probe-vector RNG.  Defaults to a *seeded* generator so the
+        precomputed quadrature (and thus the logdet approximation) is
+        reproducible run-to-run; pass your own Generator to randomize.
     """
     if rng is None:
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(0)
 
     if sp.issparse(W) or hasattr(W, "format"):
         W_sp = sp.csr_matrix(W)
@@ -415,36 +368,49 @@ def slq_logdet_precompute(
         )
         return SLQPrecompute(nodes=all_nodes, weights=all_weights, n=n, method=method)
     else:
-        # Arnoldi fallback (complex Ritz values) — per-probe loop
+        # Arnoldi fallback (complex Ritz values) — per-probe loop.  Unit
+        # starts scaled by n (matching the Lanczos convention); the bilinear
+        # weights γ are complex, so ``weights`` is complex here.
         W_op = W_sp
         method = "arnoldi"
         all_nodes = np.zeros((n_probes, lanczos_deg), dtype=np.complex128)
-        all_weights = np.zeros((n_probes, lanczos_deg), dtype=np.float64)
+        all_weights = np.zeros((n_probes, lanczos_deg), dtype=np.complex128)
 
         for j in range(n_probes):
             z = rng.standard_normal(n)
-            theta, e1_sq, z_norm = _arnoldi_iteration(W_op, n, lanczos_deg, z)
+            theta, gamma = _arnoldi_iteration(W_op, n, lanczos_deg, z)
             m = len(theta)
             all_nodes[j, :m] = theta
-            all_weights[j, :m] = z_norm**2 * e1_sq
+            all_weights[j, :m] = n * gamma
 
         return SLQPrecompute(nodes=all_nodes, weights=all_weights, n=n, method=method)
 
 
+def _slq_log_vals(vals: np.ndarray, method: str) -> np.ndarray:
+    """``log(1 - ρθ)`` for the quadrature nodes.
+
+    Lanczos nodes are real, so ``log|1 - ρθ|`` (the real logdet integrand) is
+    used directly.  Arnoldi nodes and bilinear weights are complex; the
+    complex logarithm is required because ``Re(Σ γᵢ log(1-ρθᵢ))`` keeps the
+    cross term ``Im(γ)·Im(log)`` that a magnitude-only log would drop.
+    """
+    if method == "arnoldi":
+        vals = np.where(np.abs(vals) < 1e-300, 1e-300, vals)
+        return np.log(vals.astype(np.complex128))
+    return np.log(np.maximum(np.abs(vals), 1e-300))
+
+
 def slq_logdet_eval(pre: SLQPrecompute, rho: float) -> float:
     """Evaluate log|I - ρW| from precomputed SLQ quadrature rules."""
-    vals = 1.0 - rho * pre.nodes
-    safe = np.maximum(np.abs(vals), 1e-300)
-    log_vals = np.log(safe)
-    return float(np.real(np.sum(pre.weights * log_vals) / pre.n_probes))
+    log_vals = _slq_log_vals(1.0 - rho * pre.nodes, pre.method)
+    return float(np.real(np.sum(pre.weights * log_vals)) / pre.n_probes)
 
 
 def slq_logdet_eval_vec(pre: SLQPrecompute, rho_arr: np.ndarray) -> np.ndarray:
     """Vectorized SLQ logdet evaluation over an array of ρ values."""
     rho_arr = np.asarray(rho_arr, dtype=np.float64)
     vals = 1.0 - rho_arr[:, None, None] * pre.nodes[None, :, :]
-    safe = np.maximum(np.abs(vals), 1e-300)
-    log_vals = np.log(safe)
+    log_vals = _slq_log_vals(vals, pre.method)
     return (
         np.real(np.sum(pre.weights[None, :, :] * log_vals, axis=(1, 2))) / pre.n_probes
     )
@@ -492,30 +458,20 @@ def slq_to_chebyshev_coeffs(
     """
     n = pre.n
 
-    # Normalize weights: remove ||z||² scaling, use n scaling (E[||z||²]=n)
-    # weights = ||z||² · e1², so e1² = weights / ||z||²
-    # tr(W^k) ≈ (n / n_probes) Σ_j Σ_i e1_{j,i}² θ_{j,i}^k
-    if pre.method == "lanczos":
-        # For lanczos, nodes/weights are real; recover e1² from weights
-        # We need z_norms_sq — but SLQPrecompute doesn't store it.
-        # Instead, use the direct SLQ eval approach: weights already contain
-        # ||z||², and we normalize by dividing by ||z||² and multiplying by n.
-        # Since we don't have z_norms_sq, we compute it from weight sums:
-        # Σ_i e1_{i}² = 1 for each probe (eigenvector of T_k is unit-norm),
-        # so Σ_i weights_{j,i} / ||z_j||² = 1 → ||z_j||² = Σ_i weights_{j,i}
-        z_norms_sq = np.sum(pre.weights, axis=1)  # (n_probes,)
-        e1_sq = pre.weights / z_norms_sq[:, None]  # (n_probes, k)
-        nodes = pre.nodes  # (n_probes, k)
-    else:
-        # Arnoldi fallback — complex nodes
-        z_norms_sq = np.sum(pre.weights, axis=1)
-        e1_sq = pre.weights / z_norms_sq[:, None]
-        nodes = pre.nodes
+    # Recover the per-probe spectral weights (Lanczos: v₁ᵢ²; Arnoldi: the
+    # complex bilinear γᵢ) from the stored quadrature weights, which are the
+    # n-scaled canonical form (Σᵢ weights = n per probe).  Dividing by that
+    # row sum yields the unit-mass weights independent of the n scaling, so
+    # ``tr(Wᵏ) ≈ (n / n_probes) Σ_j Σ_i eᵢ θᵢᵏ``.
+    weight_sum = np.sum(pre.weights, axis=1)  # = n per probe
+    e1_sq = pre.weights / weight_sum[:, None]  # (n_probes, k)
+    nodes = pre.nodes  # real (lanczos) or complex (arnoldi)
 
     # Estimate traces via Gauss quadrature: tr(W^k) = (n/n_probes) Σ_j Σ_i e1² θ^k
+    # (real part: Arnoldi's complex quadrature estimates a real trace).
     traces = np.zeros(order, dtype=np.float64)
     for p in range(1, order + 1):
-        traces[p - 1] = n * np.mean(np.sum(e1_sq * nodes**p, axis=1))
+        traces[p - 1] = n * np.real(np.mean(np.sum(e1_sq * nodes**p, axis=1)))
 
     # Override first two traces with exact values (major variance reduction)
     if W is not None:

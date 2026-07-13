@@ -693,3 +693,64 @@ def _resolve_flow_geometry(
     # Ensure G is row-standardised
     G = G.transform("r")
     return n_actual, G, gdf
+
+
+def _left_censor(
+    y_latent: np.ndarray, censoring: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Left-censor ``y_latent`` at ``censoring``.
+
+    Returns the observed vector (values ``<= censoring`` clamped to the
+    threshold) and the boolean mask of censored observations.  Shared by the
+    cross-sectional and panel Tobit DGPs.
+    """
+    mask = y_latent <= censoring
+    y_obs = y_latent.copy()
+    y_obs[mask] = censoring
+    return y_obs, mask
+
+
+def _maybe_geodataframe(
+    *,
+    y: np.ndarray,
+    X: np.ndarray,
+    idx: dict,
+    N: int,
+    T: int,
+    Wd: np.ndarray,
+    Wg,
+    params_true: dict,
+    create_gdf: bool,
+    gdf,
+    geometry_type: str,
+    wide: bool,
+) -> dict:
+    """Assemble a panel DGP output dict, optionally as a (Geo)DataFrame.
+
+    Returns the plain long-format dict unless ``create_gdf``, an input ``gdf``,
+    or ``wide`` is requested, in which case the output is materialised via
+    :func:`make_panel_output_geodataframe`.  Shared by the panel FE and dynamic
+    DGP families.
+    """
+    out = {
+        "y": y,
+        "X": X,
+        "unit": idx["unit"],
+        "time": idx["time"],
+        "W_dense": Wd,
+        "W_graph": Wg,
+        "params_true": params_true,
+    }
+    if create_gdf or gdf is not None or wide:
+        return make_panel_output_geodataframe(
+            y,
+            X,
+            idx["unit"],
+            idx["time"],
+            N,
+            T,
+            gdf=gdf,
+            geometry_type=geometry_type,
+            wide=wide,
+        )
+    return out

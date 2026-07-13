@@ -8,12 +8,15 @@ to avoid circular imports and code duplication.
 from __future__ import annotations
 
 import warnings
+from functools import cached_property
 from typing import Optional, Union
 
-import arviz as az
 import numpy as np
+import pandas as pd
 import scipy.sparse as sp
 from libpysal.graph import Graph
+
+from ..._lazy_deps import az, pm
 
 
 def gelman_default_beta_prior(
@@ -265,3 +268,494 @@ def _write_log_likelihood_to_idata(
 
     ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
     idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+
+
+def _tobit_pointwise_loglik(
+    y: np.ndarray,
+    mu: np.ndarray,
+    sigma_f: np.ndarray,
+    censored: np.ndarray,
+    censoring: float,
+    nu_f: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Pointwise Tobit log-likelihood (density part, no Jacobian).
+
+    Uncensored observations contribute the log-density of the (Normal, or
+    Student-t when ``nu_f`` is given) innovation evaluated at ``y``; censored
+    observations contribute the corresponding left-tail log-CDF at the
+    censoring point ``c``.  The caller adds the ``log|I - ρW|`` Jacobian.
+
+    Parameters
+    ----------
+    y : np.ndarray
+        Observed (censored) response, shape ``(n,)``.
+    mu : np.ndarray
+        Latent mean per flattened posterior draw, shape ``(s, n)``.
+    sigma_f : np.ndarray
+        Innovation scale per draw, shape ``(s,)``.
+    censored : np.ndarray
+        Boolean mask of censored observations, shape ``(n,)``.
+    censoring : float
+        Left-censoring threshold ``c``.
+    nu_f : np.ndarray, optional
+        Student-t degrees of freedom per draw, shape ``(s,)``.  ``None``
+        (default) selects the Gaussian innovation.
+
+    Returns
+    -------
+    np.ndarray
+        Pointwise log-likelihood, shape ``(s, n)``.
+    """
+    s, n = mu.shape
+    ll = np.empty((s, n), dtype=np.float64)
+    uncens = ~censored
+    sig = sigma_f[:, None]
+    resid = (y[uncens][None, :] - mu[:, uncens]) / sig
+    if nu_f is not None:
+        from scipy.special import gammaln
+        from scipy.stats import t as t_dist
+
+        nu = nu_f[:, None]
+        ll[:, uncens] = (
+            gammaln((nu + 1) / 2)
+            - gammaln(nu / 2)
+            - 0.5 * np.log(nu * np.pi)
+            - np.log(sig)
+            - (nu + 1) / 2 * np.log1p(resid**2 / nu)
+        )
+        ll[:, censored] = t_dist.logcdf((censoring - mu[:, censored]) / sig, df=nu)
+    else:
+        from scipy.stats import norm
+
+        ll[:, uncens] = -0.5 * (resid**2 + np.log(2.0 * np.pi) + 2.0 * np.log(sig))
+        ll[:, censored] = norm.logcdf((censoring - mu[:, censored]) / sig)
+    return ll
+
+
+class SharedSpatialMethods:
+    """Behaviour-preserving mixin of methods shared verbatim by the two base
+    classes (:class:`SpatialModel` and :class:`SpatialPanelModel`).
+
+    Phase 5c converges the ~39 duplicated methods into this single home before
+    the two hierarchies are collapsed.  Only methods whose bodies are *already
+    identical* across the two classes live here; anything that differs (N vs NT
+    sizing, cross-section vs panel Jacobians, ...) stays on the subclasses and
+    overrides the mixin via normal MRO.  All methods rely only on attributes
+    both classes provide (``self._X``, ``self._feature_names``, ``self.priors``,
+    ``self._idata``).
+
+    Structure-dependent operations (spatial lag, logdet ``W`` operand) are
+    delegated to ``self._structure`` (a
+    :class:`bayespecon.models._base._structure.SpatialStructure`), which the two
+    base ``__init__`` methods assign.  The class-level ``None`` default keeps the
+    attribute resolvable for classes that do not use it (e.g. flow models, which
+    shadow ``_spatial_lag`` and never touch the single-``W`` logdet path).
+    """
+
+    _structure = None
+
+    @property
+    def _nonintercept_indices(self) -> list[int]:
+        """Return indices of non-constant (non-intercept) columns in X.
+
+        This is used to exclude the intercept from impact measures, since
+        the intercept has no meaningful spatial effect interpretation.
+
+        Returns
+        -------
+        list[int]
+            Column indices of X that are not constant/intercept columns.
+        """
+        indices: list[int] = []
+        for j, name in enumerate(self._feature_names):
+            column = self._X[:, j]
+            is_named_intercept = name.lower() == "intercept"
+            is_constant = np.allclose(column, column[0])
+            if not (is_named_intercept or is_constant):
+                indices.append(j)
+        return indices
+
+    @property
+    def _nonintercept_feature_names(self) -> list[str]:
+        """Return feature names for non-intercept columns.
+
+        Returns
+        -------
+        list[str]
+            Feature names excluding intercept/constant columns.
+        """
+        return [self._feature_names[i] for i in self._nonintercept_indices]
+
+    def _add_nu_prior(self, model: pm.Model) -> pm.Model:
+        """Add the degrees-of-freedom prior for robust (Student-t) models.
+
+        Called inside ``_build_pymc_model`` when ``self.robust`` is True.
+        Uses an :math:`\\mathrm{Exp}(\\lambda_\\nu)` prior on ``nu`` with rate ``nu_lam`` (default
+        1/30, giving mean ≈ 30, favouring near-Normal tails). A lower
+        bound of 2 is enforced so that the variance exists.
+
+        Parameters
+        ----------
+        model : pymc.Model
+            The model context in which to add the ``nu`` prior.
+
+        Returns
+        -------
+        pymc.Model
+            The same model context (``nu`` is added as a side effect).
+        """
+        nu_lam = self.priors.get("nu_lam", 1.0 / 30.0)
+        pm.Truncated("nu", pm.Exponential.dist(lam=nu_lam), lower=2.0)
+        return model
+
+    def _beta_names(self) -> list[str]:
+        """Return coefficient labels used for posterior summaries.
+
+        Returns
+        -------
+        list[str]
+            Coefficient labels aligned with the ``beta`` parameter.
+        """
+        return list(self._feature_names)
+
+    def _model_coords(self) -> dict[str, list[str]]:
+        """Return PyMC coordinate labels for named dimensions.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Coordinates passed to :class:`pymc.Model`.
+        """
+        return {"coefficient": self._beta_names()}
+
+    @staticmethod
+    def _rename_summary_index(summary_df: pd.DataFrame) -> pd.DataFrame:
+        """Strip the ``beta[...]`` wrapper from coefficient row labels.
+
+        Parameters
+        ----------
+        summary_df : pandas.DataFrame
+            ArviZ summary output.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Summary with human-readable coefficient row labels.
+        """
+        renamed = []
+        for label in summary_df.index.astype(str):
+            if label.startswith("beta[") and label.endswith("]"):
+                renamed.append(label[5:-1])
+            else:
+                renamed.append(label)
+        out = summary_df.copy()
+        out.index = renamed
+        return out
+
+    @property
+    def inference_data(self) -> Optional[az.InferenceData]:
+        """Return the ArviZ InferenceData from the most recent fit.
+
+        Returns
+        -------
+        arviz.InferenceData or None
+            The inference data object, or ``None`` if the model has not
+            been fit yet.
+        """
+        return self._idata
+
+    def _require_fit(self):
+        if self._idata is None:
+            raise RuntimeError("Model has not been fit yet. Call .fit() first.")
+
+    def _posterior_mean(self, var: str) -> np.ndarray:
+        return self._idata.posterior[var].mean(("chain", "draw")).to_numpy()
+
+    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
+        """Hook to augment ``idata`` after sampling, before it is returned.
+
+        The default is a no-op.  Subclasses whose likelihood is expressed via
+        ``pm.Potential`` (so PyMC captures no pointwise ``log_likelihood``),
+        e.g. the (panel) Tobit families, override this to attach a complete
+        Jacobian-corrected pointwise log-likelihood for information criteria.
+        """
+        return idata
+
+    @staticmethod
+    def _spatial_lag_column_indices(
+        X: np.ndarray, feature_names: list[str]
+    ) -> list[int]:
+        """Return indices of regressors that should receive spatial lags.
+
+        Constant columns are treated as intercept-like and excluded, which
+        avoids adding redundant ``W * intercept`` terms to SLX/Durbin models.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Design matrix (raw, before any panel fixed-effects transformation).
+        feature_names : list[str]
+            Column labels aligned with ``X``.
+
+        Returns
+        -------
+        list[int]
+            Column indices eligible for spatial lags.
+        """
+        indices: list[int] = []
+        for j, name in enumerate(feature_names):
+            column = X[:, j]
+            is_named_intercept = name.lower() == "intercept"
+            is_constant = np.allclose(column, column[0])
+            if not (is_named_intercept or is_constant):
+                indices.append(j)
+        return indices
+
+    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
+        """Return posterior summary table.
+
+        Parameters
+        ----------
+        var_names : list, optional
+            Variable names to include in the summary.
+        **kwargs
+            Additional arguments passed to :func:`arviz.summary`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Posterior summary statistics.
+        """
+        self._require_fit()
+        summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
+        return self._rename_summary_index(summary_df)
+
+    def fitted_values(self) -> np.ndarray:
+        """Return fitted values at posterior mean parameters.
+
+        Returns
+        -------
+        np.ndarray
+            Posterior-mean fitted values (on the model's native scale;
+            fixed-effects-transformed for panel models).
+        """
+        self._require_fit()
+        return self._fitted_mean_from_posterior()
+
+    def residuals(self) -> np.ndarray:
+        """Return residuals ``y - fitted_values``.
+
+        Returns
+        -------
+        np.ndarray
+            Residual vector ``y - fitted_values`` on the same scale as
+            :meth:`fitted_values`.
+        """
+        self._require_fit()
+        return self._y - self.fitted_values()
+
+    def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
+        """Compute the spatial lag of ``X`` for the spatial filter.
+
+        Delegates to the model's :attr:`_structure`: ``W @ X`` for
+        cross-section, the Kronecker ``W ⊗ I_T`` lag for panel.
+        """
+        return self._structure.spatial_lag(X)
+
+    def _gelman_default_beta_prior(
+        self,
+        design: np.ndarray,
+        feature_names: list[str],
+        scale: float = 2.5,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        r"""Weakly-informative default prior on regression coefficients.
+
+        Thin wrapper around :func:`gelman_default_beta_prior` that uses
+        ``self._y`` as the response.  See that function for details.
+        """
+        return gelman_default_beta_prior(self._y, design, feature_names, scale=scale)
+
+    @cached_property
+    def _W_eigs(self) -> np.ndarray | None:
+        """Eigenvalues of the N×N spatial weights matrix (complex), lazy.
+
+        For large ``n`` this is O(n³), so it is only computed when needed
+        (e.g. by the eigenvalue logdet method); Chebyshev / trace / sparse-grid
+        methods never trigger it.  Cross-section models return ``None`` when no
+        ``W`` was supplied (panel models always have a ``W``).
+        """
+        if self._W_sparse is None:
+            return None
+        return np.linalg.eigvals(self._W_sparse.toarray().astype(np.float64))
+
+    @cached_property
+    def _T_ww(self) -> float:
+        """Sparse trace ``tr(WᵀW + WW)`` used by LM diagnostics (lazy)."""
+        from ...graph import sparse_trace_WtW_plus_WW
+
+        return sparse_trace_WtW_plus_WW(self._W_sparse)
+
+    @property
+    def _logdet_W_operand(self):
+        """Non-eigenvalue ``W`` operand handed to the logdet factory.
+
+        Delegates to the model's :attr:`_structure` (dense ``W`` for
+        cross-section, sparse ``W`` for panel).
+        """
+        return self._structure.logdet_W_operand()
+
+    @property
+    def _W_for_logdet(self):
+        """Argument passed to ``make_logdet_fn`` — eigenvalues or the
+        structure-specific ``W`` operand (:attr:`_logdet_W_operand`).
+
+        Computed lazily so that init never forces an eigendecomposition for
+        chebyshev / sparse-grid methods.
+        """
+        if self._W_for_logdet_cache is None:
+            if self._resolved_logdet_method == "eigenvalue":
+                self._W_for_logdet_cache = self._W_eigs
+            else:
+                self._W_for_logdet_cache = self._logdet_W_operand
+        return self._W_for_logdet_cache
+
+    def _attach_jacobian_corrected_log_likelihood(
+        self,
+        idata: az.InferenceData,
+        spatial_param: str,
+        T: int = 1,
+    ) -> None:
+        """Add Jacobian correction to the auto-captured log-likelihood group.
+
+        For models that use ``pm.Normal("obs", observed=y)`` plus
+        ``pm.Potential("jacobian", logdet_fn(rho))``, PyMC auto-captures
+        the Gaussian part in the ``log_likelihood`` group but the Jacobian
+        term is absent.  This method adds the per-observation Jacobian
+        contribution ``log|I - ρW| * T / n`` to each pointwise LL value.
+
+        Parameters
+        ----------
+        idata : arviz.InferenceData
+            InferenceData with an existing ``log_likelihood`` group.
+        spatial_param : str
+            Name of the spatial autoregressive parameter (``"rho"`` or
+            ``"lam"``) in the posterior.
+        T : int, default 1
+            Time-period multiplier for the Jacobian.  Cross-section models use
+            ``1``; panel models pass ``self._T`` because the stacked
+            ``(N T) × (N T)`` filter ``I_T ⊗ (I_N - ρW)`` has log-determinant
+            ``T·log|I_N - ρW|`` (Kronecker rule).  Dynamic panels pass
+            ``T - 1`` (one period is consumed by the lag).
+        """
+        import xarray as xr
+
+        if "log_likelihood" not in idata.groups():
+            return
+
+        n = self._y.shape[0]
+        param_draws = idata.posterior[spatial_param].values.reshape(-1)  # (n_draws,)
+
+        # Jacobian: log|I - param*W| * T (pure numpy, respects logdet_method)
+        jacobian = self._logdet_numpy_vec_fn(param_draws) * T  # (n_draws,)
+        ll_jac = jacobian[:, None] / n  # (n_draws, 1)
+
+        # Add Jacobian to each variable in the log_likelihood group
+        n_chains = idata.posterior.sizes["chain"]
+        n_draws_per_chain = idata.posterior.sizes["draw"]
+        ll_jac_3d = ll_jac.reshape(n_chains, n_draws_per_chain, 1)  # broadcast over obs
+
+        new_vars = {}
+        for var_name in list(idata.log_likelihood.data_vars):
+            da = idata.log_likelihood[var_name]
+            # Use numpy addition + broadcast to avoid xarray alignment issues
+            # when the observation dimension name differs (e.g., "obs_dim_0" vs "obs_dim")
+            new_vals = da.values + ll_jac_3d
+            new_vars[var_name] = xr.DataArray(
+                new_vals,
+                dims=da.dims,
+                coords={k: v for k, v in da.coords.items() if k != da.dims[-1]},
+            )
+
+        idata["log_likelihood"] = xr.Dataset(new_vars)
+
+    def spatial_effects(
+        self, return_posterior_samples: bool = False
+    ) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, np.ndarray]]:
+        r"""Compute Bayesian inference for direct, indirect, and total impacts.
+
+        Computes impact measures for each posterior draw, then summarises
+        the posterior distribution with means, 95% credible intervals, and
+        Bayesian p-values.  This is the fully Bayesian analog of the
+        simulation-based approach in :cite:t:`lesage2009IntroductionSpatial`
+        and the asymptotic variance formulas in
+        :cite:t:`arbia2020TestingImpact`.
+
+        Models without a spatial lag on y do not exhibit global
+        feedback propagation through :math:`(I-\\rho W)^{-1}`. However,
+        models with spatially lagged covariates (SLX, SDEM) can still
+        have non-zero neighbour spillovers captured in the indirect term.
+
+        Parameters
+        ----------
+        return_posterior_samples : bool, optional
+            If ``True``, return a ``(DataFrame, dict)`` tuple where the
+            dict contains the full posterior draws under keys
+            ``"direct"``, ``"indirect"``, and ``"total"``.  Default
+            ``False``.
+
+        Returns
+        -------
+        pd.DataFrame or tuple of (pd.DataFrame, dict)
+            If *return_posterior_samples* is ``False`` (default), returns
+            a DataFrame indexed by feature names with columns for posterior
+            means, credible-interval bounds, and Bayesian p-values.
+
+            If *return_posterior_samples* is ``True``, returns
+            ``(DataFrame, dict)`` where the dict has keys
+            ``"direct"``, ``"indirect"``, ``"total"``, each mapping
+            to a ``(G, k)`` array of posterior draws.
+        """
+        from ...diagnostics.spatial_effects import _build_effects_dataframe
+
+        self._require_fit()
+        direct_samples, indirect_samples, total_samples = (
+            self._compute_spatial_effects_posterior()
+        )
+
+        # Determine feature names based on the shape of the posterior samples.
+        # Models with WX terms (SDM, SLX, SDEM) report effects only for
+        # lagged covariates (k_wx columns), while models without WX terms
+        # (SAR, SEM) report effects for non-intercept covariates.
+        k_effects = direct_samples.shape[1]
+        if (
+            hasattr(self, "_wx_feature_names")
+            and len(self._wx_feature_names) == k_effects
+        ):
+            feature_names = list(self._wx_feature_names)
+        elif (
+            hasattr(self, "_nonintercept_feature_names")
+            and len(self._nonintercept_feature_names) == k_effects
+        ):
+            feature_names = list(self._nonintercept_feature_names)
+        else:
+            feature_names = list(self._feature_names[:k_effects])
+
+        # Determine model type label
+        model_type = self.__class__.__name__
+
+        df = _build_effects_dataframe(
+            direct_samples=direct_samples,
+            indirect_samples=indirect_samples,
+            total_samples=total_samples,
+            feature_names=feature_names,
+            model_type=model_type,
+        )
+
+        if return_posterior_samples:
+            posterior_samples = {
+                "direct": direct_samples,
+                "indirect": indirect_samples,
+                "total": total_samples,
+            }
+            return df, posterior_samples
+        return df

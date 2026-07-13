@@ -11,7 +11,8 @@ import numpy as np
 import pymc as pm
 import pytest
 
-from bayespecon import SARNegBin, dgp
+from bayespecon import dgp
+from bayespecon.models import SARNegBin
 from bayespecon.tests.helpers import W_to_graph, make_line_W
 
 
@@ -292,44 +293,26 @@ def test_sar_negbin_fit_rejects_invalid_sampler():
     """fit() raises ValueError for invalid sampler string."""
     y, X, W = _count_data(seed=105)
     model = SARNegBin(y=y, X=X, W=W)
-    with pytest.raises(ValueError, match="sampler must be 'gibbs' or 'nuts'"):
+    with pytest.raises(ValueError, match="sampler must be"):
         model.fit(draws=10, tune=10, sampler="hmc")
 
 
-def test_sar_negbin_fit_nuts_dispatches_to_super():
-    """fit(sampler='nuts') calls super().fit() which uses _build_pymc_model."""
+def test_sar_negbin_fit_nuts_routes_to_nuts_path(monkeypatch):
+    """fit(sampler='nuts') routes through the base NUTS path (_fit_nuts)."""
+    from bayespecon.models.base import SpatialModel
+
     y, X, W = _count_data(seed=106)
     model = SARNegBin(y=y, X=X, W=W)
 
-    # Patch super().fit() to verify it gets called with the right args.
-    original_fit = type(model).__bases__[0].fit
     called_with = {}
 
-    def _mock_super_fit(
-        self, *, draws, tune, chains, random_seed, progressbar, **kwargs
-    ):
-        called_with.update(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            kwargs=kwargs,
-        )
-        # Return a minimal InferenceData so the test doesn't fail.
-        import xarray as xr
+    def _fake_fit_nuts(self, **kwargs):
+        called_with.update(kwargs)
+        self._idata = az.from_dict(posterior={"rho": np.array([[0.1]])})
+        return self._idata, False
 
-        prior = xr.Dataset(
-            {"rho": (("chain", "draw"), np.array([[0.1]]))},
-            coords={"chain": [0], "draw": [0]},
-        )
-        return az.from_dict(posterior={"rho": np.array([[0.1]])})
-
-    try:
-        type(model).__bases__[0].fit = _mock_super_fit
-        model.fit(draws=50, tune=25, chains=1, random_seed=42, sampler="nuts")
-    finally:
-        type(model).__bases__[0].fit = original_fit
+    monkeypatch.setattr(SpatialModel, "_fit_nuts", _fake_fit_nuts)
+    model.fit(draws=50, tune=25, chains=1, random_seed=42, sampler="nuts")
 
     assert called_with["draws"] == 50
     assert called_with["tune"] == 25

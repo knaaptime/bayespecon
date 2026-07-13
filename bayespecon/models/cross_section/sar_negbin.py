@@ -45,20 +45,20 @@ from __future__ import annotations
 import warnings
 from typing import Optional
 
-import arviz as az
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 
+from ..._lazy_deps import az, pm
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import has_cholmod
 from ..base import SpatialModel
 from ..priors import SARNegBinPriors
 
 
 class SARNegBin(SpatialModel):
     _priors_cls = SARNegBinPriors
+    _likelihood: str = "count"
+    _gibbs_key: tuple[str, str] | None = ("count", "cross_section")
 
     #: Maximum n for which the JAX dense backend is used automatically.
     _JAX_DENSE_THRESHOLD: int = 10000
@@ -133,100 +133,64 @@ class SARNegBin(SpatialModel):
     # ------------------------------------------------------------------
     # Fitting
     # ------------------------------------------------------------------
-    def fit(
+    def _fit_gibbs(
         self,
+        *,
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
         random_seed: Optional[int] = None,
         thin: int = 1,
-        init_jitter: float = 0.1,
-        progressbar: bool = True,
         n_jobs: int = 1,
-        timeout: float | None = None,
-        sampler: str = "gibbs",
-        gibbs_method: str = "auto",
+        progressbar: bool = True,
+        backend: str = "numpy",
+        init_jitter: float = 0.1,
         slice_width: float = 0.2,
-        **kwargs,
+        krylov_degree: int = 8,
+        krylov_dmax: float = 0.15,
+        n_rho_omega_cycles: int = 1,
+        timeout: float | None = None,
     ) -> "az.InferenceData":
-        r"""Sample the posterior.
-
-        By default, uses the Pólya-Gamma Gibbs sampler (fast, scalable).
-        To use NUTS instead, pass ``sampler="nuts"``.
+        r"""Sample the reduced-form posterior via Pólya-Gamma block Gibbs.
 
         Parameters
         ----------
-        draws, tune : int
-            Post-warmup draws and warmup sweeps per chain.
-        chains : int, default 4
-            Number of independent chains.
+        draws, tune, chains : int
+            Post-warmup draws, warmup sweeps, and number of chains.
         random_seed : int, optional
             Seed for the per-chain RNGs.  Each chain receives a distinct
             child seed.
         thin : int, default 1
-            Keep every ``thin``-th post-warmup draw.  Only used when
-            ``sampler="gibbs"``.
-        init_jitter : float, default 0.1
-            Std-dev of the Gaussian noise applied to the default
-            :math:`(\beta=0, \rho=0, \alpha=1)` initial state.
-            Only used when ``sampler="gibbs"``.
-        progressbar : bool, default True
-            Show per-chain progress bars (sequential or parallel,
-            depending on ``n_jobs``).
+            Keep every ``thin``-th post-warmup draw.
         n_jobs : int, default 1
             Number of parallel worker processes.  ``1`` runs chains
-            sequentially in this process (recommended for small problems
-            where the per-chain runtime is < a few seconds).  ``-1``
-            uses all available CPUs.  Only used when
-            ``sampler="gibbs"``.
-        timeout : float or None, default None
-            Maximum wall-clock seconds to wait for all chains to finish
-            when ``n_jobs != 1``.  If any worker has not returned by this
-            deadline, a :class:`TimeoutError` is raised.  Set to ``None``
-            to wait indefinitely.  Ignored when ``n_jobs == 1``.
-            Only used when ``sampler="gibbs"``.
-        sampler : {"gibbs", "nuts"}, default "gibbs"
-            Sampling method:
-
-            - ``"gibbs"``: Pólya-Gamma Gibbs sampler (default).  Fast and
-              scalable for large datasets.
-            - ``"nuts"``: NUTS via PyMC.  Uses the reduced-form model
-              with a log-determinant Jacobian potential.
-        gibbs_method : {"auto", "factorize", "jax_dense"}, default "auto"
-            Gibbs sampler backend.  Only used when ``sampler="gibbs"``.
-
-            - ``"auto"``: select based on JAX availability and problem
-              size.  When JAX is installed and n ≤ 10 000, uses
-              ``"jax_dense"``; otherwise uses ``"factorize"``.
-            - ``"factorize"``: NumPy/SciPy path with CHOLMOD or SPLU
-              factorisation and adaptive slice sampling for ρ.
-            - ``"jax_dense"``: JAX-accelerated path with dense matrix
-              operations and slice+Krylov sampling for ρ.  Requires JAX
-              with float64 enabled.  Viable for n ≤ ~10 000 on CPU;
-              faster on GPU.
+            sequentially (recommended for small problems); ``-1`` uses all
+            available CPUs.
+        progressbar : bool, default True
+            Show per-chain progress bars.
+        backend : {"numpy", "jax"}
+            Execution backend.  ``"numpy"`` uses the CHOLMOD/SPLU
+            factorisation path with adaptive slice sampling for ρ (the
+            default); ``"jax"`` uses the JAX-accelerated dense path with
+            slice+Krylov sampling (requires float64; viable for n ≲ 10 000).
+        init_jitter : float, default 0.1
+            Std-dev of the Gaussian jitter applied to the profile-loglik
+            initial state.
         slice_width : float, default 0.2
-            Stepping-out width for the ρ slice sampler.  Only used when
-            ``sampler="gibbs"`` with ``gibbs_method="jax_dense"``.
+            Stepping-out width for the ρ slice sampler (JAX path).
         krylov_degree : int, default 8
             Krylov basis degree for the shift-invert polynomial
-            approximation of :math:`(I - \rho W)^{-1} X` inside the
-            ρ-slice density.  Used by both ``"factorize"`` and
-            ``"jax_dense"`` Gibbs backends.
+            approximation of :math:`(I - \rho W)^{-1} X` inside the ρ-slice
+            density.  Used by both backends.
         krylov_dmax : float, default 0.15
-            Maximum :math:`|\Delta\rho|` for which the Krylov basis is
-            used.  Used by both ``"factorize"`` and
-            ``"jax_dense"`` Gibbs backends.
+            Maximum :math:`|\Delta\rho|` for which the Krylov basis is used.
+            Used by both backends.
         n_rho_omega_cycles : int, default 1
-            Number of :math:`(\omega, \rho, \beta)` Gibbs cycles per
-            sweep.  Only used when ``sampler="gibbs"`` with
-            ``gibbs_method="factorize"``.
-        **kwargs
-            Additional keyword arguments.  When ``sampler="gibbs"``,
-            Gibbs-specific kwargs (``krylov_degree``,
-            ``krylov_dmax``, ``n_rho_omega_cycles``) are consumed.
-            When ``sampler="nuts"``, NUTS-specific kwargs
-            (``target_accept``, ``idata_kwargs``, ``nuts_sampler``)
-            are forwarded to :meth:`SpatialModel.fit`.
+            Number of :math:`(\omega, \rho, \beta)` Gibbs cycles per sweep
+            (NumPy path only).
+        timeout : float or None, default None
+            Maximum wall-clock seconds to wait for all chains to finish when
+            ``n_jobs != 1``; ``None`` waits indefinitely.
 
         Returns
         -------
@@ -234,24 +198,6 @@ class SARNegBin(SpatialModel):
             Posterior draws of ``rho``, ``beta``, ``alpha`` and pointwise
             ``log_likelihood`` for the observed counts.
         """
-        # ── NUTS dispatch ──
-        if sampler == "nuts":
-            return super().fit(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                **kwargs,
-            )
-        elif sampler != "gibbs":
-            raise ValueError(f"sampler must be 'gibbs' or 'nuts', got '{sampler}'")
-
-        # ── Gibbs path ──
-        # Pop Krylov kwargs from kwargs before they're silently swallowed.
-        krylov_degree = kwargs.pop("krylov_degree", 8)
-        krylov_dmax = kwargs.pop("krylov_dmax", 0.15)
-        n_rho_omega_cycles = kwargs.pop("n_rho_omega_cycles", 1)
         from ...samplers._utils._idata import gibbs_to_inference_data
         from ...samplers.gaussian._chain_runner import run_chains
         from ...samplers.negbin_reduced import (
@@ -277,26 +223,6 @@ class SARNegBin(SpatialModel):
         rho_lower = float(bounds.rho_min)
         rho_upper = float(bounds.rho_max)
 
-        # Resolve Gibbs method
-        import importlib.util
-
-        _jax_available = importlib.util.find_spec("jax") is not None
-        _valid_methods = {"auto", "factorize", "jax_dense"}
-        if gibbs_method not in _valid_methods:
-            raise ValueError(
-                f"gibbs_method must be one of {_valid_methods}, got '{gibbs_method}'"
-            )
-        if gibbs_method == "jax_dense" and not _jax_available:
-            raise ImportError(
-                "gibbs_method='jax_dense' requires JAX. Install with: pip install jax"
-            )
-        if gibbs_method == "auto":
-            gibbs_method = (
-                "jax_dense"
-                if (_jax_available and n <= self._JAX_DENSE_THRESHOLD)
-                else "factorize"
-            )
-
         priors = ReducedGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
@@ -311,7 +237,7 @@ class SARNegBin(SpatialModel):
         X = np.ascontiguousarray(self._X, dtype=np.float64)
 
         # ── JAX dense path ──
-        if gibbs_method == "jax_dense":
+        if backend == "jax":
             from ...samplers.negbin_reduced._jax import run_chains_jax_reduced
 
             rng = np.random.default_rng(random_seed)
@@ -450,11 +376,8 @@ class SARNegBin(SpatialModel):
         # CholmodFactor from the pattern matrix on its side.
         from ...samplers.negbin_reduced._core import _make_cholmod_pattern
 
-        if has_cholmod():
-            W_sym, WtW, pattern = _make_cholmod_pattern(W_csc, n)
-            cholmod_pattern = pattern
-        else:
-            W_sym, WtW, cholmod_pattern = None, None, None
+        W_sym, WtW, pattern = _make_cholmod_pattern(W_csc, n)
+        cholmod_pattern = pattern
 
         rng = np.random.default_rng(random_seed)
         chain_seeds = [int(s) for s in rng.integers(0, 2**31, size=chains)]
@@ -624,38 +547,18 @@ class SARNegBin(SpatialModel):
     # ------------------------------------------------------------------
     # Spatial effects (log-mean and count scales)
     # ------------------------------------------------------------------
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute average direct/indirect/total impacts on the log-mean scale."""
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        eigs = self._W_eigs
-        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        ni = self._nonintercept_indices
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        indirect = total - direct
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute posterior impacts on the log-mean scale for each draw."""
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
         rho_draws = _get_posterior_draws(idata, "rho")
         beta_draws = _get_posterior_draws(idata, "beta")
 
-        eigs = self._W_eigs
-        mean_diag = _chunked_eig_means(rho_draws, eigs)
+        mean_diag = self._batch_mean_diag(rho_draws)
         mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
         ni = self._nonintercept_indices
@@ -878,7 +781,7 @@ class SARNegBin(SpatialModel):
         indirect_samples : np.ndarray, shape (G, n_effects)
         total_samples : np.ndarray, shape (G, n_effects)
         """
-        from ..._ops import _make_cached_umfpack_solver
+        from ..._ops import _make_cached_sparse_solver
 
         W = self._W_sparse
         I_n = sp.eye(n, format="csr", dtype=np.float64)
@@ -903,7 +806,7 @@ class SARNegBin(SpatialModel):
             A = (I_n - rho_f * W).tocsc()
 
             # Factorise A once and reuse for all per-draw RHSes.
-            solver = _make_cached_umfpack_solver(A)
+            solver = _make_cached_sparse_solver(A)
             if solver is None:
                 solver = sp.linalg.splu(A)
 

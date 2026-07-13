@@ -22,13 +22,13 @@ the convention used by all other panel classes in this package.
 
 from __future__ import annotations
 
-import arviz as az
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
 from ..._backends.sampler_helpers import use_jax_likelihood
+from ..._lazy_deps import az, pm
+from ...samplers._registry import register
 from ..panel_base import SpatialPanelModel
 from ..priors import (
     PanelOLSREPriors,
@@ -120,6 +120,7 @@ class OLSPanelRE(SpatialPanelModel):
     """
 
     _priors_cls = PanelOLSREPriors
+    _likelihood: str = "gaussian"  # NUTS-only (no _gibbs_key)
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)  # RE always uses raw (pooled) data
@@ -176,22 +177,6 @@ class OLSPanelRE(SpatialPanelModel):
         alpha = self._posterior_mean("alpha")
         return self._X @ beta + alpha[self._unit_idx]
 
-    def _compute_spatial_effects(self) -> dict:
-        """Direct/indirect/total effects (no spatial multiplier).
-
-        Returns
-        -------
-        dict
-        """
-        ni = self._nonintercept_indices
-        beta = self._posterior_mean("beta")
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros_like(beta[ni]),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
-
     def _compute_spatial_effects_posterior(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -204,9 +189,7 @@ class OLSPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs
-            inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
-            mean_diag = np.mean(inv_eigs, axis=1)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             direct_samples = mean_diag[:, None] * beta_draws
             total_samples = mean_row_sum[:, None] * beta_draws
@@ -308,6 +291,9 @@ class SARPanelRE(SpatialPanelModel):
     """
 
     _priors_cls = PanelSARREPriors
+    _jacobian_param: str | None = "rho"
+    _likelihood: str = "gaussian"
+    _gibbs_key: tuple[str, str] | None = ("gaussian", "panel_re")
 
     def __init__(self, **kwargs):
         kwargs.pop("model", None)
@@ -366,14 +352,10 @@ class SARPanelRE(SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
-        slice_width: float | None = None,
-        chain_method: str | None = None,
     ) -> "az.InferenceData":
         """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², ρ).
+
+        NumPy-only; there is no JAX kernel for the RE sampler.
 
         Parameters
         ----------
@@ -441,94 +423,6 @@ class SARPanelRE(SpatialPanelModel):
         )
         return self._idata
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        sampler: str = "gibbs",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Sample posterior for SAR panel RE model.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of post-warmup draws per chain.
-        tune : int, default 1000
-            Number of warmup draws per chain (NUTS) or burn-in draws
-            (Gibbs).
-        chains : int, default 4
-            Number of independent chains.
-        target_accept : float, default 0.9
-            NUTS target acceptance probability. Ignored for Gibbs.
-        random_seed : int or None
-            Seed for reproducibility.
-        idata_kwargs : dict or None
-            Extra kwargs for InferenceData (NUTS only).
-        sampler : str, default "gibbs"
-            Sampler to use: ``"gibbs"`` for 5-block Gibbs or ``"nuts"``
-            for PyMC NUTS.
-        thin : int, default 1
-            Keep every ``thin``-th draw after warmup (Gibbs only).
-        n_jobs : int, default -1
-            Number of parallel workers (Gibbs only).
-        progressbar : bool, default True
-            Show per-chain progress bars (Gibbs only).
-        **sample_kwargs
-            Extra keyword arguments forwarded to PyMC (NUTS only).
-
-        Returns
-        -------
-        az.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path (default) ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="rho",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
-        return self._idata
-
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values.
 
@@ -540,28 +434,6 @@ class SARPanelRE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         alpha = self._posterior_mean("alpha")
         return rho * self._Wy + self._X @ beta + alpha[self._unit_idx]
-
-    def _compute_spatial_effects(self) -> dict:
-        """SAR direct/indirect/total effects at posterior mean rho.
-
-        Returns
-        -------
-        dict
-        """
-        ni = self._nonintercept_indices
-        rho = float(self._posterior_mean("rho"))
-        beta = self._posterior_mean("beta")
-        eigs = self._W_eigs
-        mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-        mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-        direct = mean_diag * beta[ni]
-        total = mean_row_sum * beta[ni]
-        return {
-            "direct": direct,
-            "indirect": total - direct,
-            "total": total,
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -575,9 +447,7 @@ class SARPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs
-            inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
-            mean_diag = np.mean(inv_eigs, axis=1)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             direct_samples = mean_diag[:, None] * beta_draws
             total_samples = mean_row_sum[:, None] * beta_draws
@@ -746,6 +616,9 @@ class SEMPanelRE(SpatialPanelModel):
     """
 
     _priors_cls = PanelSEMREPriors
+    _jacobian_param: str | None = "lam"
+    _likelihood: str = "gaussian"
+    _gibbs_key: tuple[str, str] | None = ("gaussian", "panel_re")
 
     def __init__(self, mundlak: bool = False, **kwargs):
         kwargs.pop("model", None)
@@ -955,14 +828,10 @@ class SEMPanelRE(SpatialPanelModel):
         thin: int = 1,
         n_jobs: int = -1,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
-        mala_step_size: float = 0.05,
-        use_mala: bool = True,
-        use_slice: bool = True,
-        slice_width: float | None = None,
-        chain_method: str | None = None,
     ) -> "az.InferenceData":
         """Sample posterior via 5-block RE Gibbs (β, σ², α, σ_α², λ).
+
+        NumPy-only; there is no JAX kernel for the RE sampler.
 
         Parameters
         ----------
@@ -1029,94 +898,6 @@ class SEMPanelRE(SpatialPanelModel):
         )
         return self._idata
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        sampler: str = "gibbs",
-        thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ):
-        """Sample posterior for SEM panel RE model.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of post-warmup draws per chain.
-        tune : int, default 1000
-            Number of warmup draws per chain (NUTS) or burn-in draws
-            (Gibbs).
-        chains : int, default 4
-            Number of independent chains.
-        target_accept : float, default 0.9
-            NUTS target acceptance probability. Ignored for Gibbs.
-        random_seed : int or None
-            Seed for reproducibility.
-        idata_kwargs : dict or None
-            Extra kwargs for InferenceData (NUTS only).
-        sampler : str, default "gibbs"
-            Sampler to use: ``"gibbs"`` for 5-block Gibbs or ``"nuts"``
-            for PyMC NUTS.
-        thin : int, default 1
-            Keep every ``thin``-th draw after warmup (Gibbs only).
-        n_jobs : int, default -1
-            Number of parallel workers (Gibbs only).
-        progressbar : bool, default True
-            Show per-chain progress bars (Gibbs only).
-        **sample_kwargs
-            Extra keyword arguments forwarded to PyMC (NUTS only).
-
-        Returns
-        -------
-        az.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs_dispatch(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                thin=thin,
-                n_jobs=n_jobs,
-                progressbar=progressbar,
-                sample_kwargs=sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
-        # --- NUTS path (default) ---
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="lam",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
-        return self._idata
-
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values (on the observed y scale).
 
@@ -1127,22 +908,6 @@ class SEMPanelRE(SpatialPanelModel):
         beta = self._posterior_mean("beta")
         alpha = self._posterior_mean("alpha")
         return self._X @ beta + alpha[self._unit_idx]
-
-    def _compute_spatial_effects(self) -> dict:
-        """SEM direct/indirect/total effects (error model: no y-multiplier).
-
-        Returns
-        -------
-        dict
-        """
-        ni = self._nonintercept_indices
-        beta = self._posterior_mean("beta")
-        return {
-            "direct": beta[ni].copy(),
-            "indirect": np.zeros_like(beta[ni]),
-            "total": beta[ni].copy(),
-            "feature_names": self._nonintercept_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -1156,9 +921,7 @@ class SEMPanelRE(SpatialPanelModel):
         if isinstance(self, SARPanelRE):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")[:, ni]
-            eigs = self._W_eigs
-            inv_eigs = 1.0 / (1.0 - rho_draws[:, None] * eigs[None, :])
-            mean_diag = np.mean(inv_eigs, axis=1)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
             direct_samples = mean_diag[:, None] * beta_draws
             total_samples = mean_row_sum[:, None] * beta_draws
@@ -1254,6 +1017,8 @@ class SDEMPanelRE(SpatialPanelModel):
     """
 
     _has_wx_in_beta = True
+    _jacobian_param: str | None = "lam"
+    _likelihood: str = "gaussian"  # NUTS-only (no _gibbs_key)
 
     _priors_cls = PanelSDEMREPriors
 
@@ -1380,66 +1145,11 @@ class SDEMPanelRE(SpatialPanelModel):
 
         return model
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        target_accept: float = 0.9,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics."""
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        progressbar = sample_kwargs.pop("progressbar", True)
-
-        _, compute_log_likelihood = self._fit_nuts(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            target_accept=target_accept,
-            random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
-            idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
-        )
-
-        if compute_log_likelihood:
-            self._reconstruct_panel_log_likelihood(
-                spatial_param="lam",
-                nuts_sampler=nuts_sampler,
-                T_eff=self._T,
-            )
-
-        return self._idata
-
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         beta = self._posterior_mean("beta")
         alpha = self._posterior_mean("alpha")
         Z = np.hstack([self._X, self._WX])
         return Z @ beta + alpha[self._unit_idx]
-
-    def _compute_spatial_effects(self) -> dict:
-        """SDEM-style direct/indirect/total effects (no rho multiplier)."""
-        beta = self._posterior_mean("beta")
-        k = self._X.shape[1]
-        kw = self._WX.shape[1]
-        beta1, beta2 = beta[:k], beta[k : k + kw]
-        mean_diag_w = float(self._W_sparse.diagonal().mean())
-        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
-        direct = beta1[self._wx_column_indices] + beta2 * mean_diag_w
-        total = beta1[self._wx_column_indices] + beta2 * mean_row_sum_w
-        return {
-            "direct": direct,
-            "indirect": total - direct,
-            "total": total,
-            "feature_names": self._wx_feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self,
@@ -1462,3 +1172,46 @@ class SDEMPanelRE(SpatialPanelModel):
         total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws
         indirect_samples = total_samples - direct_samples
         return direct_samples, indirect_samples, total_samples
+
+
+# ---------------------------------------------------------------------------
+# Gibbs registry entry
+# ---------------------------------------------------------------------------
+
+
+def _run_gaussian_re(
+    model,
+    *,
+    draws,
+    tune,
+    chains,
+    random_seed,
+    thin,
+    n_jobs,
+    progressbar,
+    backend,
+):
+    """Registry runner for Gaussian panel random-effects Gibbs.
+
+    Thin adapter over the per-class ``_fit_gibbs`` (SAR/SEM RE own their own
+    5-block sampler).  RE Gibbs is NumPy-only — there is no JAX kernel and no
+    ``slice_width``/``chain_method`` options — so ``backend`` is always
+    ``"numpy"`` and no family options are threaded.
+    """
+    return model._fit_gibbs(
+        draws=draws,
+        tune=tune,
+        chains=chains,
+        random_seed=random_seed,
+        thin=thin,
+        n_jobs=n_jobs,
+        progressbar=progressbar,
+    )
+
+
+register(
+    "gaussian",
+    "panel_re",
+    run=_run_gaussian_re,
+    backends={"numpy"},
+)

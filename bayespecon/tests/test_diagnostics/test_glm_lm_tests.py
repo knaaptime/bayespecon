@@ -10,7 +10,7 @@ from bayespecon.diagnostics.lmtests import (
     bayesian_glm_lm_lag_test,
     bayesian_glm_lm_wx_test,
 )
-from bayespecon.models import Logit, NegativeBinomial
+from bayespecon.models import Logit, NegBin
 from bayespecon.tests.helpers import W_to_graph, make_rook_W
 
 # ---------------------------------------------------------------------------
@@ -110,14 +110,14 @@ def test_logit_spatial_diagnostics_dispatch(logit_null_fit):
 
 
 # ---------------------------------------------------------------------------
-# NegativeBinomial
+# NegBin
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
 def negbin_null_fit():
     y, X, W = _negbin_dgp(seed=2, n_side=12)
-    m = NegativeBinomial(y=y, X=X, W=W_to_graph(W), w_vars=["x1", "x2"])
+    m = NegBin(y=y, X=X, W=W_to_graph(W), w_vars=["x1", "x2"])
     m.fit(draws=300, tune=300, chains=2, progressbar=False, random_seed=21)
     return m
 
@@ -125,7 +125,7 @@ def negbin_null_fit():
 @pytest.fixture(scope="module")
 def negbin_sar_fit():
     y, X, W = _negbin_dgp(seed=3, n_side=15, rho=0.7)
-    m = NegativeBinomial(y=y, X=X, W=W_to_graph(W), w_vars=["x1", "x2"])
+    m = NegBin(y=y, X=X, W=W_to_graph(W), w_vars=["x1", "x2"])
     m.fit(draws=400, tune=400, chains=2, progressbar=False, random_seed=22)
     return m
 

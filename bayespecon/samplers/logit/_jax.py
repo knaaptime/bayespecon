@@ -73,7 +73,7 @@ def _make_gibbs_step_with_data(
     """Build a JIT-compiled Gibbs step with data bound into the closure.
 
     This function creates a ``@jax.jit``-compiled function that performs
-    one complete Gibbs sweep (ω, η, β, ρ MALA) in a single XLA kernel
+    one complete Gibbs sweep (ω, η, β, ρ slice) in a single XLA kernel
     call, eliminating all Python→JAX dispatch overhead.
 
     Parameters
@@ -109,17 +109,19 @@ def _make_gibbs_step_with_data(
     gibbs_step : callable
         A JIT-compiled function with signature::
 
-            gibbs_step(state, key, mala_eps) -> (new_state, accept)
+            gibbs_step(state, key, slice_width) -> (new_state, accept)
 
         where ``state`` is a :class:`JAXLogitGibbsState`,
-        ``key`` is a JAX PRNG key, and ``mala_eps`` is a ``jnp.float64``
-        step size for the MALA proposal.  ``accept`` indicates whether
-        the MALA step was accepted.
+        ``key`` is a JAX PRNG key, and ``slice_width`` is a ``jnp.float64``
+        stepping-out width for the ρ slice sampler.  ``accept`` is always
+        ``1.0`` (slice sampling always accepts).
     """
     import equinox as eqx
     import jax
     import jax.numpy as jnp
     from jax.scipy.linalg import cho_solve, solve_triangular
+
+    from .._utils._jax_slice import jax_slice_sample_1d
 
     jax.config.update("jax_enable_x64", True)
 
@@ -267,70 +269,14 @@ def _make_gibbs_step_with_data(
                 + log_prior
             )
 
-        # ── Slice sampling for ρ ──
-        log_y0 = log_density_rho(rho)
-
-        # Draw vertical level
-        key_rho, subkey = jax.random.split(key_rho)
-        log_u = log_y0 + jnp.log(jax.random.uniform(subkey, dtype=jnp.float64))
-
-        # Stepping out: initialise [L, R]
-        key_rho, subkey = jax.random.split(key_rho)
-        u_rand = jax.random.uniform(subkey, dtype=jnp.float64)
-        w = slice_width
-        L = jnp.maximum(rho - u_rand * w, rho_lower_jax)
-        R = jnp.minimum(L + w, rho_upper_jax)
-
-        # Step out left
-        def step_out_left_cond(carry):
-            L_val, _ = carry
-            return (L_val > rho_lower_jax) & (log_density_rho(L_val) > log_u)
-
-        def step_out_left_body(carry):
-            L_val, _ = carry
-            return (jnp.maximum(L_val - w, rho_lower_jax), jnp.float64(0.0))
-
-        L_final, _ = jax.lax.while_loop(
-            step_out_left_cond, step_out_left_body, (L, jnp.float64(0.0))
-        )
-
-        # Step out right
-        def step_out_right_cond(carry):
-            R_val, _ = carry
-            return (R_val < rho_upper_jax) & (log_density_rho(R_val) > log_u)
-
-        def step_out_right_body(carry):
-            R_val, _ = carry
-            return (jnp.minimum(R_val + w, rho_upper_jax), jnp.float64(0.0))
-
-        R_final, _ = jax.lax.while_loop(
-            step_out_right_cond, step_out_right_body, (R, jnp.float64(0.0))
-        )
-
-        # Shrinkage
-        def shrink_cond(carry):
-            _, _, _, _, done = carry
-            return ~done
-
-        def shrink_body(carry):
-            L_val, R_val, key_val, x_best, _ = carry
-            key_val, subkey = jax.random.split(key_val)
-            x_new = L_val + jax.random.uniform(subkey, dtype=jnp.float64) * (
-                R_val - L_val
-            )
-            log_dens_new = log_density_rho(x_new)
-            accepted = log_dens_new > log_u
-            L_new = jnp.where(x_new < rho, x_new, L_val)
-            R_new = jnp.where(x_new >= rho, x_new, R_val)
-            collapsed = (R_new - L_new) < 1e-15
-            done = accepted | collapsed
-            x_best = jnp.where(accepted, x_new, x_best)
-            return (L_new, R_new, key_val, x_best, done)
-
-        _, _, _, rho_new, _ = jax.lax.while_loop(
-            shrink_cond,
-            shrink_body,
-            (L_final, R_final, key_rho, rho, jnp.bool_(False)),
+        # ── Slice sampling for ρ (shared JAX helper) ──
+        rho_new, _ = jax_slice_sample_1d(
+            log_density_rho,
+            rho,
+            rho_lower_jax,
+            rho_upper_jax,
+            key=key_rho,
+            w=slice_width,
         )
 
         new_state = JAXLogitGibbsState(
@@ -379,15 +325,15 @@ def run_chain_jax(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    mala_eps: float = 0.1,
     progress_manager=None,
     chain_id: int = 0,
 ):
     """Run one chain of the full-JIT JAX Gibbs sampler for SAR-logit.
 
     Creates a JIT-compiled Gibbs step function and runs it in a Python
-    loop, handling warmup, thinning, and storage.  The ρ update uses
-    MALA with adaptive step-size tuning during warmup.
+    loop, handling warmup, thinning, and storage.  The ρ update uses a
+    1-D slice sampler on the doubly-collapsed log-density (η and β
+    integrated out).
 
     Parameters
     ----------
@@ -426,9 +372,6 @@ def run_chain_jax(
         Ignored (kept for API compatibility).
     lanczos_deg : int
         Ignored (kept for API compatibility).
-    mala_eps : float, default 0.1
-        Initial step size for MALA proposal.  Adapted during warmup
-        to target ~50% acceptance rate.
     progress_manager : optional
         Progress bar manager.
     chain_id : int, default 0
@@ -439,7 +382,8 @@ def run_chain_jax(
     dict[str, np.ndarray]
         Posterior samples with keys ``rho``, ``beta``, ``log_lik``,
         ``eta_norm``, and optionally ``eta``.
-        Also includes ``mh_accept_rate`` (fraction of MALA steps accepted).
+        Also includes ``mh_accept_rate`` (always 1.0; slice sampling
+        always accepts).
     """
     import jax
     import jax.numpy as jnp
@@ -567,6 +511,7 @@ def _make_gibbs_step_with_data_sem(
     import jax.numpy as jnp
     from jax.scipy.linalg import cho_solve, solve_triangular
 
+    from .._utils._jax_slice import jax_slice_sample_1d
     from ._core import JAXSEMLogitGibbsState
 
     jax.config.update("jax_enable_x64", True)
@@ -674,70 +619,14 @@ def _make_gibbs_step_with_data_sem(
                 logdet_W - 0.5 * log_det_P + 0.5 * quad_r + xbeta_correction + log_prior
             )
 
-        # ── Slice sampling for λ ──
-        log_y0 = log_density_lam(lam)
-
-        # Draw vertical level
-        key_lam, subkey = jax.random.split(key_lam)
-        log_u = log_y0 + jnp.log(jax.random.uniform(subkey, dtype=jnp.float64))
-
-        # Stepping out: initialise [L, R]
-        key_lam, subkey = jax.random.split(key_lam)
-        u_rand = jax.random.uniform(subkey, dtype=jnp.float64)
-        w = slice_width
-        L = jnp.maximum(lam - u_rand * w, lam_lower_jax)
-        R = jnp.minimum(L + w, lam_upper_jax)
-
-        # Step out left
-        def step_out_left_cond(carry):
-            L_val, _ = carry
-            return (L_val > lam_lower_jax) & (log_density_lam(L_val) > log_u)
-
-        def step_out_left_body(carry):
-            L_val, _ = carry
-            return (jnp.maximum(L_val - w, lam_lower_jax), jnp.float64(0.0))
-
-        L_final, _ = jax.lax.while_loop(
-            step_out_left_cond, step_out_left_body, (L, jnp.float64(0.0))
-        )
-
-        # Step out right
-        def step_out_right_cond(carry):
-            R_val, _ = carry
-            return (R_val < lam_upper_jax) & (log_density_lam(R_val) > log_u)
-
-        def step_out_right_body(carry):
-            R_val, _ = carry
-            return (jnp.minimum(R_val + w, lam_upper_jax), jnp.float64(0.0))
-
-        R_final, _ = jax.lax.while_loop(
-            step_out_right_cond, step_out_right_body, (R, jnp.float64(0.0))
-        )
-
-        # Shrinkage
-        def shrink_cond(carry):
-            _, _, _, _, done = carry
-            return ~done
-
-        def shrink_body(carry):
-            L_val, R_val, key_val, x_best, _ = carry
-            key_val, subkey = jax.random.split(key_val)
-            x_new = L_val + jax.random.uniform(subkey, dtype=jnp.float64) * (
-                R_val - L_val
-            )
-            log_dens_new = log_density_lam(x_new)
-            accepted = log_dens_new > log_u
-            L_new = jnp.where(x_new < lam, x_new, L_val)
-            R_new = jnp.where(x_new >= lam, x_new, R_val)
-            collapsed = (R_new - L_new) < 1e-15
-            done = accepted | collapsed
-            x_best = jnp.where(accepted, x_new, x_best)
-            return (L_new, R_new, key_val, x_best, done)
-
-        _, _, _, lam_new, _ = jax.lax.while_loop(
-            shrink_cond,
-            shrink_body,
-            (L_final, R_final, key_lam, lam, jnp.bool_(False)),
+        # ── Slice sampling for λ (shared JAX helper) ──
+        lam_new, _ = jax_slice_sample_1d(
+            log_density_lam,
+            lam,
+            lam_lower_jax,
+            lam_upper_jax,
+            key=key_lam,
+            w=slice_width,
         )
 
         new_state = JAXSEMLogitGibbsState(
@@ -768,7 +657,6 @@ def run_chain_jax_sem(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    mala_eps: float = 0.1,
     progress_manager=None,
     chain_id: int = 0,
 ):
@@ -817,7 +705,8 @@ def run_chain_jax_sem(
     dict[str, np.ndarray]
         Posterior samples with keys ``lam``, ``beta``, ``log_lik``,
         ``eta_norm``, and optionally ``eta``.
-        Also includes ``mh_accept_rate`` (fraction of MALA steps accepted).
+        Also includes ``mh_accept_rate`` (always 1.0; slice sampling
+        always accepts).
     """
     import jax
     import jax.numpy as jnp
@@ -1055,7 +944,6 @@ def run_chains_jax_vectorized(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    mala_eps: float = 0.1,
     progressbar: bool = True,
 ) -> list[dict]:
     """Run multiple SAR-logit Gibbs chains in parallel via ``jax.vmap``.
@@ -1077,9 +965,6 @@ def run_chains_jax_vectorized(
         Per-chain JAX PRNG seeds.  Defaults to ``range(chains)``.
     pg_n_terms, n_probes, lanczos_deg :
         Same meaning as in :func:`run_chain_jax`.
-    mala_eps : float, default 0.1
-        Ignored (kept for API compatibility).  Slice sampling does
-        not use a step-size parameter.
     progressbar : bool, default True
         Show per-chain progress bars.  Because all chains advance in
         lock-step under vmap, the bar is updated in bulk at the end of
@@ -1248,7 +1133,6 @@ def run_chains_jax_sem_vectorized(
     pg_n_terms: int = 25,
     n_probes: int = 5,
     lanczos_deg: int = 15,
-    mala_eps: float = 0.1,
     progressbar: bool = True,
 ) -> list[dict]:
     """Run multiple SEM-logit Gibbs chains in parallel via ``jax.vmap``.

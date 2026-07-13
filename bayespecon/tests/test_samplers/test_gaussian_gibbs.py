@@ -242,15 +242,7 @@ class TestSEMCollapsedLogDensity:
     def test_returns_scalar(self):
         y, X, W_dense, n = _make_sem_data()
         cache = _build_cache(W_dense, X, model_type="sem", y=y)
-        result = _sem_collapsed_log_density(
-            0.3,
-            y,
-            X,
-            cache.W_sparse,
-            cache.logdet_fn,
-            n,
-            X.shape[1],
-        )
+        result = _sem_collapsed_log_density(0.3, cache, n, X.shape[1])
         assert np.isscalar(result) or result.ndim == 0
 
     def test_maximum_near_true_lam(self):
@@ -261,19 +253,33 @@ class TestSEMCollapsedLogDensity:
 
         lam_grid = np.linspace(cache.rho_lower + 0.01, cache.rho_upper - 0.01, 50)
         log_dens = [
-            _sem_collapsed_log_density(
-                l,
-                y,
-                X,
-                cache.W_sparse,
-                cache.logdet_fn,
-                n,
-                X.shape[1],
-            )
-            for l in lam_grid
+            _sem_collapsed_log_density(l, cache, n, X.shape[1]) for l in lam_grid
         ]
         lam_argmax = lam_grid[np.argmax(log_dens)]
         assert abs(lam_argmax - lam_true) < 0.3
+
+    def test_cross_product_form_matches_explicit(self):
+        """Quadratic-in-λ cross-products must equal the explicit y*/X* form."""
+        y, X, W_dense, n = _make_sem_data()
+        k = X.shape[1]
+        cache = _build_cache(W_dense, X, model_type="sem", y=y)
+        W = cache.W_sparse
+        logdet_fn = cache.logdet_fn
+
+        def _explicit(lam):
+            y_star = y - lam * (W @ y)
+            X_star = X - lam * (W @ X)
+            XtX_star = X_star.T @ X_star
+            Xty_star = X_star.T @ y_star
+            yty_star = float(y_star @ y_star)
+            sol = np.linalg.solve(XtX_star, Xty_star)
+            rss = max(yty_star - Xty_star @ sol, 1e-300)
+            logdet_XtX = np.linalg.slogdet(XtX_star)[1]
+            return logdet_fn(lam) - 0.5 * logdet_XtX - 0.5 * (n - k) * np.log(rss)
+
+        for lam in (-0.6, -0.2, 0.0, 0.3, 0.7):
+            got = _sem_collapsed_log_density(lam, cache, n, k)
+            np.testing.assert_allclose(got, _explicit(lam), rtol=0, atol=1e-8)
 
 
 # ===================================================================
@@ -677,6 +683,7 @@ class TestGibbsVsNUTS:
 
         model_nuts = SAR(y=y, X=X, W=W)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=500,
             tune=500,
             chains=2,
@@ -715,6 +722,7 @@ class TestGibbsVsNUTS:
 
         model_nuts = SEM(y=y, X=X, W=W)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=500,
             tune=500,
             chains=2,
@@ -748,6 +756,7 @@ class TestGibbsVsNUTS:
 
         model_nuts = SDM(y=y, X=X, W=W)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=500,
             tune=500,
             chains=2,
@@ -780,6 +789,7 @@ class TestGibbsVsNUTS:
 
         model_nuts = SDEM(y=y, X=X, W=W)
         idata_nuts = model_nuts.fit(
+            sampler="nuts",
             draws=500,
             tune=500,
             chains=2,
@@ -891,7 +901,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "posterior" in idata.groups()
         assert "rho" in idata.posterior.data_vars
@@ -912,7 +922,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "lam" in idata.posterior.data_vars
 
@@ -930,7 +940,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "rho" in idata.posterior.data_vars
         assert idata.posterior["beta"].shape[-1] == 3  # intercept + x + W*x
@@ -949,29 +959,9 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "lam" in idata.posterior.data_vars
-
-    def test_rw_mh_option(self):
-        """use_mala=False should use RW-MH instead of MALA."""
-        from bayespecon.models.cross_section.sar import SAR
-
-        y, X, W_dense, n = _make_sar_data()
-        W = W_to_graph(W_dense)
-        model = SAR(y=y, X=X, W=W)
-        idata = model.fit(
-            sampler="gibbs",
-            draws=50,
-            tune=20,
-            chains=1,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-            gibbs_method="jax",
-            use_mala=False,
-        )
-        assert "rho" in idata.posterior.data_vars
 
     def test_jax_loo_works(self):
         """LOO should work with JAX-produced InferenceData."""
@@ -988,7 +978,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         loo = az.loo(idata)
         assert np.isfinite(loo.elpd_loo)
@@ -1008,7 +998,7 @@ class TestJAXGaussianGibbs:
             random_seed=42,
             n_jobs=1,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "rho" in idata.posterior.data_vars
 
@@ -1082,25 +1072,43 @@ class TestEdgeCases:
         with pytest.raises(ValueError, match="sampler"):
             model.fit(sampler="invalid")
 
-    def test_invalid_gibbs_method_falls_back(self):
-        """Invalid gibbs_method falls back to numpy path (no error raised)."""
+    def test_invalid_gibbs_backend_raises(self):
+        """An invalid gibbs_backend value raises (strict; no silent fallback)."""
         from bayespecon.models.cross_section.sar import SAR
 
         y, X, W_dense, n = _make_sar_data()
         W = W_to_graph(W_dense)
         model = SAR(y=y, X=X, W=W)
-        # gibbs_method="invalid" falls through to numpy path
-        idata = model.fit(
-            sampler="gibbs",
-            draws=10,
-            tune=5,
-            chains=1,
-            random_seed=42,
-            n_jobs=1,
-            progressbar=False,
-            gibbs_method="invalid",
-        )
-        assert "posterior" in idata.groups()
+        with pytest.raises(ValueError, match="gibbs_backend must be one of"):
+            model.fit(
+                sampler="gibbs",
+                draws=10,
+                tune=5,
+                chains=1,
+                random_seed=42,
+                n_jobs=1,
+                progressbar=False,
+                gibbs_backend="invalid",
+            )
+
+    def test_removed_gibbs_method_kwarg_rejected(self):
+        """The old gibbs_method kwarg was renamed to gibbs_backend (strict)."""
+        from bayespecon.models.cross_section.sar import SAR
+
+        y, X, W_dense, n = _make_sar_data()
+        W = W_to_graph(W_dense)
+        model = SAR(y=y, X=X, W=W)
+        with pytest.raises(TypeError, match="unsupported keyword"):
+            model.fit(
+                sampler="gibbs",
+                draws=10,
+                tune=5,
+                chains=1,
+                random_seed=42,
+                n_jobs=1,
+                progressbar=False,
+                gibbs_method="jax",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1204,7 +1212,7 @@ class TestInformativeOutput:
         assert "took" in caplog.text
 
     def test_jax_path_logs_sampler_name(self, caplog):
-        """JAX path logs MALA/RW-MH sampler name."""
+        """JAX path logs the slice sampler name."""
         pytest.importorskip("jax")
         from bayespecon.models.cross_section.sar import SAR
 
@@ -1220,11 +1228,10 @@ class TestInformativeOutput:
                 random_seed=42,
                 n_jobs=1,
                 progressbar=False,
-                gibbs_method="jax",
-                use_mala=True,
+                gibbs_backend="jax",
             )
-        assert "MALA" in caplog.text
-        assert "acceptance rate" in caplog.text
+        assert "JAX Gibbs sampling" in caplog.text
+        assert "slice" in caplog.text
 
 
 class TestChainParallelism:
@@ -1302,7 +1309,7 @@ class TestChainParallelism:
             chains=2,
             random_seed=42,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
             chain_method="vectorized",
         )
         assert "posterior" in idata.groups()
@@ -1323,7 +1330,7 @@ class TestChainParallelism:
             chains=2,
             random_seed=42,
             progressbar=False,
-            gibbs_method="jax",
+            gibbs_backend="jax",
         )
         assert "posterior" in idata.groups()
         assert idata.posterior["beta"].shape[0] == 2  # 2 chains
@@ -1344,12 +1351,12 @@ class TestChainParallelism:
                 chains=2,
                 random_seed=42,
                 progressbar=False,
-                gibbs_method="jax",
+                gibbs_backend="jax",
                 chain_method="parallel",
             )
 
-    def test_vectorized_per_chain_adaptation(self):
-        """JAX vectorized path uses per-chain adapted step sizes."""
+    def test_vectorized_runner_valid_results(self):
+        """JAX vectorized runner returns valid multi-chain slice results."""
         jax = pytest.importorskip("jax")
         import jax.numpy as jnp
         import scipy.sparse as sp
@@ -1419,7 +1426,6 @@ class TestChainParallelism:
             rho_max=priors.rho_upper,
         )
 
-        # Run with use_mala=True to trigger adaptation
         results = run_chains_jax_gibbs_vectorized(
             y=y,
             X=X,
@@ -1434,8 +1440,6 @@ class TestChainParallelism:
             thin=1,
             jax_seeds=list(range(chains)),
             model_type="sar",
-            mala_step_size=0.05,
-            use_mala=True,
             progressbar=False,
         )
 

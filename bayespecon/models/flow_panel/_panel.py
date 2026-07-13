@@ -13,10 +13,8 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Any, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
@@ -26,6 +24,7 @@ from ..._backends.sampler_helpers import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
 )
+from ..._lazy_deps import az, pm
 from ..._logdet import (
     compute_flow_traces,
     flow_logdet_numpy,
@@ -261,21 +260,32 @@ class FlowPanelModel(SpatialPanelModel):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev"}
-        if self.logdet_method in _SEPARABLE_METHODS:
+        _SEPARABLE_METHODS = {
+            "eigenvalue",
+            "chebyshev",
+            "cheb_cholesky",
+            "aaa",
+            "cheb_stochastic",
+        }
+        if self.logdet_method is None or self.logdet_method in _SEPARABLE_METHODS:
+            from ..._logdet._config import resolve_logdet_method
+
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
                 self._n,
                 method=self.logdet_method,
-                cheb_order=miter,
             )
             self._separable_logdet_numpy_fn = make_flow_separable_logdet_numpy(
                 self._W_sparse,
                 self._n,
                 method=self.logdet_method,
-                cheb_order=miter,
             )
-            if self.logdet_method == "eigenvalue":
+            # Populate ``_W_eigs`` only when the resolved method is eigenvalue
+            # (auto-selection may resolve None to eigenvalue for small n).
+            resolved = resolve_logdet_method(
+                self.logdet_method, n=self._n, W=self._W_sparse
+            )
+            if resolved == "eigenvalue":
                 self._W_eigs = np.linalg.eigvals(
                     self._W_sparse.toarray().astype(np.float64)
                 ).real
@@ -311,12 +321,6 @@ class FlowPanelModel(SpatialPanelModel):
         draws: Optional[int] = None,
     ) -> dict[str, np.ndarray]:
         """Compute posterior effects per draw."""
-
-    def _compute_spatial_effects(self) -> dict[str, np.ndarray]:
-        """Compute direct/indirect/total effects at posterior mean."""
-        raise NotImplementedError(
-            "Spatial effects not yet implemented for flow panel models."
-        )
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Posterior-mean fitted values on transformed scale."""
@@ -1355,7 +1359,9 @@ class SARFlowSeparablePanel(FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"} or None, default None
+        ``None`` auto-selects (``aaa`` for directed W, ``cheb_cholesky`` for
+        symmetric, ``eigenvalue`` for small n).
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -1392,12 +1398,12 @@ class SARFlowSeparablePanel(FlowPanelModel):
     """
 
     def __init__(self, y, G, X, **kwargs):
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SARFlowSeparablePanel logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y, G, X, **kwargs)
@@ -1412,7 +1418,8 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -1449,7 +1456,8 @@ class SARFlowSeparablePanel(FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "Initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
         return self._T * self._separable_logdet_numpy_fn(rho_d, rho_o)
 
@@ -1681,14 +1689,14 @@ class OLSFlowPanel(FlowPanelModel):
         return out
 
 
-class NegativeBinomialSARFlowPanel(SARFlowPanel):
+class SARNegBinFlowPanel(SARFlowPanel):
     """Panel NB2 SAR flow model with unrestricted dependence parameters."""
 
     def __init__(self, y, G, X, **kwargs):
         effects_mode = int(kwargs.get("effects", kwargs.get("model", 0)))
         if effects_mode != 0:
             raise ValueError(
-                "NegativeBinomialSARFlowPanel currently supports effects=0 only. "
+                "SARNegBinFlowPanel currently supports effects=0 only. "
                 "Within-transformed FE panels are not valid for count models."
             )
 
@@ -1697,13 +1705,13 @@ class NegativeBinomialSARFlowPanel(SARFlowPanel):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialSARFlowPanel requires integer-valued observations; "
+                    "SARNegBinFlowPanel requires integer-valued observations; "
                     f"got dtype {y_arr.dtype} with non-integer values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "NegativeBinomialSARFlowPanel requires non-negative integer observations."
+                "SARNegBinFlowPanel requires non-negative integer observations."
             )
 
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
@@ -1752,9 +1760,7 @@ class NegativeBinomialSARFlowPanel(SARFlowPanel):
         eta = eta_mat.T.reshape(-1)
         lam = np.exp(np.clip(eta, -50.0, 50.0))
         if alpha is None:
-            raise ValueError(
-                "alpha is required for NegativeBinomial posterior_predictive"
-            )
+            raise ValueError("alpha is required for NegBin posterior_predictive")
         p = alpha / (alpha + lam)
         return rng.negative_binomial(alpha, p).astype(np.float64)
 
@@ -1801,9 +1807,7 @@ class NegativeBinomialSARFlowPanel(SARFlowPanel):
         from ..._ops import SparseFlowSolveMatrixOp
 
         if self.logdet_method != "traces":
-            raise ValueError(
-                "NegativeBinomialSARFlowPanel supports logdet_method='traces' only."
-            )
+            raise ValueError("SARNegBinFlowPanel supports logdet_method='traces' only.")
 
         beta_mu = self.priors.get("beta_mu", 0.0)
         beta_sigma = self.priors.get("beta_sigma", 10.0)
@@ -1863,14 +1867,14 @@ class NegativeBinomialSARFlowPanel(SARFlowPanel):
         return model
 
 
-class NegativeBinomialSARFlowSeparablePanel(SARFlowSeparablePanel):
+class SARNegBinFlowSeparablePanel(SARFlowSeparablePanel):
     """Panel separable NB2 SAR flow model."""
 
     def __init__(self, y, G, X, **kwargs):
         effects_mode = int(kwargs.get("effects", kwargs.get("model", 0)))
         if effects_mode != 0:
             raise ValueError(
-                "NegativeBinomialSARFlowSeparablePanel currently supports effects=0 only. "
+                "SARNegBinFlowSeparablePanel currently supports effects=0 only. "
                 "Within-transformed FE panels are not valid for count models."
             )
 
@@ -1879,21 +1883,21 @@ class NegativeBinomialSARFlowSeparablePanel(SARFlowSeparablePanel):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialSARFlowSeparablePanel requires integer-valued observations; "
+                    "SARNegBinFlowSeparablePanel requires integer-valued observations; "
                     f"got dtype {y_arr.dtype} with non-integer values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "NegativeBinomialSARFlowSeparablePanel requires non-negative integer observations."
+                "SARNegBinFlowSeparablePanel requires non-negative integer observations."
             )
 
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"NegativeBinomialSARFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SARNegBinFlowSeparablePanel logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
@@ -1942,9 +1946,7 @@ class NegativeBinomialSARFlowSeparablePanel(SARFlowSeparablePanel):
         eta = eta_mat.T.reshape(-1)
         lam = np.exp(np.clip(eta, -50.0, 50.0))
         if alpha is None:
-            raise ValueError(
-                "alpha is required for NegativeBinomial posterior_predictive"
-            )
+            raise ValueError("alpha is required for NegBin posterior_predictive")
         p = alpha / (alpha + lam)
         return rng.negative_binomial(alpha, p).astype(np.float64)
 
@@ -1996,8 +1998,9 @@ class NegativeBinomialSARFlowSeparablePanel(SARFlowSeparablePanel):
 
         if self._separable_logdet_fn is None:
             raise RuntimeError(
-                "NegativeBinomialSARFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "SARNegBinFlowSeparablePanel requires precomputed logdet data; "
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
         n = self._n
         N = self._N_flow
@@ -2029,14 +2032,14 @@ class NegativeBinomialSARFlowSeparablePanel(SARFlowSeparablePanel):
         return model
 
 
-class NegativeBinomialFlowPanel(OLSFlowPanel):
+class NegBinFlowPanel(OLSFlowPanel):
     """Aspatial panel OD-flow NB2 gravity baseline."""
 
     def __init__(self, y, G, X, T, **kwargs):
         effects_mode = int(kwargs.get("effects", kwargs.get("model", 0)))
         if effects_mode != 0:
             raise ValueError(
-                "NegativeBinomialFlowPanel currently supports effects=0 only. "
+                "NegBinFlowPanel currently supports effects=0 only. "
                 "Within-transformed FE panels are not valid for count models."
             )
 
@@ -2045,13 +2048,13 @@ class NegativeBinomialFlowPanel(OLSFlowPanel):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialFlowPanel requires integer-valued observations; "
+                    "NegBinFlowPanel requires integer-valued observations; "
                     f"got dtype {y_arr.dtype} with non-integer values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "NegativeBinomialFlowPanel requires non-negative integer observations."
+                "NegBinFlowPanel requires non-negative integer observations."
             )
         super().__init__(y_arr.astype(np.float64), G, X, T, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.reshape(-1).astype(np.int64)
@@ -2070,9 +2073,7 @@ class NegativeBinomialFlowPanel(OLSFlowPanel):
         eta = self._X @ beta  # (N_flow * T,)
         lam = np.exp(np.clip(eta, -50.0, 50.0))
         if alpha is None:
-            raise ValueError(
-                "alpha is required for NegativeBinomial posterior_predictive"
-            )
+            raise ValueError("alpha is required for NegBin posterior_predictive")
         p = alpha / (alpha + lam)
         return rng.negative_binomial(alpha, p).astype(np.float64)
 
@@ -2416,7 +2417,9 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"} or None, default None
+        ``None`` auto-selects (``aaa`` for directed W, ``cheb_cholesky`` for
+        symmetric, ``eigenvalue`` for small n).
         Method for the Kronecker-factored log-determinant.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
@@ -2453,12 +2456,12 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
     """
 
     def __init__(self, y, G, X, T, **kwargs):
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SEMFlowSeparablePanel logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SEMFlowSeparablePanel logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y, G, X, T, **kwargs)
@@ -2474,7 +2477,8 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparablePanel requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
 
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
@@ -2522,7 +2526,8 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue' or 'chebyshev'."
+                "Initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)."
             )
         return self._T * self._separable_logdet_numpy_fn(lam_d, lam_o)
 

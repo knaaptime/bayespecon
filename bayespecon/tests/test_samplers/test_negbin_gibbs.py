@@ -144,7 +144,8 @@ class TestSARNegBinStructuralRhoMixing:
 
     def test_rho_not_stuck(self):
         """Rho should have more than 1 unique value after 200 draws."""
-        from bayespecon import SARNegBinStructural, dgp
+        from bayespecon import dgp
+        from bayespecon.models import SARNegBinStructural
         from bayespecon.tests.helpers import W_to_graph, make_rook_W
 
         rng = np.random.default_rng(42)

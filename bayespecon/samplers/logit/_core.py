@@ -42,8 +42,10 @@ from typing import Callable, NamedTuple
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
-from .._utils._base import GibbsBasePriors, GibbsBaseState
+from ...models.priors import LogitGibbsPriors, SEMLogitGibbsPriors
+from .._utils._base import GibbsBaseState
 from .._utils._polyagamma import sample_polyagamma
 from .._utils._slice import (
     SliceWidthState,
@@ -95,16 +97,6 @@ JAXLogitGibbsState = make_jax_state_class(
 )
 
 
-@dataclass
-class LogitGibbsPriors(GibbsBasePriors):
-    """Prior hyperparameters for the SAR-logit Gibbs sampler.
-
-    All priors are weakly informative by default.  There is no σ²
-    parameter (the logit link absorbs the error scale) and no α
-    parameter (binary response is always Bernoulli).
-    """
-
-
 class LogitGibbsCache(NamedTuple):
     """Precomputed data that doesn't change across sweeps.
 
@@ -120,9 +112,9 @@ class LogitGibbsCache(NamedTuple):
     cholmod_factor: CholmodFactor | None = None
     W_sym: sp.csr_matrix | None = None  # W + W^T (not divided by σ²)
     WtW: sp.csr_matrix | None = None  # W^T W (not divided by σ²)
-    solve_method: str = "cholmod"  # "cholmod" | "splu" | "cg" | "jax_dense"
+    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense"
     logdet_P_method: str = "cholmod"  # "cholmod" | "lanczos" | "jax_dense"
-    sample_method: str = "cholmod"  # "cholmod" | "splu" | "jax_dense"
+    sample_method: str = "cholmod"  # "cholmod" | "jax_dense"
     lanczos_n_probes: int = 10
     lanczos_deg: int = 30
     # JAX dense backend fields
@@ -174,7 +166,7 @@ def _sample_eta(
     *,
     rng: np.random.Generator,
     cache: LogitGibbsCache | None = None,
-) -> tuple[np.ndarray, CholmodFactor | spla.SuperLU]:
+) -> tuple[np.ndarray, CholmodFactor]:
     """Block 2: Draw η | ω, ρ, β — spatial-normal draw (σ² = 1).
 
     The conditional posterior is
@@ -203,7 +195,7 @@ def _sample_eta(
     -------
     eta_new : ndarray of shape (n,)
         New draw of the latent log-odds.
-    factor : CholmodFactor or SuperLU
+    factor : CholmodFactor
         Factorisation (for potential reuse within the sweep).
     """
     n = X.shape[0]
@@ -257,7 +249,6 @@ def _sample_eta(
         rhs,
         rng=rng,
         cached_factor=cholmod_factor,
-        use_cholmod=(sample_method == "cholmod"),
     )
     return draw.x, draw.factor
 
@@ -313,11 +304,11 @@ def _sample_beta(
     Sigma_beta_inv = Lambda0_inv + XtX
     rhs_beta = Lambda0_inv_mu0 + X.T @ A_rho_eta  # σ² = 1
 
-    # Posterior mean via Cholesky
-    m_beta = np.linalg.solve(Sigma_beta_inv, rhs_beta)
-    L = np.linalg.cholesky(Sigma_beta_inv)
+    # One Cholesky of the SPD precision, reused for the mean and the sample.
+    L, lower = cho_factor(Sigma_beta_inv, lower=True)
+    m_beta = cho_solve((L, lower), rhs_beta)
     z = rng.standard_normal(len(m_beta))
-    beta_new = m_beta + np.linalg.solve(L.T, z)
+    beta_new = m_beta + solve_triangular(L, z, lower=lower, trans="T")
 
     return beta_new
 
@@ -462,8 +453,10 @@ def _sample_rho(
         if use_jax:
             # NOTE: JAX path still uses β-conditional density;
             # marginalising β here is deferred to a follow-up.
-            _jax_key_step = jax.random.fold_in(_jax_key, hash(rho) % (2**31))
-            result = _jax_logdens_fn(jnp.float64(rho), _jax_key_step)
+            # Fixed key per slice step: all ρ candidates share the same
+            # Lanczos probes, giving a deterministic density surface within
+            # the step (fresh _jax_key each Gibbs iteration).
+            result = _jax_logdens_fn(jnp.float64(rho), _jax_key)
             return float(result)
 
         # --- scipy sparse path (β-marginalised, σ² = 1) ---
@@ -490,30 +483,15 @@ def _sample_rho(
                 lanczos_deg=cache.lanczos_deg,
                 rng=_lanczos_rng,
             )
-        elif cholmod_factor is not None:
+        else:
             cholmod_factor.factorize(P)
             log_det_P = cholmod_factor.logdet()
-        else:
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            log_det_P = float(np.sum(np.log(np.abs(lu.U.diagonal()))))
 
         # --- Multi-RHS solve: P [z | M] = [κ | u] ---
         if solve_method == "cg":
             sol = np.column_stack([cg_solve(P, rhs_stack[:, j]) for j in range(k + 1)])
-        elif cholmod_factor is not None and solve_method == "cholmod":
-            sol = cholmod_factor.solve(rhs_stack)
-        elif solve_method == "splu":
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            sol = lu.solve(rhs_stack)
         else:
-            if logdet_P_method != "lanczos" and cholmod_factor is not None:
-                sol = cholmod_factor.solve(rhs_stack)
-            else:
-                P_csc = sp.csc_matrix(P)
-                lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-                sol = lu.solve(rhs_stack)
+            sol = cholmod_factor.solve(rhs_stack)
         z = sol[:, 0]
         M = sol[:, 1:]
 
@@ -789,19 +767,6 @@ JAXSEMLogitGibbsState = make_jax_state_class(
 )
 
 
-@dataclass
-class SEMLogitGibbsPriors:
-    """Prior hyperparameters for the SEM-logit Gibbs sampler.
-
-    No σ² parameter (logit link absorbs error scale).
-    """
-
-    beta_mu: np.ndarray | float = 0.0
-    beta_sigma: np.ndarray | float = 1e6
-    lam_lower: float = -0.999
-    lam_upper: float = 0.999
-
-
 class SEMLogitGibbsCache(NamedTuple):
     """Precomputed data for the SEM-logit Gibbs sampler.
 
@@ -843,7 +808,7 @@ def _sample_eta_sem(
     *,
     rng: np.random.Generator,
     cache: SEMLogitGibbsCache | None = None,
-) -> tuple[np.ndarray, CholmodFactor | spla.SuperLU]:
+) -> tuple[np.ndarray, CholmodFactor]:
     """Block 2 (SEM): Draw η | ω, β, λ — spatial-normal draw (σ² = 1).
 
     The conditional posterior is
@@ -875,7 +840,7 @@ def _sample_eta_sem(
     -------
     eta_new : ndarray of shape (n,)
         New draw of the latent log-odds.
-    factor : CholmodFactor or SuperLU
+    factor : CholmodFactor
         Factorisation (for potential reuse within the sweep).
     """
     n = X.shape[0]
@@ -934,7 +899,6 @@ def _sample_eta_sem(
         rhs,
         rng=rng,
         cached_factor=cholmod_factor,
-        use_cholmod=(sample_method == "cholmod"),
     )
     return draw.x, draw.factor
 
@@ -1001,11 +965,11 @@ def _sample_beta_sem(
     Sigma_beta_inv = Lambda0_inv + XstXs
     rhs_beta = Lambda0_inv_mu0 + X_star.T @ eta_star  # σ² = 1
 
-    # Posterior mean via Cholesky
-    m_beta = np.linalg.solve(Sigma_beta_inv, rhs_beta)
-    L = np.linalg.cholesky(Sigma_beta_inv)
+    # One Cholesky of the SPD precision, reused for the mean and the sample.
+    L, lower = cho_factor(Sigma_beta_inv, lower=True)
+    m_beta = cho_solve((L, lower), rhs_beta)
     z = rng.standard_normal(len(m_beta))
-    beta_new = m_beta + np.linalg.solve(L.T, z)
+    beta_new = m_beta + solve_triangular(L, z, lower=lower, trans="T")
 
     return beta_new
 
@@ -1134,8 +1098,10 @@ def _sample_lam(
     def log_density(lam: float) -> float:
         """Collapsed log-density of λ (η integrated out)."""
         if use_jax:
-            _jax_key_step = jax.random.fold_in(_jax_key, hash(lam) % (2**31))
-            result = _jax_logdens_fn(jnp.float64(lam), _jax_key_step)
+            # Fixed key per slice step: all λ candidates share the same
+            # Lanczos probes, giving a deterministic density surface within
+            # the step (fresh _jax_key each Gibbs iteration).
+            result = _jax_logdens_fn(jnp.float64(lam), _jax_key)
             return float(result)
 
         # --- scipy sparse path ---
@@ -1160,30 +1126,15 @@ def _sample_lam(
                 lanczos_deg=cache.lanczos_deg,
                 rng=_lanczos_rng,
             )
-        elif cholmod_factor is not None:
+        else:
             cholmod_factor.factorize(P)
             log_det_P = cholmod_factor.logdet()
-        else:
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            log_det_P = np.sum(np.log(np.abs(lu.U.diagonal())))
 
         # --- Solve P m = rhs ---
         if solve_method == "cg":
             m = cg_solve(P, rhs)
-        elif cholmod_factor is not None and solve_method == "cholmod":
-            m = cholmod_factor.solve(rhs)
-        elif solve_method == "splu":
-            P_csc = sp.csc_matrix(P)
-            lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            m = lu.solve(rhs)
         else:
-            if logdet_P_method != "lanczos" and cholmod_factor is not None:
-                m = cholmod_factor.solve(rhs)
-            else:
-                P_csc = sp.csc_matrix(P)
-                lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-                m = lu.solve(rhs)
+            m = cholmod_factor.solve(rhs)
 
         quad = float(rhs @ m)
 

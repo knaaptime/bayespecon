@@ -57,11 +57,11 @@ def _lineax_available() -> bool:
 
 @lru_cache(maxsize=1)
 def _umfpack_available() -> bool:
-    """Return ``True`` when optional ``scikits.umfpack`` is importable."""
+    """Return ``True`` when ``sksparse.umfpack`` (scikit-sparse) is importable."""
     # ``find_spec`` raises ``ModuleNotFoundError`` in Python 3.14+ when the
-    # parent package (here ``scikits``) is not installed at all, so guard.
+    # parent package (here ``sksparse``) is not installed at all, so guard.
     try:
-        return importlib.util.find_spec("scikits.umfpack") is not None
+        return importlib.util.find_spec("sksparse.umfpack") is not None
     except (ImportError, ValueError):
         return False
 
@@ -70,8 +70,8 @@ def _umfpack_available() -> bool:
 def _warn_jax_auto_fallback_once(missing: str, target: str) -> None:
     """Emit a one-time advisory warning for JAX sparse backend auto-fallbacks."""
     install_hint = ""
-    if missing == "scikits.umfpack":
-        install_hint = " Install 'scikit-umfpack' to enable the UMFPACK callback path."
+    if missing == "sksparse.umfpack":
+        install_hint = " Install 'scikit-sparse' to enable the UMFPACK callback path."
     elif missing == "klujax":
         install_hint = " Install 'klujax' to enable the faster JAX-native sparse path."
     warnings.warn(
@@ -114,7 +114,7 @@ def _select_jax_sparse_backend() -> str:
             _warn_jax_auto_fallback_once("klujax", "callback+umfpack")
         else:
             _warn_jax_auto_fallback_once("klujax", "callback+scipy")
-            _warn_jax_auto_fallback_once("scikits.umfpack", "callback+scipy")
+            _warn_jax_auto_fallback_once("sksparse.umfpack", "callback+scipy")
         return "callback"
 
     if requested in {"callback", "scipy", "pure_callback"}:

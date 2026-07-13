@@ -12,10 +12,11 @@ All classes use latent-data augmentation for censored observations.
 from __future__ import annotations
 
 import numpy as np
-import pymc as pm
 import pytensor.tensor as pt
 from pytensor import sparse as pts
 
+from ..._lazy_deps import az, pm
+from .._base._shared import _tobit_pointwise_loglik, _write_log_likelihood_to_idata
 from ..base import SpatialModel
 from ..priors import SARTobitPriors, SDMTobitPriors, SEMTobitPriors
 
@@ -51,6 +52,67 @@ class _SpatialTobitBase(SpatialModel):
                 gap_hat, dtype=float
             )
         return y_lat
+
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior samples of direct, indirect, and total effects.
+
+        Effects are reported on the latent (uncensored) scale, so they share
+        the linear SAR/SEM/SDM impact structure of the corresponding Gaussian
+        model.  The diagonal traces ride the resolvent identities
+        ``tr(S)/n = 1 - (rho/n)*g`` and ``tr(SW)/n = -g/n`` and need no
+        eigendecomposition.
+        """
+        from ...diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+
+        if isinstance(self, SARTobit):
+            rho_draws = _get_posterior_draws(idata, "rho")
+            beta_draws = _get_posterior_draws(idata, "beta")
+            mean_diag = self._batch_mean_diag(rho_draws)
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
+            ni = self._nonintercept_indices
+            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
+            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
+            indirect_samples = total_samples - direct_samples
+
+        elif isinstance(self, SEMTobit):
+            beta_draws = _get_posterior_draws(idata, "beta")
+            ni = self._nonintercept_indices
+            direct_samples = beta_draws[:, ni].copy()
+            indirect_samples = np.zeros_like(direct_samples)
+            total_samples = direct_samples.copy()
+
+        elif isinstance(self, SDMTobit):
+            rho_draws = _get_posterior_draws(idata, "rho")
+            beta_draws = _get_posterior_draws(idata, "beta")
+            k = self._X.shape[1]
+            kw = self._WX.shape[1]
+            beta1_draws = beta_draws[:, :k]
+            beta2_draws = beta_draws[:, k : k + kw]
+            mean_diag_M = self._batch_mean_diag(rho_draws)
+            mean_diag_MW = self._batch_mean_diag_MW(rho_draws)
+            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
+            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
+            wx_idx = self._wx_column_indices
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
+            indirect_samples = total_samples - direct_samples
+
+        else:
+            raise NotImplementedError(
+                f"Spatial effects not implemented for {type(self).__name__}."
+            )
+
+        return direct_samples, indirect_samples, total_samples
 
 
 class SARTobit(_SpatialTobitBase):
@@ -185,93 +247,40 @@ class SARTobit(_SpatialTobitBase):
         structural = np.linalg.solve(A, self._X @ beta)
         return np.maximum(self.censoring, structural)
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
+    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
+        """Attach the complete pointwise Tobit log-likelihood for IC metrics.
 
-        The SAR Tobit model uses ``pm.Potential`` for both the residual
-        log-likelihood and the Jacobian, so nothing is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, using the Tobit censoring formula:
-
-        - Uncensored: log N(y | mu, sigma^2)
-        - Censored:   log Phi((c - mu) / sigma)
+        The SAR Tobit model expresses both the residual log-likelihood and the
+        Jacobian via ``pm.Potential``, so PyMC captures no pointwise
+        ``log_likelihood``.  We rebuild it here from the Tobit censoring
+        formula (Normal or Student-t density for uncensored observations, the
+        matching left-tail log-CDF for censored ones) with the structural
+        latent mean :math:`\\mu = (I - \\rho W)^{-1} X\\beta`.
         """
-        idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
-        )
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
-        import xarray as xr
-        from scipy.stats import norm
-
         rho = idata.posterior["rho"].values
         beta = idata.posterior["beta"].values
         sigma = idata.posterior["sigma"].values
         c, d = rho.shape
         s = c * d
         n = self._y.shape[0]
-        X = self._X
-        W = self._W_dense
-        censored = self._censored_mask
-        censoring = self.censoring
         rho_f = rho.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
         I_n = np.eye(n)
-        Xb = beta_f @ X.T
+        W = self._W_dense
+        Xb = beta_f @ self._X.T
         mu = np.empty((s, n), dtype=np.float64)
         for i in range(s):
             mu[i] = np.linalg.solve(I_n - rho_f[i] * W, Xb[i])
-        ll = np.empty((s, n), dtype=np.float64)
-        uncens = ~censored
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-            from scipy.stats import t as t_dist
-
-            ll[:, uncens] = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - (nu_f[:, None] + 1)
-                / 2
-                * np.log1p(
-                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                    / nu_f[:, None]
-                )
-            )
-            ll[:, censored] = t_dist.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None]
-            )
-        else:
-            ll[:, uncens] = -0.5 * (
-                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
-            )
-            ll[:, censored] = norm.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None]
-            )
+        nu_f = idata.posterior["nu"].values.reshape(s) if self.robust else None
+        ll = _tobit_pointwise_loglik(
+            self._y, mu, sigma_f, self._censored_mask, self.censoring, nu_f
+        )
         jac = self._logdet_numpy_vec_fn(rho_f)
-        ll = ll + jac[:, None] / n
-        ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        ll = (ll + jac[:, None] / n).reshape(c, d, n)
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
 
@@ -387,91 +396,34 @@ class SEMTobit(_SpatialTobitBase):
         beta = self._posterior_mean("beta")
         return np.maximum(self.censoring, self._X @ beta)
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
+    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
+        """Attach the complete pointwise Tobit log-likelihood for IC metrics.
 
-        The SEM Tobit model uses ``pm.Potential`` for both the error
-        log-likelihood and the Jacobian, so nothing is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, using the Tobit censoring formula:
-
-        - Uncensored: log N(y | mu, sigma^2)
-        - Censored:   log Phi((c - mu) / sigma)
-
-        where mu = X @ beta and the spatial filtering is absorbed into
-        the Jacobian.
+        The SEM Tobit model expresses both the error log-likelihood and the
+        Jacobian via ``pm.Potential``, so PyMC captures no pointwise
+        ``log_likelihood``.  We rebuild it here from the Tobit censoring
+        formula with structural latent mean :math:`\\mu = X\\beta` (the spatial
+        filter operates on the error term and is absorbed into the Jacobian).
         """
-        idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
-        )
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
-        import xarray as xr
-        from scipy.stats import norm
-
         lam = idata.posterior["lam"].values
         beta = idata.posterior["beta"].values
         sigma = idata.posterior["sigma"].values
         c, d = lam.shape
         s = c * d
         n = self._y.shape[0]
-        X = self._X
-        censored = self._censored_mask
-        censoring = self.censoring
         lam_f = lam.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
-        mu = beta_f @ X.T
-        ll = np.empty((s, n), dtype=np.float64)
-        uncens = ~censored
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-            from scipy.stats import t as t_dist
-
-            ll[:, uncens] = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - (nu_f[:, None] + 1)
-                / 2
-                * np.log1p(
-                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                    / nu_f[:, None]
-                )
-            )
-            ll[:, censored] = t_dist.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None]
-            )
-        else:
-            ll[:, uncens] = -0.5 * (
-                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
-            )
-            ll[:, censored] = norm.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None]
-            )
+        mu = beta_f @ self._X.T
+        nu_f = idata.posterior["nu"].values.reshape(s) if self.robust else None
+        ll = _tobit_pointwise_loglik(
+            self._y, mu, sigma_f, self._censored_mask, self.censoring, nu_f
+        )
         jac = self._logdet_numpy_vec_fn(lam_f)
-        ll = ll + jac[:, None] / n
-        ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        ll = (ll + jac[:, None] / n).reshape(c, d, n)
+        _write_log_likelihood_to_idata(idata, ll)
         return idata
 
 
@@ -601,41 +553,18 @@ class SDMTobit(_SpatialTobitBase):
         structural = np.linalg.solve(A, Z @ beta)
         return np.maximum(self.censoring, structural)
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: int | None = None,
-        idata_kwargs: dict | None = None,
-        **sample_kwargs,
-    ):
-        """Sample posterior and attach pointwise log-likelihood for IC metrics.
+    def _postprocess_idata(self, idata: az.InferenceData) -> az.InferenceData:
+        """Attach the complete pointwise Tobit log-likelihood for IC metrics.
 
-        The SDM Tobit model uses ``pm.Potential`` for both the residual
-        log-likelihood and the Jacobian, so nothing is auto-captured.
-        We compute the complete pointwise log-likelihood manually after
-        sampling, using the Tobit censoring formula:
-
-        - Uncensored: log N(y | mu, sigma^2)
-        - Censored:   log Phi((c - mu) / sigma)
-
-        where mu = rho*Wy* + Z@beta.
+        The SDM Tobit model expresses both the residual log-likelihood and the
+        Jacobian via ``pm.Potential``, so PyMC captures no pointwise
+        ``log_likelihood``.  We rebuild it here from the Tobit censoring
+        formula with structural latent mean
+        :math:`\\mu = (I - \\rho W)^{-1} (X\\beta + WX\\theta)`, where the
+        stacked design ``Z = [X, WX]`` carries the Durbin lags.
         """
-        idata_kwargs = idata_kwargs or {}
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            idata_kwargs=idata_kwargs,
-            **sample_kwargs,
-        )
         if "log_likelihood" in idata.groups() and "obs" in idata.log_likelihood:
             return idata
-        import xarray as xr
-        from scipy.stats import norm
-
         rho = idata.posterior["rho"].values
         beta = idata.posterior["beta"].values
         sigma = idata.posterior["sigma"].values
@@ -643,51 +572,20 @@ class SDMTobit(_SpatialTobitBase):
         s = c * d
         n = self._y.shape[0]
         Z = np.hstack([self._X, self._WX])
-        W = self._W_dense
-        censored = self._censored_mask
-        censoring = self.censoring
         rho_f = rho.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
         I_n = np.eye(n)
+        W = self._W_dense
         Zb = beta_f @ Z.T
         mu = np.empty((s, n), dtype=np.float64)
         for i in range(s):
             mu[i] = np.linalg.solve(I_n - rho_f[i] * W, Zb[i])
-        ll = np.empty((s, n), dtype=np.float64)
-        uncens = ~censored
-        if self.robust:
-            nu_f = idata.posterior["nu"].values.reshape(s)
-            from scipy.special import gammaln
-            from scipy.stats import t as t_dist
-
-            ll[:, uncens] = (
-                gammaln((nu_f[:, None] + 1) / 2)
-                - gammaln(nu_f[:, None] / 2)
-                - 0.5 * np.log(nu_f[:, None] * np.pi)
-                - np.log(sigma_f[:, None])
-                - (nu_f[:, None] + 1)
-                / 2
-                * np.log1p(
-                    ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                    / nu_f[:, None]
-                )
-            )
-            ll[:, censored] = t_dist.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None], df=nu_f[:, None]
-            )
-        else:
-            ll[:, uncens] = -0.5 * (
-                ((self._y[uncens][None, :] - mu[:, uncens]) / sigma_f[:, None]) ** 2
-                + np.log(2.0 * np.pi)
-                + 2.0 * np.log(sigma_f[:, None])
-            )
-            ll[:, censored] = norm.logcdf(
-                (censoring - mu[:, censored]) / sigma_f[:, None]
-            )
+        nu_f = idata.posterior["nu"].values.reshape(s) if self.robust else None
+        ll = _tobit_pointwise_loglik(
+            self._y, mu, sigma_f, self._censored_mask, self.censoring, nu_f
+        )
         jac = self._logdet_numpy_vec_fn(rho_f)
-        ll = ll + jac[:, None] / n
-        ll = ll.reshape(c, d, n)
-        ll_da = xr.DataArray(ll, dims=("chain", "draw", "obs_dim"), name="obs")
-        idata["log_likelihood"] = xr.Dataset({"obs": ll_da})
+        ll = (ll + jac[:, None] / n).reshape(c, d, n)
+        _write_log_likelihood_to_idata(idata, ll)
         return idata

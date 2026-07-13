@@ -32,10 +32,8 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Any, Optional, Union
 
-import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm
 import pytensor.tensor as pt
 import scipy.sparse as sp
 from libpysal.graph import Graph
@@ -45,6 +43,7 @@ from ..._backends.sampler_helpers import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
 )
+from ..._lazy_deps import az, pm
 from ..._logdet import (
     compute_flow_traces,
     flow_logdet_numpy,
@@ -423,21 +422,30 @@ class FlowModel(SpatialModel):
         self._W_eigs: Optional[np.ndarray] = None
         self._separable_logdet_fn = None
         self._separable_logdet_numpy_fn = None
-        _SEPARABLE_METHODS = {"eigenvalue", "chebyshev"}
-        if logdet_method in _SEPARABLE_METHODS:
+        _SEPARABLE_METHODS = {
+            "eigenvalue",
+            "chebyshev",
+            "cheb_cholesky",
+            "aaa",
+            "cheb_stochastic",
+        }
+        if logdet_method is None or logdet_method in _SEPARABLE_METHODS:
+            from ..._logdet._config import resolve_logdet_method
+
             self._separable_logdet_fn = make_flow_separable_logdet(
                 self._W_sparse,
                 self._n,
                 method=logdet_method,
-                cheb_order=miter,
             )
             self._separable_logdet_numpy_fn = make_flow_separable_logdet_numpy(
                 self._W_sparse,
                 self._n,
                 method=logdet_method,
-                cheb_order=miter,
             )
-            if logdet_method == "eigenvalue":
+            # Populate ``_W_eigs`` only when the resolved method is eigenvalue
+            # (auto-selection may resolve None to eigenvalue for small n).
+            resolved = resolve_logdet_method(logdet_method, n=self._n, W=self._W_sparse)
+            if resolved == "eigenvalue":
                 self._W_eigs = np.linalg.eigvals(
                     self._W_sparse.toarray().astype(np.float64)
                 ).real
@@ -995,7 +1003,7 @@ class FlowModel(SpatialModel):
 
         Default implementation: Gaussian SAR flow,
         ``y_rep = A^{-1} (X β + σ ε)`` with ``ε ~ N(0, I_N)``.
-        Subclasses (NegativeBinomialSARFlow, NegativeBinomialSARFlowSeparable) override this.
+        Subclasses (SARNegBinFlow, SARNegBinFlowSeparable) override this.
         """
         A = self._assemble_A(rho_d, rho_o, rho_w)
         Xb = self._X @ beta
@@ -1395,12 +1403,12 @@ class SARFlowSeparable(FlowModel):
     """
 
     def __init__(self, y, G, X, **kwargs):
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SARFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SARFlowSeparable logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y, G, X, **kwargs)
@@ -1415,7 +1423,8 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -1450,7 +1459,8 @@ class SARFlowSeparable(FlowModel):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "Initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         return self._separable_logdet_numpy_fn(rho_d, rho_o)
 
@@ -1752,11 +1762,97 @@ class OLSFlow(FlowModel):
 
 
 # ---------------------------------------------------------------------------
-# Model 4: NegativeBinomial SAR/OLS flow variants
+# Model 4: NegBin SAR/OLS flow variants
 # ---------------------------------------------------------------------------
 
 
-class NegativeBinomialSARFlow(SARFlow):
+class _NegBinFlowMixin:
+    """Shared ``fit`` dispatch for Negative-Binomial flow models.
+
+    The NB flow classes share a single ``fit`` wrapper — NUTS by default, or a
+    reduced-form Pólya–Gamma Gibbs sampler via ``sampler="gibbs"``.  Only the
+    per-class :meth:`_fit_gibbs` (unrestricted 3-ρ vs. separable 2-ρ
+    reduced-form sampler) differs, so it stays on each subclass.  The mixin is
+    listed first in the bases so its ``fit`` wins and ``super().fit`` resolves
+    to the Gaussian :class:`FlowModel.fit` NUTS path.
+    """
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        sampler: str = "nuts",
+        gibbs_backend: str = "numpy",
+        store_lambda: bool = False,
+        idata_kwargs: Optional[dict] = None,
+        progressbar: bool = True,
+        **sample_kwargs,
+    ) -> az.InferenceData:
+        """Draw samples from the posterior.
+
+        Parameters
+        ----------
+        draws : int, default 2000
+            Number of posterior samples per chain (after tuning).
+        tune : int, default 1000
+            Number of tuning (warm-up) steps per chain.
+        chains : int, default 4
+            Number of parallel chains.
+        random_seed : int, optional
+            Seed for reproducibility.
+        sampler : {"nuts", "gibbs"}, default "nuts"
+            Sampling method: ``"nuts"`` for NUTS (default) or ``"gibbs"`` for
+            the reduced-form Pólya–Gamma Gibbs sampler.
+        gibbs_backend : {"numpy", "auto"}, default "numpy"
+            Execution backend for the Gibbs sampler (only used when
+            ``sampler="gibbs"``).  The NB flow Gibbs sampler is NumPy-only.
+        store_lambda : bool, default False
+            If True, include the high-dimensional fitted mean ``lambda`` in the
+            stored posterior (NUTS only).
+        idata_kwargs : dict, optional
+            Forwarded to ``pm.sample`` (NUTS only).
+        progressbar : bool, default True
+            Show progress bar during sampling.
+        **sample_kwargs
+            Additional keyword arguments forwarded to ``pm.sample`` (NUTS
+            only).  Pass ``target_accept=0.95`` to adjust the NUTS acceptance
+            rate.
+
+        Returns
+        -------
+        arviz.InferenceData
+        """
+        if sampler == "gibbs":
+            if gibbs_backend not in {"numpy", "auto"}:
+                raise ValueError(
+                    "Negative-Binomial flow Gibbs supports only "
+                    f"gibbs_backend='numpy' (or 'auto'); got {gibbs_backend!r}."
+                )
+            return self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                sample_kwargs=sample_kwargs,
+            )
+        if sampler != "nuts":
+            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got {sampler!r}")
+        return super().fit(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            random_seed=random_seed,
+            store_lambda=store_lambda,
+            idata_kwargs=idata_kwargs,
+            progressbar=progressbar,
+            **sample_kwargs,
+        )
+
+
+class SARNegBinFlow(_NegBinFlowMixin, SARFlow):
     r"""Bayesian SAR flow model with NB2 observation noise.
 
     This class extends :class:`SARFlow` with a Negative Binomial likelihood:
@@ -1775,14 +1871,14 @@ class NegativeBinomialSARFlow(SARFlow):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialSARFlow requires integer-valued "
+                    "SARNegBinFlow requires integer-valued "
                     f"observations; got dtype {y_arr.dtype} with non-integer "
                     "values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "NegativeBinomialSARFlow requires non-negative integer observations."
+                "SARNegBinFlow requires non-negative integer observations."
             )
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
@@ -1885,75 +1981,6 @@ class NegativeBinomialSARFlow(SARFlow):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        sampler: str = "nuts",
-        gibbs_method: str = "numpy",
-        store_lambda: bool = False,
-        idata_kwargs: Optional[dict] = None,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Draw samples from the posterior.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of posterior samples per chain (after tuning).
-        tune : int, default 1000
-            Number of tuning (warm-up) steps per chain.
-        chains : int, default 4
-            Number of parallel chains.
-        random_seed : int, optional
-            Seed for reproducibility.
-        sampler : str, default "nuts"
-            Sampling method: ``"nuts"`` for NUTS (default) or
-            ``"gibbs"`` for Pólya–Gamma Gibbs.
-        gibbs_method : str, default "numpy"
-            Gibbs backend (only used when ``sampler="gibbs"``).
-            Currently only ``"numpy"`` is supported.
-        store_lambda : bool, default False
-            If True, include the high-dimensional fitted mean
-            ``lambda`` in the stored posterior.
-        idata_kwargs : dict, optional
-            Forwarded to ``pm.sample`` (NUTS only).
-        progressbar : bool, default True
-            Show progress bar during sampling.
-        **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
-            acceptance rate.
-
-        Returns
-        -------
-        arviz.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        # NUTS path — delegate to parent
-        return super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            store_lambda=store_lambda,
-            idata_kwargs=idata_kwargs,
-            progressbar=progressbar,
-            **sample_kwargs,
-        )
-
     def _fit_gibbs(
         self,
         draws: int = 2000,
@@ -1961,7 +1988,6 @@ class NegativeBinomialSARFlow(SARFlow):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via reduced-form PG-Gibbs (unrestricted 3-ρ).
@@ -2084,7 +2110,7 @@ class NegativeBinomialSARFlow(SARFlow):
         return self._idata
 
 
-class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
+class SARNegBinFlowSeparable(_NegBinFlowMixin, SARFlowSeparable):
     """Separable SAR flow model with NB2 observation noise."""
 
     def __init__(self, y, G, X, **kwargs):
@@ -2093,15 +2119,14 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialSARFlowSeparable requires integer-valued "
+                    "SARNegBinFlowSeparable requires integer-valued "
                     f"observations; got dtype {y_arr.dtype} with non-integer "
                     "values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
             raise ValueError(
-                "NegativeBinomialSARFlowSeparable requires non-negative integer "
-                "observations."
+                "SARNegBinFlowSeparable requires non-negative integer observations."
             )
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
@@ -2122,8 +2147,9 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         n = self._n
         if self._separable_logdet_fn is None:
             raise RuntimeError(
-                "NegativeBinomialSARFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "SARNegBinFlowSeparable requires precomputed logdet data; "
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         X_t = pt.as_tensor_variable(self._X.astype(np.float64))
 
@@ -2186,74 +2212,6 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        sampler: str = "nuts",
-        gibbs_method: str = "numpy",
-        store_lambda: bool = False,
-        idata_kwargs: Optional[dict] = None,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Draw samples from the posterior.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of posterior samples per chain (after tuning).
-        tune : int, default 1000
-            Number of tuning (warm-up) steps per chain.
-        chains : int, default 4
-            Number of parallel chains.
-        random_seed : int, optional
-            Seed for reproducibility.
-        sampler : str, default "nuts"
-            Sampling method: ``"nuts"`` for NUTS (default) or
-            ``"gibbs"`` for Pólya–Gamma Gibbs.
-        gibbs_method : str, default "numpy"
-            Gibbs backend (only used when ``sampler="gibbs"``).
-            Currently only ``"numpy"`` is supported.
-        store_lambda : bool, default False
-            If True, include the high-dimensional fitted mean
-            ``lambda`` in the stored posterior.
-        idata_kwargs : dict, optional
-            Forwarded to ``pm.sample`` (NUTS only).
-        progressbar : bool, default True
-            Show progress bar during sampling.
-        **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
-            acceptance rate.
-
-        Returns
-        -------
-        arviz.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        return super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            store_lambda=store_lambda,
-            idata_kwargs=idata_kwargs,
-            progressbar=progressbar,
-            **sample_kwargs,
-        )
-
     def _fit_gibbs(
         self,
         draws: int = 2000,
@@ -2261,7 +2219,6 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via reduced-form PG-Gibbs (separable 2-ρ).
@@ -2382,7 +2339,7 @@ class NegativeBinomialSARFlowSeparable(SARFlowSeparable):
         return self._idata
 
 
-class NegativeBinomialFlow(OLSFlow):
+class NegBinFlow(_NegBinFlowMixin, OLSFlow):
     """Aspatial OD-flow Negative Binomial gravity baseline."""
 
     def __init__(self, y, G, X, **kwargs):
@@ -2391,15 +2348,13 @@ class NegativeBinomialFlow(OLSFlow):
             y_rounded = np.round(y_arr).astype(np.int64)
             if not np.allclose(y_arr, y_rounded):
                 raise ValueError(
-                    "NegativeBinomialFlow requires integer-valued "
+                    "NegBinFlow requires integer-valued "
                     f"observations; got dtype {y_arr.dtype} with non-integer "
                     "values."
                 )
             y_arr = y_rounded
         if np.any(y_arr < 0):
-            raise ValueError(
-                "NegativeBinomialFlow requires non-negative integer observations."
-            )
+            raise ValueError("NegBinFlow requires non-negative integer observations.")
         super().__init__(y_arr.astype(np.float64), G, X, **kwargs)
         self._y_int_vec: np.ndarray = y_arr.ravel().astype(np.int64)
 
@@ -2452,74 +2407,6 @@ class NegativeBinomialFlow(OLSFlow):
             out[g] = rng.negative_binomial(alpha, p).astype(np.float64)
         return out
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        sampler: str = "nuts",
-        gibbs_method: str = "numpy",
-        store_lambda: bool = False,
-        idata_kwargs: Optional[dict] = None,
-        progressbar: bool = True,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Draw samples from the posterior.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of posterior samples per chain (after tuning).
-        tune : int, default 1000
-            Number of tuning (warm-up) steps per chain.
-        chains : int, default 4
-            Number of parallel chains.
-        random_seed : int, optional
-            Seed for reproducibility.
-        sampler : str, default "nuts"
-            Sampling method: ``"nuts"`` for NUTS (default) or
-            ``"gibbs"`` for Pólya–Gamma Gibbs.
-        gibbs_method : str, default "numpy"
-            Gibbs backend (only used when ``sampler="gibbs"``).
-            Currently only ``"numpy"`` is supported.
-        store_lambda : bool, default False
-            If True, include the high-dimensional fitted mean
-            ``lambda`` in the stored posterior.
-        idata_kwargs : dict, optional
-            Forwarded to ``pm.sample`` (NUTS only).
-        progressbar : bool, default True
-            Show progress bar during sampling.
-        **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``
-            (NUTS only).  Pass ``target_accept=0.95`` to adjust the NUTS
-            acceptance rate.
-
-        Returns
-        -------
-        arviz.InferenceData
-        """
-        if sampler == "gibbs":
-            return self._fit_gibbs(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                gibbs_method=gibbs_method,
-                sample_kwargs=sample_kwargs,
-            )
-        return super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            store_lambda=store_lambda,
-            idata_kwargs=idata_kwargs,
-            progressbar=progressbar,
-            **sample_kwargs,
-        )
-
     def _fit_gibbs(
         self,
         draws: int = 2000,
@@ -2527,7 +2414,6 @@ class NegativeBinomialFlow(OLSFlow):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
-        gibbs_method: str = "numpy",
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via aspatial PG-Gibbs (no spatial parameters).
@@ -2986,7 +2872,9 @@ class SEMFlowSeparable(SEMFlow):
         Number of regional attribute columns. Inferred from
         ``dest_*``/``orig_*`` column names when the standard LeSage
         layout is used.
-    logdet_method : {"eigenvalue", "chebyshev"}, default "eigenvalue"
+    logdet_method : {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"} or None, default None
+        ``None`` auto-selects (``aaa`` for directed W, ``cheb_cholesky`` for
+        symmetric, ``eigenvalue`` for small n).
         Method for the Kronecker-factored log-determinant.
     miter : int, default 30
         Polynomial / approximation order (used by ``"chebyshev"`` /
@@ -3016,12 +2904,12 @@ class SEMFlowSeparable(SEMFlow):
     """
 
     def __init__(self, y, G, X, **kwargs):
-        method = kwargs.pop("logdet_method", "eigenvalue")
-        _VALID = {"eigenvalue", "chebyshev"}
-        if method not in _VALID:
+        method = kwargs.pop("logdet_method", None)
+        _VALID = {"eigenvalue", "chebyshev", "cheb_cholesky", "aaa", "cheb_stochastic"}
+        if method is not None and method not in _VALID:
             raise ValueError(
-                f"SEMFlowSeparable logdet_method must be one of {sorted(_VALID)}; "
-                f"got {method!r}."
+                f"SEMFlowSeparable logdet_method must be None (auto) or one of "
+                f"{sorted(_VALID)}; got {method!r}."
             )
         kwargs["logdet_method"] = method
         super().__init__(y, G, X, **kwargs)
@@ -3036,7 +2924,8 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_fn is None:
             raise RuntimeError(
                 "SEMFlowSeparable requires precomputed logdet data; "
-                "initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         Wd_y_t = pt.as_tensor_variable(self._Wd_y.astype(np.float64))
         Wo_y_t = pt.as_tensor_variable(self._Wo_y.astype(np.float64))
@@ -3079,6 +2968,7 @@ class SEMFlowSeparable(SEMFlow):
         if self._separable_logdet_numpy_fn is None:
             raise RuntimeError(
                 "Missing separable numeric logdet evaluator. "
-                "Initialize with logdet_method='eigenvalue' or 'chebyshev'"
+                "Initialize with a separable logdet_method (None/auto, "
+                "eigenvalue, chebyshev, cheb_cholesky, aaa, or cheb_stochastic)"
             )
         return self._separable_logdet_numpy_fn(lam_d, lam_o)

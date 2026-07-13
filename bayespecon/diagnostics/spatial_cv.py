@@ -176,7 +176,6 @@ def _refit_on_train(
         priors=model.priors_obj,
         logdet_method=model.logdet_method,
         robust=model.robust,
-        backend=model.backend_name,
     )
     new.fit(**fit_kwargs)
     return new

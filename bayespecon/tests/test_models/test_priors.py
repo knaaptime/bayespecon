@@ -8,17 +8,17 @@ from libpysal.graph import Graph
 from scipy import sparse as sp
 
 from bayespecon.models import OLS, SAR, SDEM, SDM, SEM, SLX
-from bayespecon.models.cross_section.spatial_probit import SpatialProbit
+from bayespecon.models.cross_section.sar_probit import SARProbit
 from bayespecon.models.cross_section.tobit import SARTobit
 from bayespecon.models.priors import (
     BasePriors,
     OLSPriors,
     SARPriors,
+    SARProbitPriors,
     SDEMPriors,
     SDMPriors,
     SEMPriors,
     SLXPriors,
-    SpatialProbitPriors,
     priors_as_dict,
     resolve_priors,
 )
@@ -120,8 +120,8 @@ def test_spatial_probit_priors_defaults():
     X = rng.normal(size=(n, 2))
     y = (rng.normal(size=n) > 0).astype(int)
     W = _make_w(n)
-    m = SpatialProbit(y=y, X=X, W=W, region_ids=np.arange(n))
-    assert isinstance(m.priors_obj, SpatialProbitPriors)
+    m = SARProbit(y=y, X=X, W=W, region_ids=np.arange(n))
+    assert isinstance(m.priors_obj, SARProbitPriors)
     assert m.priors["rho_lower"] == -0.95
     assert m.priors["rho_upper"] == 0.95
 

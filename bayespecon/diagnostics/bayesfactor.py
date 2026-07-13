@@ -312,8 +312,14 @@ def _compute_ess(samples: np.ndarray) -> float:
             ess_vals.append(n)
             continue
         max_lag = min(n // 2, 1000)
-        acf = np.correlate(x_centered, x_centered, mode="full")
-        acf = acf[n - 1 :]
+        # Biased autocovariance via FFT (O(n log n)) instead of the dense
+        # O(n^2) ``np.correlate``.  Zero-padding to >= 2n-1 makes the
+        # circular FFT product yield the *linear* autocorrelation, so the
+        # result matches ``np.correlate(x_c, x_c, "full")[n-1:]`` to
+        # floating-point precision — the ESS estimate is unchanged.
+        nfft = int(2 ** np.ceil(np.log2(2 * n - 1)))
+        f = np.fft.rfft(x_centered, n=nfft)
+        acf = np.fft.irfft(f * np.conj(f), n=nfft)[:max_lag]
         acf = acf / (var_x * n)
         tau = 1.0
         for lag in range(1, max_lag):
@@ -444,20 +450,14 @@ def _run_iterative_scheme(
         l2_shifted = l2 - lstar
         l1_shifted = l1 - lstar
 
-        # Numerator: for proposal samples
-        log_num = np.array(
-            [
-                l2_shifted[j] - _logsumexp(np.array([log_s1 + l2_shifted[j], log_s2_r]))
-                for j in range(N2)
-            ]
-        )
-        # Denominator: for posterior samples
-        log_den = np.array(
-            [
-                l1_shifted[j] - _logsumexp(np.array([log_s1 + l1_shifted[j], log_s2_r]))
-                for j in range(N1)
-            ]
-        )
+        # Optimal bridge function, vectorised.  ``_logsumexp`` over a
+        # two-element array is exactly ``np.logaddexp``; broadcasting the
+        # scalar ``log_s2_r`` collapses the per-sample Python loops (run
+        # every one of up to ``maxiter`` iterations) into a single
+        # vectorised call each — identical values, O(N) numpy instead of
+        # O(N) Python-level ``_logsumexp`` allocations.
+        log_num = l2_shifted - np.logaddexp(log_s1 + l2_shifted, log_s2_r)
+        log_den = l1_shifted - np.logaddexp(log_s1 + l1_shifted, log_s2_r)
 
         # Check for infinities
         if np.any(np.isinf(log_num)) or np.any(np.isinf(log_den)):
@@ -1101,14 +1101,14 @@ def bayes_factor_compare_models(
     **Posterior model probabilities.**  After computing Bayes factors,
     posterior model probabilities can be obtained via :func:`post_prob`::
 
-        from bayespecon import post_prob
+        from bayespecon.diagnostics import post_prob
         probs = post_prob(logml_list, model_names=model_labels)
 
     Examples
     --------
     Compare fitted spatial models using bridge sampling (recommended)::
 
-        from bayespecon import bayes_factor_compare_models
+        from bayespecon.diagnostics import bayes_factor_compare_models
 
         # Pass fitted model objects directly — log-posterior is compiled
         # automatically from each model's PyMC model.

@@ -42,14 +42,14 @@ import warnings
 from functools import cached_property
 from typing import Optional
 
-import arviz as az
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
+from ..._lazy_deps import az
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
-from ...samplers._utils._spatial_normal import CholmodFactor, has_cholmod
+from ...samplers._utils._spatial_normal import CholmodFactor
 from ...samplers.gaussian._chain_runner import run_chains
 from ...samplers.logit import (
     LogitGibbsCache,
@@ -70,7 +70,7 @@ from .._base._shared import _parse_W
 from ..base import SpatialModel
 
 
-class ZINBSAR(SpatialModel):
+class SARZINB(SpatialModel):
     """Bayesian zero-inflated SAR Negative Binomial with PG-Gibbs sampler.
 
     Parameters
@@ -127,6 +127,8 @@ class ZINBSAR(SpatialModel):
     _jacobian_param: str | None = "rho"  # count equation Jacobian
     _gibbs_class: str | None = None
     _model_type: str = "zinb_sar"
+    _likelihood: str = "count"
+    _gibbs_key: tuple[str, str] | None = ("zinb", "cross_section")
 
     def __init__(
         self,
@@ -143,7 +145,7 @@ class ZINBSAR(SpatialModel):
         **kwargs,
     ):
         if robust:
-            raise NotImplementedError("robust=True is not supported for ZINBSAR.")
+            raise NotImplementedError("robust=True is not supported for SARZINB.")
 
         # Initialize base class with count equation data
         super().__init__(
@@ -202,14 +204,39 @@ class ZINBSAR(SpatialModel):
     # ------------------------------------------------------------------
 
     @cached_property
-    def _W_sel_eigs(self) -> np.ndarray | None:
-        """Eigenvalues of W_sel (complex), computed lazily.
+    def _sel_logdet_grad_numpy_vec_fn(self):
+        """Vectorised ``(λ_arr) -> g(λ)`` logdet-gradient evaluator for W_sel.
 
-        Used by the selection-equation spatial effects decomposition.
+        Mirrors :attr:`SpatialModel._logdet_grad_numpy_vec_fn` on the
+        selection-equation weights; ``method=None`` auto-resolves to the fast
+        surrogate for ``W_sel``'s own size/symmetry, only touching the
+        eigenvalue path when that is the resolved method (tiny n).
         """
-        if self._W_sel_sparse is None:
-            return None
-        return np.linalg.eigvals(self._W_sel_sparse.toarray().astype(np.float64))
+        from ..._logdet import make_logdet_grad_numpy_vec_fn
+
+        return make_logdet_grad_numpy_vec_fn(
+            self._W_sel_sparse,
+            eigs=None,
+            method=None,
+            rho_min=float(self.priors.get("lam_lower", self._logdet_bounds.rho_min)),
+            rho_max=float(self.priors.get("lam_upper", self._logdet_bounds.rho_max)),
+        )
+
+    def _sel_batch_mean_diag(self, lam_draws: np.ndarray) -> np.ndarray:
+        """``(1/n) tr((I − λ W_sel)⁻¹)`` per draw for the selection equation.
+
+        Direct analogue of :meth:`SpatialModel._batch_mean_diag` on the
+        selection-equation weights.  When ``W_sel`` is the count-equation
+        ``W`` the shared helper is reused; otherwise a resolvent
+        (logdet-gradient) evaluator is built once for ``W_sel`` so the
+        selection direct effect avoids the O(n³) eigendecomposition too.
+        """
+        if self._same_W:
+            return self._batch_mean_diag(lam_draws)
+        lam_draws = np.asarray(lam_draws, dtype=np.float64)
+        n = int(self._W_sel_sparse.shape[0])
+        g = np.asarray(self._sel_logdet_grad_numpy_vec_fn(lam_draws), dtype=np.float64)
+        return 1.0 - (lam_draws / n) * g
 
     @cached_property
     def _sel_nonintercept_indices(self) -> list[int]:
@@ -371,36 +398,36 @@ class ZINBSAR(SpatialModel):
             z=z_init,
         )
 
-    def fit(
+    def _fit_gibbs(
         self,
+        *,
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
         random_seed: Optional[int] = None,
         thin: int = 1,
-        progressbar: bool = True,
         n_jobs: int = 1,
+        progressbar: bool = True,
+        backend: str = "numpy",
         timeout: float | None = None,
-        **_unused,
     ) -> az.InferenceData:
         """Sample posterior via 9-block Pólya–Gamma Gibbs.
 
         Parameters
         ----------
-        draws : int
-            Number of post-warmup draws per chain.
-        tune : int
-            Number of warmup (burn-in) draws per chain.
-        chains : int
-            Number of independent chains.
+        draws, tune, chains : int
+            Post-warmup draws, warmup draws, and number of chains.
         random_seed : int, optional
             Seed for reproducibility.
         thin : int
             Keep every ``thin``-th draw. Default 1.
-        progressbar : bool
-            Show per-chain progress bars.
         n_jobs : int
             Number of parallel chains. 1 = sequential.
+        progressbar : bool
+            Show per-chain progress bars.
+        backend : {"numpy"}
+            Execution backend.  ZINB is NumPy-only (CHOLMOD 9-block Gibbs);
+            there is no JAX kernel.
         timeout : float or None
             Maximum wall-clock seconds for parallel chains.
 
@@ -409,19 +436,7 @@ class ZINBSAR(SpatialModel):
         arviz.InferenceData
             Posterior draws of ``lam``, ``gamma``, ``rho``, ``beta``,
             ``alpha`` and pointwise ``log_likelihood``.
-
-        Raises
-        ------
-        TypeError
-            If NUTS-specific kwargs are passed.
         """
-        for bad_kwarg in ("nuts_sampler", "target_accept", "idata_kwargs"):
-            if bad_kwarg in _unused:
-                raise TypeError(
-                    f"ZINBSAR.fit() does not accept '{bad_kwarg}'. "
-                    f"This model uses a Gibbs sampler, not NUTS."
-                )
-
         n, k = self._X.shape
         self._Z.shape[1]
 
@@ -476,11 +491,8 @@ class ZINBSAR(SpatialModel):
         W_sel_sym = W_sel_csr + W_sel_csr.T
         W_sel_tW = W_sel_csr.T @ W_sel_csr
 
-        if has_cholmod():
-            _P0_sel = sp.eye(n, format="csr") + 0.5 * W_sel_sym + 0.25 * W_sel_tW
-            sel_cholmod_factor = CholmodFactor(_P0_sel)
-        else:
-            sel_cholmod_factor = None
+        _P0_sel = sp.eye(n, format="csr") + 0.5 * W_sel_sym + 0.25 * W_sel_tW
+        sel_cholmod_factor = CholmodFactor(_P0_sel)
 
         sel_cache = LogitGibbsCache(
             W_sparse=W_sel_csr,
@@ -491,9 +503,9 @@ class ZINBSAR(SpatialModel):
             cholmod_factor=sel_cholmod_factor,
             W_sym=W_sel_sym,
             WtW=W_sel_tW,
-            solve_method="cholmod" if sel_cholmod_factor is not None else "splu",
+            solve_method="cholmod",
             logdet_P_method="cholmod",
-            sample_method="cholmod" if sel_cholmod_factor is not None else "splu",
+            sample_method="cholmod",
             rho_adaptive_width=True,
             rho_slice_width_state=SliceWidthState(w=0.2),
         )
@@ -509,11 +521,8 @@ class ZINBSAR(SpatialModel):
             W_eig_max = 1.0
             W_eig_min = -1.0
 
-        if has_cholmod():
-            W_cnt_sym, W_cnt_tW, cnt_pattern = _make_cholmod_pattern(W_cnt_csc, n)
-            cnt_cholmod_pattern = cnt_pattern
-        else:
-            W_cnt_sym, W_cnt_tW, cnt_cholmod_pattern = None, None, None
+        W_cnt_sym, W_cnt_tW, cnt_pattern = _make_cholmod_pattern(W_cnt_csc, n)
+        cnt_cholmod_pattern = cnt_pattern
 
         cnt_cache = ReducedGibbsCache(
             W_sparse=W_cnt_csr,
@@ -618,72 +627,11 @@ class ZINBSAR(SpatialModel):
         return idata
 
     def _build_pymc_model(self):
-        """Not supported — ZINBSAR uses a Gibbs sampler, not NUTS."""
+        """Not supported — SARZINB uses a Gibbs sampler, not NUTS."""
         raise NotImplementedError(
-            "ZINBSAR does not build a PyMC model. "
+            "SARZINB does not build a PyMC model. "
             "Use the fit() method for Gibbs sampling."
         )
-
-    def _compute_spatial_effects(
-        self, equation: str = "count"
-    ) -> dict[str, np.ndarray]:
-        """Compute average direct/indirect/total impacts at posterior means.
-
-        Parameters
-        ----------
-        equation : {"count", "selection"}, default "count"
-            Which equation to compute impacts for.
-
-            - ``"count"``: LeSage–Pace decomposition for the SAR-NB
-              count equation using ρ and β.
-            - ``"selection"``: LeSage–Pace decomposition for the
-              SAR-logit selection equation using λ and γ.
-        """
-        if equation == "count":
-            rho = float(self._posterior_mean("rho"))
-            beta = self._posterior_mean("beta")
-            eigs = self._W_eigs
-            mean_diag = float(np.mean((1.0 / (1.0 - rho * eigs)).real))
-            mean_row_sum = float(self._batch_mean_row_sum(np.array([rho]))[0])
-            ni = self._nonintercept_indices
-            direct = mean_diag * beta[ni]
-            total = mean_row_sum * beta[ni]
-            indirect = total - direct
-            feature_names = self._nonintercept_feature_names
-        elif equation == "selection":
-            lam = float(self._posterior_mean("lam"))
-            gamma = self._posterior_mean("gamma")
-            sel_eigs = self._W_sel_eigs
-            mean_diag = float(np.mean((1.0 / (1.0 - lam * sel_eigs)).real))
-            # Mean row sum of (I - lam * W_sel)^{-1}
-            if self._is_sel_row_std:
-                mean_row_sum = 1.0 / (1.0 - lam)
-            else:
-                # Eigenvalue-based computation for non-row-standardised W_sel
-                n = self._Z.shape[0]
-                W_sel_dense = self._W_sel_sparse.toarray().astype(np.float64)
-                V_sel = np.linalg.eig(W_sel_dense)[1]
-                c_sel = np.linalg.solve(V_sel, np.ones(n))
-                V_col_sums_sel = V_sel.sum(axis=0)
-                mean_row_sum = float(
-                    np.real(np.mean((V_col_sums_sel * c_sel) / (1.0 - lam * sel_eigs)))
-                )
-            ni = self._sel_nonintercept_indices
-            direct = mean_diag * gamma[ni]
-            total = mean_row_sum * gamma[ni]
-            indirect = total - direct
-            feature_names = self._sel_nonintercept_feature_names
-        else:
-            raise ValueError(
-                f"equation must be 'count' or 'selection', got '{equation}'"
-            )
-
-        return {
-            "direct": direct,
-            "indirect": indirect,
-            "total": total,
-            "feature_names": feature_names,
-        }
 
     def _compute_spatial_effects_posterior(
         self, equation: str = "count"
@@ -696,7 +644,6 @@ class ZINBSAR(SpatialModel):
             Which equation to compute impacts for.
         """
         from ...diagnostics.lmtests import _get_posterior_draws
-        from ...diagnostics.spatial_effects import _chunked_eig_means
 
         idata = self.inference_data
 
@@ -704,8 +651,7 @@ class ZINBSAR(SpatialModel):
             rho_draws = _get_posterior_draws(idata, "rho")
             beta_draws = _get_posterior_draws(idata, "beta")
 
-            eigs = self._W_eigs
-            mean_diag = _chunked_eig_means(rho_draws, eigs)
+            mean_diag = self._batch_mean_diag(rho_draws)
             mean_row_sum = self._batch_mean_row_sum(rho_draws)
 
             ni = self._nonintercept_indices
@@ -716,13 +662,19 @@ class ZINBSAR(SpatialModel):
             lam_draws = _get_posterior_draws(idata, "lam")
             gamma_draws = _get_posterior_draws(idata, "gamma")
 
-            sel_eigs = self._W_sel_eigs
-            mean_diag = _chunked_eig_means(lam_draws, sel_eigs)
+            # Direct-effect trace (1/n)tr((I−λW_sel)⁻¹) via the resolvent
+            # (logdet gradient) — no eigendecomposition of W_sel.
+            mean_diag = self._sel_batch_mean_diag(lam_draws)
 
             # Mean row sum of (I - lam * W_sel)^{-1}
             if self._is_sel_row_std:
                 mean_row_sum = 1.0 / (1.0 - lam_draws)
             else:
+                # The non-row-standardised total effect is a column-weighted
+                # bilinear form (1'S1), not a trace, so it keeps the
+                # eigenvector decomposition of W_sel.
+                from ...diagnostics.spatial_effects import _chunked_eig_means
+
                 n = self._Z.shape[0]
                 W_sel_dense = self._W_sel_sparse.toarray().astype(np.float64)
                 eigvals_sel, V_sel = np.linalg.eig(W_sel_dense)

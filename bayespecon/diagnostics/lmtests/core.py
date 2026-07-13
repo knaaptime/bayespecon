@@ -12,9 +12,10 @@ LM test families (cross-sectional, panel, flow):
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
-import arviz as az
 import numpy as np
 from scipy import stats as sp_stats
+
+from ..._lazy_deps import az
 
 # ---------------------------------------------------------------------------
 # BayesianLMTestResult dataclass
@@ -357,9 +358,7 @@ def _compute_residuals(
     np.ndarray, shape (draws, n)
         Residual matrix.
     """
-    y = model.__dict__.get("_y")
-    if y is None:
-        y = model.__dict__.get("_y")
+    y = model._y
     idata = model.inference_data
 
     if use_Z:
@@ -368,9 +367,7 @@ def _compute_residuals(
         # When the intercept was dropped (Gibbs + FE), use the
         # sub-matrix that matches the posterior beta dimensions.
         ni = model._nonintercept_indices
-        X_full = model.__dict__.get("_X")
-        if X_full is None:
-            X_full = model.__dict__.get("_X")
+        X_full = model._X
         if len(ni) < X_full.shape[1] and beta_draws.shape[1] < X_full.shape[1]:
             Z = X_full[:, ni]
         else:

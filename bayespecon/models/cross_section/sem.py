@@ -69,9 +69,12 @@ class SEM(GaussianLikelihoodMixin, SpatialModel):
 
     logdet_method : str, optional
         How to compute :math:`\\log|I - \\lambda W|`. ``None`` (default)
-        auto-selects ``"eigenvalue"`` for ``n <= 2000`` else
-        ``"chebyshev"``. Other options: ``"exact"``, ``"dense_grid"``,
-        ``"sparse_grid"``, ``"spline"``, ``"mc"``, ``"ilu"``.
+        auto-selects by size: ``"eigenvalue"`` for ``n <= 500``; for
+        ``500 < n <= 20000``, ``"cheb_cholesky"`` (exact, sparse Cholesky
+        at Chebyshev nodes) when ``W`` is symmetric else ``"aaa"`` (AAA
+        rational approximation); ``"cheb_stochastic"`` for ``n > 20000``.
+        Explicit opt-ins: ``"chebyshev"`` (Barry-Pace) and ``"slq"``
+        (stochastic Lanczos quadrature).
     robust : bool, default False
         If True, replace the Normal disturbance with Student-t. See
         *Robust regression* below.
@@ -102,6 +105,35 @@ class SEM(GaussianLikelihoodMixin, SpatialModel):
     _has_wx_in_beta: bool = False
     _gibbs_class: str | None = "GaussianSEMGibbs"
     _model_type: str = "sem"
+    _likelihood: str = "gaussian"
+    _gibbs_key: tuple[str, str] | None = ("gaussian", "cross_section")
+
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute direct, indirect, and total effects for each posterior draw.
+
+        For the SEM model the spatial multiplier does not apply to :math:`X`
+        directly, so :math:`\\text{Direct}_k = \\beta_k`,
+        :math:`\\text{Indirect}_k = 0`, and :math:`\\text{Total}_k = \\beta_k`.
+
+        Returns
+        -------
+        tuple of np.ndarray
+            ``(direct_samples, indirect_samples, total_samples)``, each of
+            shape ``(G, k)``.
+        """
+        from ...diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        beta_draws = _get_posterior_draws(idata, "beta")  # (G, k)
+
+        ni = self._nonintercept_indices
+        direct_samples = beta_draws[:, ni].copy()
+        indirect_samples = np.zeros_like(direct_samples)
+        total_samples = direct_samples.copy()
+
+        return direct_samples, indirect_samples, total_samples
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean coefficients.

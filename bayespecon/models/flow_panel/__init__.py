@@ -1,11 +1,11 @@
 from ._panel import (
     FlowPanelModel,
-    NegativeBinomialFlowPanel,
-    NegativeBinomialSARFlowPanel,
-    NegativeBinomialSARFlowSeparablePanel,
+    NegBinFlowPanel,
     OLSFlowPanel,
     SARFlowPanel,
     SARFlowSeparablePanel,
+    SARNegBinFlowPanel,
+    SARNegBinFlowSeparablePanel,
     SEMFlowPanel,
     SEMFlowSeparablePanel,
 )

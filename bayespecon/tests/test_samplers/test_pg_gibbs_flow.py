@@ -164,14 +164,14 @@ def _make_flow_data(n=5, k=2, seed=42):
 
 
 class TestNegativeBinomialFlowGibbs:
-    """Tests for NegativeBinomialFlow.fit(sampler='gibbs')."""
+    """Tests for NegBinFlow.fit(sampler='gibbs')."""
 
     def test_gibbs_returns_inference_data(self):
         """Gibbs sampler returns valid InferenceData."""
-        from bayespecon.models.flow._flow import NegativeBinomialFlow
+        from bayespecon.models.flow._flow import NegBinFlow
 
         data = _make_flow_data()
-        model = NegativeBinomialFlow(data["y_vec"], data["G"], data["X"])
+        model = NegBinFlow(data["y_vec"], data["G"], data["X"])
         idata = model.fit(
             draws=20,
             tune=20,
@@ -186,10 +186,10 @@ class TestNegativeBinomialFlowGibbs:
 
     def test_gibbs_shapes(self):
         """Gibbs posterior has correct shapes."""
-        from bayespecon.models.flow._flow import NegativeBinomialFlow
+        from bayespecon.models.flow._flow import NegBinFlow
 
         data = _make_flow_data()
-        model = NegativeBinomialFlow(data["y_vec"], data["G"], data["X"])
+        model = NegBinFlow(data["y_vec"], data["G"], data["X"])
         draws, chains = 30, 2
         idata = model.fit(
             draws=draws,
@@ -208,10 +208,10 @@ class TestNegativeBinomialFlowGibbs:
 
     def test_gibbs_alpha_positive(self):
         """NB dispersion alpha should be positive."""
-        from bayespecon.models.flow._flow import NegativeBinomialFlow
+        from bayespecon.models.flow._flow import NegBinFlow
 
         data = _make_flow_data()
-        model = NegativeBinomialFlow(data["y_vec"], data["G"], data["X"])
+        model = NegBinFlow(data["y_vec"], data["G"], data["X"])
         idata = model.fit(
             draws=30,
             tune=30,
@@ -224,10 +224,10 @@ class TestNegativeBinomialFlowGibbs:
 
     def test_nuts_still_works(self):
         """NUTS (default sampler) still works after adding Gibbs."""
-        from bayespecon.models.flow._flow import NegativeBinomialFlow
+        from bayespecon.models.flow._flow import NegBinFlow
 
         data = _make_flow_data()
-        model = NegativeBinomialFlow(data["y_vec"], data["G"], data["X"])
+        model = NegBinFlow(data["y_vec"], data["G"], data["X"])
         idata = model.fit(
             draws=20,
             tune=20,
@@ -240,14 +240,14 @@ class TestNegativeBinomialFlowGibbs:
 
 
 class TestNegativeBinomialSARFlowSeparableGibbs:
-    """Tests for NegativeBinomialSARFlowSeparable.fit(sampler='gibbs')."""
+    """Tests for SARNegBinFlowSeparable.fit(sampler='gibbs')."""
 
     def test_gibbs_returns_inference_data(self):
         """Gibbs sampler returns valid InferenceData with spatial params."""
-        from bayespecon.models.flow._flow import NegativeBinomialSARFlowSeparable
+        from bayespecon.models.flow._flow import SARNegBinFlowSeparable
 
         data = _make_flow_data()
-        model = NegativeBinomialSARFlowSeparable(
+        model = SARNegBinFlowSeparable(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -269,10 +269,10 @@ class TestNegativeBinomialSARFlowSeparableGibbs:
 
     def test_gibbs_rho_w_deterministic(self):
         """rho_w = -rho_d * rho_o for separable model."""
-        from bayespecon.models.flow._flow import NegativeBinomialSARFlowSeparable
+        from bayespecon.models.flow._flow import SARNegBinFlowSeparable
 
         data = _make_flow_data()
-        model = NegativeBinomialSARFlowSeparable(
+        model = SARNegBinFlowSeparable(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -293,10 +293,10 @@ class TestNegativeBinomialSARFlowSeparableGibbs:
 
     def test_gibbs_shapes(self):
         """Gibbs posterior has correct shapes for separable model."""
-        from bayespecon.models.flow._flow import NegativeBinomialSARFlowSeparable
+        from bayespecon.models.flow._flow import SARNegBinFlowSeparable
 
         data = _make_flow_data()
-        model = NegativeBinomialSARFlowSeparable(
+        model = SARNegBinFlowSeparable(
             data["y_vec"],
             data["G"],
             data["X"],
@@ -319,14 +319,14 @@ class TestNegativeBinomialSARFlowSeparableGibbs:
 
 
 class TestNegativeBinomialSARFlowGibbs:
-    """Tests for NegativeBinomialSARFlow.fit(sampler='gibbs')."""
+    """Tests for SARNegBinFlow.fit(sampler='gibbs')."""
 
     def test_gibbs_returns_inference_data(self):
         """Gibbs sampler returns valid InferenceData with 3 spatial params."""
-        from bayespecon.models.flow._flow import NegativeBinomialSARFlow
+        from bayespecon.models.flow._flow import SARNegBinFlow
 
         data = _make_flow_data()
-        model = NegativeBinomialSARFlow(data["y_vec"], data["G"], data["X"])
+        model = SARNegBinFlow(data["y_vec"], data["G"], data["X"])
         idata = model.fit(
             draws=20,
             tune=20,
@@ -343,10 +343,10 @@ class TestNegativeBinomialSARFlowGibbs:
 
     def test_gibbs_shapes(self):
         """Gibbs posterior has correct shapes for unrestricted model."""
-        from bayespecon.models.flow._flow import NegativeBinomialSARFlow
+        from bayespecon.models.flow._flow import SARNegBinFlow
 
         data = _make_flow_data()
-        model = NegativeBinomialSARFlow(data["y_vec"], data["G"], data["X"])
+        model = SARNegBinFlow(data["y_vec"], data["G"], data["X"])
         draws, chains = 30, 2
         idata = model.fit(
             draws=draws,
@@ -365,10 +365,10 @@ class TestNegativeBinomialSARFlowGibbs:
 
     def test_gibbs_rho_in_bounds(self):
         """Spatial parameters should be within prior bounds."""
-        from bayespecon.models.flow._flow import NegativeBinomialSARFlow
+        from bayespecon.models.flow._flow import SARNegBinFlow
 
         data = _make_flow_data()
-        model = NegativeBinomialSARFlow(data["y_vec"], data["G"], data["X"])
+        model = SARNegBinFlow(data["y_vec"], data["G"], data["X"])
         idata = model.fit(
             draws=30,
             tune=30,

@@ -15,7 +15,6 @@ from bayespecon.samplers._utils._spatial_normal import (
     CholmodFactor,
     cg_solve,
     chebyshev_sample,
-    has_cholmod,
     lanczos_logdet,
     sample_spatial_normal,
 )
@@ -250,15 +249,9 @@ class TestDecoupledRhoSlice:
         rhs = rng.standard_normal(n)
 
         # Factorisation path
-        if has_cholmod():
-            factor = CholmodFactor(P)
-            log_det_P_exact = factor.logdet()
-            m_exact = factor.solve(rhs)
-        else:
-            P_csc = sp.csc_matrix(P)
-            lu = sp.linalg.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-            log_det_P_exact = float(np.sum(np.log(np.abs(lu.U.diagonal()))))
-            m_exact = lu.solve(rhs)
+        factor = CholmodFactor(P)
+        log_det_P_exact = factor.logdet()
+        m_exact = factor.solve(rhs)
 
         quad_exact = float(rhs @ m_exact)
         ld_exact = -0.5 * log_det_P_exact + 0.5 * quad_exact
