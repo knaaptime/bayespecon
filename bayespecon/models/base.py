@@ -962,7 +962,8 @@ class SpatialModel(ABC):
         """
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
         idata_kwargs = sample_kwargs.pop("idata_kwargs", None)
-        self._fit_nuts(
+        compute_log_likelihood = bool((idata_kwargs or {}).get("log_likelihood", False))
+        _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
             tune=tune,
             chains=chains,
@@ -971,9 +972,13 @@ class SpatialModel(ABC):
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            compute_log_likelihood=False,
+            compute_log_likelihood=compute_log_likelihood,
             sample_kwargs=sample_kwargs,
         )
+        # Gaussian spatial models capture only the Normal part natively; add
+        # the Jacobian-corrected pointwise log-likelihood (Pattern A+J).
+        if compute_log_likelihood and getattr(self, "_likelihood", None) == "gaussian":
+            self._reconstruct_cross_sectional_log_likelihood(nuts_sampler=nuts_sampler)
         self._idata = self._postprocess_idata(self._idata)
         return self._idata
 
