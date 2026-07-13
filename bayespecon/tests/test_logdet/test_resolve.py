@@ -16,6 +16,7 @@ CANONICAL_METHODS = {
     "cheb_cholesky",
     "aaa",
     "traces",
+    "cholmod",
 }
 
 

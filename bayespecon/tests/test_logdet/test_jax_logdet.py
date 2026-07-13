@@ -26,7 +26,6 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from bayespecon._logdet import (
-    compute_flow_traces,
     jax_logdet_chebyshev,
     make_logdet_jax_fn,
 )

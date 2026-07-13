@@ -112,9 +112,11 @@ class LogitGibbsCache(NamedTuple):
     cholmod_factor: CholmodFactor | None = None
     W_sym: sp.csr_matrix | None = None  # W + W^T (not divided by σ²)
     WtW: sp.csr_matrix | None = None  # W^T W (not divided by σ²)
-    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense"
-    logdet_P_method: str = "cholmod"  # "cholmod" | "lanczos" | "jax_dense"
-    sample_method: str = "cholmod"  # "cholmod" | "jax_dense"
+    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense" | "cholmod_jax"
+    logdet_P_method: str = (
+        "cholmod"  # "cholmod" | "lanczos" | "jax_dense" | "cholmod_jax"
+    )
+    sample_method: str = "cholmod"  # "cholmod" | "jax_dense" | "cholmod_jax"
     lanczos_n_probes: int = 10
     lanczos_deg: int = 30
     # JAX dense backend fields
@@ -781,9 +783,11 @@ class SEMLogitGibbsCache(NamedTuple):
     cholmod_factor: CholmodFactor | None = None
     W_sym: sp.csr_matrix | None = None  # W + W^T
     WtW: sp.csr_matrix | None = None  # W^T W
-    solve_method: str = "cholmod"
-    logdet_P_method: str = "cholmod"
-    sample_method: str = "cholmod"
+    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense" | "cholmod_jax"
+    logdet_P_method: str = (
+        "cholmod"  # "cholmod" | "lanczos" | "jax_dense" | "cholmod_jax"
+    )
+    sample_method: str = "cholmod"  # "cholmod" | "jax_dense" | "cholmod_jax"
     lanczos_n_probes: int = 10
     lanczos_deg: int = 30
     # JAX dense backend fields

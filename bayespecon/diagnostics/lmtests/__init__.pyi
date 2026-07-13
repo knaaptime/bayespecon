@@ -241,6 +241,8 @@ from .suites import (
 from .suites import (
     FLOW_SUITE as FLOW_SUITE,
 )
+from .suites import LOGIT_SUITE as LOGIT_SUITE
+from .suites import NEGBIN_SUITE as NEGBIN_SUITE
 from .suites import (
     OLS_PANEL_SUITE as OLS_PANEL_SUITE,
 )

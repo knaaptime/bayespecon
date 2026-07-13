@@ -50,9 +50,6 @@ from ._factories import (
     make_logdet_numpy_vec_fn,
 )
 from ._flow import (
-    compute_flow_traces,
-    flow_logdet_numpy,
-    flow_logdet_pytensor,
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
@@ -106,10 +103,7 @@ __all__ = [
     "logdet_grad_chebyshev",
     "logdet_grad_aaa",
     "logdet_grad_slq",
-    # Flow
-    "flow_logdet_pytensor",
-    "flow_logdet_numpy",
-    "compute_flow_traces",
+    # Flow (separable factorisation)
     "make_flow_separable_logdet",
     "make_flow_separable_logdet_numpy",
     # Flow resolvent-Kronecker gradient (scalable, eigenvalue-free)

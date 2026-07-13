@@ -289,26 +289,39 @@ class SARNegBinStructural(SpatialModel):
         # ``auto`` prefers exact CHOLMOD factorisation (3× faster than jax_dense
         # at n=2500 on CPU); ``jax`` is the opt-in dense path.
         if backend == "jax":
-            solve_method = "jax_dense"
-            logdet_P_method = "jax_dense"
-            sample_method = "jax_dense"
+            from ..._jax_dispatch import _cholmod_jax_enabled, _cholmodjax_available
+
+            if _cholmod_jax_enabled() and _cholmodjax_available():
+                solve_method = "cholmod_jax"
+                logdet_P_method = "cholmod_jax"
+                sample_method = "cholmod_jax"
+            else:
+                solve_method = "jax_dense"
+                logdet_P_method = "jax_dense"
+                sample_method = "jax_dense"
         else:  # "numpy" → CHOLMOD factorisation
             solve_method = "cholmod"
             logdet_P_method = "cholmod"
             sample_method = "cholmod"
 
-        # Precompute JAX dense components if using jax_dense path
+        # Precompute JAX dense components if using jax_dense or cholmod_jax path
         W_sym_dense = None
         WtW_dense = None
         logdet_jax = None
-        if solve_method == "jax_dense":
+        cholmodjax_pattern = None
+        if solve_method in ("jax_dense", "cholmod_jax"):
             import jax
             import jax.numpy as jnp
 
             # Enable float64 for numerical stability
             jax.config.update("jax_enable_x64", True)
-            W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
-            WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
+
+            # Only the dense-Cholesky fallback needs the dense (W+Wᵀ) and WᵀW;
+            # the cholmod_jax path assembles P from the sparse COO pattern and
+            # does its matvecs via BCOO, so we never densify W there.
+            if solve_method == "jax_dense":
+                W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
+                WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
 
             # Build JAX-native logdet callable.  For n > 2000 this uses
             # trace-seeded Chebyshev (O(nnz·m) precomputation, O(m) per
@@ -323,6 +336,16 @@ class SARNegBinStructural(SpatialModel):
                 rho_min=bounds.rho_min,
                 rho_max=bounds.rho_max,
             )
+
+            if solve_method == "cholmod_jax":
+                from ...samplers._utils._cholmodjax_utils import (
+                    precompute_cholmodjax_pattern,
+                )
+
+                # Pass the raw (row-standardised) W; the helper derives
+                # W+Wᵀ and WᵀW internally.  Passing W_sym here would double
+                # the symmetric part and corrupt WᵀW.
+                cholmodjax_pattern = precompute_cholmodjax_pattern(W_sparse.tocsc(), n)
 
         cache = GibbsCache(
             W_sparse=W_sparse,
@@ -358,7 +381,7 @@ class SARNegBinStructural(SpatialModel):
         # When using the full-JIT JAX backend, delegate to run_chain_jax()
         # which composes all Gibbs blocks into a single @jax.jit function,
         # eliminating Python→JAX dispatch overhead (~30ms/call × 6 calls).
-        _use_jax_full = sample_method == "jax_dense"
+        _use_jax_full = sample_method in ("jax_dense", "cholmod_jax")
 
         # JAX dense path: run every chain together via jax.vmap.  This
         # JITs the Gibbs step once and executes all chains as a single
@@ -390,6 +413,7 @@ class SARNegBinStructural(SpatialModel):
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
                 progressbar=progressbar,
+                cholmodjax_pattern=cholmodjax_pattern,
             )
         else:
 

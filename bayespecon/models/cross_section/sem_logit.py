@@ -261,25 +261,38 @@ class SEMLogit(SpatialModel):
 
         # Map the resolved backend onto the sampler's solve/logdet/sample paths.
         if backend == "jax":
-            solve_method = "jax_dense"
-            logdet_P_method = "jax_dense"
-            sample_method = "jax_dense"
+            from ..._jax_dispatch import _cholmod_jax_enabled, _cholmodjax_available
+
+            if _cholmod_jax_enabled() and _cholmodjax_available():
+                solve_method = "cholmod_jax"
+                logdet_P_method = "cholmod_jax"
+                sample_method = "cholmod_jax"
+            else:
+                solve_method = "jax_dense"
+                logdet_P_method = "jax_dense"
+                sample_method = "jax_dense"
         else:  # "numpy" → CHOLMOD factorisation
             solve_method = "cholmod"
             logdet_P_method = "cholmod"
             sample_method = "cholmod"
 
-        # Precompute JAX dense components if using jax_dense path
+        # Precompute JAX dense components if using jax_dense or cholmod_jax path
         W_sym_dense = None
         WtW_dense = None
         logdet_jax = None
-        if solve_method == "jax_dense":
+        cholmodjax_pattern = None
+        if solve_method in ("jax_dense", "cholmod_jax"):
             import jax
             import jax.numpy as jnp
 
             jax.config.update("jax_enable_x64", True)
-            W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
-            WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
+
+            # Only the dense-Cholesky fallback needs the dense (W+Wᵀ) and WᵀW;
+            # the cholmod_jax path assembles P from the sparse COO pattern and
+            # does its matvecs via BCOO, so we never densify W there.
+            if solve_method == "jax_dense":
+                W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
+                WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
 
             from ..._logdet import make_logdet_jax_fn
 
@@ -290,6 +303,16 @@ class SEMLogit(SpatialModel):
                 rho_min=bounds.rho_min,
                 rho_max=bounds.rho_max,
             )
+
+            if solve_method == "cholmod_jax":
+                from ...samplers._utils._cholmodjax_utils import (
+                    precompute_cholmodjax_pattern,
+                )
+
+                # Pass the raw (row-standardised) W; the helper derives
+                # W+Wᵀ and WᵀW internally.  Passing W_sym here would double
+                # the symmetric part and corrupt WᵀW.
+                cholmodjax_pattern = precompute_cholmodjax_pattern(W_sparse.tocsc(), n)
 
         cache = SEMLogitGibbsCache(
             W_sparse=W_sparse,
@@ -319,7 +342,7 @@ class SEMLogit(SpatialModel):
         seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
 
         # Define the per-chain function
-        _use_jax_full = sample_method == "jax_dense"
+        _use_jax_full = sample_method in ("jax_dense", "cholmod_jax")
 
         # JAX dense path: run all chains together via jax.vmap so the
         # Gibbs step JITs once and every chain executes inside one
@@ -350,6 +373,7 @@ class SEMLogit(SpatialModel):
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
                 progressbar=progressbar,
+                cholmodjax_pattern=cholmodjax_pattern,
             )
         else:
 

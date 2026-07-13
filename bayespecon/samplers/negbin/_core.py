@@ -185,9 +185,13 @@ class GibbsCache(NamedTuple):
     cholmod_factor: CholmodFactor | None = None
     W_sym_over_s2: sp.csr_matrix | None = None  # (W + W^T), divided by σ² at runtime
     WtW_over_s2: sp.csr_matrix | None = None  # W^T W, divided by σ² at runtime
-    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense"
-    logdet_P_method: str = "cholmod"  # "cholmod" | "lanczos" | "jax_dense"
-    sample_method: str = "cholmod"  # "cholmod" | "chebyshev" | "jax_dense"
+    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense" | "cholmod_jax"
+    logdet_P_method: str = (
+        "cholmod"  # "cholmod" | "lanczos" | "jax_dense" | "cholmod_jax"
+    )
+    sample_method: str = (
+        "cholmod"  # "cholmod" | "chebyshev" | "jax_dense" | "cholmod_jax"
+    )
     lanczos_n_probes: int = 10  # probe vectors for Lanczos logdet
     lanczos_deg: int = 30  # Lanczos iteration depth
     chebyshev_degree: int = 30  # Chebyshev polynomial degree for η draw

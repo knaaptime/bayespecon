@@ -390,7 +390,7 @@ class SpatialModel(ABC):
             self._resolved_logdet_method = (
                 self.logdet_method
                 if self.logdet_method is not None
-                else _auto_logdet_method(self._W_sparse.shape[0])
+                else _auto_logdet_method(self._W_sparse.shape[0], W=self._W_sparse)
             )
             # Resolve rho/lambda bounds from method and priors.
             # For row-standardised W the spectral stability interval is
@@ -400,6 +400,7 @@ class SpatialModel(ABC):
                 self.logdet_method,
                 n=len(self._y),
                 priors=self.priors,
+                W=self._W_sparse,
             )
             self._wx_column_indices = self._spatial_lag_column_indices(
                 self._X, self._feature_names
@@ -930,7 +931,7 @@ class SpatialModel(ABC):
         draws: int = 2000,
         tune: int = 1000,
         chains: int = 4,
-        target_accept: float = 0.9,
+        target_accept: float | None = None,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
         sampler: str | None = None,
@@ -950,8 +951,9 @@ class SpatialModel(ABC):
         ----------
         draws, tune, chains : int
             Post-warmup draws, warmup steps, and number of chains.
-        target_accept : float
-            Target acceptance rate for NUTS.
+        target_accept : float, optional
+            Target acceptance rate for NUTS.  NUTS-only: passing it with the
+            Gibbs sampler raises ``TypeError``.  Defaults to ``0.9`` for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         progressbar : bool, default True
@@ -996,6 +998,12 @@ class SpatialModel(ABC):
                     "Gibbs sampling is not supported for robust (Student-t) "
                     "models. Use sampler='nuts'."
                 )
+            if target_accept is not None:
+                raise TypeError(
+                    "target_accept is a NUTS-only argument and is not valid for "
+                    "the Gibbs sampler (sampler='gibbs'). Remove it, or use "
+                    "sampler='nuts'."
+                )
             backend = resolve_backend(gibbs_backend, entry, jax_ok=jax_available())
             family_opts = pop_options(sample_kwargs, entry)
             self._idata = entry.run(
@@ -1024,7 +1032,7 @@ class SpatialModel(ABC):
             draws=draws,
             tune=tune,
             chains=chains,
-            target_accept=target_accept,
+            target_accept=0.9 if target_accept is None else target_accept,
             random_seed=random_seed,
             progressbar=progressbar,
             nuts_sampler=nuts_sampler,

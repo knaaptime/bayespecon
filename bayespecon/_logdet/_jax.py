@@ -69,8 +69,10 @@ def make_logdet_jax_fn(
 ):
     """Return a JAX-native ``(rho) -> log|I - ρW|`` callable.
 
-    Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``, and
-    ``"slq"``.  SLQ uses JAX-native Arnoldi iteration via ``jax.lax.scan``.
+    Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``,
+    ``"cheb_cholesky"``, ``"aaa"``, ``"cholmod"``, and ``"slq"``.
+    ``"cholmod"`` uses ``cholmodjax`` for exact sparse CHOLMOD logdet
+    (requires the ``cholmodjax`` package; CPU-only).
     """
     T = int(T)
 
@@ -237,8 +239,97 @@ def make_logdet_jax_fn(
 
         return _jax_aaa
 
+    if method == "cholmod":
+        # JAX-native exact logdet via cholmodjax sparse CHOLMOD.
+        # Requires W to be D-symmetrizable (row-standardised undirected
+        # graph): W = D⁻¹A with symmetric A → W_sym = D^{1/2} W D^{-1/2}
+        # is symmetric with the same eigenvalues, so I−ρW_sym is SPD
+        # for |ρ| < 1 and cholmodjax.logdet applies directly.
+        # If W is not D-symmetrizable (directed graph), this raises
+        # ValueError — use logdet_method="aaa" for such matrices.
+        from .._jax_dispatch import _cholmodjax_available
+
+        if not _cholmodjax_available():
+            raise ImportError(
+                "logdet method 'cholmod' requires the 'cholmodjax' package. "
+                "Install it with: pip install cholmodjax"
+            )
+
+        from ._chol_cheb import _d_symmetrize
+
+        # D-symmetrise: raises ValueError if W is not symmetrizable.
+        W_sym_sp = _d_symmetrize(W_sparse)  # csc_matrix, symmetric
+
+        # Build the COO pattern for I − ρW_sym.
+        # cholmodjax reads only Ai <= Aj entries (upper triangle),
+        # so we include the upper triangle of W_sym plus all diagonal
+        # entries (for the I in I − ρW_sym, since W_sym has zero diagonal
+        # for graphs without self-loops).
+        W_sym_coo = W_sym_sp.tocoo()
+        mask_upper = W_sym_coo.row <= W_sym_coo.col
+        upper_rows = W_sym_coo.row[mask_upper]
+        upper_cols = W_sym_coo.col[mask_upper]
+        upper_vals = W_sym_coo.data[mask_upper]
+
+        # Add diagonal entries that are missing from W_sym's pattern
+        existing_diag = set(zip(upper_rows.tolist(), upper_cols.tolist()))
+        diag_rows = []
+        diag_cols = []
+        for i in range(n):
+            if (i, i) not in existing_diag:
+                diag_rows.append(i)
+                diag_cols.append(i)
+
+        _Ai_direct = np.concatenate(
+            [
+                upper_rows.astype(np.int32),
+                np.array(diag_rows, dtype=np.int32),
+            ]
+        )
+        _Aj_direct = np.concatenate(
+            [
+                upper_cols.astype(np.int32),
+                np.array(diag_cols, dtype=np.int32),
+            ]
+        )
+        # W_sym values at these positions (0 for added diagonal entries)
+        _W_sym_vals = np.concatenate(
+            [
+                upper_vals.astype(np.float64),
+                np.zeros(len(diag_rows), dtype=np.float64),
+            ]
+        )
+        _nnz_direct = len(_Ai_direct)
+        _n_static = n
+
+        # Diagonal indices for I − ρW_sym
+        _diag_idx_direct = np.full(n, -1, dtype=np.int32)
+        for k_idx in range(_nnz_direct):
+            if _Ai_direct[k_idx] == _Aj_direct[k_idx]:
+                _diag_idx_direct[_Ai_direct[k_idx]] = k_idx
+
+        def _jax_cholmod(rho):
+            import cholmodjax
+            import jax.numpy as jnp
+
+            Ai = jnp.asarray(_Ai_direct, dtype=jnp.int32)
+            Aj = jnp.asarray(_Aj_direct, dtype=jnp.int32)
+            W_vals = jnp.asarray(_W_sym_vals, dtype=jnp.float64)
+            diag_idx = jnp.asarray(_diag_idx_direct, dtype=jnp.int32)
+
+            # Ax = I − ρW_sym at pattern positions
+            Ax = -rho * W_vals
+            diag_vals = jnp.zeros(_nnz_direct, dtype=jnp.float64)
+            diag_vals = diag_vals.at[diag_idx].set(1.0)
+            Ax = Ax + diag_vals
+
+            val = cholmodjax.logdet(Ai, Aj, Ax, _n_static)
+            return val if T == 1 else T * val
+
+        return _jax_cholmod
+
     raise ValueError(
         f"Method '{method}' has no JAX implementation. "
         "Use 'eigenvalue', 'chebyshev', 'cheb_stochastic', "
-        "'cheb_cholesky', 'aaa', or 'slq'."
+        "'cheb_cholesky', 'aaa', 'cholmod', or 'slq'."
     )
