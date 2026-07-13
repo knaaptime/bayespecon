@@ -449,6 +449,18 @@ class SpatialModel(ABC):
             if w_vars is not None:
                 raise ValueError("w_vars requires a spatial weights matrix W.")
 
+    def _spatial_lag(self, X: np.ndarray) -> np.ndarray:
+        """Spatial lag ``W @ X`` of the design used by the spatial filter."""
+        return np.asarray(self._W_sparse @ X, dtype=np.float64)
+
+    def _postprocess_idata(self, idata: "az.InferenceData") -> "az.InferenceData":
+        """Hook to post-process the ``InferenceData`` before ``fit`` returns.
+
+        No-op by default; censored-likelihood families (Tobit) override this
+        to attach a Jacobian-corrected pointwise log-likelihood group.
+        """
+        return idata
+
     @cached_property
     def _W_dense(self) -> np.ndarray:
         """Dense weight matrix, materialised lazily on first access."""
@@ -962,6 +974,7 @@ class SpatialModel(ABC):
             compute_log_likelihood=False,
             sample_kwargs=sample_kwargs,
         )
+        self._idata = self._postprocess_idata(self._idata)
         return self._idata
 
     def _fit_gibbs_dispatch(
