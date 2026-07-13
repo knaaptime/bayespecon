@@ -41,7 +41,6 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 from ...models.priors import LogitGibbsPriors, SEMLogitGibbsPriors
@@ -1292,13 +1291,11 @@ def _sem_logit_collapsed_log_density(
     # log|I - λW|
     logdet = logdet_fn(lam)
 
-    # log|P| via LU
-    P_csc = sp.csc_matrix(P)
-    lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-    log_det_P = np.sum(np.log(np.abs(lu.U.diagonal())))
+    # log|P| via LU — prefer KLU/UMFPACK (scikit-sparse) over scipy SuperLU
+    from .._ops._backend import _factor_solve_logdet
 
-    # Solve P m = rhs
-    m = lu.solve(rhs)
+    P_csc = sp.csc_matrix(P)
+    m, log_det_P = _factor_solve_logdet(P_csc, rhs)
     quad = float(rhs @ m)
 
     # Missing term from SEM prior: -½Xβ'A_λ'A_λXβ

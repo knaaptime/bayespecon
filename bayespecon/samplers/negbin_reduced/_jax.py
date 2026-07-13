@@ -951,19 +951,73 @@ def run_chains_jax_reduced(
             log_lik = np.empty((n_keep, n), dtype=np.float64)
             from scipy.special import gammaln
 
-            for i in range(n_keep):
-                rho_i = rho_samples[i]
-                beta_i = beta_samples[i]
-                A_i = I_n_np - rho_i * W_dense_np
-                eta_i = np.linalg.solve(A_i, X @ beta_i)
-                alpha_i = alpha_samples[i]
-                mu = np.exp(eta_i)
-                log_lik[i] = (
-                    gammaln(y + alpha_i)
-                    - gammaln(alpha_i)
-                    + y * np.log(np.maximum(mu / (mu + alpha_i), 1e-300))
-                    + alpha_i * np.log(np.maximum(alpha_i / (mu + alpha_i), 1e-300))
+            # Prefer klujax (cached symbolic analysis) over dense solve loop
+            import scipy.sparse as _sp
+
+            from .._jax_dispatch import _klujax_available
+
+            if _klujax_available():
+                import klujax
+
+                I_coo = _sp.eye(n, format="coo")
+                W_coo = W_sparse.tocoo()
+                all_rows = np.concatenate([I_coo.row, W_coo.row])
+                all_cols = np.concatenate([I_coo.col, W_coo.col])
+                shape = (n, n)
+                const_coo = _sp.coo_matrix(
+                    (
+                        np.concatenate([np.ones(I_coo.nnz), np.zeros(W_coo.nnz)]),
+                        (all_rows, all_cols),
+                    ),
+                    shape=shape,
                 )
+                const_coo.sum_duplicates()
+                w_coo = _sp.coo_matrix(
+                    (
+                        np.concatenate([np.zeros(I_coo.nnz), W_coo.data]),
+                        (all_rows, all_cols),
+                    ),
+                    shape=shape,
+                )
+                w_coo.sum_duplicates()
+                Ai = np.asarray(const_coo.row, dtype=np.int32)
+                Aj = np.asarray(const_coo.col, dtype=np.int32)
+                const_vals = np.asarray(const_coo.data, dtype=np.float64)
+                w_vals = np.asarray(w_coo.data, dtype=np.float64)
+                symbolic = klujax.analyze(Ai, Aj, n)
+                for i in range(n_keep):
+                    rho_i = rho_samples[i]
+                    beta_i = beta_samples[i]
+                    Ax = const_vals - rho_i * w_vals
+                    eta_i = np.asarray(
+                        klujax.solve_with_symbol(Ai, Aj, Ax, X @ beta_i, symbolic),
+                        dtype=np.float64,
+                    )
+                    alpha_i = alpha_samples[i]
+                    mu = np.exp(eta_i)
+                    log_lik[i] = (
+                        gammaln(y + alpha_i)
+                        - gammaln(alpha_i)
+                        + y * np.log(np.maximum(mu / (mu + alpha_i), 1e-300))
+                        + alpha_i * np.log(np.maximum(alpha_i / (mu + alpha_i), 1e-300))
+                    )
+            else:
+                from .._ops._backend import _solve_sparse_vector
+
+                I_sp = _sp.eye(n, format="csc")
+                for i in range(n_keep):
+                    rho_i = rho_samples[i]
+                    beta_i = beta_samples[i]
+                    A_csc = (I_sp - rho_i * W_sparse).tocsc()
+                    eta_i = _solve_sparse_vector(A_csc, X @ beta_i)
+                    alpha_i = alpha_samples[i]
+                    mu = np.exp(eta_i)
+                    log_lik[i] = (
+                        gammaln(y + alpha_i)
+                        - gammaln(alpha_i)
+                        + y * np.log(np.maximum(mu / (mu + alpha_i), 1e-300))
+                        + alpha_i * np.log(np.maximum(alpha_i / (mu + alpha_i), 1e-300))
+                    )
 
             chain_results.append(
                 {

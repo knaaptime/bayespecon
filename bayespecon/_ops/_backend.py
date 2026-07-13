@@ -176,6 +176,36 @@ def _solve_sparse_matrix(A: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
     return np.asarray(lu.solve(rhs64), dtype=np.float64)
 
 
+def _factor_solve_logdet(A: sp.spmatrix, rhs: np.ndarray) -> tuple[np.ndarray, float]:
+    """Factorise ``A``, solve ``A x = rhs``, and return ``(x, log|det A|)``.
+
+    Uses KLU/UMFPACK (scikit-sparse) when available, falling back to
+    scipy SuperLU.  The logdet is recovered from the factor's diagonal(s).
+    """
+    backend = _select_sparse_backend()
+    rhs64 = np.asarray(rhs, dtype=np.float64)
+    A_csc = A.tocsc() if not sp.isspmatrix_csc(A) else A
+    if backend == "klu":
+        factor = _sparse_factor(A_csc, backend)
+        x = np.asarray(factor.solve(rhs64), dtype=np.float64)
+        logdet = float(np.sum(np.log(np.abs(factor.U.diagonal()))))
+        l_diag = factor.L.diagonal()
+        logdet += float(np.sum(np.log(np.abs(l_diag))))
+        rscale = factor.rscale
+        if rscale is not None:
+            logdet -= float(np.sum(np.log(np.abs(rscale))))
+        return x, logdet
+    if backend == "umfpack":
+        factor = _sparse_factor(A_csc, backend)
+        x = np.asarray(factor.solve(rhs64), dtype=np.float64)
+        _sign, logabsdet = factor.slogdet()
+        return x, float(logabsdet)
+    lu = sp.linalg.splu(A_csc)
+    x = np.asarray(lu.solve(rhs64), dtype=np.float64)
+    logdet = float(np.sum(np.log(np.abs(lu.U.diagonal()))))
+    return x, logdet
+
+
 class _SparseFactorSolver:
     """Adapter exposing a ``SuperLU``-like ``solve`` over a KLU/UMFPACK factor.
 

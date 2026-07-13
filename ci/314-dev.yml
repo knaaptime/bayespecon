@@ -30,7 +30,8 @@ dependencies:
   - pip
   - pip:
     - klujax
-  
+    - git+https://github.com/knaaptime.cholmodjax.git
+
   # docs
   - twine
   - sphinx>=1.4.3

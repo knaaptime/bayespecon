@@ -176,9 +176,14 @@ def _solve_A_unrestricted(
     A: sp.csr_matrix,
     X: np.ndarray,
 ) -> np.ndarray:
-    """Solve A η = X via sparse LU, returning η = A⁻¹X."""
-    lu = spla.splu(A.tocsc())
-    return lu.solve(X)
+    """Solve A η = X via sparse LU, returning η = A⁻¹X.
+
+    Uses KLU/UMFPACK (scikit-sparse) when available, falling back to
+    scipy SuperLU.
+    """
+    from ..._ops._backend import _solve_sparse_matrix
+
+    return _solve_sparse_matrix(A, X)
 
 
 def _solve_A_separable(
@@ -208,10 +213,16 @@ def _compute_eta_unrestricted(
     Xbeta: np.ndarray,
     cache: FlowReducedGibbsCache,
 ) -> np.ndarray:
-    """Compute η = A⁻¹ Xβ for the unrestricted model."""
+    """Compute η = A⁻¹ Xβ for the unrestricted model.
+
+    Uses KLU/UMFPACK (scikit-sparse) when available, falling back to
+    scipy SuperLU.
+    """
+    from ..._ops._backend import _solve_sparse_vector
+
     N = cache.Wd.shape[0]
     A = _assemble_A_unrestricted(rho_d, rho_o, rho_w, cache.Wd, cache.Wo, cache.Ww, N)
-    return spla.spsolve(A.tocsc(), Xbeta)
+    return _solve_sparse_vector(A, Xbeta)
 
 
 def _compute_eta_separable(

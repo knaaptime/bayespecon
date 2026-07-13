@@ -43,10 +43,17 @@ from ..._logdet._flow_resolvent import (
 
 
 def _default_logdet_value_and_grad(kron, probes):
-    """Resolvent value+grad closure sharing frozen probes across a chain."""
+    """Resolvent value+grad closure sharing frozen probes across a chain.
+
+    Uses relaxed GMRES tolerance (``1e-6``) since the Hutchinson trace estimator
+    already carries stochastic error ~1/√(N·P); tightening GMRES below the
+    stochastic noise floor wastes iterations without improving accuracy.
+    """
 
     def _fn(rho_d, rho_o, rho_w):
-        return flow_logdet_value_and_grad(kron, rho_d, rho_o, rho_w, probes=probes)
+        return flow_logdet_value_and_grad(
+            kron, rho_d, rho_o, rho_w, probes=probes, tol=1e-6
+        )
 
     return _fn
 
@@ -106,6 +113,9 @@ class FlowResolventTarget:
         self.XtX = self.X.T @ self.X
         self.XtX_inv = np.linalg.inv(self.XtX)
         self._last_ld_val = 0.0  # cached per-period log|A| for the Jacobian
+        self._cached_rho = None  # cache key for logdet reuse after Gibbs
+        self._cached_ld_val = 0.0
+        self._cached_ld_grad = np.zeros(3)
         if self.logdet_value_and_grad is None:
             rng = np.random.default_rng(self.seed)
             probes = rng.choice([-1.0, 1.0], size=(self.Nf, self.n_probes)).astype(
@@ -146,16 +156,41 @@ class FlowResolventTarget:
         are scaled by ``T`` (``T=1`` for the cross-section).  The per-period
         ``log|A|`` value is cached in ``self._last_ld_val`` so the sampler can attach
         the change-of-variables Jacobian to the ``log_likelihood`` group.
+
+        Caches the logdet ``(value, grad)`` keyed on ρ so that
+        :meth:`logpost_cached` can reuse it when only β/σ² have changed
+        (after a Gibbs update), avoiding a redundant resolvent computation.
         """
         rho = np.asarray(rho, dtype=np.float64)
         if not self.in_bounds(rho):
+            self._cached_rho = None
             return -np.inf, np.zeros(3)
         r = self.Ay(rho) - self.X @ beta
         ld_val, ld_grad = self.logdet_value_and_grad(rho[0], rho[1], rho[2])
         self._last_ld_val = float(ld_val)
+        # Cache logdet for reuse after Gibbs β/σ² updates (ρ unchanged)
+        self._cached_rho = rho.copy()
+        self._cached_ld_val = ld_val
+        self._cached_ld_grad = np.asarray(ld_grad, dtype=np.float64)
         logp = self.T * ld_val - 0.5 * float(r @ r) / sigma2
         # d/dρ_k [-||r||²/2σ²] = (rᵀ L_k)/σ²  since ∂r/∂ρ_k = -L_k
-        grad = self.T * np.asarray(ld_grad, dtype=np.float64) + (self.L.T @ r) / sigma2
+        grad = self.T * self._cached_ld_grad + (self.L.T @ r) / sigma2
+        return logp, grad
+
+    def logpost_cached(self, rho, beta, sigma2):
+        """Recompute ``logp, grad`` using the cached logdet (ρ must be unchanged).
+
+        After a Gibbs β/σ² update the logdet ``(value, grad)`` is identical
+        because it depends only on ρ.  This method avoids the expensive
+        resolvent computation, cutting the per-iteration GMRES solves in half.
+        """
+        rho = np.asarray(rho, dtype=np.float64)
+        r = self.Ay(rho) - self.X @ beta
+        ld_val = self._cached_ld_val
+        ld_grad = self._cached_ld_grad
+        self._last_ld_val = float(ld_val)
+        logp = self.T * ld_val - 0.5 * float(r @ r) / sigma2
+        grad = self.T * ld_grad + (self.L.T @ r) / sigma2
         return logp, grad
 
     # -- conjugate Gibbs updates for β, σ² given ρ ------------------------
@@ -239,6 +274,9 @@ class SEMFlowResolventTarget:
         self.WoX = _lag_matrix(self.kron, self.X, "o", self.T)
         self.WwX = _lag_matrix(self.kron, self.X, "w", self.T)
         self._last_ld_val = 0.0  # cached per-period log|A| for the Jacobian
+        self._cached_rho = None  # cache key for logdet reuse after Gibbs
+        self._cached_ld_val = 0.0
+        self._cached_ld_grad = np.zeros(3)
         if self.logdet_value_and_grad is None:
             rng = np.random.default_rng(self.seed)
             probes = rng.choice([-1.0, 1.0], size=(self.Nf, self.n_probes)).astype(
@@ -267,11 +305,16 @@ class SEMFlowResolventTarget:
     def logpost_and_grad(self, rho, beta, sigma2):
         rho = np.asarray(rho, dtype=np.float64)
         if not self.in_bounds(rho):
+            self._cached_rho = None
             return -np.inf, np.zeros(3)
         ytil, Xtil = self._whiten(rho)
         r = ytil - Xtil @ beta
         ld_val, ld_grad = self.logdet_value_and_grad(rho[0], rho[1], rho[2])
         self._last_ld_val = float(ld_val)
+        # Cache logdet for reuse after Gibbs β/σ² updates (ρ unchanged)
+        self._cached_rho = rho.copy()
+        self._cached_ld_val = ld_val
+        self._cached_ld_grad = np.asarray(ld_grad, dtype=np.float64)
         logp = self.T * ld_val - 0.5 * float(r @ r) / sigma2
         # W_k e = W_k y - W_k X β ;  d/dλ_k[-||r||²/2σ²] = (rᵀ W_k e)/σ²
         WkE = np.column_stack(
@@ -281,7 +324,26 @@ class SEMFlowResolventTarget:
                 self.L_y[:, 2] - self.WwX @ beta,
             ]
         )
-        grad = self.T * np.asarray(ld_grad, dtype=np.float64) + (WkE.T @ r) / sigma2
+        grad = self.T * self._cached_ld_grad + (WkE.T @ r) / sigma2
+        return logp, grad
+
+    def logpost_cached(self, rho, beta, sigma2):
+        """Recompute ``logp, grad`` using the cached logdet (ρ must be unchanged)."""
+        rho = np.asarray(rho, dtype=np.float64)
+        ytil, Xtil = self._whiten(rho)
+        r = ytil - Xtil @ beta
+        ld_val = self._cached_ld_val
+        ld_grad = self._cached_ld_grad
+        self._last_ld_val = float(ld_val)
+        logp = self.T * ld_val - 0.5 * float(r @ r) / sigma2
+        WkE = np.column_stack(
+            [
+                self.L_y[:, 0] - self.WdX @ beta,
+                self.L_y[:, 1] - self.WoX @ beta,
+                self.L_y[:, 2] - self.WwX @ beta,
+            ]
+        )
+        grad = self.T * ld_grad + (WkE.T @ r) / sigma2
         return logp, grad
 
     def draw_beta_sigma2(self, rho, rng, a0=1e-3, b0=1e-3):
@@ -355,7 +417,8 @@ def run_flow_resolvent_gibbs(
                 window = 0
         # --- Gibbs β, σ² ---
         beta, sigma2 = target.draw_beta_sigma2(rho, rng)
-        logp, grad = target.logpost_and_grad(rho, beta, sigma2)
+        # ρ unchanged after Gibbs β/σ² update — reuse cached logdet (50% fewer GMRES solves)
+        logp, grad = target.logpost_cached(rho, beta, sigma2)
         if it >= tune:
             out["rho_d"].append(rho[0])
             out["rho_o"].append(rho[1])

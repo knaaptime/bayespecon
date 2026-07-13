@@ -4,7 +4,17 @@ All public test functions return :class:`BayesianLMTestResult`.
 """
 
 import numpy as np
+import scipy.sparse as _sp
 
+from bayespecon._jax_dispatch import _klujax_available
+from bayespecon._logdet import (
+    resolvent_trace_eigs,
+    resolvent_trace_G2_eigs,
+    resolvent_trace_GtG_eigs,
+    resolvent_trace_WG_eigs,
+    resolvent_trace_WtG_eigs,
+)
+from bayespecon._ops._backend import _solve_sparse_matrix
 from bayespecon.diagnostics.lmtests.core import (
     BayesianLMTestResult,
     _compute_residuals,
@@ -1497,7 +1507,6 @@ def bayesian_lm_lag_sdem_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_dense = model._W_dense
     T_ww = model._T_ww
 
     idata = model.inference_data
@@ -1517,11 +1526,10 @@ def bayesian_lm_lag_sdem_test(
 
     lam_mean = float(np.mean(lam_draws))
     _, sigma2_mean = _posterior_mean_sigma2(idata)
-    n = W_sp.shape[0]
-    A_lam = np.eye(n) - lam_mean * W_dense
     Z = np.hstack([X, WX])
-    Z_tilde = A_lam @ Z
-    z_rho = A_lam @ Wy  # whitened lag vector
+    # A_λ @ v = v - λ̄(W @ v) — sparse matvec, no dense matrix
+    Z_tilde = Z - lam_mean * (W_sp @ Z)
+    z_rho = Wy - lam_mean * (W_sp @ Wy)
 
     S = u @ z_rho  # (draws,)
     V = sigma2_mean**2 * T_ww + sigma2_mean * _mx_quadratic(Z_tilde, z_rho)
@@ -1536,7 +1544,7 @@ def bayesian_lm_lag_sdem_test(
 
 def _sar_null_lambda_info(
     W_sparse,
-    W_dense: np.ndarray,
+    W_eigs,
     X_design: np.ndarray,
     beta_full_mean: np.ndarray,
     rho_mean: float,
@@ -1563,31 +1571,62 @@ def _sar_null_lambda_info(
     where :math:`M_X = I - X_{\text{design}}(X_{\text{design}}^\top
     X_{\text{design}})^{-1} X_{\text{design}}^\top`.  ``X_design`` is the
     OLS-projection design (``X`` for SAR null, ``[X, WX]`` for SDM null);
-    ``beta_full_mean`` must match its column count.  The dense
-    :math:`G = \bar A^{-1} W` is built once via ``solve(A, W_dense)`` —
-    appropriate for the moderate ``N`` typical of cross-sectional fits.
+    ``beta_full_mean`` must match its column count.
+
+    The traces :math:`\mathrm{tr}(G)`, :math:`\mathrm{tr}(G^2)`,
+    :math:`\mathrm{tr}(G^\top G)`, :math:`\mathrm{tr}(WG)` and
+    :math:`\mathrm{tr}(W^\top G)` are computed in :math:`O(n)` from the
+    cached eigenvalues ``W_eigs`` via
+    :mod:`bayespecon._logdet._resolvent`.  The matrix product
+    :math:`G X_{\text{design}}` is computed via a single sparse LU
+    factorisation of :math:`\bar A` followed by a sparse solve —
+    :math:`O(\mathrm{nnz}^{1.5})` rather than the :math:`O(n^3)` dense
+    solve used previously.
     """
     n = W_sparse.shape[0]
-    A = np.eye(n) - rho_mean * W_dense
-    G = np.linalg.solve(A, W_dense)  # = (I - rho W)^{-1} W
-    # Trace identities.  tr(B'C) = sum(B * C) and tr(BC) = sum(B * C.T),
-    # so both traces are O(n^2) elementwise sums — never form the dense
-    # O(n^3) products G @ G or W_dense @ G just to take their trace.
-    T_GG = float(np.sum(G * G) + np.sum(G * G.T))
-    T_WG = float(np.sum(W_dense * G) + np.sum(W_dense * G.T))
-    tr_G = float(np.trace(G))
-    # tr(M_X G) for centering the M_X-projected score g_rho = e_perp' W y.
-    # M_X = I - X (X'X)^{-1} X', so
-    #     tr(M_X G) = tr(G) - tr((X'X)^{-1} X' G X).
+
+    # O(n) trace computation from cached eigenvalues
+    tr_G = float(resolvent_trace_eigs(rho_mean, W_eigs))
+    T_GG = float(
+        resolvent_trace_GtG_eigs(rho_mean, W_eigs)
+        + resolvent_trace_G2_eigs(rho_mean, W_eigs)
+    )
+    T_WG = float(
+        resolvent_trace_WtG_eigs(rho_mean, W_eigs)
+        + resolvent_trace_WG_eigs(rho_mean, W_eigs)
+    )
+
+    # G @ X_design via sparse solve:  (I - ρW)⁻¹ (W @ X)
+    # Prefer klujax (JAX-native, reuses cached symbolic analysis) over
+    # sksparse.klu (re-factorises each call) over scipy SuperLU.
+    WX_design = W_sparse @ X_design  # O(nnz·k) sparse matmul
+    if _klujax_available():
+        import klujax
+
+        # Build COO pattern for (I - ρW): fixed sparsity, values depend on ρ
+        A_coo = (_sp.eye(n, format="csc") - rho_mean * W_sparse).tocoo()
+        Ai = np.asarray(A_coo.row, dtype=np.int32)
+        Aj = np.asarray(A_coo.col, dtype=np.int32)
+        Ax = np.asarray(A_coo.data, dtype=np.float64)
+        symbolic = klujax.analyze(Ai, Aj, n)
+        GX = np.asarray(
+            klujax.solve_with_symbol(Ai, Aj, Ax, WX_design, symbolic),
+            dtype=np.float64,
+        )
+    else:
+        A_csc = _sp.eye(n, format="csc") - rho_mean * W_sparse
+        GX = _solve_sparse_matrix(A_csc, WX_design)  # (n, k)
+
+    # tr(M_X G) = tr(G) - tr((X'X)⁻¹ X'GX)
     XtX = X_design.T @ X_design
-    XtGX = X_design.T @ (G @ X_design)
+    XtGX = X_design.T @ GX
     tr_PxG = float(np.trace(np.linalg.solve(XtX, XtGX)))
     tr_MxG = tr_G - tr_PxG
 
     V_ll = sigma2_mean**2 * T_ww
     V_lr = sigma2_mean**2 * T_WG
 
-    GxBeta = G @ (X_design @ beta_full_mean)
+    GxBeta = GX @ beta_full_mean  # reuse GX from above
     proj = _mx_quadratic(X_design, GxBeta)
     V_rr = sigma2_mean**2 * T_GG + sigma2_mean * proj
 
@@ -1700,7 +1739,7 @@ def bayesian_robust_lm_error_sar_test(
     model : SAR
         Fitted SAR model exposing ``inference_data`` with posterior draws
         of ``beta``, ``rho``, ``sigma`` and the cached ``_y``, ``_X``,
-        ``_Wy``, ``_W_sparse``, ``_W_dense``, ``_T_ww`` attributes.
+        ``_Wy``, ``_W_sparse``, ``_W_eigs``, ``_T_ww`` attributes.
 
     Returns
     -------
@@ -1711,7 +1750,7 @@ def bayesian_robust_lm_error_sar_test(
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_dense = model._W_dense
+    W_eigs = model._W_eigs
     T_ww = model._T_ww
 
     idata = model.inference_data
@@ -1739,7 +1778,7 @@ def bayesian_robust_lm_error_sar_test(
     sigma_draws, sigma2_mean = _posterior_mean_sigma2(idata)
 
     info = _sar_null_lambda_info(
-        W_sp, W_dense, X, beta_mean, rho_mean, sigma2_mean, T_ww
+        W_sp, W_eigs, X, beta_mean, rho_mean, sigma2_mean, T_ww
     )
     V_ll = info["V_ll"]
     V_lr = info["V_lr"]
@@ -1816,7 +1855,7 @@ def bayesian_robust_lm_error_sdm_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_dense = model._W_dense
+    W_eigs = model._W_eigs
     T_ww = model._T_ww
 
     idata = model.inference_data
@@ -1849,7 +1888,7 @@ def bayesian_robust_lm_error_sdm_test(
     sigma2_mean = float(np.mean(sigma_draws**2))
 
     info = _sar_null_lambda_info(
-        W_sp, W_dense, Z, beta_mean, rho_mean, sigma2_mean, T_ww
+        W_sp, W_eigs, Z, beta_mean, rho_mean, sigma2_mean, T_ww
     )
     V_ll = info["V_ll"]
     V_lr = info["V_lr"]
@@ -1882,7 +1921,6 @@ def bayesian_robust_lm_error_sdm_test(
 
 def _sem_filtered_blocks(
     W_sparse,
-    W_dense: np.ndarray,
     X: np.ndarray,
     Wy: np.ndarray,
     WX: np.ndarray,
@@ -1913,12 +1951,18 @@ def _sem_filtered_blocks(
     :math:`T_{WW}` contribution to :math:`V_{\rho\rho}` arises from the
     SARAR Hessian's Magnus trace term, which is independent of the
     filter at :math:`\rho = 0`.
+
+    All :math:`\bar A_\lambda \mathbf{v}` products are computed as
+    :math:`\mathbf{v} - \bar\lambda (W \mathbf{v})` using sparse
+    matrix-vector products — :math:`O(\mathrm{nnz})` rather than
+    :math:`O(n^2)` dense matmuls.  The filtered vectors
+    :math:`\tilde z_\rho` and :math:`\tilde Z_\gamma` are returned in
+    the dict so callers need not recompute them.
     """
-    n = W_sparse.shape[0]
-    A_lam = np.eye(n) - lam_mean * W_dense
-    X_tilde = A_lam @ X
-    z_rho = A_lam @ Wy
-    Z_gamma = A_lam @ WX
+    # A_λ @ v = v - λ̄(W @ v) — sparse matvec, no dense matrix
+    X_tilde = X - lam_mean * (W_sparse @ X)
+    z_rho = Wy - lam_mean * (W_sparse @ Wy)
+    Z_gamma = WX - lam_mean * (W_sparse @ WX)
 
     V_rr = sigma2_mean**2 * T_ww + sigma2_mean * _mx_quadratic(X_tilde, z_rho)
     if WX.shape[1] > 0:
@@ -1928,7 +1972,13 @@ def _sem_filtered_blocks(
         V_gg = np.zeros((0, 0))
         V_rg = np.zeros(0)
 
-    return {"V_rr": V_rr, "V_gg": V_gg, "V_rg": V_rg, "A_lam": A_lam}
+    return {
+        "V_rr": V_rr,
+        "V_gg": V_gg,
+        "V_rg": V_rg,
+        "z_rho": z_rho,
+        "Z_gamma": Z_gamma,
+    }
 
 
 def bayesian_robust_lm_lag_sem_test(
@@ -1991,7 +2041,6 @@ def bayesian_robust_lm_lag_sem_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_dense = model._W_dense
     T_ww = model._T_ww
 
     idata = model.inference_data
@@ -2008,10 +2057,9 @@ def bayesian_robust_lm_lag_sem_test(
     # Filtered designs at posterior-mean lambda
     lam_mean = float(np.mean(lam_draws))
     sigma2_mean = float(np.mean(sigma_draws**2))
-    blocks = _sem_filtered_blocks(W_sp, W_dense, X, Wy, WX, lam_mean, sigma2_mean, T_ww)
-    A_lam_bar = blocks["A_lam"]
-    z_rho = A_lam_bar @ Wy  # (n,)
-    Z_gamma = A_lam_bar @ WX  # (n, k_wx)
+    blocks = _sem_filtered_blocks(W_sp, X, Wy, WX, lam_mean, sigma2_mean, T_ww)
+    z_rho = blocks["z_rho"]  # (n,)
+    Z_gamma = blocks["Z_gamma"]  # (n, k_wx)
 
     g_rho = u @ z_rho  # (draws,)
     g_gamma = u @ Z_gamma  # (draws, k_wx)
@@ -2095,7 +2143,6 @@ def bayesian_robust_lm_wx_sem_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_dense = model._W_dense
     T_ww = model._T_ww
     k_wx = WX.shape[1]
 
@@ -2117,10 +2164,9 @@ def bayesian_robust_lm_wx_sem_test(
 
     lam_mean = float(np.mean(lam_draws))
     sigma2_mean = float(np.mean(sigma_draws**2))
-    blocks = _sem_filtered_blocks(W_sp, W_dense, X, Wy, WX, lam_mean, sigma2_mean, T_ww)
-    A_lam_bar = blocks["A_lam"]
-    z_rho = A_lam_bar @ Wy
-    Z_gamma = A_lam_bar @ WX
+    blocks = _sem_filtered_blocks(W_sp, X, Wy, WX, lam_mean, sigma2_mean, T_ww)
+    z_rho = blocks["z_rho"]
+    Z_gamma = blocks["Z_gamma"]
 
     g_rho = u @ z_rho
     g_gamma = u @ Z_gamma
@@ -2203,7 +2249,6 @@ def bayesian_robust_lm_lag_sdem_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_dense = model._W_dense
     T_ww = model._T_ww
 
     idata = model.inference_data
@@ -2219,10 +2264,9 @@ def bayesian_robust_lm_lag_sdem_test(
 
     lam_mean = float(np.mean(lam_draws))
     sigma2_mean = float(np.mean(sigma_draws**2))
-    n = W_sp.shape[0]
-    A_lam = np.eye(n) - lam_mean * W_dense
-    Z_tilde = A_lam @ Z
-    z_rho = A_lam @ Wy
+    # A_λ @ v = v - λ̄(W @ v) — sparse matvec, no dense matrix
+    Z_tilde = Z - lam_mean * (W_sp @ Z)
+    z_rho = Wy - lam_mean * (W_sp @ Wy)
 
     g_rho = u @ z_rho
 

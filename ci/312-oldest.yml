@@ -32,3 +32,4 @@ dependencies:
   - pip
   - pip:
     - klujax
+    - git+https://github.com/knaaptime.cholmodjax.git

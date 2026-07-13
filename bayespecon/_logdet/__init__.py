@@ -67,6 +67,11 @@ from ._resolvent import (
     logdet_grad_chebyshev,
     logdet_grad_eigenvalue,
     logdet_grad_slq,
+    resolvent_trace_eigs,
+    resolvent_trace_G2_eigs,
+    resolvent_trace_GtG_eigs,
+    resolvent_trace_WG_eigs,
+    resolvent_trace_WtG_eigs,
 )
 from ._slq import (
     SLQPrecompute,
@@ -103,6 +108,11 @@ __all__ = [
     "logdet_grad_chebyshev",
     "logdet_grad_aaa",
     "logdet_grad_slq",
+    "resolvent_trace_eigs",
+    "resolvent_trace_G2_eigs",
+    "resolvent_trace_GtG_eigs",
+    "resolvent_trace_WG_eigs",
+    "resolvent_trace_WtG_eigs",
     # Flow (separable factorisation)
     "make_flow_separable_logdet",
     "make_flow_separable_logdet_numpy",
