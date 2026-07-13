@@ -17,6 +17,7 @@ from formulaic import model_matrix
 from libpysal.graph import Graph
 
 from .._backends.sampler_helpers import (
+    jax_available,
     prepare_compile_kwargs,
     prepare_idata_kwargs,
     use_jax_likelihood,
@@ -932,36 +933,92 @@ class SpatialModel(ABC):
         target_accept: float = 0.9,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
+        sampler: str | None = None,
+        gibbs_backend: str = "auto",
+        thin: int = 1,
+        n_jobs: int = -1,
+        idata_kwargs: dict[str, Any] | None = None,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
 
+        Dispatches to this model's Gibbs sampler (``sampler="gibbs"``) or NUTS
+        (``sampler="nuts"``).  When ``sampler`` is ``None`` (default), Gibbs is
+        used if the model has a registered Gibbs sampler, otherwise NUTS.
+
         Parameters
         ----------
-        draws : int
-            Number of posterior samples per chain (after tuning).
-        tune : int
-            Number of tuning (burn-in) steps per chain.
-        chains : int
-            Number of parallel chains.
+        draws, tune, chains : int
+            Post-warmup draws, warmup steps, and number of chains.
         target_accept : float
             Target acceptance rate for NUTS.
         random_seed : int, optional
             Seed for reproducibility.
         progressbar : bool, default True
-            Show progress bar during sampling.
+            Show progress bar(s) during sampling.
+        sampler : {"gibbs", "nuts", None}, default None
+            Sampling method.  ``None`` auto-selects Gibbs when this model has
+            one, else NUTS.
+        gibbs_backend : {"auto", "jax", "numpy"}, default "auto"
+            Execution backend for the Gibbs sampler.  ``"auto"`` uses JAX when
+            installed and supported by the family, else NumPy.  Ignored for NUTS.
+        thin : int, default 1
+            Keep every ``thin``-th post-warmup Gibbs draw (Gibbs only).
+        n_jobs : int, default -1
+            Parallel workers for the NumPy Gibbs path (Gibbs only).
+        idata_kwargs : dict, optional
+            Passed to ``pm.sample`` (NUTS only).  ``{"log_likelihood": True}``
+            reconstructs the complete Jacobian-corrected pointwise
+            log-likelihood.
         **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``.  Pass
-            ``nuts_sampler="blackjax"`` (or ``"numpyro"``, ``"nutpie"``) to
-            select an alternative NUTS backend; defaults to PyMC's built-in
-            sampler.
+            For NUTS, forwarded to ``pm.sample`` (``nuts_sampler=...``); for
+            Gibbs, the family's declared options (an unsupported key raises).
 
         Returns
         -------
         arviz.InferenceData
         """
+        from ..samplers._registry import pop_options, resolve, resolve_backend
+
+        gibbs_key = getattr(self, "_gibbs_key", None)
+        entry = resolve(*gibbs_key) if gibbs_key is not None else None
+        if sampler is None:
+            sampler = "gibbs" if entry is not None else "nuts"
+
+        if sampler == "gibbs":
+            if entry is None:
+                raise NotImplementedError(
+                    f"{type(self).__name__} has no Gibbs sampler. "
+                    "Use sampler='nuts' (the default)."
+                )
+            if self.robust and not entry.supports_robust:
+                raise NotImplementedError(
+                    "Gibbs sampling is not supported for robust (Student-t) "
+                    "models. Use sampler='nuts'."
+                )
+            backend = resolve_backend(gibbs_backend, entry, jax_ok=jax_available())
+            family_opts = pop_options(sample_kwargs, entry)
+            self._idata = entry.run(
+                self,
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                thin=thin,
+                n_jobs=n_jobs,
+                progressbar=progressbar,
+                backend=backend,
+                **family_opts,
+            )
+            self._idata = self._postprocess_idata(self._idata)
+            return self._idata
+
+        if sampler != "nuts":
+            raise ValueError(
+                f"sampler must be 'gibbs', 'nuts', or None, got {sampler!r}"
+            )
+
         nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        idata_kwargs = sample_kwargs.pop("idata_kwargs", None)
         compute_log_likelihood = bool((idata_kwargs or {}).get("log_likelihood", False))
         _, compute_log_likelihood = self._fit_nuts(
             draws=draws,
@@ -1260,9 +1317,6 @@ class SpatialModel(ABC):
             n_jobs=n_jobs,
             progressbar=progressbar,
             gibbs_method=gibbs_method,
-            mala_step_size=mala_step_size,
-            use_mala=use_mala,
-            use_slice=use_slice,
             slice_width=slice_width,
             chain_method=chain_method,
         )
