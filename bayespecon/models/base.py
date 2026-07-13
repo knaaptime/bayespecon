@@ -6,7 +6,7 @@ import inspect
 import warnings
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import Any, Optional, Union
 
 import arviz as az
 import numpy as np
@@ -16,9 +16,6 @@ import scipy.sparse as sp
 from formulaic import model_matrix
 from libpysal.graph import Graph
 
-if TYPE_CHECKING:
-    from .._backends import ProbabilisticBackend
-
 from .._backends.sampler_helpers import (
     prepare_compile_kwargs,
     prepare_idata_kwargs,
@@ -26,6 +23,7 @@ from .._backends.sampler_helpers import (
 )
 from .._logdet import (
     make_logdet_fn,
+    make_logdet_grad_numpy_vec_fn,
     make_logdet_numpy_fn,
     make_logdet_numpy_vec_fn,
     resolve_logdet_bounds,
@@ -357,7 +355,6 @@ class SpatialModel(ABC):
         logdet_method: str | None = None,
         robust: bool = False,
         w_vars: Optional[list] = None,
-        backend: Optional[Union[str, "ProbabilisticBackend"]] = None,
     ):
         # Resolve typed priors (dataclass) and dict view.
         from .priors import BasePriors, priors_as_dict, resolve_priors
@@ -367,12 +364,6 @@ class SpatialModel(ABC):
         self.priors = priors_as_dict(self.priors_obj)
         self.logdet_method = logdet_method
         self.robust = robust
-
-        # Resolve probabilistic backend (PyMC, NumPyro, BlackJAX, nutpie).
-        from .._backends import resolve_backend
-
-        self.backend = resolve_backend(backend)
-        self.backend_name = self.backend.name
 
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
@@ -434,6 +425,7 @@ class SpatialModel(ABC):
             # chebyshev / trace methods.
             self._logdet_numpy_fn_cache = None
             self._logdet_numpy_vec_fn_cache = None
+            self._logdet_grad_numpy_vec_fn_cache = None
             self._logdet_pytensor_fn_cache = None
             self._W_for_logdet_cache = None
             self._Wy: np.ndarray = np.asarray(
@@ -591,6 +583,50 @@ class SpatialModel(ABC):
         if decomp is None:
             return None
         return decomp[2] @ np.ones(decomp[0].shape[0], dtype=np.complex128)
+
+    @property
+    def _logdet_grad_numpy_vec_fn(self):
+        """Vectorised ``(rho_arr) -> g(ρ)`` logdet-gradient evaluator (lazy).
+
+        Built from the model's resolved logdet method, so it uses the fast
+        surrogate (chol-cheb / AAA / …) and only touches the eigenvalue path
+        when that is genuinely the resolved method (tiny n).
+        """
+        if self._logdet_grad_numpy_vec_fn_cache is None:
+            eigs = (
+                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
+            )
+            self._logdet_grad_numpy_vec_fn_cache = make_logdet_grad_numpy_vec_fn(
+                self._W_sparse,
+                eigs,
+                method=self._logdet_bounds.method,
+                rho_min=self._logdet_bounds.rho_min,
+                rho_max=self._logdet_bounds.rho_max,
+            )
+        return self._logdet_grad_numpy_vec_fn_cache
+
+    def _batch_mean_diag(self, rho_draws: np.ndarray) -> np.ndarray:
+        """``(1/n) tr((I - ρW)⁻¹)`` per draw — the SAR/SDM direct-effect trace.
+
+        Uses the resolvent identity ``tr(S)/n = 1 − (ρ/n)·g(ρ)`` with
+        ``g(ρ) = d/dρ log|I − ρW| = −tr(W(I−ρW)⁻¹)``, so it rides the model's
+        fast logdet surrogate and never triggers the O(n³) eigendecomposition
+        (unless the resolved method is already ``eigenvalue``).
+        """
+        rho_draws = np.asarray(rho_draws, dtype=np.float64)
+        n = int(self._W_sparse.shape[0])
+        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
+        return 1.0 - (rho_draws / n) * g
+
+    def _batch_mean_diag_MW(self, rho_draws: np.ndarray) -> np.ndarray:
+        """``(1/n) tr((I - ρW)⁻¹ W)`` per draw — the SDM cross direct-effect trace.
+
+        Equals ``−g(ρ)/n`` for the same ``g``, again with no eigendecomposition.
+        """
+        rho_draws = np.asarray(rho_draws, dtype=np.float64)
+        n = int(self._W_sparse.shape[0])
+        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
+        return -g / n
 
     def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
         """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.

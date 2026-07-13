@@ -53,6 +53,67 @@ class _SpatialTobitBase(SpatialModel):
             )
         return y_lat
 
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Posterior samples of direct, indirect, and total effects.
+
+        Effects are reported on the latent (uncensored) scale, so they share
+        the linear SAR/SEM/SDM impact structure of the corresponding Gaussian
+        model.  The diagonal traces ride the resolvent identities
+        ``tr(S)/n = 1 - (rho/n)*g`` and ``tr(SW)/n = -g/n`` and need no
+        eigendecomposition.
+        """
+        from ...diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+
+        if isinstance(self, SARTobit):
+            rho_draws = _get_posterior_draws(idata, "rho")
+            beta_draws = _get_posterior_draws(idata, "beta")
+            mean_diag = self._batch_mean_diag(rho_draws)
+            mean_row_sum = self._batch_mean_row_sum(rho_draws)
+            ni = self._nonintercept_indices
+            direct_samples = mean_diag[:, None] * beta_draws[:, ni]
+            total_samples = mean_row_sum[:, None] * beta_draws[:, ni]
+            indirect_samples = total_samples - direct_samples
+
+        elif isinstance(self, SEMTobit):
+            beta_draws = _get_posterior_draws(idata, "beta")
+            ni = self._nonintercept_indices
+            direct_samples = beta_draws[:, ni].copy()
+            indirect_samples = np.zeros_like(direct_samples)
+            total_samples = direct_samples.copy()
+
+        elif isinstance(self, SDMTobit):
+            rho_draws = _get_posterior_draws(idata, "rho")
+            beta_draws = _get_posterior_draws(idata, "beta")
+            k = self._X.shape[1]
+            kw = self._WX.shape[1]
+            beta1_draws = beta_draws[:, :k]
+            beta2_draws = beta_draws[:, k : k + kw]
+            mean_diag_M = self._batch_mean_diag(rho_draws)
+            mean_diag_MW = self._batch_mean_diag_MW(rho_draws)
+            mean_row_sum_M = self._batch_mean_row_sum(rho_draws)
+            mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)
+            wx_idx = self._wx_column_indices
+            direct_samples = (
+                mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_diag_MW[:, None] * beta2_draws
+            )
+            total_samples = (
+                mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+                + mean_row_sum_MW[:, None] * beta2_draws
+            )
+            indirect_samples = total_samples - direct_samples
+
+        else:
+            raise NotImplementedError(
+                f"Spatial effects not implemented for {type(self).__name__}."
+            )
+
+        return direct_samples, indirect_samples, total_samples
+
 
 class SARTobit(_SpatialTobitBase):
     """Bayesian spatial autoregressive Tobit model.

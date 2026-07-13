@@ -119,6 +119,44 @@ class SDEM(GaussianLikelihoodMixin, SpatialModel):
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute direct, indirect, and total effects for each posterior draw.
+
+        For the SDEM model (no :math:`\\rho` on :math:`y`) the impacts are
+        identical in form to SLX; the spatial error parameter :math:`\\lambda`
+        does not affect the partial derivatives of :math:`y` w.r.t. :math:`X`:
+        :math:`\\text{Direct}_k = \\beta_{1k} + \\beta_{2k}\\,
+        \\overline{\\text{diag}}(W)`, :math:`\\text{Total}_k = \\beta_{1k}
+        + \\beta_{2k}\\,\\overline{\\text{rowsum}}(W)`.
+
+        Returns
+        -------
+        tuple of np.ndarray
+            ``(direct_samples, indirect_samples, total_samples)``, each of
+            shape ``(G, k_wx)``.
+        """
+        from ...diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
+        k = self._X.shape[1]
+        kw = self._WX.shape[1]
+
+        beta1_draws = beta_draws[:, :k]  # (G, k)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
+
+        mean_diag_w = float(self._W_sparse.diagonal().mean())
+        mean_row_sum_w = float(self._W_sparse.sum() / self._W_sparse.shape[0])
+
+        wx_idx = self._wx_column_indices
+        direct_samples = beta1_draws[:, wx_idx] + mean_diag_w * beta2_draws  # (G, kw)
+        total_samples = beta1_draws[:, wx_idx] + mean_row_sum_w * beta2_draws  # (G, kw)
+        indirect_samples = total_samples - direct_samples  # (G, kw)
+
+        return direct_samples, indirect_samples, total_samples
+
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean coefficients.
 

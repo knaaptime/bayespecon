@@ -119,6 +119,53 @@ class SDM(GaussianLikelihoodMixin, SpatialModel):
     def _beta_names(self) -> list[str]:
         return self._feature_names + [f"W*{name}" for name in self._wx_feature_names]
 
+    def _compute_spatial_effects_posterior(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute direct, indirect, and total effects for each posterior draw.
+
+        For the SDM model the spatial multiplier acts on both :math:`X` and
+        :math:`WX`: :math:`S_k = (I-\\rho W)^{-1}(\\beta_{1k} I + \\beta_{2k} W)`.
+        The two diagonal traces ride the resolvent identities
+        :math:`\\text{tr}(S)/n = 1 - (\\rho/n) g` and
+        :math:`\\text{tr}(SW)/n = -g/n` (``g = d/drho log|I - rho W|``), so
+        no O(n³) eigendecomposition is triggered.
+
+        Returns
+        -------
+        tuple of np.ndarray
+            ``(direct_samples, indirect_samples, total_samples)``, each of
+            shape ``(G, k_wx)``.
+        """
+        from ...diagnostics.lmtests import _get_posterior_draws
+
+        idata = self.inference_data
+        rho_draws = _get_posterior_draws(idata, "rho")  # (G,)
+        beta_draws = _get_posterior_draws(idata, "beta")  # (G, k+k_wx)
+        k = self._X.shape[1]
+        kw = self._WX.shape[1]
+
+        beta1_draws = beta_draws[:, :k]  # (G, k)
+        beta2_draws = beta_draws[:, k : k + kw]  # (G, kw)
+
+        mean_diag_M = self._batch_mean_diag(rho_draws)  # (G,)
+        mean_diag_MW = self._batch_mean_diag_MW(rho_draws)  # (G,)
+        mean_row_sum_M = self._batch_mean_row_sum(rho_draws)  # (G,)
+        mean_row_sum_MW = self._batch_mean_row_sum_MW(rho_draws)  # (G,)
+
+        wx_idx = self._wx_column_indices
+        direct_samples = (
+            mean_diag_M[:, None] * beta1_draws[:, wx_idx]
+            + mean_diag_MW[:, None] * beta2_draws
+        )  # (G, kw)
+        total_samples = (
+            mean_row_sum_M[:, None] * beta1_draws[:, wx_idx]
+            + mean_row_sum_MW[:, None] * beta2_draws
+        )  # (G, kw)
+        indirect_samples = total_samples - direct_samples  # (G, kw)
+
+        return direct_samples, indirect_samples, total_samples
+
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         """Compute fitted values at posterior mean parameters.
 
