@@ -330,34 +330,15 @@ class FlowPanelModel(SpatialPanelModel):
         random_seed: Optional[int] = None,
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
-        sampler: str = "nuts",
         progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
-        """Draw samples from the posterior.
+        """Draw samples from the posterior via PyMC NUTS.
 
-        Parameters
-        ----------
-        sampler : str, default "nuts"
-            Sampling backend: ``"nuts"`` for PyMC NUTS (default) or
-            ``"gibbs"`` for the custom Gaussian panel flow Gibbs sampler
-            (only available for separable SAR models).
-        **sample_kwargs
-            Additional keyword arguments forwarded to ``pm.sample``.
-            Pass ``target_accept=0.95`` to adjust the NUTS acceptance rate.
+        Models with a resolvent-gradient path (``SARFlowPanel``, ``SEMFlowPanel``)
+        override ``fit`` via :class:`_ResolventFlowPanelMixin` to add
+        ``sampler="gibbs"`` support; this base method is the NUTS-only path.
         """
-        if sampler == "gibbs":
-            return self.fit_gibbs(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                **sample_kwargs,
-            )
-        elif sampler != "nuts":
-            raise ValueError(f"sampler must be 'nuts' or 'gibbs', got '{sampler}'")
-
         idata_kwargs = dict(idata_kwargs) if idata_kwargs else {}
         idata_kwargs.setdefault("log_likelihood", True)
         compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
@@ -448,173 +429,6 @@ class FlowPanelModel(SpatialPanelModel):
     def approximation(self):
         """Return the most recent PyMC variational approximation, if any."""
         return self._approximation
-
-    def fit_gibbs(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        store_eta: bool = False,
-        eta_thin: int = 1,
-        n_jobs: int = -1,
-        progressbar: bool = True,
-        gamma_init: float = 0.5,
-        rho_init: float = 0.0,
-    ) -> az.InferenceData:
-        """Fit the model using the Kronecker eigenbasis FFBS Gibbs sampler.
-
-        Available for separable SAR panel flow models. Runs independent
-        Gibbs chains and combines the results into an
-        :class:`arviz.InferenceData` object.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of post-warmup draws per chain.
-        tune : int, default 1000
-            Number of warmup draws per chain (discarded).
-        chains : int, default 4
-            Number of independent chains.
-        random_seed : int, optional
-            Random seed for reproducibility.
-        store_eta : bool, default False
-            Whether to store the latent field draws. Disabled by default
-            because the η trace is large: ``(draws, n², T)``.
-        eta_thin : int, default 1
-            Store every ``eta_thin``-th draw of η.
-        n_jobs : int, default -1
-            Number of parallel workers. ``-1`` uses all CPUs.
-        progressbar : bool, default True
-            Show progress bars.
-        gamma_init : float, default 0.5
-            Initial value for the temporal AR(1) parameter γ.
-        rho_init : float, default 0.0
-            Initial value for ρ_d and ρ_o.
-
-        Returns
-        -------
-        az.InferenceData
-            Posterior samples with groups ``posterior`` and
-            ``log_likelihood``.
-
-        Raises
-        ------
-        NotImplementedError
-            If the model is not a separable SAR flow panel model.
-        """
-        from ...samplers._utils._idata import gibbs_to_inference_data
-        from ...samplers.panel_flow import (
-            PanelGaussianPriors,
-            run_gaussian_panel_flow_chain,
-        )
-
-        # Only separable SAR is supported currently
-        if not isinstance(self, SARFlowSeparablePanel):
-            raise NotImplementedError(
-                "fit_gibbs is currently only implemented for "
-                "SARFlowSeparablePanel. Use fit() for other model types."
-            )
-
-        n2 = self._N_flow
-        T = self._T
-
-        # Reshape y from (n²*T,) to (n², T) column-major
-        y_panel = self._y.reshape(T, n2).T  # (n², T)
-
-        # Reshape X from (n²*T, p) to (n², k) — time-invariant
-        X_panel = self._X  # (n²*T, p) → we assume time-invariant for now
-        # For pooled model (model=0), X repeats across T periods
-        X_period = X_panel[:n2, :]  # (n², k) — first period as template
-
-        # Get W as dense
-        W_dense = self._W_sparse.toarray().astype(np.float64)
-
-        # Build priors from model's prior dict
-        priors = PanelGaussianPriors(
-            beta_mu=self.priors.get("beta_mu", 0.0),
-            beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma2_alpha=2.0,
-            sigma2_beta=1.0,
-            sigma2_y_alpha=2.0,
-            sigma2_y_beta=1.0,
-            gamma_prior_var=1.0,
-        )
-
-        # Generate per-chain seeds
-        if random_seed is not None:
-            parent_ss = np.random.SeedSequence(random_seed)
-        else:
-            parent_ss = np.random.SeedSequence()
-        child_seeds = parent_ss.spawn(chains)
-        seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
-
-        # Run chains via run_chains (parallel + progress bars)
-        from ..samplers.gaussian._chain_runner import run_chains
-
-        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
-            return run_gaussian_panel_flow_chain(
-                y=y_panel,
-                W=W_dense,
-                X=X_period,
-                n_draws=draws,
-                n_warmup=tune,
-                priors=priors,
-                rho_init=rho_init,
-                gamma_init=gamma_init,
-                store_eta=store_eta,
-                eta_thin=eta_thin,
-                seed=seed,
-            )
-
-        chain_traces = run_chains(
-            chain_fn=_chain_fn,
-            n_chains=chains,
-            seeds=seeds,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-            parallel=n_jobs != 1,
-            draws=draws,
-            tune=tune,
-            model_type="panel_flow",
-        )
-
-        # Convert to InferenceData
-        # Stack chain traces: each param becomes (chains, draws, ...)
-        posterior_samples = {
-            "beta": np.stack([t.beta for t in chain_traces]),
-            "sigma2_u": np.stack([t.sigma2_u for t in chain_traces]),
-            "sigma2_y": np.stack([t.sigma2_y for t in chain_traces]),
-            "rho_d": np.stack([t.rho_d for t in chain_traces]),
-            "rho_o": np.stack([t.rho_o for t in chain_traces]),
-            "gamma": np.stack([t.gamma for t in chain_traces]),
-        }
-        if store_eta and chain_traces[0].eta is not None:
-            posterior_samples["eta"] = np.stack([t.eta for t in chain_traces])
-
-        log_likelihood = {
-            "y": np.stack([t.loglik for t in chain_traces]),
-        }
-
-        # Build coords
-        k = X_period.shape[-1]
-        coords = {
-            "chain": np.arange(chains),
-            "draw": np.arange(draws),
-            "coefficient": np.arange(k),
-        }
-        dims = {
-            "beta": ["coefficient"],
-        }
-
-        self._idata = gibbs_to_inference_data(
-            posterior_samples=posterior_samples,
-            log_likelihood=log_likelihood,
-            observed_data={"y": y_panel},
-            coords=coords,
-            dims=dims,
-        )
-        return self._idata
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
@@ -1159,7 +973,85 @@ class FlowPanelModel(SpatialPanelModel):
         return out
 
 
-class SARFlowPanel(FlowPanelModel):
+class _ResolventFlowPanelMixin:
+    """Shared ``fit`` dispatch for unrestricted flow panel models.
+
+    Provides ``sampler="gibbs"`` (resolvent-gradient MALA) and
+    ``sampler="nuts"`` (PyMC NUTS via ``FlowPanelModel.fit``) paths,
+    matching the regular panel model pattern.  The mixin is listed
+    first in the bases so its ``fit`` wins and ``FlowPanelModel.fit``
+    is reached via explicit delegation.
+    """
+
+    def fit(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        *,
+        sampler: str | None = None,
+        step_size: float = 5e-4,
+        n_probes: int = 48,
+        logdet_method: str = "jax",
+        n_quad: int = 8,
+        progressbar: bool = True,
+        n_jobs: int = -1,
+        **sample_kwargs,
+    ) -> az.InferenceData:
+        """Draw samples from the posterior.
+
+        Parameters
+        ----------
+        sampler : {"gibbs", "nuts", None}, default None
+            ``"gibbs"`` (default) uses the resolvent-gradient MALA sampler;
+            ``"nuts"`` uses PyMC NUTS via the base class.
+        step_size, n_probes, logdet_method, n_quad : float/int/str
+            Resolvent sampler parameters (Gibbs path only).
+        n_jobs : int, default -1
+            Parallel workers for the Gibbs path (``-1`` = all CPUs).
+        """
+        if sampler is None:
+            sampler = "gibbs"
+        if sampler == "nuts":
+            return FlowPanelModel.fit(
+                self,
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                **sample_kwargs,
+            )
+        elif sampler != "gibbs":
+            raise ValueError(
+                f"sampler must be 'gibbs', 'nuts', or None, got {sampler!r}."
+            )
+        # --- Gibbs (resolvent) path ---
+        self._pymc_model = None
+        self._approximation = None
+        self._idata = self._sample_resolvent(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            step_size=step_size,
+            n_probes=n_probes,
+            logdet_method=logdet_method,
+            n_quad=n_quad,
+            coord_names=list(getattr(self, "_feature_names", []) or []) or None,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            n_jobs=n_jobs,
+        )
+        return self._idata
+
+    @abstractmethod
+    def _sample_resolvent(self, **kwargs) -> az.InferenceData:
+        """Subclass hook: call the appropriate resolvent sampling function."""
+        ...
+
+
+class SARFlowPanel(_ResolventFlowPanelMixin, FlowPanelModel):
     """Panel spatial-lag origin-destination flow model with unrestricted dependence.
 
     For each period :math:`t`, the vectorized flow matrix
@@ -1235,58 +1127,16 @@ class SARFlowPanel(FlowPanelModel):
         kwargs.setdefault("logdet_method", "resolvent")
         super().__init__(*args, **kwargs)
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        *,
-        step_size: float = 5e-4,
-        n_probes: int = 48,
-        logdet_method: str = "jax",
-        n_quad: int = 8,
-        progressbar: bool = True,
-        n_jobs: int = -1,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Sample the panel SAR-flow posterior with the resolvent-gradient sampler.
-
-        MALA-on-ρ within GLS/OLS Gibbs; the log-determinant is ``T·log|A|`` from the
-        resolvent estimator (per-period block over ``T``).  A non-``"resolvent"``
-        ``logdet_method`` (set by the NB count panel) routes to the PyMC path.
-        """
-        if self.logdet_method != "resolvent":
-            return super().fit(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                progressbar=progressbar,
-                **sample_kwargs,
-            )
+    def _sample_resolvent(self, **kwargs) -> az.InferenceData:
         from ...samplers.gaussian._flow_resolvent import sample_flow_resolvent
 
-        self._pymc_model = None
-        self._approximation = None
-        self._idata = sample_flow_resolvent(
+        return sample_flow_resolvent(
             self._W_sparse,
             self._y,
             self._X,
             T=self._T,
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            step_size=step_size,
-            n_probes=n_probes,
-            coord_names=list(getattr(self, "_feature_names", []) or []) or None,
-            random_seed=random_seed,
-            logdet_method=logdet_method,
-            n_quad=n_quad,
-            progressbar=progressbar,
-            n_jobs=n_jobs,
+            **kwargs,
         )
-        return self._idata
 
     def _build_pymc_model(self) -> pm.Model:
         # Only reached if a non-resolvent, non-count logdet_method is forced; the
@@ -2213,7 +2063,7 @@ class _SEMFlowPanelMixin:
         )
 
 
-class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
+class SEMFlowPanel(_ResolventFlowPanelMixin, _SEMFlowPanelMixin, FlowPanelModel):
     """Panel spatial-error flow model with three free spatial parameters.
 
     Panel analogue of :class:`~bayespecon.models.flow.SEMFlow`: applies the
@@ -2291,50 +2141,16 @@ class SEMFlowPanel(_SEMFlowPanelMixin, FlowPanelModel):
         super().__init__(y, G, X, T, **kwargs)
         self._init_sem_lags()
 
-    def fit(
-        self,
-        draws: int = 2000,
-        tune: int = 1000,
-        chains: int = 4,
-        random_seed: Optional[int] = None,
-        *,
-        step_size: float = 5e-4,
-        n_probes: int = 48,
-        **sample_kwargs,
-    ) -> az.InferenceData:
-        """Sample the panel SEM-flow posterior with the resolvent-gradient sampler.
-
-        MALA-on-λ within GLS Gibbs for ``β, σ²``; the log-determinant is
-        ``T·log|B|`` from the resolvent estimator (per-period block over ``T``),
-        and the whitened residual ``B(y − Xβ)`` is linear in λ.  A non-``"resolvent"``
-        ``logdet_method`` routes to the PyMC path.
-        """
-        if self.logdet_method != "resolvent":
-            return super().fit(
-                draws=draws,
-                tune=tune,
-                chains=chains,
-                random_seed=random_seed,
-                **sample_kwargs,
-            )
+    def _sample_resolvent(self, **kwargs) -> az.InferenceData:
         from ...samplers.gaussian._flow_resolvent import sample_sem_flow_resolvent
 
-        self._pymc_model = None
-        self._approximation = None
-        self._idata = sample_sem_flow_resolvent(
+        return sample_sem_flow_resolvent(
             self._W_sparse,
             self._y,
             self._X,
             T=self._T,
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            step_size=step_size,
-            n_probes=n_probes,
-            coord_names=list(getattr(self, "_feature_names", []) or []) or None,
-            random_seed=random_seed,
+            **kwargs,
         )
-        return self._idata
 
     def _build_pymc_model(self) -> pm.Model:
         # The unrestricted SEM flow panel samples via the resolvent-gradient
