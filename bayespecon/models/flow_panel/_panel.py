@@ -549,10 +549,11 @@ class FlowPanelModel(SpatialPanelModel):
         child_seeds = parent_ss.spawn(chains)
         seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
 
-        # Run chains
-        chain_traces = []
-        for chain_id in range(chains):
-            trace = run_gaussian_panel_flow_chain(
+        # Run chains via run_chains (parallel + progress bars)
+        from ..samplers.gaussian._chain_runner import run_chains
+
+        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
+            return run_gaussian_panel_flow_chain(
                 y=y_panel,
                 W=W_dense,
                 X=X_period,
@@ -563,9 +564,20 @@ class FlowPanelModel(SpatialPanelModel):
                 gamma_init=gamma_init,
                 store_eta=store_eta,
                 eta_thin=eta_thin,
-                seed=seeds[chain_id],
+                seed=seed,
             )
-            chain_traces.append(trace)
+
+        chain_traces = run_chains(
+            chain_fn=_chain_fn,
+            n_chains=chains,
+            seeds=seeds,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            parallel=n_jobs != 1,
+            draws=draws,
+            tune=tune,
+            model_type="panel_flow",
+        )
 
         # Convert to InferenceData
         # Stack chain traces: each param becomes (chains, draws, ...)
@@ -1232,6 +1244,10 @@ class SARFlowPanel(FlowPanelModel):
         *,
         step_size: float = 5e-4,
         n_probes: int = 48,
+        logdet_method: str = "jax",
+        n_quad: int = 8,
+        progressbar: bool = True,
+        n_jobs: int = -1,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Sample the panel SAR-flow posterior with the resolvent-gradient sampler.
@@ -1246,6 +1262,7 @@ class SARFlowPanel(FlowPanelModel):
                 tune=tune,
                 chains=chains,
                 random_seed=random_seed,
+                progressbar=progressbar,
                 **sample_kwargs,
             )
         from ...samplers.gaussian._flow_resolvent import sample_flow_resolvent
@@ -1264,6 +1281,10 @@ class SARFlowPanel(FlowPanelModel):
             n_probes=n_probes,
             coord_names=list(getattr(self, "_feature_names", []) or []) or None,
             random_seed=random_seed,
+            logdet_method=logdet_method,
+            n_quad=n_quad,
+            progressbar=progressbar,
+            n_jobs=n_jobs,
         )
         return self._idata
 

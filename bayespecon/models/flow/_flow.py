@@ -1169,6 +1169,7 @@ class SARFlow(FlowModel):
         logdet_method: str = "jax",
         n_quad: int = 8,
         progressbar: bool = True,
+        n_jobs: int = -1,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Sample the posterior with the resolvent-Kronecker gradient sampler.
@@ -1195,6 +1196,7 @@ class SARFlow(FlowModel):
             logdet_method=logdet_method,
             n_quad=n_quad,
             progressbar=progressbar,
+            n_jobs=n_jobs,
         )
         return self._idata
 
@@ -1776,6 +1778,7 @@ class _NegBinFlowMixin:
         idata_kwargs: Optional[dict] = None,
         progressbar: bool = True,
         attach_log_abs_det: bool = True,
+        n_jobs: int = -1,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Draw samples from the posterior.
@@ -1830,6 +1833,7 @@ class _NegBinFlowMixin:
                 chains=chains,
                 random_seed=random_seed,
                 progressbar=progressbar,
+                n_jobs=n_jobs,
                 sample_kwargs=sample_kwargs,
             )
         elif sampler == "nuts":
@@ -1971,6 +1975,7 @@ class SARNegBinFlow(_NegBinFlowMixin, SARFlow):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
+        n_jobs: int = -1,
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via reduced-form PG-Gibbs (unrestricted 3-ρ).
@@ -2063,9 +2068,9 @@ class SARNegBinFlow(_NegBinFlowMixin, SARFlow):
             seeds=[random_seed + i for i in range(chains)]
             if random_seed is not None
             else None,
-            n_jobs=1,
+            n_jobs=n_jobs,
             progressbar=progressbar,
-            parallel=False,
+            parallel=n_jobs != 1,
             draws=draws,
             tune=tune,
             model_type="nb_sar_flow",
@@ -2202,6 +2207,7 @@ class SARNegBinFlowSeparable(_NegBinFlowMixin, SARFlowSeparable):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
+        n_jobs: int = -1,
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via reduced-form PG-Gibbs (separable 2-ρ).
@@ -2292,9 +2298,9 @@ class SARNegBinFlowSeparable(_NegBinFlowMixin, SARFlowSeparable):
             seeds=[random_seed + i for i in range(chains)]
             if random_seed is not None
             else None,
-            n_jobs=1,
+            n_jobs=n_jobs,
             progressbar=progressbar,
-            parallel=False,
+            parallel=n_jobs != 1,
             draws=draws,
             tune=tune,
             model_type="nb_sar_flow_sep",
@@ -2397,6 +2403,7 @@ class NegBinFlow(_NegBinFlowMixin, OLSFlow):
         chains: int = 4,
         random_seed: Optional[int] = None,
         progressbar: bool = True,
+        n_jobs: int = -1,
         sample_kwargs: dict[str, Any] | None = None,
     ) -> az.InferenceData:
         """Sample posterior via aspatial PG-Gibbs (no spatial parameters).
@@ -2526,9 +2533,9 @@ class NegBinFlow(_NegBinFlowMixin, OLSFlow):
             seeds=[random_seed + i for i in range(chains)]
             if random_seed is not None
             else None,
-            n_jobs=1,
+            n_jobs=n_jobs,
             progressbar=progressbar,
-            parallel=False,
+            parallel=n_jobs != 1,
             draws=draws,
             tune=tune,
             model_type="nb_flow",
@@ -2655,7 +2662,10 @@ class SEMFlow(FlowModel):
         *,
         step_size: float = 5e-4,
         n_probes: int = 48,
+        logdet_method: str = "jax",
+        n_quad: int = 8,
         progressbar: bool = True,
+        n_jobs: int = -1,
         **sample_kwargs,
     ) -> az.InferenceData:
         """Sample the SEM-flow posterior.
@@ -2688,6 +2698,10 @@ class SEMFlow(FlowModel):
             n_probes=n_probes,
             coord_names=list(self._feature_names) or None,
             random_seed=random_seed,
+            logdet_method=logdet_method,
+            n_quad=n_quad,
+            progressbar=progressbar,
+            n_jobs=n_jobs,
         )
         return self._idata
 

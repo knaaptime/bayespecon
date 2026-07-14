@@ -26,6 +26,7 @@ dependencies:
   - optimistix
   - blackjax
   - numpyro
+  - jax
   - pip
   - pip:
     - klujax

@@ -29,6 +29,7 @@ dependencies:
   - scikit-umfpack
   - scikit-sparse
   - optimistix
+  - jax
   - pip
   - pip:
     - klujax

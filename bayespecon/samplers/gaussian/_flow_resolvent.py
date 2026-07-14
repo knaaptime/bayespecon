@@ -505,6 +505,9 @@ def _sample_flow_chains(
     random_seed,
     compute_log_likelihood: bool = True,
     progressbar: bool = True,
+    n_jobs: int = -1,
+    logdet_method: str = "jax",
+    n_quad: int = 8,
 ):
     """Run ``chains`` MALA-within-Gibbs chains for a flow target → InferenceData.
 
@@ -513,45 +516,57 @@ def _sample_flow_chains(
     ``InferenceData`` carries the per-draw Jacobian ``log|A|`` in ``sample_stats`` and
     — when ``compute_log_likelihood`` — a pointwise ``log_likelihood`` group (Gaussian
     density + change-of-variables Jacobian) so ``az.loo`` / ``az.waic`` work directly.
+
+    When ``parallel=True``, chains are dispatched via ``run_chains`` (joblib
+    process-based parallelism with shared-memory progress bars), matching the
+    cross-sectional Gibbs sampler infrastructure.
     """
     import arviz as az
 
-    from .._utils._progress import GibbsProgressBarManager
+    from ._chain_runner import run_chains
 
     k = np.asarray(X).shape[1]
     if coord_names is None:
         coord_names = [f"x{j}" for j in range(k)]
 
     child_seeds = np.random.SeedSequence(random_seed).spawn(chains)
-    posts = []
-    with GibbsProgressBarManager(
-        chains, draws, tune, progressbar=progressbar, model_type="flow"
-    ) as pmgr:
-        for c in range(chains):
-            seed_c = int(child_seeds[c].generate_state(1)[0])
-            target = target_cls(
-                W,
-                y,
-                X,
-                T=T,
-                logdet_value_and_grad=logdet_value_and_grad,
-                n_probes=n_probes,
-                seed=seed_c,
-            )
-            pmgr.start_chain(c)
-            posts.append(
-                run_flow_resolvent_gibbs(
-                    target,
-                    draws=draws,
-                    tune=tune,
-                    step_size=step_size,
-                    seed=seed_c,
-                    compute_log_likelihood=compute_log_likelihood,
-                    progressbar=progressbar,
-                    chain_idx=c,
-                    progress_manager=pmgr,
-                )
-            )
+    seeds = [int(s.generate_state(1)[0]) for s in child_seeds]
+
+    def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
+        target = target_cls(
+            W,
+            y,
+            X,
+            T=T,
+            logdet_value_and_grad=logdet_value_and_grad,
+            n_probes=n_probes,
+            seed=seed,
+            logdet_method=logdet_method,
+            n_quad=n_quad,
+        )
+        return run_flow_resolvent_gibbs(
+            target,
+            draws=draws,
+            tune=tune,
+            step_size=step_size,
+            seed=seed,
+            compute_log_likelihood=compute_log_likelihood,
+            progressbar=progressbar,
+            chain_idx=chain_id,
+            progress_manager=progress_manager,
+        )
+
+    posts = run_chains(
+        chain_fn=_chain_fn,
+        n_chains=chains,
+        seeds=seeds,
+        n_jobs=n_jobs,
+        progressbar=progressbar,
+        parallel=n_jobs != 1,
+        draws=draws,
+        tune=tune,
+        model_type="flow",
+    )
 
     def _stack(key):
         return np.stack([p[key] for p in posts], axis=0)
@@ -593,6 +608,8 @@ def sample_flow_resolvent(
     random_seed=None,
     compute_log_likelihood: bool = True,
     progressbar: bool = True,
+    n_jobs: int = -1,
+    logdet_method: str = "jax",
 ):
     """Sample the unrestricted **SAR** flow posterior → ``arviz.InferenceData``.
 
@@ -622,6 +639,9 @@ def sample_flow_resolvent(
         random_seed=random_seed,
         compute_log_likelihood=compute_log_likelihood,
         progressbar=progressbar,
+        n_jobs=n_jobs,
+        logdet_method=logdet_method,
+        n_quad=n_quad,
     )
 
 
@@ -642,6 +662,8 @@ def sample_sem_flow_resolvent(
     random_seed=None,
     compute_log_likelihood: bool = True,
     progressbar: bool = True,
+    n_jobs: int = -1,
+    logdet_method: str = "jax",
 ):
     """Sample the unrestricted **SEM** flow posterior → ``arviz.InferenceData``.
 
@@ -667,6 +689,9 @@ def sample_sem_flow_resolvent(
         random_seed=random_seed,
         compute_log_likelihood=compute_log_likelihood,
         progressbar=progressbar,
+        n_jobs=n_jobs,
+        logdet_method=logdet_method,
+        n_quad=n_quad,
     )
 
 
@@ -754,25 +779,45 @@ def attach_flow_log_abs_det(
                 )
             return out
     else:
+        from bayespecon._jax_dispatch import _klujax_available
+
         rng = np.random.default_rng(seed)
         probes = rng.choice([-1.0, 1.0], size=(kron.N, int(n_probes))).astype(
             np.float64
         )
 
-        def _value_at(points):
-            return np.array(
-                [
-                    flow_logdet_value(
-                        kron,
-                        float(p[0]),
-                        float(p[1]),
-                        float(p[2]),
-                        probes=probes,
-                        n_quad=n_quad,
+        if _klujax_available():
+            # JAX-native path: JIT-compiled, reuses klujax symbolic analysis
+            from ..._logdet._flow_resolvent import _make_flow_kron_jax
+
+            jax_fn = _make_flow_kron_jax(kron, probes, n_quad=n_quad)
+
+            def _value_at(points):
+                import jax.numpy as jnp
+
+                results = []
+                for p in points:
+                    v, _ = jax_fn(
+                        jnp.float64(p[0]), jnp.float64(p[1]), jnp.float64(p[2])
                     )
-                    for p in points
-                ]
-            )
+                    results.append(float(v))
+                return np.array(results)
+        else:
+
+            def _value_at(points):
+                return np.array(
+                    [
+                        flow_logdet_value(
+                            kron,
+                            float(p[0]),
+                            float(p[1]),
+                            float(p[2]),
+                            probes=probes,
+                            n_quad=n_quad,
+                        )
+                        for p in points
+                    ]
+                )
 
     if m_all <= int(n_surrogate):
         # Few enough draws to evaluate directly.
