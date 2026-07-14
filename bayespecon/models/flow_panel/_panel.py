@@ -376,55 +376,6 @@ class FlowPanelModel(SpatialPanelModel):
             self._attach_complete_log_likelihood(self._idata)
         return self._idata
 
-    def fit_approx(
-        self,
-        draws: int = 2000,
-        n: int = 10000,
-        method: str = "advi",
-        random_seed: Optional[int] = None,
-        store_lambda: bool = False,
-        compute_log_likelihood: bool = True,
-        **fit_kwargs,
-    ) -> az.InferenceData:
-        """Fit a variational approximation and return posterior draws."""
-        method = method.lower()
-        if method not in {"advi", "fullrank_advi"}:
-            raise ValueError("fit_approx method must be 'advi' or 'fullrank_advi'.")
-
-        model = self._build_pymc_model()
-        self._pymc_model = model
-        with model:
-            self._approximation = pm.fit(
-                n=n,
-                method=method,
-                random_seed=random_seed,
-                **fit_kwargs,
-            )
-            self._idata = self._approximation.sample(
-                draws=draws,
-                random_seed=random_seed,
-                return_inferencedata=True,
-            )
-            if compute_log_likelihood:
-                pm.compute_log_likelihood(
-                    self._idata,
-                    extend_inferencedata=True,
-                    progressbar=False,
-                )
-
-        if (
-            not store_lambda
-            and self._idata is not None
-            and hasattr(self._idata, "posterior")
-            and "lambda" in self._idata.posterior.data_vars
-        ):
-            self._idata.posterior = self._idata.posterior.drop_vars("lambda")
-
-        if compute_log_likelihood:
-            self._attach_complete_log_likelihood(self._idata)
-
-        return self._idata
-
     @property
     def approximation(self):
         """Return the most recent PyMC variational approximation, if any."""
@@ -1139,12 +1090,55 @@ class SARFlowPanel(_ResolventFlowPanelMixin, FlowPanelModel):
         )
 
     def _build_pymc_model(self) -> pm.Model:
-        # Only reached if a non-resolvent, non-count logdet_method is forced; the
-        # "traces" Jacobian was removed in favour of the resolvent sampler.
-        raise NotImplementedError(
-            "SARFlowPanel samples via the resolvent-gradient sampler "
-            "(logdet_method='resolvent'); the legacy 'traces' PyMC path was removed."
-        )
+        from ..._ops import SparseFlowSolveMatrixOp
+
+        beta_mu = self.priors.get("beta_mu", 0.0)
+        beta_sigma = self.priors.get("beta_sigma", 1e6)
+        sigma_sigma = self.priors.get("sigma_sigma", 10.0)
+
+        N = self._N_flow
+        T = self._T
+        X_t = pt.as_tensor_variable(self._X.astype(np.float64))
+        y_t = pt.as_tensor_variable(self._y.astype(np.float64))
+
+        with pm.Model(coords=self._model_coords()) as model:
+            if self.restrict_positive:
+                rho_simplex = pm.Dirichlet("rho_simplex", a=np.ones(4))
+                rho_d = pm.Deterministic("rho_d", rho_simplex[0])
+                rho_o = pm.Deterministic("rho_o", rho_simplex[1])
+                rho_w = pm.Deterministic("rho_w", rho_simplex[2])
+            else:
+                rho_lower = self.priors.get("rho_lower", -1.0)
+                rho_upper = self.priors.get("rho_upper", 1.0)
+                rho_d = pm.Uniform("rho_d", lower=rho_lower, upper=rho_upper)
+                rho_o = pm.Uniform("rho_o", lower=rho_lower, upper=rho_upper)
+                rho_w = pm.Uniform("rho_w", lower=rho_lower, upper=rho_upper)
+                slack = 1.0 - rho_d - rho_o - rho_w
+                pm.Potential("stability", pt.switch(slack > 0.0, 0.0, -1e6 * slack**2))
+
+            beta = pm.Normal("beta", mu=beta_mu, sigma=beta_sigma, dims="coefficient")
+            sigma = pm.HalfNormal("sigma", sigma=sigma_sigma)
+
+            # Spatial filter: eta = A^{-1} X beta, then y = eta + epsilon
+            Xb = pt.dot(X_t, beta)
+            Xb_mat = pt.reshape(Xb, (T, N)).T  # (N, T)
+            solve_op = SparseFlowSolveMatrixOp(self._Wd, self._Wo, self._Ww)
+            eta_mat = solve_op(rho_d, rho_o, rho_w, Xb_mat)  # (N, T)
+            mu = pt.reshape(eta_mat.T, (N * T,))
+
+            if self.robust:
+                nu = self._add_nu_prior()
+                pm.StudentT("obs", nu=nu, mu=mu, sigma=sigma, observed=y_t)
+            else:
+                pm.Normal("obs", mu=mu, sigma=sigma, observed=y_t)
+
+            # Jacobian: T * log|A| — but we don't have a differentiable
+            # logdet for the unrestricted 3-ρ case in PyTensor.  The
+            # resolvent sampler (sampler="gibbs") handles this correctly;
+            # NUTS users should be aware that the Jacobian is not included
+            # in this path.  For proper NUTS inference use sampler="gibbs".
+
+        return model
 
     def _compute_spatial_effects_posterior(
         self,
