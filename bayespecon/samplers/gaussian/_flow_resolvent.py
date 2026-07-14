@@ -58,6 +58,26 @@ def _default_logdet_value_and_grad(kron, probes):
     return _fn
 
 
+def _jax_logdet_value_and_grad(kron, probes, n_quad=8):
+    """JAX-native value+grad closure — klujax solves, JIT-compiled via equinox.
+
+    All P probes are solved in a single batched klujax call, and the Hutchinson
+    accumulation + ray integration are done in JAX.  The entire function is
+    JIT-compiled, eliminating Python overhead per MALA step.
+    """
+    from ..._logdet._flow_resolvent import _make_flow_kron_jax
+
+    fn = _make_flow_kron_jax(kron, probes, n_quad=n_quad)
+
+    def _fn(rho_d, rho_o, rho_w):
+        import jax.numpy as jnp
+
+        v, g = fn(jnp.float64(rho_d), jnp.float64(rho_o), jnp.float64(rho_w))
+        return float(v), np.asarray(g)
+
+    return _fn
+
+
 @dataclass
 class FlowResolventTarget:
     """ρ-conditional log-posterior and gradient for the unrestricted flow model.
@@ -87,6 +107,8 @@ class FlowResolventTarget:
     rho_bound: float = 0.999
     n_probes: int = 48
     seed: int = 0
+    logdet_method: str = "jax"
+    n_quad: int = 8
 
     def __post_init__(self):
         self.kron = FlowKron(self.W)
@@ -121,9 +143,14 @@ class FlowResolventTarget:
             probes = rng.choice([-1.0, 1.0], size=(self.Nf, self.n_probes)).astype(
                 np.float64
             )
-            self.logdet_value_and_grad = _default_logdet_value_and_grad(
-                self.kron, probes
-            )
+            if self.logdet_method == "jax":
+                self.logdet_value_and_grad = _jax_logdet_value_and_grad(
+                    self.kron, probes, n_quad=self.n_quad
+                )
+            else:
+                self.logdet_value_and_grad = _default_logdet_value_and_grad(
+                    self.kron, probes
+                )
 
     def _period_lag(self, vec, fn):
         """Apply the per-period flow operator ``fn`` to each length-``Nf`` block."""
@@ -248,6 +275,8 @@ class SEMFlowResolventTarget:
     rho_bound: float = 0.999
     n_probes: int = 48
     seed: int = 0
+    logdet_method: str = "jax"
+    n_quad: int = 8
 
     def __post_init__(self):
         self.kron = FlowKron(self.W)
@@ -282,9 +311,14 @@ class SEMFlowResolventTarget:
             probes = rng.choice([-1.0, 1.0], size=(self.Nf, self.n_probes)).astype(
                 np.float64
             )
-            self.logdet_value_and_grad = _default_logdet_value_and_grad(
-                self.kron, probes
-            )
+            if self.logdet_method == "jax":
+                self.logdet_value_and_grad = _jax_logdet_value_and_grad(
+                    self.kron, probes, n_quad=self.n_quad
+                )
+            else:
+                self.logdet_value_and_grad = _default_logdet_value_and_grad(
+                    self.kron, probes
+                )
 
     def in_bounds(self, rho) -> bool:
         rho = np.asarray(rho, dtype=np.float64)
@@ -370,6 +404,9 @@ def run_flow_resolvent_gibbs(
     rho_init=None,
     seed: int = 0,
     compute_log_likelihood: bool = True,
+    progressbar: bool = True,
+    chain_idx: int = 0,
+    progress_manager=None,
 ):
     """MALA-on-ρ within Gibbs for the unrestricted Gaussian flow model.
 
@@ -399,6 +436,7 @@ def run_flow_resolvent_gibbs(
         prop = rho + eps * grad + np.sqrt(2 * eps) * rng.standard_normal(3)
         logp_p, grad_p = target.logpost_and_grad(prop, beta, sigma2)
         accept = 0.0
+        accepted_this = False
         if np.isfinite(logp_p):
             q_fwd = -np.sum((prop - rho - eps * grad) ** 2) / (4 * eps)
             q_bwd = -np.sum((rho - prop - eps * grad_p) ** 2) / (4 * eps)
@@ -406,6 +444,7 @@ def run_flow_resolvent_gibbs(
             accept = min(1.0, np.exp(min(0.0, log_alpha)))
             if np.log(rng.uniform()) < log_alpha:
                 rho, logp, grad = prop, logp_p, grad_p
+                accepted_this = True
         # --- step-size adaptation (during tuning only) ---
         if it < tune:
             accepted_window += accept
@@ -440,6 +479,11 @@ def run_flow_resolvent_gibbs(
                     + (target.T * ld_val) / target.Ntot
                 )
                 out["loglik"].append(ll)
+        # --- progress bar ---
+        if progress_manager is not None:
+            progress_manager.update(
+                chain_idx, it, tuning=it < tune, accept=accepted_this
+            )
     return {k: np.asarray(v) for k, v in out.items()}
 
 
@@ -460,6 +504,7 @@ def _sample_flow_chains(
     logdet_value_and_grad,
     random_seed,
     compute_log_likelihood: bool = True,
+    progressbar: bool = True,
 ):
     """Run ``chains`` MALA-within-Gibbs chains for a flow target → InferenceData.
 
@@ -471,33 +516,42 @@ def _sample_flow_chains(
     """
     import arviz as az
 
+    from .._utils._progress import GibbsProgressBarManager
+
     k = np.asarray(X).shape[1]
     if coord_names is None:
         coord_names = [f"x{j}" for j in range(k)]
 
     child_seeds = np.random.SeedSequence(random_seed).spawn(chains)
     posts = []
-    for c in range(chains):
-        seed_c = int(child_seeds[c].generate_state(1)[0])
-        target = target_cls(
-            W,
-            y,
-            X,
-            T=T,
-            logdet_value_and_grad=logdet_value_and_grad,
-            n_probes=n_probes,
-            seed=seed_c,
-        )
-        posts.append(
-            run_flow_resolvent_gibbs(
-                target,
-                draws=draws,
-                tune=tune,
-                step_size=step_size,
+    with GibbsProgressBarManager(
+        chains, draws, tune, progressbar=progressbar, model_type="flow"
+    ) as pmgr:
+        for c in range(chains):
+            seed_c = int(child_seeds[c].generate_state(1)[0])
+            target = target_cls(
+                W,
+                y,
+                X,
+                T=T,
+                logdet_value_and_grad=logdet_value_and_grad,
+                n_probes=n_probes,
                 seed=seed_c,
-                compute_log_likelihood=compute_log_likelihood,
             )
-        )
+            pmgr.start_chain(c)
+            posts.append(
+                run_flow_resolvent_gibbs(
+                    target,
+                    draws=draws,
+                    tune=tune,
+                    step_size=step_size,
+                    seed=seed_c,
+                    compute_log_likelihood=compute_log_likelihood,
+                    progressbar=progressbar,
+                    chain_idx=c,
+                    progress_manager=pmgr,
+                )
+            )
 
     def _stack(key):
         return np.stack([p[key] for p in posts], axis=0)
@@ -538,6 +592,7 @@ def sample_flow_resolvent(
     logdet_value_and_grad=None,
     random_seed=None,
     compute_log_likelihood: bool = True,
+    progressbar: bool = True,
 ):
     """Sample the unrestricted **SAR** flow posterior → ``arviz.InferenceData``.
 
@@ -566,6 +621,7 @@ def sample_flow_resolvent(
         logdet_value_and_grad=logdet_value_and_grad,
         random_seed=random_seed,
         compute_log_likelihood=compute_log_likelihood,
+        progressbar=progressbar,
     )
 
 
@@ -585,6 +641,7 @@ def sample_sem_flow_resolvent(
     logdet_value_and_grad=None,
     random_seed=None,
     compute_log_likelihood: bool = True,
+    progressbar: bool = True,
 ):
     """Sample the unrestricted **SEM** flow posterior → ``arviz.InferenceData``.
 
@@ -609,6 +666,7 @@ def sample_sem_flow_resolvent(
         logdet_value_and_grad=logdet_value_and_grad,
         random_seed=random_seed,
         compute_log_likelihood=compute_log_likelihood,
+        progressbar=progressbar,
     )
 
 

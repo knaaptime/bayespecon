@@ -945,14 +945,13 @@ def run_chains_jax_reduced(
                 alpha_samples = alpha_samples[::thin]
 
             # Compute pointwise log-likelihood (NumPy)
-            W_dense_np = W_sparse.toarray().astype(np.float64)
-            I_n_np = np.eye(n, dtype=np.float64)
+            W_sparse.toarray().astype(np.float64)
+            np.eye(n, dtype=np.float64)
             n_keep = rho_samples.shape[0]
             log_lik = np.empty((n_keep, n), dtype=np.float64)
-            from scipy.special import gammaln
-
             # Prefer klujax (cached symbolic analysis) over dense solve loop
             import scipy.sparse as _sp
+            from scipy.special import gammaln
 
             from .._jax_dispatch import _klujax_available
 

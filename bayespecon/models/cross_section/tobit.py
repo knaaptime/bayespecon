@@ -288,12 +288,20 @@ class SARTobit(_SpatialTobitBase):
             all_cols = np.concatenate([I_coo.col, W_coo.col])
             shape = (n, n)
             const_coo = _sp.coo_matrix(
-                (np.concatenate([np.ones(I_coo.nnz), np.zeros(W_coo.nnz)]),
-                 (all_rows, all_cols)), shape=shape)
+                (
+                    np.concatenate([np.ones(I_coo.nnz), np.zeros(W_coo.nnz)]),
+                    (all_rows, all_cols),
+                ),
+                shape=shape,
+            )
             const_coo.sum_duplicates()
             w_coo = _sp.coo_matrix(
-                (np.concatenate([np.zeros(I_coo.nnz), W_coo.data]),
-                 (all_rows, all_cols)), shape=shape)
+                (
+                    np.concatenate([np.zeros(I_coo.nnz), W_coo.data]),
+                    (all_rows, all_cols),
+                ),
+                shape=shape,
+            )
             w_coo.sum_duplicates()
             Ai = np.asarray(const_coo.row, dtype=np.int32)
             Aj = np.asarray(const_coo.col, dtype=np.int32)

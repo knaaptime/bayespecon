@@ -1166,6 +1166,8 @@ class SARFlow(FlowModel):
         *,
         step_size: float = 5e-4,
         n_probes: int = 48,
+        logdet_method: str = "jax",
+        n_quad: int = 8,
         progressbar: bool = True,
         **sample_kwargs,
     ) -> az.InferenceData:
@@ -1190,6 +1192,9 @@ class SARFlow(FlowModel):
             n_probes=n_probes,
             coord_names=list(self._feature_names) or None,
             random_seed=random_seed,
+            logdet_method=logdet_method,
+            n_quad=n_quad,
+            progressbar=progressbar,
         )
         return self._idata
 

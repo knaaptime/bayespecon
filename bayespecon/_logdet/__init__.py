@@ -55,10 +55,13 @@ from ._flow import (
 )
 from ._flow_resolvent import (
     FlowKron,
+    FlowKronJax,
     flow_logdet_grad,
     flow_logdet_grad_exact,
+    flow_logdet_grad_jax,
     flow_logdet_value,
     flow_logdet_value_and_grad,
+    flow_logdet_value_and_grad_jax,
 )
 from ._jax import jax_logdet_chebyshev, make_logdet_jax_fn
 from ._pytensor import logdet_chebyshev, logdet_eigenvalue
