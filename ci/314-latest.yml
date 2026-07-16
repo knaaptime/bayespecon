@@ -30,7 +30,7 @@ dependencies:
   - pip
   - pip:
     - klujax
-    - git+https://github.com/knaaptime/cholmodjax
+    - git+https://github.com/knaaptime/cholmodjax --no-build-isolation
 
   # docs
   - numpydoc
