@@ -29,6 +29,7 @@ dependencies:
   - optimistix
   - equinox
   - lineax
+  - jax
   - pip
   - pip:
     - klujax
