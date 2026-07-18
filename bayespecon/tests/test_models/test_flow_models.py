@@ -48,192 +48,6 @@ class TestBarryPaceTraces:
         np.testing.assert_allclose(out[0, :], 0.0, atol=1e-12)
 
 
-class TestComputeFlowTraces:
-    def test_shape(self):
-        from bayespecon._logdet import compute_flow_traces
-        from bayespecon.dgp.flows import generate_flow_data
-
-        n = 6
-        G = generate_flow_data(n=n, seed=0)["G"]
-        W = G.sparse.tocsr().astype(np.float64)
-        traces = compute_flow_traces(W, miter=5, riter=20, random_state=0)
-        assert traces.shape == (5,)
-
-    def test_tr_W2_close_to_exact(self):
-        """tr(W^2) estimate should be within 20% of exact for ring graph."""
-        from bayespecon._logdet import compute_flow_traces
-        from bayespecon.dgp.flows import generate_flow_data
-
-        n = 10
-        G = generate_flow_data(n=n, seed=0)["G"]
-        W = G.sparse.tocsr().astype(np.float64)
-        exact_tr_W2 = float(W.multiply(W.T).sum())
-        traces = compute_flow_traces(W, miter=5, riter=200, random_state=42)
-        # traces[1] = tr(W^2) (exact override from _barry_pace_traces)
-        np.testing.assert_allclose(traces[1], exact_tr_W2, atol=1e-10)
-
-
-class TestFlowLogdetPolyCoeffs:
-    def test_output_tuple_length(self):
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-
-        n = 5
-        miter = 3
-        traces = np.zeros(miter)
-        result = _flow_logdet_poly_coeffs(traces, n, miter)
-        assert len(result) == 8
-
-    def test_array_shapes_consistent(self):
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-
-        n = 5
-        miter = 4
-        traces = np.array([0.0, 2.0, 0.0, 0.1])
-        poly_a, poly_b, poly_c, poly_coeffs, m_a, m_b, m_c, m_coeffs = (
-            _flow_logdet_poly_coeffs(traces, n, miter)
-        )
-        # All poly arrays same length
-        assert len(poly_a) == len(poly_b) == len(poly_c) == len(poly_coeffs)
-        # miter arrays same length
-        assert len(m_a) == len(m_b) == len(m_c) == len(m_coeffs)
-        # miter triples: (miter+1)(miter+2)//2 combinations
-        expected_miter = (miter + 1) * (miter + 2) // 2
-        assert len(m_a) == expected_miter
-
-    def test_k1_terms_zero_for_zero_diagonal_W(self):
-        """For zero-diagonal W (tr(W)=0), all k=1 poly_coeffs should be 0."""
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-
-        n = 6
-        miter = 5
-        # traces[0] = tr(W) = 0 for zero-diagonal W
-        traces = np.array([0.0, 3.0, 0.0, 0.5, 0.1])
-        poly_a, poly_b, poly_c, poly_coeffs, *_ = _flow_logdet_poly_coeffs(
-            traces, n, miter
-        )
-        # k=1 triples: a+b+c=1 → (1,0,0), (0,1,0), (0,0,1)
-        k1_mask = (poly_a + poly_b + poly_c) == 1
-        np.testing.assert_allclose(poly_coeffs[k1_mask], 0.0, atol=1e-10)
-
-    def test_raises_wrong_traces_length(self):
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-
-        with pytest.raises(ValueError, match=r"len\(traces\)"):
-            _flow_logdet_poly_coeffs(np.zeros(4), n=5, miter=3)
-
-
-class TestFlowLogdetSeparableIdentity:
-    """Verify that flow_logdet_pytensor matches the exact log-det at a test point."""
-
-    def test_zero_rho_gives_zero_logdet(self):
-        """log|I| = 0, so at rho=0 the log-det should be ~0."""
-        import pytensor.tensor as pt
-
-        from bayespecon._logdet import (
-            compute_flow_traces,
-            flow_logdet_pytensor,
-        )
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-        from bayespecon.dgp.flows import generate_flow_data
-
-        n = 5
-        G = generate_flow_data(n=n, seed=0)["G"]
-        W = G.sparse.tocsr().astype(np.float64)
-        miter = 10
-        traces = compute_flow_traces(W, miter=miter, riter=50, random_state=7)
-        result = _flow_logdet_poly_coeffs(traces, n, miter)
-        poly_a, poly_b, poly_c, poly_coeffs = result[:4]
-        miter_a, miter_b, miter_c, miter_coeffs = result[4:]
-
-        rho_d_pt = pt.scalar("rho_d")
-        rho_o_pt = pt.scalar("rho_o")
-        rho_w_pt = pt.scalar("rho_w")
-
-        expr = flow_logdet_pytensor(
-            rho_d_pt,
-            rho_o_pt,
-            rho_w_pt,
-            poly_a,
-            poly_b,
-            poly_c,
-            poly_coeffs,
-            miter_a,
-            miter_b,
-            miter_c,
-            miter_coeffs,
-            miter=miter,
-            titer=800,
-        )
-        import pytensor
-
-        fn = pytensor.function([rho_d_pt, rho_o_pt, rho_w_pt], expr)
-        val = float(fn(0.0, 0.0, 0.0))
-        np.testing.assert_allclose(val, 0.0, atol=1e-6)
-
-    def test_separable_identity(self):
-        """For rho_w = -rho_d*rho_o the flow log-det should equal
-        n*logdet_eigenvalue(rho_d, eigs) + n*logdet_eigenvalue(rho_o, eigs)."""
-        import pytensor
-        import pytensor.tensor as pt
-
-        from bayespecon._logdet import (
-            compute_flow_traces,
-            flow_logdet_pytensor,
-            logdet_eigenvalue,
-        )
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-        from bayespecon.dgp.flows import generate_flow_data
-
-        n = 5
-        G = generate_flow_data(n=n, seed=0)["G"]
-        W = G.sparse.tocsr().astype(np.float64)
-        eigs = np.linalg.eigvals(W.toarray()).real
-
-        miter = 15
-        traces = compute_flow_traces(W, miter=miter, riter=100, random_state=7)
-        result = _flow_logdet_poly_coeffs(traces, n, miter)
-        poly_a, poly_b, poly_c, poly_coeffs = result[:4]
-        miter_a, miter_b, miter_c, miter_coeffs = result[4:]
-
-        rd, ro = 0.3, 0.2
-        rw = -rd * ro
-
-        # Flow log-det via trace series
-        rho_d_pt = pt.scalar("rho_d")
-        rho_o_pt = pt.scalar("rho_o")
-        rho_w_pt = pt.scalar("rho_w")
-        expr = flow_logdet_pytensor(
-            rho_d_pt,
-            rho_o_pt,
-            rho_w_pt,
-            poly_a,
-            poly_b,
-            poly_c,
-            poly_coeffs,
-            miter_a,
-            miter_b,
-            miter_c,
-            miter_coeffs,
-            miter=miter,
-            titer=800,
-        )
-        fn_flow = pytensor.function([rho_d_pt, rho_o_pt, rho_w_pt], expr)
-        flow_val = float(fn_flow(rd, ro, rw))
-
-        # Exact separable log-det via eigenvalues
-        rho_scalar = pt.scalar("rho")
-        fn_eig = pytensor.function([rho_scalar], logdet_eigenvalue(rho_scalar, eigs))
-        separable_val = n * float(fn_eig(rd)) + n * float(fn_eig(ro))
-
-        # Should match within Monte Carlo trace estimation error (~1% tolerance)
-        np.testing.assert_allclose(flow_val, separable_val, rtol=0.05)
-
-
-# ---------------------------------------------------------------------------
-# FlowModel construction
-# ---------------------------------------------------------------------------
-
-
 class TestFlowModelConstruction:
     def setup_method(self):
         from bayespecon.dgp.flows import generate_flow_data
@@ -322,7 +136,8 @@ class TestFlowModelConstruction:
         assert data["beta_d"].shape == (1,)
         assert data["beta_o"].shape == (2,)
 
-    def test_pymc_model_builds_without_error(self):
+    def test_pymc_model_raises_not_implemented(self):
+        """SARFlow samples via the resolvent sampler; the PyMC path was removed."""
         from bayespecon.models.flow import SARFlow
 
         model = SARFlow(
@@ -334,8 +149,8 @@ class TestFlowModelConstruction:
             titer=50,
             trace_seed=0,
         )
-        pm_model = model._build_pymc_model()
-        assert pm_model is not None
+        with pytest.raises(NotImplementedError, match="resolvent"):
+            model._build_pymc_model()
 
     def test_pymc_model_separable_builds_without_error(self):
         from bayespecon.models.flow import SARFlowSeparable
@@ -1716,48 +1531,3 @@ class TestFlowLogLikelihood:
         comp = az.compare({"sar": idata_sar, "sep": idata_sep, "ols": idata_ols})
         assert "rank" in comp.columns
         assert len(comp) == 3
-
-    def test_sar_flow_jacobian_matches_pytensor(self):
-        """SARFlow._compute_jacobian_log_det matches pytensor logdet at draws."""
-        import pytensor
-        import pytensor.tensor as pt
-
-        from bayespecon._logdet import flow_logdet_pytensor
-        from bayespecon.models.flow import SARFlow
-
-        m = SARFlow(
-            self.gauss["y_vec"],
-            self.G,
-            self.gauss["X"],
-            col_names=self.gauss["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
-            restrict_positive=True,
-        )
-        idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
-        post = idata.posterior
-        np_jac = m._compute_jacobian_log_det(post)
-
-        a, b, c = pt.scalar("a"), pt.scalar("b"), pt.scalar("c")
-        expr = flow_logdet_pytensor(
-            a,
-            b,
-            c,
-            m._poly_a,
-            m._poly_b,
-            m._poly_c,
-            m._poly_coeffs,
-            m._miter_a,
-            m._miter_b,
-            m._miter_c,
-            m._miter_coeffs,
-            m.miter,
-            m.titer,
-        )
-        fn = pytensor.function([a, b, c], expr)
-        rd = post["rho_d"].values.reshape(-1)
-        ro = post["rho_o"].values.reshape(-1)
-        rw = post["rho_w"].values.reshape(-1)
-        pt_jac = np.array([float(fn(x, y, z)) for x, y, z in zip(rd, ro, rw)])
-        np.testing.assert_allclose(np_jac, pt_jac, atol=1e-10)

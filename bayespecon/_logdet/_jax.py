@@ -71,8 +71,8 @@ def make_logdet_jax_fn(
 
     Supports ``"eigenvalue"``, ``"chebyshev"``, ``"cheb_stochastic"``,
     ``"cheb_cholesky"``, ``"aaa"``, ``"cholmod"``, and ``"slq"``.
-    ``"cholmod"`` uses ``cholmodjax`` for exact sparse CHOLMOD logdet
-    (requires the ``cholmodjax`` package; CPU-only).
+    ``"cholmod"`` uses ``cholgraph`` for exact sparse CHOLMOD logdet
+    (requires the ``cholgraph`` package; CPU-only).
     """
     T = int(T)
 
@@ -240,19 +240,19 @@ def make_logdet_jax_fn(
         return _jax_aaa
 
     if method == "cholmod":
-        # JAX-native exact logdet via cholmodjax sparse CHOLMOD.
+        # JAX-native exact logdet via cholgraph sparse CHOLMOD.
         # Requires W to be D-symmetrizable (row-standardised undirected
         # graph): W = D⁻¹A with symmetric A → W_sym = D^{1/2} W D^{-1/2}
         # is symmetric with the same eigenvalues, so I−ρW_sym is SPD
-        # for |ρ| < 1 and cholmodjax.logdet applies directly.
+        # for |ρ| < 1 and cholgraph.logdet applies directly.
         # If W is not D-symmetrizable (directed graph), this raises
         # ValueError — use logdet_method="aaa" for such matrices.
-        from .._jax_dispatch import _cholmodjax_available
+        from .._jax_dispatch import _cholgraph_available
 
-        if not _cholmodjax_available():
+        if not _cholgraph_available():
             raise ImportError(
-                "logdet method 'cholmod' requires the 'cholmodjax' package. "
-                "Install it with: pip install cholmodjax"
+                "logdet method 'cholmod' requires the 'cholgraph' package. "
+                "Install it with: pip install cholgraph"
             )
 
         from ._chol_cheb import _d_symmetrize
@@ -261,7 +261,7 @@ def make_logdet_jax_fn(
         W_sym_sp = _d_symmetrize(W_sparse)  # csc_matrix, symmetric
 
         # Build the COO pattern for I − ρW_sym.
-        # cholmodjax reads only Ai <= Aj entries (upper triangle),
+        # cholgraph reads only Ai <= Aj entries (upper triangle),
         # so we include the upper triangle of W_sym plus all diagonal
         # entries (for the I in I − ρW_sym, since W_sym has zero diagonal
         # for graphs without self-loops).
@@ -309,7 +309,7 @@ def make_logdet_jax_fn(
                 _diag_idx_direct[_Ai_direct[k_idx]] = k_idx
 
         def _jax_cholmod(rho):
-            import cholmodjax
+            import cholgraph
             import jax.numpy as jnp
 
             Ai = jnp.asarray(_Ai_direct, dtype=jnp.int32)
@@ -323,7 +323,7 @@ def make_logdet_jax_fn(
             diag_vals = diag_vals.at[diag_idx].set(1.0)
             Ax = Ax + diag_vals
 
-            val = cholmodjax.logdet(Ai, Aj, Ax, _n_static)
+            val = cholgraph.logdet(Ai, Aj, Ax, _n_static)
             return val if T == 1 else T * val
 
         return _jax_cholmod

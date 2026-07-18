@@ -6,15 +6,7 @@ All public test functions return :class:`BayesianLMTestResult`.
 import numpy as np
 import scipy.sparse as _sp
 
-from bayespecon._jax_dispatch import _klujax_available
-from bayespecon._logdet import (
-    resolvent_trace_eigs,
-    resolvent_trace_G2_eigs,
-    resolvent_trace_GtG_eigs,
-    resolvent_trace_WG_eigs,
-    resolvent_trace_WtG_eigs,
-)
-from bayespecon._ops._backend import _solve_sparse_matrix
+from bayespecon._ops._backend import _select_sparse_backend, _sparse_factor
 from bayespecon.diagnostics.lmtests.core import (
     BayesianLMTestResult,
     _compute_residuals,
@@ -1544,7 +1536,6 @@ def bayesian_lm_lag_sdem_test(
 
 def _sar_null_lambda_info(
     W_sparse,
-    W_eigs,
     X_design: np.ndarray,
     beta_full_mean: np.ndarray,
     rho_mean: float,
@@ -1573,49 +1564,55 @@ def _sar_null_lambda_info(
     OLS-projection design (``X`` for SAR null, ``[X, WX]`` for SDM null);
     ``beta_full_mean`` must match its column count.
 
-    The traces :math:`\mathrm{tr}(G)`, :math:`\mathrm{tr}(G^2)`,
+    All five traces :math:`\mathrm{tr}(G)`, :math:`\mathrm{tr}(G^2)`,
     :math:`\mathrm{tr}(G^\top G)`, :math:`\mathrm{tr}(WG)` and
-    :math:`\mathrm{tr}(W^\top G)` are computed in :math:`O(n)` from the
-    cached eigenvalues ``W_eigs`` via
-    :mod:`bayespecon._logdet._resolvent`.  The matrix product
-    :math:`G X_{\text{design}}` is computed via a single sparse LU
-    factorisation of :math:`\bar A` followed by a sparse solve —
-    :math:`O(\mathrm{nnz}^{1.5})` rather than the :math:`O(n^3)` dense
-    solve used previously.
+    :math:`\mathrm{tr}(W^\top G)` are **exact** and eigenvalue-free: a
+    single sparse factorisation of :math:`\bar A` (KLU/UMFPACK when
+    available, SuperLU otherwise) is reused for chunked column solves
+    :math:`G_{:,J} = \bar A^{-1} W_{:,J}`, which yield
+    :math:`\mathrm{tr}(G)`, :math:`\|G\|_F^2 = \mathrm{tr}(G^\top G)`,
+    :math:`\mathrm{tr}(W^\top G)` and :math:`\mathrm{tr}(WG)` directly; a
+    second backsolve on :math:`W G_{:,J}` yields :math:`\mathrm{tr}(G^2)`.
+    This avoids both the :math:`O(n^3)` dense solve and the
+    eigendecomposition (which is only exact for these transpose traces
+    when ``W`` is normal — row-standardised ``W`` generally is not).
     """
     n = W_sparse.shape[0]
 
-    # O(n) trace computation from cached eigenvalues
-    tr_G = float(resolvent_trace_eigs(rho_mean, W_eigs))
-    T_GG = float(
-        resolvent_trace_GtG_eigs(rho_mean, W_eigs)
-        + resolvent_trace_G2_eigs(rho_mean, W_eigs)
-    )
-    T_WG = float(
-        resolvent_trace_WtG_eigs(rho_mean, W_eigs)
-        + resolvent_trace_WG_eigs(rho_mean, W_eigs)
-    )
+    A_csc = _sp.eye(n, format="csc") - rho_mean * W_sparse
+    W_csc = W_sparse.tocsc()
 
-    # G @ X_design via sparse solve:  (I - ρW)⁻¹ (W @ X)
-    # Prefer klujax (JAX-native, reuses cached symbolic analysis) over
-    # sksparse.klu (re-factorises each call) over scipy SuperLU.
-    WX_design = W_sparse @ X_design  # O(nnz·k) sparse matmul
-    if _klujax_available():
-        import klujax
-
-        # Build COO pattern for (I - ρW): fixed sparsity, values depend on ρ
-        A_coo = (_sp.eye(n, format="csc") - rho_mean * W_sparse).tocoo()
-        Ai = np.asarray(A_coo.row, dtype=np.int32)
-        Aj = np.asarray(A_coo.col, dtype=np.int32)
-        Ax = np.asarray(A_coo.data, dtype=np.float64)
-        symbolic = klujax.analyze(Ai, Aj, n)
-        GX = np.asarray(
-            klujax.solve_with_symbol(Ai, Aj, Ax, WX_design, symbolic),
-            dtype=np.float64,
-        )
+    # One sparse factorisation, reused for every solve below.
+    backend = _select_sparse_backend()
+    if backend in ("klu", "umfpack"):
+        factor = _sparse_factor(A_csc, backend)
+        solve = factor.solve
     else:
-        A_csc = _sp.eye(n, format="csc") - rho_mean * W_sparse
-        GX = _solve_sparse_matrix(A_csc, WX_design)  # (n, k)
+        lu = _sp.linalg.splu(A_csc)
+        solve = lu.solve
+
+    # G @ X_design = A⁻¹ (W @ X_design)
+    WX_design = np.asarray(W_sparse @ X_design, dtype=np.float64)
+    GX = np.asarray(solve(WX_design), dtype=np.float64)  # (n, k)
+
+    # Exact traces via chunked column solves G[:, J] = A⁻¹ W[:, J].
+    tr_G = T_GtG = T_WtG = tr_WG = tr_G2 = 0.0
+    chunk = max(1, min(512, n))
+    for j0 in range(0, n, chunk):
+        j1 = min(j0 + chunk, n)
+        idx = np.arange(j1 - j0)
+        B = W_csc[:, j0:j1].toarray()  # dense (n, c) block of W columns
+        Gc = np.asarray(solve(B), dtype=np.float64)  # G[:, j0:j1]
+        tr_G += float(Gc[j0 + idx, idx].sum())
+        T_GtG += float(np.sum(Gc * Gc))
+        T_WtG += float(np.sum(B * Gc))
+        WGc = np.asarray(W_sparse @ Gc, dtype=np.float64)
+        tr_WG += float(WGc[j0 + idx, idx].sum())
+        G2c = np.asarray(solve(WGc), dtype=np.float64)  # G²[:, j0:j1]
+        tr_G2 += float(G2c[j0 + idx, idx].sum())
+
+    T_GG = T_GtG + tr_G2
+    T_WG = T_WtG + tr_WG
 
     # tr(M_X G) = tr(G) - tr((X'X)⁻¹ X'GX)
     XtX = X_design.T @ X_design
@@ -1739,7 +1736,7 @@ def bayesian_robust_lm_error_sar_test(
     model : SAR
         Fitted SAR model exposing ``inference_data`` with posterior draws
         of ``beta``, ``rho``, ``sigma`` and the cached ``_y``, ``_X``,
-        ``_Wy``, ``_W_sparse``, ``_W_eigs``, ``_T_ww`` attributes.
+        ``_Wy``, ``_W_sparse``, ``_T_ww`` attributes.
 
     Returns
     -------
@@ -1750,7 +1747,6 @@ def bayesian_robust_lm_error_sar_test(
     X = model._X
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_eigs = model._W_eigs
     T_ww = model._T_ww
 
     idata = model.inference_data
@@ -1777,9 +1773,7 @@ def bayesian_robust_lm_error_sar_test(
     rho_mean = float(np.mean(rho_draws))
     sigma_draws, sigma2_mean = _posterior_mean_sigma2(idata)
 
-    info = _sar_null_lambda_info(
-        W_sp, W_eigs, X, beta_mean, rho_mean, sigma2_mean, T_ww
-    )
+    info = _sar_null_lambda_info(W_sp, X, beta_mean, rho_mean, sigma2_mean, T_ww)
     V_ll = info["V_ll"]
     V_lr = info["V_lr"]
     V_rr = info["V_rr"]
@@ -1855,7 +1849,6 @@ def bayesian_robust_lm_error_sdm_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_eigs = model._W_eigs
     T_ww = model._T_ww
 
     idata = model.inference_data
@@ -1887,9 +1880,7 @@ def bayesian_robust_lm_error_sdm_test(
     rho_mean = float(np.mean(rho_draws))
     sigma2_mean = float(np.mean(sigma_draws**2))
 
-    info = _sar_null_lambda_info(
-        W_sp, W_eigs, Z, beta_mean, rho_mean, sigma2_mean, T_ww
-    )
+    info = _sar_null_lambda_info(W_sp, Z, beta_mean, rho_mean, sigma2_mean, T_ww)
     V_ll = info["V_ll"]
     V_lr = info["V_lr"]
     V_rr = info["V_rr"]

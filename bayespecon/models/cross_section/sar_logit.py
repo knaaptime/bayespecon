@@ -294,10 +294,10 @@ class SARLogit(SpatialModel):
 
         # Map the resolved backend onto the sampler's solve/logdet/sample paths.
         if backend == "jax":
-            # Check if cholmodjax sparse path is opted in
-            from ..._jax_dispatch import _cholmod_jax_enabled, _cholmodjax_available
+            # Check if cholgraph sparse path is opted in
+            from ..._jax_dispatch import _cholgraph_available, _cholmod_jax_enabled
 
-            if _cholmod_jax_enabled() and _cholmodjax_available():
+            if _cholmod_jax_enabled() and _cholgraph_available():
                 solve_method = "cholmod_jax"
                 logdet_P_method = "cholmod_jax"
                 sample_method = "cholmod_jax"
@@ -314,7 +314,7 @@ class SARLogit(SpatialModel):
         W_sym_dense = None
         WtW_dense = None
         logdet_jax = None
-        cholmodjax_pattern = None
+        cholgraph_pattern = None
         if solve_method in ("jax_dense", "cholmod_jax"):
             import jax
             import jax.numpy as jnp
@@ -339,14 +339,14 @@ class SARLogit(SpatialModel):
             )
 
             if solve_method == "cholmod_jax":
-                from ...samplers._utils._cholmodjax_utils import (
-                    precompute_cholmodjax_pattern,
+                from ...samplers._utils._cholgraph_utils import (
+                    precompute_cholgraph_pattern,
                 )
 
                 # Pass the raw (row-standardised) W; the helper derives
                 # W+Wᵀ and WᵀW internally.  Passing W_sym here would double
                 # the symmetric part and corrupt WᵀW.
-                cholmodjax_pattern = precompute_cholmodjax_pattern(W_sparse.tocsc(), n)
+                cholgraph_pattern = precompute_cholgraph_pattern(W_sparse.tocsc(), n)
 
         cache = LogitGibbsCache(
             W_sparse=W_sparse,
@@ -409,7 +409,7 @@ class SARLogit(SpatialModel):
                 n_probes=n_probes,
                 lanczos_deg=lanczos_deg,
                 progressbar=progressbar,
-                cholmodjax_pattern=cholmodjax_pattern,
+                cholgraph_pattern=cholgraph_pattern,
             )
         else:
 

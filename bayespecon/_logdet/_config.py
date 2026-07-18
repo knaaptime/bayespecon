@@ -51,7 +51,7 @@ class LogDetMethod(str, Enum):
     CHEB_CHOLESKY = "cheb_cholesky"
     AAA = "aaa"
     TRACES = "traces"
-    CHOLMOD = "cholmod"  # JAX-native sparse CHOLMOD logdet (requires cholmodjax)
+    CHOLMOD = "cholmod"  # JAX-native sparse CHOLMOD logdet (requires cholgraph)
 
 
 VALID_LOGDET_METHODS: frozenset[str] = frozenset(m.value for m in LogDetMethod)

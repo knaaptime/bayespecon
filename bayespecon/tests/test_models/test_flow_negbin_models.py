@@ -188,10 +188,12 @@ class TestNegativeBinomialFlowRecovery:
             titer=50,
             trace_seed=0,
         )
-        idata = model.fit_approx(
-            method="advi",
-            n=25000,
+        # NUTS on the exact count likelihood: the reduced-form PG-Gibbs path is
+        # documented to attenuate rho severely at this sample size (N = 100).
+        idata = model.fit(
             draws=500,
+            tune=500,
+            chains=2,
             random_seed=42,
             progressbar=False,
         )
@@ -241,10 +243,12 @@ class TestNegativeBinomialFlowRecovery:
             col_names=out["col_names"],
             trace_seed=0,
         )
-        idata = model.fit_approx(
-            method="advi",
-            n=25000,
+        # NUTS on the exact count likelihood: the reduced-form PG-Gibbs path is
+        # documented to attenuate rho severely at this sample size (N = 100).
+        idata = model.fit(
             draws=500,
+            tune=500,
+            chains=2,
             random_seed=43,
             progressbar=False,
         )
@@ -253,7 +257,7 @@ class TestNegativeBinomialFlowRecovery:
         rho_o_hat = float(idata.posterior["rho_o"].mean())
         alpha_hat = float(idata.posterior["alpha"].mean())
 
-        # Separable NB with ADVI exhibits materially higher Monte-Carlo variability
+        # Separable NB recovery exhibits materially higher Monte-Carlo variability
         # than the unrestricted NB flow recovery case on this small synthetic sample.
         assert abs(rho_d_hat - rho_d_true) < 0.45, (
             f"rho_d: {rho_d_hat:.3f} vs {rho_d_true}"
@@ -303,10 +307,12 @@ class TestNegativeBinomialPanelFlowRecovery:
             titer=50,
             trace_seed=0,
         )
-        idata = model.fit_approx(
-            method="advi",
-            n=25000,
-            draws=500,
+        # 1000/1000: alpha (NB dispersion) mixes slowly under NUTS; 500-draw
+        # chains leave ESS < 100 and an unstable posterior mean.
+        idata = model.fit(
+            draws=1000,
+            tune=1000,
+            chains=2,
             random_seed=44,
             progressbar=False,
         )
@@ -359,10 +365,12 @@ class TestNegativeBinomialPanelFlowRecovery:
             effects=0,
             trace_seed=0,
         )
-        idata = model.fit_approx(
-            method="advi",
-            n=25000,
-            draws=500,
+        # 1000/1000: alpha (NB dispersion) mixes slowly under NUTS; 500-draw
+        # chains leave ESS < 100 and an unstable posterior mean.
+        idata = model.fit(
+            draws=1000,
+            tune=1000,
+            chains=2,
             random_seed=45,
             progressbar=False,
         )
@@ -371,8 +379,8 @@ class TestNegativeBinomialPanelFlowRecovery:
         rho_o_hat = float(idata.posterior["rho_o"].mean())
         alpha_hat = float(idata.posterior["alpha"].mean())
 
-        # Panel separable NB recovery is noisier under mean-field ADVI; keep this
-        # as a coarse calibration test rather than a tight parameter-recovery check.
+        # Panel separable NB recovery is noisy on this small synthetic sample; keep
+        # this as a coarse calibration test rather than a tight recovery check.
         assert abs(rho_d_hat - rho_d_true) < 0.35, (
             f"rho_d: {rho_d_hat:.3f} vs {rho_d_true}"
         )

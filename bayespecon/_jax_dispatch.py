@@ -50,15 +50,25 @@ def _klujax_available() -> bool:
 
 
 @lru_cache(maxsize=1)
-def _cholmodjax_available() -> bool:
-    """Return ``True`` when optional ``cholmodjax`` is importable.
+def _cholgraph_available() -> bool:
+    """Return ``True`` when optional ``cholgraph`` is importable.
 
-    ``cholmodjax`` exposes CHOLMOD sparse SPD Cholesky as JIT-compatible
+    ``cholgraph`` exposes CHOLMOD sparse SPD Cholesky as JIT-compatible
     JAX primitives (``solve``, ``logdet``, ``update_solve``) with custom
     VJP gradients and vmap batching.  It is CPU-only and requires
     ``jax_enable_x64=True``.
+
+    A real import is attempted (not just ``find_spec``) so that broken
+    installs — e.g. a stale editable install whose source tree has moved —
+    count as unavailable instead of crashing at op-registration time.
     """
-    return importlib.util.find_spec("cholmodjax") is not None
+    if importlib.util.find_spec("cholgraph") is None:
+        return False
+    try:
+        importlib.import_module("cholgraph")
+    except Exception:
+        return False
+    return True
 
 
 @lru_cache(maxsize=1)
@@ -86,9 +96,9 @@ def _warn_jax_auto_fallback_once(missing: str, target: str) -> None:
         install_hint = " Install 'scikit-sparse' to enable the UMFPACK callback path."
     elif missing == "klujax":
         install_hint = " Install 'klujax' to enable the faster JAX-native sparse path."
-    elif missing == "cholmodjax":
+    elif missing == "cholgraph":
         install_hint = (
-            " Install 'cholmodjax' to enable the JAX-native sparse SPD Cholesky path."
+            " Install 'cholgraph' to enable the JAX-native sparse SPD Cholesky path."
         )
     warnings.warn(
         "BAYESPECON_JAX_SPARSE_BACKEND=auto selected fallback backend "
@@ -105,8 +115,8 @@ def _select_jax_sparse_backend() -> str:
 
     Environment
     -----------
-    BAYESPECON_JAX_SPARSE_BACKEND : {"auto", "callback", "klujax", "cholmodjax"}
-        Default ``auto``. ``auto`` prefers ``cholmodjax`` (SPD-exact) when
+    BAYESPECON_JAX_SPARSE_BACKEND : {"auto", "callback", "klujax", "cholgraph"}
+        Default ``auto``. ``auto`` prefers ``cholgraph`` (SPD-exact) when
         available, then ``klujax``.
     BAYESPECON_JAX_SPARSE_STRICT : {"0", "1", "false", "true"}
         If truthy, missing requested optional backends raise ImportError.
@@ -120,20 +130,20 @@ def _select_jax_sparse_backend() -> str:
     }
 
     if requested in {"", "auto"}:
-        if _cholmodjax_available():
-            return "cholmodjax"
+        if _cholgraph_available():
+            return "cholgraph"
         if _klujax_available():
             return "klujax"
         # JAX path fallback chain:
-        #   1) cholmodjax (SPD-exact, JAX-native)
+        #   1) cholgraph (SPD-exact, JAX-native)
         #   2) klujax (LU-based, JAX-native)
         #   3) callback + umfpack
         #   4) callback + scipy
         # The callback solver selection is handled in ops._select_sparse_backend.
         if _umfpack_available():
-            _warn_jax_auto_fallback_once("cholmodjax", "callback+umfpack")
+            _warn_jax_auto_fallback_once("cholgraph", "callback+umfpack")
         else:
-            _warn_jax_auto_fallback_once("cholmodjax", "callback+scipy")
+            _warn_jax_auto_fallback_once("cholgraph", "callback+scipy")
             _warn_jax_auto_fallback_once("sksparse.umfpack", "callback+scipy")
         return "callback"
 
@@ -152,12 +162,12 @@ def _select_jax_sparse_backend() -> str:
         warnings.warn(msg, RuntimeWarning)
         return "callback"
 
-    if requested in {"cholmod", "cholmodjax"}:
-        if _cholmodjax_available():
-            return "cholmodjax"
+    if requested in {"cholmod", "cholgraph"}:
+        if _cholgraph_available():
+            return "cholgraph"
         msg = (
-            "BAYESPECON_JAX_SPARSE_BACKEND=cholmodjax requested, but optional "
-            "dependency 'cholmodjax' is not installed. Falling back to callback backend."
+            "BAYESPECON_JAX_SPARSE_BACKEND=cholgraph requested, but optional "
+            "dependency 'cholgraph' is not installed. Falling back to callback backend."
         )
         if strict:
             raise ImportError(msg)
@@ -166,13 +176,13 @@ def _select_jax_sparse_backend() -> str:
 
     msg = (
         f"Unknown BAYESPECON_JAX_SPARSE_BACKEND='{requested}'. "
-        "Valid values are: auto, callback, klujax, cholmodjax. Falling back to auto."
+        "Valid values are: auto, callback, klujax, cholgraph. Falling back to auto."
     )
     if strict:
         raise ValueError(msg)
     warnings.warn(msg, RuntimeWarning)
-    if _cholmodjax_available():
-        return "cholmodjax"
+    if _cholgraph_available():
+        return "cholgraph"
     return "klujax" if _klujax_available() else "callback"
 
 
@@ -187,17 +197,17 @@ def _strict_env() -> bool:
 
 @lru_cache(maxsize=1)
 def _cholmod_jax_enabled() -> bool:
-    """Return ``True`` unless the cholmodjax JAX Gibbs path is opted *out*.
+    """Return ``True`` unless the cholgraph JAX Gibbs path is opted *out*.
 
     Environment
     -----------
     BAYESPECON_JAX_CHOLMOD : {"0", "1", "false", "true", ...}
-        Default **enabled**.  When ``cholmodjax`` is installed (checked
-        separately via :func:`_cholmodjax_available`), the JAX Gibbs samplers
+        Default **enabled**.  When ``cholgraph`` is installed (checked
+        separately via :func:`_cholgraph_available`), the JAX Gibbs samplers
         use its sparse SPD Cholesky instead of the dense ``jnp.linalg.cholesky``
         stopgap.  Set to a falsy value (``0``/``false``/``no``/``off``) to force
         the dense path — useful for benchmarking, debugging, or GPU experiments
-        (cholmodjax is CPU-only).
+        (cholgraph is CPU-only).
     """
     return os.environ.get("BAYESPECON_JAX_CHOLMOD", "1").strip().lower() not in {
         "0",
@@ -234,7 +244,7 @@ def _resolve_auto_sar_solver(n: int) -> str:
        (default 0, i.e. opt-in only). The eigen path materialises three
        N×N complex128 matrices plus a dense N×N float64 W and triggers
        multi-minute XLA compile times for n > ~500, so we keep it gated.
-    2. ``cholmodjax`` when installed (default; disable via
+    2. ``cholgraph`` when installed (default; disable via
        ``BAYESPECON_JAX_CHOLMOD=0``).  SPD-exact sparse CHOLMOD via JAX FFI;
        supplies its own VJP.  CPU-only.  Requires D-symmetrizable W.
     3. ``klujax`` when installed. Per
@@ -250,8 +260,8 @@ def _resolve_auto_sar_solver(n: int) -> str:
     """
     if n <= _JAX_SAR_EIGEN_N_MAX:
         return "eigen"
-    if _cholmod_jax_enabled() and _cholmodjax_available():
-        return "cholmodjax"
+    if _cholmod_jax_enabled() and _cholgraph_available():
+        return "cholgraph"
     if _klujax_available():
         return "klujax"
     if _lineax_available():
@@ -270,10 +280,10 @@ def _select_jax_sar_solver() -> str:
 
     Environment
     -----------
-    BAYESPECON_JAX_SAR_SOLVER : {"auto", "eigen", "callback", "klujax", "cholmodjax", "lineax"}
+    BAYESPECON_JAX_SAR_SOLVER : {"auto", "eigen", "callback", "klujax", "cholgraph", "lineax"}
         Default ``auto``. ``auto`` selects ``eigen`` when
         N ≤ ``BAYESPECON_JAX_SAR_EIGEN_N_MAX`` (default 0, i.e. opt-in),
-        otherwise ``cholmodjax`` when installed (default; disable via
+        otherwise ``cholgraph`` when installed (default; disable via
         ``BAYESPECON_JAX_CHOLMOD=0``), else ``klujax`` when installed, else
         ``lineax`` when installed, else ``callback``.
     BAYESPECON_JAX_SAR_EIGEN_N_MAX : int, default 0
@@ -308,12 +318,12 @@ def _select_jax_sar_solver() -> str:
         warnings.warn(msg, RuntimeWarning)
         return "callback"
 
-    if requested in {"cholmod", "cholmodjax"}:
-        if _cholmodjax_available():
-            return "cholmodjax"
+    if requested in {"cholmod", "cholgraph"}:
+        if _cholgraph_available():
+            return "cholgraph"
         msg = (
-            "BAYESPECON_JAX_SAR_SOLVER=cholmodjax requested, but optional "
-            "dependency 'cholmodjax' is not installed. Falling back to callback."
+            "BAYESPECON_JAX_SAR_SOLVER=cholgraph requested, but optional "
+            "dependency 'cholgraph' is not installed. Falling back to callback."
         )
         if strict:
             raise ImportError(msg)
@@ -337,7 +347,7 @@ def _select_jax_sar_solver() -> str:
 
     msg = (
         f"Unknown BAYESPECON_JAX_SAR_SOLVER='{requested}'. "
-        "Valid values are: auto, eigen, callback, klujax, cholmodjax, lineax, jax_gmres. Falling back to auto."
+        "Valid values are: auto, eigen, callback, klujax, cholgraph, lineax, jax_gmres. Falling back to auto."
     )
     if strict:
         raise ValueError(msg)
@@ -1135,8 +1145,8 @@ def register_jax_dispatch() -> bool:
 
             return sparse_sar_solve
 
-        if resolved == "cholmodjax":
-            import cholmodjax as _chj
+        if resolved == "cholgraph":
+            import cholgraph as _chj
 
             from ._logdet._chol_cheb import _d_symmetrize
 

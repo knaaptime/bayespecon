@@ -40,11 +40,6 @@ __all__ = [
     "logdet_grad_aaa",
     "logdet_grad_slq",
     "clenshaw_deriv_x",
-    "resolvent_trace_eigs",
-    "resolvent_trace_G2_eigs",
-    "resolvent_trace_GtG_eigs",
-    "resolvent_trace_WG_eigs",
-    "resolvent_trace_WtG_eigs",
 ]
 
 
@@ -128,57 +123,3 @@ def logdet_grad_slq(rho, nodes, weights, n_probes, *, xp=np):
     w = xp.asarray(weights)
     res = w * theta / (1.0 - rho * theta)
     return -xp.real(xp.sum(res)) / n_probes
-
-
-# ---------------------------------------------------------------------------
-# Higher-order resolvent traces from eigenvalues
-#
-# Used by the Bayesian LM diagnostic tests to compute Fisher-information
-# blocks for SARAR / SDEM without forming the dense n×n matrix
-# G = (I - ρW)⁻¹W.  All are O(n) elementwise sums over the (cached)
-# eigenvalues of W.
-# ---------------------------------------------------------------------------
-
-
-def resolvent_trace_eigs(rho, eigs, *, xp=np):
-    r"""``tr(W(I−ρW)⁻¹) = Σ Re(λᵢ/(1−ρλᵢ))``.
-
-    Exact from eigenvalues.  This is ``−logdet_grad_eigenvalue(rho, eigs)``.
-    """
-    lam = xp.asarray(eigs)
-    return xp.sum(xp.real(lam / (1.0 - rho * lam)))
-
-
-def resolvent_trace_G2_eigs(rho, eigs, *, xp=np):
-    r"""``tr(G²) = Σ (λᵢ/(1−ρλᵢ))²``  where ``G = (I−ρW)⁻¹W``.
-
-    Exact from eigenvalues (trace of a matrix power depends only on
-    eigenvalues, not eigenvectors).
-    """
-    lam = xp.asarray(eigs)
-    r = lam / (1.0 - rho * lam)
-    return xp.sum(xp.real(r**2))
-
-
-def resolvent_trace_GtG_eigs(rho, eigs, *, xp=np):
-    r"""``tr(G'G) = Σ |λᵢ|²/|1−ρλᵢ|²``.
-
-    Exact when ``W`` is normal (symmetric or row-standardised symmetric).
-    For non-normal ``W`` this is an approximation; the exact value requires
-    the full eigendecomposition (``V``, ``V⁻¹``).
-    """
-    lam = xp.asarray(eigs)
-    r = lam / (1.0 - rho * lam)
-    return xp.sum(xp.abs(r) ** 2)
-
-
-def resolvent_trace_WG_eigs(rho, eigs, *, xp=np):
-    r"""``tr(WG) = Σ Re(λᵢ²/(1−ρλᵢ))``  where ``G = (I−ρW)⁻¹W``."""
-    lam = xp.asarray(eigs)
-    return xp.sum(xp.real(lam**2 / (1.0 - rho * lam)))
-
-
-def resolvent_trace_WtG_eigs(rho, eigs, *, xp=np):
-    r"""``tr(W'G) = Σ Re(conj(λᵢ)·λᵢ/(1−ρλᵢ))``  where ``G = (I−ρW)⁻¹W``."""
-    lam = xp.asarray(eigs)
-    return xp.sum(xp.real(xp.conj(lam) * lam / (1.0 - rho * lam)))

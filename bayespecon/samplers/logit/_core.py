@@ -1292,7 +1292,7 @@ def _sem_logit_collapsed_log_density(
     logdet = logdet_fn(lam)
 
     # log|P| via LU — prefer KLU/UMFPACK (scikit-sparse) over scipy SuperLU
-    from .._ops._backend import _factor_solve_logdet
+    from ..._ops._backend import _factor_solve_logdet
 
     P_csc = sp.csc_matrix(P)
     m, log_det_P = _factor_solve_logdet(P_csc, rhs)

@@ -306,7 +306,6 @@ class FlowModel(SpatialModel):
         self._is_row_std = True  # Graph is assumed row-standardised
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
-        self._approximation = None
 
         # Validate and extract the n×n weight matrix
         self._W_sparse: sp.csr_matrix = _graph_to_csr(G)
@@ -573,7 +572,6 @@ class FlowModel(SpatialModel):
 
         model = self._build_pymc_model()
         self._pymc_model = model
-        self._approximation = None
         if "var_names" not in sample_kwargs and not store_lambda:
             sample_kwargs["var_names"] = self._posterior_var_names(
                 model,
@@ -597,76 +595,6 @@ class FlowModel(SpatialModel):
             self._attach_complete_log_likelihood(self._idata)
         return self._idata
 
-    def fit_approx(
-        self,
-        draws: int = 2000,
-        n: int = 10000,
-        method: str = "advi",
-        random_seed: Optional[int] = None,
-        store_lambda: bool = False,
-        compute_log_likelihood: bool = True,
-        **fit_kwargs,
-    ) -> az.InferenceData:
-        """Fit a variational approximation and return posterior draws.
-
-        Parameters
-        ----------
-        draws : int, default 2000
-            Number of samples to draw from the fitted approximation.
-        n : int, default 10000
-            Number of optimisation iterations for ``pm.fit``.
-        method : {"advi", "fullrank_advi"}, default "advi"
-            Variational inference family to fit.
-        random_seed : int, optional
-            Seed for optimisation and posterior sampling.
-        store_lambda : bool, default False
-            If True, keep the high-dimensional fitted mean ``lambda`` in the
-            posterior draws.
-        compute_log_likelihood : bool, default True
-            If True, compute pointwise log-likelihood after sampling and
-            attach to the InferenceData (with Jacobian correction for SAR
-            flow variants), enabling ``az.loo`` / ``az.waic``.
-        **fit_kwargs
-            Additional keyword arguments forwarded to ``pm.fit``.
-        """
-        method = method.lower()
-        if method not in {"advi", "fullrank_advi"}:
-            raise ValueError("fit_approx method must be 'advi' or 'fullrank_advi'.")
-
-        model = self._build_pymc_model()
-        self._pymc_model = model
-        with model:
-            self._approximation = pm.fit(
-                n=n,
-                method=method,
-                random_seed=random_seed,
-                **fit_kwargs,
-            )
-            self._idata = self._approximation.sample(
-                draws=draws,
-                random_seed=random_seed,
-                return_inferencedata=True,
-            )
-            if compute_log_likelihood:
-                pm.compute_log_likelihood(
-                    self._idata,
-                    extend_inferencedata=True,
-                    progressbar=False,
-                )
-
-        if (
-            not store_lambda
-            and self._idata is not None
-            and hasattr(self._idata, "posterior")
-            and "lambda" in self._idata.posterior.data_vars
-        ):
-            self._idata.posterior = self._idata.posterior.drop_vars("lambda")
-
-        if compute_log_likelihood:
-            self._attach_complete_log_likelihood(self._idata)
-
-        return self._idata
-
     @property
     def _W_eigs_complex(self) -> Optional[np.ndarray]:
         """Complex eigenvalues of W, or None when not pre-computed.
@@ -675,11 +603,6 @@ class FlowModel(SpatialModel):
         (e.g. the latent NB flow Gibbs) can request eigenvalues uniformly.
         """
         return self._W_eigs
-
-    @property
-    def approximation(self):
-        """Return the most recent PyMC variational approximation, if any."""
-        return self._approximation
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
@@ -1181,7 +1104,6 @@ class SARFlow(FlowModel):
         from ...samplers.gaussian._flow_resolvent import sample_flow_resolvent
 
         self._pymc_model = None
-        self._approximation = None
         self._idata = sample_flow_resolvent(
             self._W_sparse,
             self._y,
@@ -1197,6 +1119,7 @@ class SARFlow(FlowModel):
             n_quad=n_quad,
             progressbar=progressbar,
             n_jobs=n_jobs,
+            restrict_positive=self.restrict_positive,
         )
         return self._idata
 
@@ -2686,7 +2609,6 @@ class SEMFlow(FlowModel):
         from ...samplers.gaussian._flow_resolvent import sample_sem_flow_resolvent
 
         self._pymc_model = None
-        self._approximation = None
         self._idata = sample_sem_flow_resolvent(
             self._W_sparse,
             self._y,
@@ -2702,6 +2624,7 @@ class SEMFlow(FlowModel):
             n_quad=n_quad,
             progressbar=progressbar,
             n_jobs=n_jobs,
+            restrict_positive=self.restrict_positive,
         )
         return self._idata
 

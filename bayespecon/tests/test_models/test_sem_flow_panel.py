@@ -101,6 +101,7 @@ class TestSemFlowPanelConstruction:
         assert model._n == self.n
 
     def test_pymc_model_builds(self):
+        """SEMFlowPanel samples via the resolvent sampler; the PyMC path was removed."""
         from bayespecon.models.flow_panel._panel import SEMFlowPanel
 
         model = SEMFlowPanel(
@@ -112,8 +113,8 @@ class TestSemFlowPanelConstruction:
             miter=5,
             trace_seed=0,
         )
-        pm_model = model._build_pymc_model()
-        assert pm_model is not None
+        with pytest.raises(NotImplementedError, match="resolvent"):
+            model._build_pymc_model()
 
 
 class TestSemFlowPanelRecovery:

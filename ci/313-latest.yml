@@ -31,4 +31,4 @@ dependencies:
   - pip
   - pip:
     - klujax
-    - git+https://github.com/knaaptime/cholmodjax --no-build-isolation
+    - git+https://github.com/knaaptime/cholgraph

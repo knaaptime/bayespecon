@@ -106,7 +106,6 @@ class FlowPanelModel(SpatialPanelModel):
         self._is_row_std = True  # Graph is assumed row-standardised
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
-        self._approximation = None
 
         # Validate and extract n x n W
         self._W_sparse: sp.csr_matrix = _graph_to_csr(G)
@@ -352,7 +351,6 @@ class FlowPanelModel(SpatialPanelModel):
 
         model = self._build_pymc_model()
         self._pymc_model = model
-        self._approximation = None
         if "var_names" not in sample_kwargs and not store_lambda:
             sample_kwargs["var_names"] = self._posterior_var_names(
                 model,
@@ -375,11 +373,6 @@ class FlowPanelModel(SpatialPanelModel):
         if compute_log_likelihood:
             self._attach_complete_log_likelihood(self._idata)
         return self._idata
-
-    @property
-    def approximation(self):
-        """Return the most recent PyMC variational approximation, if any."""
-        return self._approximation
 
     def spatial_diagnostics_decision(
         self, alpha: float = 0.05, format: str = "graphviz"
@@ -980,7 +973,6 @@ class _ResolventFlowPanelMixin:
             )
         # --- Gibbs (resolvent) path ---
         self._pymc_model = None
-        self._approximation = None
         self._idata = self._sample_resolvent(
             draws=draws,
             tune=tune,
@@ -1086,6 +1078,7 @@ class SARFlowPanel(_ResolventFlowPanelMixin, FlowPanelModel):
             self._y,
             self._X,
             T=self._T,
+            restrict_positive=self.restrict_positive,
             **kwargs,
         )
 
@@ -1582,6 +1575,7 @@ class SARNegBinFlowPanel(SARFlowPanel):
             tune=tune,
             chains=chains,
             random_seed=random_seed,
+            sampler="nuts",
             **sample_kwargs,
         )
         if attach_log_abs_det:
@@ -2143,6 +2137,7 @@ class SEMFlowPanel(_ResolventFlowPanelMixin, _SEMFlowPanelMixin, FlowPanelModel)
             self._y,
             self._X,
             T=self._T,
+            restrict_positive=self.restrict_positive,
             **kwargs,
         )
 

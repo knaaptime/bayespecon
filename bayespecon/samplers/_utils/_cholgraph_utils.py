@@ -1,7 +1,7 @@
-"""Shared helpers for cholmodjax integration in JAX Gibbs samplers.
+"""Shared helpers for cholgraph integration in JAX Gibbs samplers.
 
 Provides the COO sparsity-pattern precomputation and value-assembly
-utilities needed to use :mod:`cholmodjax` (JAX-native sparse CHOLMOD)
+utilities needed to use :mod:`cholgraph` (JAX-native sparse CHOLMOD)
 inside JIT-compiled Gibbs steps.
 
 The precision matrix
@@ -17,7 +17,7 @@ assemble only the values ``Ax(ρ, ω)`` inside the JIT boundary.
 
 This mirrors the NumPy-CHOLMOD pattern in
 :func:`bayespecon.samplers.negbin_reduced._core._make_cholmod_pattern`
-but returns int32 COO arrays suitable for ``cholmodjax``.
+but returns int32 COO arrays suitable for ``cholgraph``.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ import numpy as np
 import scipy.sparse as sp
 
 
-def precompute_cholmodjax_pattern(
+def precompute_cholgraph_pattern(
     W_csc: sp.csc_matrix,
     n: int,
 ) -> dict:
@@ -79,7 +79,7 @@ def precompute_cholmodjax_pattern(
     # Build a lookup from (row, col) → index in the pattern array.
     # The pattern is symmetric (upper triangle), so we only need to
     # match entries with Ai <= Aj (lower triangle entries are ignored
-    # by cholmodjax).
+    # by cholgraph).
     pattern_lookup: dict[tuple[int, int], int] = {}
     for k in range(nnz):
         pattern_lookup[(int(Ai[k]), int(Aj[k]))] = k
@@ -89,7 +89,7 @@ def precompute_cholmodjax_pattern(
 
     for k in range(len(W_sym_coo.row)):
         i, j = int(W_sym_coo.row[k]), int(W_sym_coo.col[k])
-        # cholmodjax reads only upper triangle (Ai <= Aj)
+        # cholgraph reads only upper triangle (Ai <= Aj)
         if i <= j:
             idx = pattern_lookup.get((i, j))
             if idx is not None:
@@ -140,7 +140,7 @@ def assemble_Ax_logit(
     rho : jax.numpy.ndarray (scalar)
         Spatial autoregressive parameter.
     pattern : dict
-        Output of :func:`precompute_cholmodjax_pattern`.
+        Output of :func:`precompute_cholgraph_pattern`.
 
     Returns
     -------
@@ -189,7 +189,7 @@ def assemble_Ax_negbin(
     sigma2 : jax.numpy.ndarray (scalar)
         Residual variance.
     pattern : dict
-        Output of :func:`precompute_cholmodjax_pattern`.
+        Output of :func:`precompute_cholgraph_pattern`.
 
     Returns
     -------
@@ -215,31 +215,31 @@ def assemble_Ax_negbin(
     return Ax
 
 
-def make_cholmodjax_ops(Ai, Aj, n: int):
+def make_cholgraph_ops(Ai, Aj, n: int):
     """Return ``(eta_sample, solve_logdet)`` factor-once closures over a fixed pattern.
 
     Both do **one** numeric factorization per call (matching numpy's
-    ``CholmodFactor`` reuse), using cholmodjax 0.4's factor-once primitives when
+    ``CholmodFactor`` reuse), using cholgraph 0.4's factor-once primitives when
     available and falling back to the 0.3 idiom otherwise:
 
     - ``eta_sample(Ax, mean_term, z) -> N(P⁻¹ mean_term, P⁻¹)`` draw — 0.4:
-      :func:`cholmodjax.sample_gaussian` (one factorization); 0.3: mean solve +
+      :func:`cholgraph.sample_gaussian` (one factorization); 0.3: mean solve +
       ``MODE_LT`` + ``MODE_PT`` (three solves ≈ three factorizations under vmap).
     - ``solve_logdet(Ax, b) -> (P⁻¹ b, log|P|)`` — 0.4:
-      :func:`cholmodjax.factor_solve` with ``want_logdet=True`` (one factorization,
-      no working-copy); 0.3: :func:`cholmodjax.update_solve` with a zero update
+      :func:`cholgraph.factor_solve` with ``want_logdet=True`` (one factorization,
+      no working-copy); 0.3: :func:`cholgraph.update_solve` with a zero update
       column and ``return_logdet=True``.
 
     ``Ai``/``Aj`` are the fixed COO indices (int32); ``b`` may be ``(n,)`` or
     ``(n, n_rhs)``.
     """
-    import cholmodjax as _chj
+    import cholgraph as _chj
     import jax.numpy as jnp
 
     Ai = jnp.asarray(Ai, dtype=jnp.int32)
     Aj = jnp.asarray(Aj, dtype=jnp.int32)
 
-    if hasattr(_chj, "sample_gaussian"):  # cholmodjax >= 0.4
+    if hasattr(_chj, "sample_gaussian"):  # cholgraph >= 0.4
         _MODE_A = getattr(_chj, "MODE_A", 0)
 
         def eta_sample(Ax, mean_term, z):
@@ -250,7 +250,7 @@ def make_cholmodjax_ops(Ai, Aj, n: int):
             sols, ld = _chj.factor_solve(Ai, Aj, Ax, [(b, _MODE_A)], want_logdet=True)
             return sols[0], ld
 
-    else:  # cholmodjax 0.3 fallback
+    else:  # cholgraph 0.3 fallback
         _Czero = jnp.zeros((n, 1), dtype=jnp.float64)
         _MODE_LT, _MODE_PT = _chj.MODE_LT, _chj.MODE_PT
 
@@ -267,15 +267,15 @@ def make_cholmodjax_ops(Ai, Aj, n: int):
     return eta_sample, solve_logdet
 
 
-def cholmodjax_mvn_sample(Ai, Aj, Ax, mean_term, key, n: int):
-    """Draw from ``N(P⁻¹ mean_term, P⁻¹)`` (thin wrapper over :func:`make_cholmodjax_ops`).
+def cholgraph_mvn_sample(Ai, Aj, Ax, mean_term, key, n: int):
+    """Draw from ``N(P⁻¹ mean_term, P⁻¹)`` (thin wrapper over :func:`make_cholgraph_ops`).
 
     Kept for callers/tests; delegates to the factor-once ``eta_sample`` closure so
-    the draw costs a single factorization on cholmodjax >= 0.4.
+    the draw costs a single factorization on cholgraph >= 0.4.
     """
     import jax
     import jax.numpy as jnp
 
     z = jax.random.normal(key, shape=(n,), dtype=jnp.float64)
-    eta_sample, _ = make_cholmodjax_ops(Ai, Aj, n)
+    eta_sample, _ = make_cholgraph_ops(Ai, Aj, n)
     return eta_sample(Ax, mean_term, z)

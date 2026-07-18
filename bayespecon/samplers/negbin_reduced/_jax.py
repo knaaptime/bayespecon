@@ -953,7 +953,7 @@ def run_chains_jax_reduced(
             import scipy.sparse as _sp
             from scipy.special import gammaln
 
-            from .._jax_dispatch import _klujax_available
+            from ..._jax_dispatch import _klujax_available
 
             if _klujax_available():
                 import klujax
@@ -1001,7 +1001,7 @@ def run_chains_jax_reduced(
                         + alpha_i * np.log(np.maximum(alpha_i / (mu + alpha_i), 1e-300))
                     )
             else:
-                from .._ops._backend import _solve_sparse_vector
+                from ..._ops._backend import _solve_sparse_vector
 
                 I_sp = _sp.eye(n, format="csc")
                 for i in range(n_keep):

@@ -89,15 +89,18 @@ def _make_test_data(n=20, k=2, rho_true=0.3, seed=42):
 
 def _make_jax_components(W, W_sym, WtW, W_eigs, X):
     """Convert numpy/scipy arrays to JAX arrays for the Gibbs step."""
+    from jax.experimental import sparse as jsparse
+
     from bayespecon._logdet import make_logdet_jax_fn
 
     W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
     WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
     logdet_jax = make_logdet_jax_fn(W_eigs, method="eigenvalue")
-    W_dense_jax = jnp.asarray(W.toarray(), dtype=jnp.float64)
+    W_bcoo = jsparse.BCOO.from_scipy_sparse(W.tocsr())
+    Wt_bcoo = jsparse.BCOO.from_scipy_sparse(W.T.tocsr())
     X_jax = jnp.asarray(X, dtype=jnp.float64)
     XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
-    return W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax
+    return W_sym_dense, WtW_dense, logdet_jax, W_bcoo, Wt_bcoo, X_jax, XtX_jax
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +117,7 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax = (
+        W_sym_dense, WtW_dense, logdet_jax, W_bcoo, Wt_bcoo, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
         )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
@@ -122,7 +125,8 @@ class TestMakeGibbsStepWithData:
         gibbs_step = _make_gibbs_step_with_data(
             y_jax=y_jax,
             X_jax=X_jax,
-            W_dense_jax=W_dense_jax,
+            W_bcoo=W_bcoo,
+            Wt_bcoo=Wt_bcoo,
             n=n,
             k=k,
             W_sym_dense=W_sym_dense,
@@ -142,7 +146,7 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax = (
+        W_sym_dense, WtW_dense, logdet_jax, W_bcoo, Wt_bcoo, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
         )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
@@ -150,7 +154,8 @@ class TestMakeGibbsStepWithData:
         gibbs_step = _make_gibbs_step_with_data(
             y_jax=y_jax,
             X_jax=X_jax,
-            W_dense_jax=W_dense_jax,
+            W_bcoo=W_bcoo,
+            Wt_bcoo=Wt_bcoo,
             n=n,
             k=k,
             W_sym_dense=W_sym_dense,
@@ -189,7 +194,7 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax = (
+        W_sym_dense, WtW_dense, logdet_jax, W_bcoo, Wt_bcoo, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
         )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
@@ -197,7 +202,8 @@ class TestMakeGibbsStepWithData:
         gibbs_step = _make_gibbs_step_with_data(
             y_jax=y_jax,
             X_jax=X_jax,
-            W_dense_jax=W_dense_jax,
+            W_bcoo=W_bcoo,
+            Wt_bcoo=Wt_bcoo,
             n=n,
             k=k,
             W_sym_dense=W_sym_dense,
@@ -238,7 +244,7 @@ class TestMakeGibbsStepWithData:
         n, k = X.shape
         priors = GibbsPriors(rho_lower=-0.999, rho_upper=0.999)
 
-        W_sym_dense, WtW_dense, logdet_jax, W_dense_jax, X_jax, XtX_jax = (
+        W_sym_dense, WtW_dense, logdet_jax, W_bcoo, Wt_bcoo, X_jax, XtX_jax = (
             _make_jax_components(W, W_sym, WtW, W_eigs, X)
         )
         y_jax = jnp.asarray(y, dtype=jnp.float64)
@@ -246,7 +252,8 @@ class TestMakeGibbsStepWithData:
         gibbs_step = _make_gibbs_step_with_data(
             y_jax=y_jax,
             X_jax=X_jax,
-            W_dense_jax=W_dense_jax,
+            W_bcoo=W_bcoo,
+            Wt_bcoo=Wt_bcoo,
             n=n,
             k=k,
             W_sym_dense=W_sym_dense,

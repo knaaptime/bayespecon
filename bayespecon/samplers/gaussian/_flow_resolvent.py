@@ -97,6 +97,9 @@ class FlowResolventTarget:
     rho_bound : float
         Reject ρ with ``|ρ_d|+|ρ_o|+|ρ_w| >= rho_bound`` or ``sum(ρ) >= rho_bound``
         (a conservative row-stochastic stability wall).
+    positive : bool
+        Additionally reject any ``ρ_k < 0`` (the model-level
+        ``restrict_positive=True`` prior: flat on the positive simplex).
     """
 
     W: object
@@ -105,6 +108,7 @@ class FlowResolventTarget:
     T: int = 1
     logdet_value_and_grad: object = None
     rho_bound: float = 0.999
+    positive: bool = False
     n_probes: int = 48
     seed: int = 0
     logdet_method: str = "jax"
@@ -173,6 +177,8 @@ class FlowResolventTarget:
 
     def in_bounds(self, rho) -> bool:
         rho = np.asarray(rho, dtype=np.float64)
+        if self.positive and np.any(rho < 0.0):
+            return False
         return bool(np.abs(rho).sum() < self.rho_bound and rho.sum() < self.rho_bound)
 
     # -- ρ-conditional target ---------------------------------------------
@@ -273,6 +279,7 @@ class SEMFlowResolventTarget:
     T: int = 1
     logdet_value_and_grad: object = None
     rho_bound: float = 0.999
+    positive: bool = False
     n_probes: int = 48
     seed: int = 0
     logdet_method: str = "jax"
@@ -322,6 +329,8 @@ class SEMFlowResolventTarget:
 
     def in_bounds(self, rho) -> bool:
         rho = np.asarray(rho, dtype=np.float64)
+        if self.positive and np.any(rho < 0.0):
+            return False
         return bool(np.abs(rho).sum() < self.rho_bound and rho.sum() < self.rho_bound)
 
     def _whiten(self, rho):
@@ -508,6 +517,7 @@ def _sample_flow_chains(
     n_jobs: int = -1,
     logdet_method: str = "jax",
     n_quad: int = 8,
+    positive: bool = False,
 ):
     """Run ``chains`` MALA-within-Gibbs chains for a flow target → InferenceData.
 
@@ -539,6 +549,7 @@ def _sample_flow_chains(
             X,
             T=T,
             logdet_value_and_grad=logdet_value_and_grad,
+            positive=positive,
             n_probes=n_probes,
             seed=seed,
             logdet_method=logdet_method,
@@ -610,6 +621,7 @@ def sample_flow_resolvent(
     progressbar: bool = True,
     n_jobs: int = -1,
     logdet_method: str = "jax",
+    restrict_positive: bool = False,
 ):
     """Sample the unrestricted **SAR** flow posterior → ``arviz.InferenceData``.
 
@@ -617,10 +629,12 @@ def sample_flow_resolvent(
     MALA-within-Gibbs chains, packaging ``rho_d, rho_o, rho_w, beta, sigma``.  ``T>1``
     handles the panel (stacked over ``T`` periods; log-det scaled by ``T``).  Pass
     ``logdet_value_and_grad`` to override the resolvent log-det backend (e.g. an exact
-    one for small problems / testing).  The per-draw Jacobian ``log|A|`` is attached in
-    ``sample_stats``; with ``compute_log_likelihood`` (default) a pointwise
-    ``log_likelihood`` group (Gaussian density + Jacobian) is added for LOO/WAIC — set
-    it ``False`` to skip the ``(chains, draws, N)`` allocation at very large ``N``.
+    one for small problems / testing).  With ``restrict_positive`` the flat ρ prior is
+    truncated to ``ρ_k ≥ 0`` (the model-level positivity constraint).  The per-draw
+    Jacobian ``log|A|`` is attached in ``sample_stats``; with
+    ``compute_log_likelihood`` (default) a pointwise ``log_likelihood`` group
+    (Gaussian density + Jacobian) is added for LOO/WAIC — set it ``False`` to skip
+    the ``(chains, draws, N)`` allocation at very large ``N``.
     """
     return _sample_flow_chains(
         FlowResolventTarget,
@@ -642,6 +656,7 @@ def sample_flow_resolvent(
         n_jobs=n_jobs,
         logdet_method=logdet_method,
         n_quad=n_quad,
+        positive=restrict_positive,
     )
 
 
@@ -664,11 +679,13 @@ def sample_sem_flow_resolvent(
     progressbar: bool = True,
     n_jobs: int = -1,
     logdet_method: str = "jax",
+    restrict_positive: bool = False,
 ):
     """Sample the unrestricted **SEM** flow posterior → ``arviz.InferenceData``.
 
     Same resolvent log-det and sampler as the SAR flow; the data term uses the
     whitened residual ``A(y−Xβ)`` and a GLS ``β`` draw.  ``T>1`` handles the panel.
+    With ``restrict_positive`` the flat λ prior is truncated to ``λ_k ≥ 0``.
     Packages ``lam_d, lam_o, lam_w, beta, sigma`` with the per-draw Jacobian ``log|A|``
     in ``sample_stats`` and (default) a pointwise ``log_likelihood`` group for LOO/WAIC.
     """
@@ -692,6 +709,7 @@ def sample_sem_flow_resolvent(
         n_jobs=n_jobs,
         logdet_method=logdet_method,
         n_quad=n_quad,
+        positive=restrict_positive,
     )
 
 

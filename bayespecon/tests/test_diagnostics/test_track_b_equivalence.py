@@ -155,7 +155,8 @@ class TestSarNullTraceIdentity:
 
     def test_trace_identity_matches_dense(self):
         rng = np.random.default_rng(3)
-        n, k = 300, 3
+        # n > 512 so the chunked column-solve path crosses a chunk boundary.
+        n, k = 600, 3
         # Row-standardised ring lattice -> asymmetric weighted W.
         row = np.concatenate([np.arange(n), np.arange(n)])
         col = np.concatenate([(np.arange(n) - 1) % n, (np.arange(n) + 1) % n])
@@ -171,7 +172,7 @@ class TestSarNullTraceIdentity:
             float((W_dense.T @ W_dense).trace() + (W_dense @ W_dense).trace()),
         )
 
-        info = _sar_null_lambda_info(W, W_dense, X, beta, rho, sigma2, T_ww)
+        info = _sar_null_lambda_info(W, X, beta, rho, sigma2, T_ww)
         ref_GG, ref_WG = self._reference_info(W, W_dense, X, beta, rho, sigma2, T_ww)
         np.testing.assert_allclose(info["T_GG"], ref_GG, rtol=0, atol=1e-9)
         np.testing.assert_allclose(info["T_WG"], ref_WG, rtol=0, atol=1e-9)
