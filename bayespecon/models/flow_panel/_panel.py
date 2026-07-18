@@ -1897,10 +1897,11 @@ class SARNegBinFlowSeparablePanel(SARFlowSeparablePanel):
 
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
 
-            pm.Potential(
-                "jacobian",
-                self._T * self._separable_logdet_fn(rho_d, rho_o),
-            )
+            # No |A| change-of-variables Jacobian for the count likelihood:
+            # the NB mean is η = A⁻¹Xβ and y is modelled directly, so the
+            # spatial filter enters only through the mean.  (The Gaussian
+            # separable panel keeps the Jacobian; copying it here biases
+            # ρ toward the negative-logdet region.)
 
         return model
 

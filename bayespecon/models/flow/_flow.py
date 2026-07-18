@@ -1760,7 +1760,10 @@ class _NegBinFlowMixin:
                 sample_kwargs=sample_kwargs,
             )
         elif sampler == "nuts":
-            idata = super().fit(
+            # Call FlowModel.fit explicitly: SARFlow's own ``fit`` is the
+            # Gaussian resolvent sampler, which must never see count data.
+            idata = FlowModel.fit(
+                self,
                 draws=draws,
                 tune=tune,
                 chains=chains,
@@ -2079,10 +2082,11 @@ class SARNegBinFlowSeparable(_NegBinFlowMixin, SARFlowSeparable):
 
             pm.NegativeBinomial("obs", mu=lam, alpha=alpha, observed=self._y_int_vec)
 
-            pm.Potential(
-                "jacobian",
-                self._separable_logdet_fn(rho_d, rho_o),
-            )
+            # No |A| change-of-variables Jacobian for the count likelihood:
+            # the NB mean is η = A⁻¹Xβ and y is modelled directly, so the
+            # spatial filter enters only through the mean.  (The Gaussian
+            # separable model keeps the Jacobian; copying it here biases
+            # ρ toward the negative-logdet region.)
 
         return model
 
