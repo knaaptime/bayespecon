@@ -169,7 +169,7 @@ class TestNegativeBinomialFlowRecovery:
         alpha_true = 2.0
 
         out = generate_negbin_flow_data(
-            n=10,
+            n=15,
             rho_d=rho_d_true,
             rho_o=rho_o_true,
             rho_w=rho_w_true,
@@ -188,11 +188,10 @@ class TestNegativeBinomialFlowRecovery:
             titer=50,
             trace_seed=0,
         )
-        # NUTS on the exact count likelihood: the reduced-form PG-Gibbs path is
-        # documented to attenuate rho severely at this sample size (N = 100).
         idata = model.fit(
-            draws=500,
-            tune=500,
+            sampler="gibbs",
+            draws=1500,
+            tune=1500,
             chains=2,
             random_seed=42,
             progressbar=False,
@@ -227,7 +226,7 @@ class TestNegativeBinomialFlowRecovery:
         alpha_true = 1.8
 
         out = generate_negbin_flow_data_separable(
-            n=10,
+            n=15,
             rho_d=rho_d_true,
             rho_o=rho_o_true,
             beta_d=beta_d_true,
@@ -243,11 +242,10 @@ class TestNegativeBinomialFlowRecovery:
             col_names=out["col_names"],
             trace_seed=0,
         )
-        # NUTS on the exact count likelihood: the reduced-form PG-Gibbs path is
-        # documented to attenuate rho severely at this sample size (N = 100).
         idata = model.fit(
-            draws=500,
-            tune=500,
+            sampler="gibbs",
+            draws=1500,
+            tune=1500,
             chains=2,
             random_seed=43,
             progressbar=False,
@@ -307,11 +305,10 @@ class TestNegativeBinomialPanelFlowRecovery:
             titer=50,
             trace_seed=0,
         )
-        # 1000/1000: alpha (NB dispersion) mixes slowly under NUTS; 500-draw
-        # chains leave ESS < 100 and an unstable posterior mean.
         idata = model.fit(
-            draws=1000,
-            tune=1000,
+            sampler="gibbs",
+            draws=1500,
+            tune=1500,
             chains=2,
             random_seed=44,
             progressbar=False,
@@ -348,9 +345,13 @@ class TestNegativeBinomialPanelFlowRecovery:
         gamma_dist_true = -0.5
         alpha_true = 1.7
 
+        # n=10/T=6 (NT=600): at NT≈250 this realisation has a competing joint
+        # mode (rho_o≈0 with beta_d absorbing the origin-side signal) that
+        # beats the DGP truth in exact likelihood — the (rho_o, beta) split is
+        # simply not identified there.
         out = generate_panel_negbin_flow_data_separable(
-            n=8,
-            T=4,
+            n=10,
+            T=6,
             rho_d=rho_d_true,
             rho_o=rho_o_true,
             beta_d=beta_d_true,
@@ -363,16 +364,15 @@ class TestNegativeBinomialPanelFlowRecovery:
             y=out["y"],
             G=out["G"],
             X=out["X"],
-            T=4,
+            T=6,
             col_names=out["col_names"],
             effects=0,
             trace_seed=0,
         )
-        # 1000/1000: alpha (NB dispersion) mixes slowly under NUTS; 500-draw
-        # chains leave ESS < 100 and an unstable posterior mean.
         idata = model.fit(
-            draws=1000,
-            tune=1000,
+            sampler="gibbs",
+            draws=1500,
+            tune=1500,
             chains=2,
             random_seed=45,
             progressbar=False,
@@ -382,8 +382,6 @@ class TestNegativeBinomialPanelFlowRecovery:
         rho_o_hat = float(idata.posterior["rho_o"].mean())
         alpha_hat = float(idata.posterior["alpha"].mean())
 
-        # Panel separable NB recovery is noisy on this small synthetic sample; keep
-        # this as a coarse calibration test rather than a tight recovery check.
         assert abs(rho_d_hat - rho_d_true) < 0.35, (
             f"rho_d: {rho_d_hat:.3f} vs {rho_d_true}"
         )

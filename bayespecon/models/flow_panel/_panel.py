@@ -1558,29 +1558,175 @@ class SARNegBinFlowPanel(SARFlowPanel):
         chains: int = 4,
         random_seed: Optional[int] = None,
         *,
+        sampler: str = "gibbs",
         attach_log_abs_det: bool = True,
+        progressbar: bool = True,
+        n_jobs: int = -1,
         **sample_kwargs,
     ) -> az.InferenceData:
-        """Sample the NB2 SAR flow panel posterior via the PyMC/NUTS count path.
+        """Sample the NB2 SAR flow panel posterior.
 
-        The discrete likelihood carries no ``|A|`` change-of-variables term, so the
-        count model uses the PyMC path rather than the Gaussian resolvent sampler.
-        With ``attach_log_abs_det`` (default) the per-draw spatial-filter Jacobian
-        ``T·log|A(ρ)|`` is recorded in ``sample_stats["log_abs_det"]`` for diagnostics
-        (never folded into ``log_likelihood``); set it ``False`` to skip the per-draw
-        resolvent cost at very large ``N``.
+        ``sampler="gibbs"`` (default) runs the reduced-form Pólya–Gamma Gibbs
+        sampler with per-period Kronecker solves — the recommended path for NB
+        models.  ``sampler="nuts"`` uses the PyMC count path (exact likelihood,
+        much slower).  The count likelihood carries no ``|A|`` change-of-variables
+        term on either path.  With ``attach_log_abs_det`` (default) the per-draw
+        spatial-filter Jacobian ``T·log|A(ρ)|`` is recorded in
+        ``sample_stats["log_abs_det"]`` for diagnostics (never folded into
+        ``log_likelihood``); set it ``False`` to skip the per-draw resolvent cost
+        at very large ``N``.
         """
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            sampler="nuts",
-            **sample_kwargs,
-        )
+        if sampler == "gibbs":
+            idata = self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                n_jobs=n_jobs,
+            )
+        elif sampler == "nuts":
+            idata = super().fit(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                sampler="nuts",
+                progressbar=progressbar,
+                **sample_kwargs,
+            )
+        else:
+            raise ValueError(f"sampler must be 'gibbs' or 'nuts', got {sampler!r}")
         if attach_log_abs_det:
             self._attach_flow_log_abs_det(idata)
         return idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        progressbar: bool = True,
+        n_jobs: int = -1,
+    ) -> az.InferenceData:
+        """Sample posterior via reduced-form PG-Gibbs (unrestricted 3-ρ panel).
+
+        Identical model to the cross-sectional :class:`SARNegBinFlow` Gibbs but
+        with ``T`` periods sharing the per-period system matrix ``A``: one
+        ``N_f × N_f`` factorisation covers all periods per candidate ρ.
+        """
+        from ...models._base._shared import gelman_default_beta_prior
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.gaussian._chain_runner import run_chains
+        from ...samplers.negbin_reduced._flow import (
+            FlowReducedGibbsCache,
+            FlowReducedGibbsPriors,
+            FlowReducedGibbsState,
+            run_chain_unrestricted,
+        )
+
+        X = self._X
+        y = self._y_int_vec.astype(np.float64)
+        k = X.shape[1]
+        W_csc = self._W_sparse.tocsc()
+        T = self._T
+
+        cache = FlowReducedGibbsCache(
+            Wd=self._Wd,
+            Wo=self._Wo,
+            Ww=self._Ww,
+            W_csc=W_csc,
+            n=self._n,
+            separable=False,
+            rho_lower=self.priors.get("rho_lower", -0.999),
+            rho_upper=self.priors.get("rho_upper", 0.999),
+            positive=self.restrict_positive,
+            T=T,
+        )
+
+        default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
+            self._y, X, list(self._feature_names)
+        )
+        priors = FlowReducedGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
+            rho_lower=self.priors.get("rho_lower", -0.999),
+            rho_upper=self.priors.get("rho_upper", 0.999),
+        )
+
+        def _make_init(rng: np.random.Generator) -> FlowReducedGibbsState:
+            beta0 = rng.normal(0.0, 0.1, size=k)
+            rho_lo = 0.0 if self.restrict_positive else -0.1
+            rho_d0 = rng.uniform(rho_lo, 0.1)
+            rho_o0 = rng.uniform(rho_lo, 0.1)
+            rho_w0 = rng.uniform(0.0 if self.restrict_positive else -0.05, 0.05)
+            alpha0 = 1.0
+            omega0 = np.ones(self._N_flow * T, dtype=np.float64) * 0.5
+            return FlowReducedGibbsState(
+                beta=beta0,
+                rho_d=rho_d0,
+                rho_o=rho_o0,
+                rho_w=rho_w0,
+                alpha=alpha0,
+                omega=omega0,
+            )
+
+        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
+            rng = np.random.default_rng(seed)
+            init = _make_init(rng)
+            return run_chain_unrestricted(
+                y=y,
+                X=X,
+                Wd=self._Wd,
+                Wo=self._Wo,
+                Ww=self._Ww,
+                priors=priors,
+                cache=cache,
+                init=init,
+                draws=draws,
+                tune=tune,
+                thin=1,
+                rng=rng,
+                chain_id=chain_id,
+                progress_manager=progress_manager,
+            )
+
+        chain_results = run_chains(
+            chain_fn=_chain_fn,
+            n_chains=chains,
+            seeds=[random_seed + i for i in range(chains)]
+            if random_seed is not None
+            else None,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            parallel=n_jobs != 1,
+            draws=draws,
+            tune=tune,
+            model_type="nb_sar_flow_panel",
+        )
+
+        posterior_samples = {
+            "rho_d": np.stack([c["rho_d"] for c in chain_results], axis=0),
+            "rho_o": np.stack([c["rho_o"] for c in chain_results], axis=0),
+            "rho_w": np.stack([c["rho_w"] for c in chain_results], axis=0),
+            "beta": np.stack([c["beta"] for c in chain_results], axis=0),
+            "alpha": np.stack([c["alpha"] for c in chain_results], axis=0),
+        }
+        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
+        coords = {"coefficient": list(self._feature_names)}
+        dims = {"beta": ["coefficient"]}
+
+        self._idata = gibbs_to_inference_data(
+            posterior_samples=posterior_samples,
+            log_likelihood={"obs": log_lik},
+            observed_data={"obs": self._y_int_vec},
+            coords=coords,
+            dims=dims,
+        )
+        return self._idata
 
     def _compute_spatial_effects_posterior(
         self,
@@ -1755,26 +1901,169 @@ class SARNegBinFlowSeparablePanel(SARFlowSeparablePanel):
         chains: int = 4,
         random_seed: Optional[int] = None,
         *,
+        sampler: str = "gibbs",
         attach_log_abs_det: bool = True,
+        progressbar: bool = True,
+        n_jobs: int = -1,
         **sample_kwargs,
     ) -> az.InferenceData:
-        """Sample the separable NB2 SAR flow panel posterior (PyMC/NUTS count path).
+        """Sample the separable NB2 SAR flow panel posterior.
 
-        With ``attach_log_abs_det`` (default) the per-draw Jacobian ``T·log|A(ρ)|``
+        ``sampler="gibbs"`` (default) runs the reduced-form Pólya–Gamma Gibbs
+        sampler with per-period Kronecker solves; ``sampler="nuts"`` uses the
+        PyMC count path (exact likelihood, much slower).  With
+        ``attach_log_abs_det`` (default) the per-draw Jacobian ``T·log|A(ρ)|``
         (using the separability relation ``ρ_w = −ρ_d ρ_o``) is recorded in
-        ``sample_stats["log_abs_det"]`` for diagnostics — not folded into the count
-        model's ``log_likelihood``.
+        ``sample_stats["log_abs_det"]`` for diagnostics — not folded into the
+        count model's ``log_likelihood``.
         """
-        idata = super().fit(
-            draws=draws,
-            tune=tune,
-            chains=chains,
-            random_seed=random_seed,
-            **sample_kwargs,
-        )
+        if sampler == "gibbs":
+            idata = self._fit_gibbs(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                n_jobs=n_jobs,
+            )
+        elif sampler == "nuts":
+            idata = super().fit(
+                draws=draws,
+                tune=tune,
+                chains=chains,
+                random_seed=random_seed,
+                progressbar=progressbar,
+                **sample_kwargs,
+            )
+        else:
+            raise ValueError(f"sampler must be 'gibbs' or 'nuts', got {sampler!r}")
         if attach_log_abs_det:
             self._attach_flow_log_abs_det(idata)
         return idata
+
+    def _fit_gibbs(
+        self,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        random_seed: Optional[int] = None,
+        progressbar: bool = True,
+        n_jobs: int = -1,
+    ) -> az.InferenceData:
+        """Sample posterior via reduced-form PG-Gibbs (separable 2-ρ panel).
+
+        Identical model to the cross-sectional :class:`SARNegBinFlowSeparable`
+        Gibbs but with ``T`` periods sharing the per-period Kronecker system
+        ``A = L_o ⊗ L_d``: two ``n × n`` factorisations cover all periods per
+        candidate ρ.
+        """
+        from ...models._base._shared import gelman_default_beta_prior
+        from ...samplers._utils._idata import gibbs_to_inference_data
+        from ...samplers.gaussian._chain_runner import run_chains
+        from ...samplers.negbin_reduced._flow import (
+            FlowReducedGibbsCache,
+            FlowReducedGibbsPriors,
+            FlowReducedGibbsState,
+            run_chain_separable,
+        )
+
+        X = self._X
+        y = self._y_int_vec.astype(np.float64)
+        k = X.shape[1]
+        W_csc = self._W_sparse.tocsc()
+        T = self._T
+
+        cache = FlowReducedGibbsCache(
+            Wd=self._Wd,
+            Wo=self._Wo,
+            Ww=self._Ww,
+            W_csc=W_csc,
+            n=self._n,
+            separable=True,
+            rho_lower=self.priors.get("rho_lower", -0.999),
+            rho_upper=self.priors.get("rho_upper", 0.999),
+            T=T,
+        )
+
+        default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
+            self._y, X, list(self._feature_names)
+        )
+        priors = FlowReducedGibbsPriors(
+            beta_mu=self.priors.get("beta_mu", default_beta_mu),
+            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
+            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
+            alpha_nu=self.priors.get("alpha_nu", 3.0),
+            rho_lower=self.priors.get("rho_lower", -0.999),
+            rho_upper=self.priors.get("rho_upper", 0.999),
+        )
+
+        def _make_init(rng: np.random.Generator) -> FlowReducedGibbsState:
+            beta0 = rng.normal(0.0, 0.1, size=k)
+            rho_d0 = rng.uniform(-0.1, 0.1)
+            rho_o0 = rng.uniform(-0.1, 0.1)
+            alpha0 = 1.0
+            omega0 = np.ones(self._N_flow * T, dtype=np.float64) * 0.5
+            return FlowReducedGibbsState(
+                beta=beta0,
+                rho_d=rho_d0,
+                rho_o=rho_o0,
+                rho_w=None,
+                alpha=alpha0,
+                omega=omega0,
+            )
+
+        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
+            rng = np.random.default_rng(seed)
+            init = _make_init(rng)
+            return run_chain_separable(
+                y=y,
+                X=X,
+                W_csc=W_csc,
+                n=self._n,
+                priors=priors,
+                cache=cache,
+                init=init,
+                draws=draws,
+                tune=tune,
+                thin=1,
+                rng=rng,
+                chain_id=chain_id,
+                progress_manager=progress_manager,
+            )
+
+        chain_results = run_chains(
+            chain_fn=_chain_fn,
+            n_chains=chains,
+            seeds=[random_seed + i for i in range(chains)]
+            if random_seed is not None
+            else None,
+            n_jobs=n_jobs,
+            progressbar=progressbar,
+            parallel=n_jobs != 1,
+            draws=draws,
+            tune=tune,
+            model_type="nb_sar_flow_sep_panel",
+        )
+
+        posterior_samples = {
+            "rho_d": np.stack([c["rho_d"] for c in chain_results], axis=0),
+            "rho_o": np.stack([c["rho_o"] for c in chain_results], axis=0),
+            "rho_w": np.stack([c["rho_w"] for c in chain_results], axis=0),
+            "beta": np.stack([c["beta"] for c in chain_results], axis=0),
+            "alpha": np.stack([c["alpha"] for c in chain_results], axis=0),
+        }
+        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
+        coords = {"coefficient": list(self._feature_names)}
+        dims = {"beta": ["coefficient"]}
+
+        self._idata = gibbs_to_inference_data(
+            posterior_samples=posterior_samples,
+            log_likelihood={"obs": log_lik},
+            observed_data={"obs": self._y_int_vec},
+            coords=coords,
+            dims=dims,
+        )
+        return self._idata
 
     def _compute_spatial_effects_posterior(
         self,

@@ -1681,8 +1681,9 @@ class OLSFlow(FlowModel):
 class _NegBinFlowMixin:
     """Shared ``fit`` dispatch for Negative-Binomial flow models.
 
-    The NB flow classes share a single ``fit`` wrapper — NUTS by default, or a
-    reduced-form Pólya–Gamma Gibbs sampler via ``sampler="gibbs"``.  Only the
+    The NB flow classes share a single ``fit`` wrapper — the reduced-form
+    Pólya–Gamma Gibbs sampler by default, or PyMC NUTS on the exact count
+    likelihood via ``sampler="nuts"`` (much slower).  Only the
     per-class :meth:`_fit_gibbs` (unrestricted 3-ρ vs. separable 2-ρ
     reduced-form sampler) differs, so it stays on each subclass.  The mixin is
     listed first in the bases so its ``fit`` wins and ``super().fit`` resolves
@@ -1695,7 +1696,7 @@ class _NegBinFlowMixin:
         tune: int = 1000,
         chains: int = 4,
         random_seed: Optional[int] = None,
-        sampler: str = "nuts",
+        sampler: str = "gibbs",
         gibbs_backend: str = "numpy",
         store_lambda: bool = False,
         idata_kwargs: Optional[dict] = None,
@@ -1716,9 +1717,10 @@ class _NegBinFlowMixin:
             Number of parallel chains.
         random_seed : int, optional
             Seed for reproducibility.
-        sampler : {"nuts", "gibbs"}, default "nuts"
-            Sampling method: ``"nuts"`` for NUTS (default) or ``"gibbs"`` for
-            the reduced-form Pólya–Gamma Gibbs sampler.
+        sampler : {"gibbs", "nuts"}, default "gibbs"
+            Sampling method: ``"gibbs"`` (default) for the reduced-form
+            Pólya–Gamma Gibbs sampler, or ``"nuts"`` for PyMC NUTS on the
+            exact count likelihood (much slower).
         gibbs_backend : {"numpy", "auto"}, default "numpy"
             Execution backend for the Gibbs sampler (only used when
             ``sampler="gibbs"``).  The NB flow Gibbs sampler is NumPy-only.
@@ -1934,6 +1936,7 @@ class SARNegBinFlow(_NegBinFlowMixin, SARFlow):
             separable=False,
             rho_lower=self.priors.get("rho_lower", -0.999),
             rho_upper=self.priors.get("rho_upper", 0.999),
+            positive=self.restrict_positive,
         )
 
         # --- Build priors ---
@@ -1952,9 +1955,10 @@ class SARNegBinFlow(_NegBinFlowMixin, SARFlow):
         # --- Build init state (per-chain, via closure) ---
         def _make_init(rng: np.random.Generator) -> FlowReducedGibbsState:
             beta0 = rng.normal(0.0, 0.1, size=k)
-            rho_d0 = rng.uniform(-0.1, 0.1)
-            rho_o0 = rng.uniform(-0.1, 0.1)
-            rho_w0 = rng.uniform(-0.05, 0.05)
+            rho_lo = 0.0 if self.restrict_positive else -0.1
+            rho_d0 = rng.uniform(rho_lo, 0.1)
+            rho_o0 = rng.uniform(rho_lo, 0.1)
+            rho_w0 = rng.uniform(0.0 if self.restrict_positive else -0.05, 0.05)
             alpha0 = 1.0
             omega0 = np.ones(self._N, dtype=np.float64) * 0.5
             return FlowReducedGibbsState(
