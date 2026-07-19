@@ -31,7 +31,7 @@ dependencies:
   - pip
   - pip:
     - klujax
-    - git+https://github.com/knaaptime/cholgraph --no-build-isolation
+    - git+https://github.com/knaaptime/cholgraph
 
   # docs
   - twine
