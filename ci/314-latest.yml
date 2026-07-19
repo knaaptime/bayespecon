@@ -26,11 +26,11 @@ dependencies:
   - optimistix
   - blackjax
   - numpyro
-  - jax
   - pip
   - pip:
     - klujax
     - git+https://github.com/knaaptime/cholgraph
+    - jax # force from pip to allow windows 
 
   # docs
   - numpydoc
