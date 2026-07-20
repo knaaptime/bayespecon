@@ -405,10 +405,8 @@ class SARPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=(
-                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
-            ),
-            logdet_method=self.logdet_method,
+            W_eigs=self._logdet_eigs,
+            logdet_method=self._logdet_bounds.method,
         )
 
         self._idata = gibbs.fit(
@@ -879,10 +877,8 @@ class SEMPanelRE(SpatialPanelModel):
             N=self._N,
             T=self._T,
             unit_idx=self._unit_idx,
-            W_eigs=(
-                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
-            ),
-            logdet_method=self.logdet_method,
+            W_eigs=self._logdet_eigs,
+            logdet_method=self._logdet_bounds.method,
         )
 
         self._idata = gibbs.fit(
