@@ -337,7 +337,7 @@ def _compute_residuals(
     Parameters
     ----------
     model : fitted model instance
-        Must provide ``_y`` (or ``_y``) and ``_X`` (or ``_X``),
+        Must provide ``_y`` and ``_X``,
         and optionally ``_WX``.
     beta_draws : np.ndarray, shape (draws, k)
         Posterior draws of beta.

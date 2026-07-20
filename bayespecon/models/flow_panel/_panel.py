@@ -64,14 +64,14 @@ class FlowPanelModel(SpatialPanelModel):
         0 pooled, 1 pair FE, 2 time FE, 3 two-way FE.
     priors : dict, optional
         Prior overrides.
-    logdet_method : str, default "traces"
-        Flow log-determinant method.
+    logdet_method : str, optional
+        Flow log-determinant method; ``None`` (default) auto-selects.
+        Concrete subclasses override the default with their recommended
+        method (see the cross-sectional :class:`~bayespecon.models.flow.FlowModel`).
     restrict_positive : bool, default True
         If True, use simplex-constrained rho parameters.
     robust : bool, default False
         If True, use Student-t observation errors.
-    miter, titer, trace_riter, trace_seed
-        Flow logdet approximation controls.
     """
 
     def __init__(
@@ -83,13 +83,9 @@ class FlowPanelModel(SpatialPanelModel):
         col_names: Optional[list[str]] = None,
         k: Optional[int] = None,
         priors: Optional[dict] = None,
-        logdet_method: str = "traces",
+        logdet_method: Optional[str] = None,
         restrict_positive: bool = True,
         robust: bool = False,
-        miter: int = 30,
-        titer: int = 800,
-        trace_riter: int = 50,
-        trace_seed: Optional[int] = None,
         symmetric_xo_xd: Optional[bool] = None,
         effects: int = 0,
     ):
@@ -101,8 +97,6 @@ class FlowPanelModel(SpatialPanelModel):
         if self.effects not in (0, 1, 2, 3):
             raise ValueError("effects must be one of {0,1,2,3}.")
 
-        self.miter = miter
-        self.titer = titer
         self._is_row_std = True  # Graph is assumed row-standardised
         self._idata: Optional[az.InferenceData] = None
         self._pymc_model: Optional[pm.Model] = None
@@ -1029,8 +1023,9 @@ class SARFlowPanel(_ResolventFlowPanelMixin, FlowPanelModel):
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : str, default "traces"
-        Log-determinant method. Only ``"traces"`` is supported here.
+    logdet_method : str, default "resolvent"
+        Log-determinant method.  The default ``"resolvent"`` samples via the
+        per-period resolvent-Kronecker gradient sampler (recommended).
     restrict_positive : bool, default True
         If True, use ``pm.Dirichlet("rho_simplex", a=ones(4))`` to enforce
         :math:`\\rho_d, \\rho_o, \\rho_w \\geq 0` and
@@ -1042,14 +1037,6 @@ class SARFlowPanel(_ResolventFlowPanelMixin, FlowPanelModel):
         to heavy-tailed outliers. Adds a ``nu`` parameter with prior
         :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`,
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
-    miter : int, default 30
-        Trace polynomial order for the log-determinant.
-    titer : int, default 800
-        Geometric tail cutoff for the log-determinant series.
-    trace_riter : int, default 50
-        Number of Monte Carlo probes for trace estimation.
-    trace_seed : int, optional
-        Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
         If ``None`` (default), origin and destination design blocks are
         compared and symmetry is auto-detected.
@@ -1199,15 +1186,6 @@ class SARFlowSeparablePanel(FlowPanelModel):
         to heavy-tailed outliers. Adds a ``nu`` parameter with prior
         :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`,
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
-    miter : int, default 30
-        Polynomial / approximation order (used by ``"chebyshev"`` /
-
-    titer : int, default 800
-        Geometric tail cutoff for series-based variants.
-    trace_riter : int, default 50
-        Number of Monte Carlo probes (used by
-    trace_seed : int, optional
-        Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
         If ``None`` (default), origin and destination design blocks are
         compared and symmetry is auto-detected.
@@ -1610,123 +1588,22 @@ class SARNegBinFlowPanel(SARFlowPanel):
         progressbar: bool = True,
         n_jobs: int = -1,
     ) -> az.InferenceData:
-        """Sample posterior via reduced-form PG-Gibbs (unrestricted 3-ρ panel).
+        """Sample posterior via reduced-form PG-Gibbs (unrestricted 3-ρ panel)."""
+        from ..flow._nb_gibbs import run_negbin_flow_gibbs
 
-        Identical model to the cross-sectional :class:`SARNegBinFlow` Gibbs but
-        with ``T`` periods sharing the per-period system matrix ``A``: one
-        ``N_f × N_f`` factorisation covers all periods per candidate ρ.
-        """
-        from ...models._base._shared import gelman_default_beta_prior
-        from ...samplers._utils._idata import gibbs_to_inference_data
-        from ...samplers.gaussian._chain_runner import run_chains
-        from ...samplers.negbin_reduced._flow import (
-            FlowReducedGibbsCache,
-            FlowReducedGibbsPriors,
-            FlowReducedGibbsState,
-            run_chain_unrestricted,
-        )
-
-        X = self._X
-        y = self._y_int_vec.astype(np.float64)
-        k = X.shape[1]
-        W_csc = self._W_sparse.tocsc()
-        T = self._T
-
-        cache = FlowReducedGibbsCache(
-            Wd=self._Wd,
-            Wo=self._Wo,
-            Ww=self._Ww,
-            W_csc=W_csc,
-            n=self._n,
+        return run_negbin_flow_gibbs(
+            self,
             separable=False,
-            rho_lower=self.priors.get("rho_lower", -0.999),
-            rho_upper=self.priors.get("rho_upper", 0.999),
-            positive=self.restrict_positive,
-            T=T,
-        )
-
-        default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
-            self._y, X, list(self._feature_names)
-        )
-        priors = FlowReducedGibbsPriors(
-            beta_mu=self.priors.get("beta_mu", default_beta_mu),
-            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
-            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
-            alpha_nu=self.priors.get("alpha_nu", 3.0),
-            rho_lower=self.priors.get("rho_lower", -0.999),
-            rho_upper=self.priors.get("rho_upper", 0.999),
-        )
-
-        def _make_init(rng: np.random.Generator) -> FlowReducedGibbsState:
-            beta0 = rng.normal(0.0, 0.1, size=k)
-            rho_lo = 0.0 if self.restrict_positive else -0.1
-            rho_d0 = rng.uniform(rho_lo, 0.1)
-            rho_o0 = rng.uniform(rho_lo, 0.1)
-            rho_w0 = rng.uniform(0.0 if self.restrict_positive else -0.05, 0.05)
-            alpha0 = 1.0
-            omega0 = np.ones(self._N_flow * T, dtype=np.float64) * 0.5
-            return FlowReducedGibbsState(
-                beta=beta0,
-                rho_d=rho_d0,
-                rho_o=rho_o0,
-                rho_w=rho_w0,
-                alpha=alpha0,
-                omega=omega0,
-            )
-
-        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
-            rng = np.random.default_rng(seed)
-            init = _make_init(rng)
-            return run_chain_unrestricted(
-                y=y,
-                X=X,
-                Wd=self._Wd,
-                Wo=self._Wo,
-                Ww=self._Ww,
-                priors=priors,
-                cache=cache,
-                init=init,
-                draws=draws,
-                tune=tune,
-                thin=1,
-                rng=rng,
-                chain_id=chain_id,
-                progress_manager=progress_manager,
-            )
-
-        chain_results = run_chains(
-            chain_fn=_chain_fn,
-            n_chains=chains,
-            seeds=[random_seed + i for i in range(chains)]
-            if random_seed is not None
-            else None,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-            parallel=n_jobs != 1,
+            model_type="nb_sar_flow_panel",
+            omega_size=self._N_flow * self._T,
+            T=self._T,
             draws=draws,
             tune=tune,
-            model_type="nb_sar_flow_panel",
+            chains=chains,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            n_jobs=n_jobs,
         )
-
-        posterior_samples = {
-            "rho_d": np.stack([c["rho_d"] for c in chain_results], axis=0),
-            "rho_o": np.stack([c["rho_o"] for c in chain_results], axis=0),
-            "rho_w": np.stack([c["rho_w"] for c in chain_results], axis=0),
-            "beta": np.stack([c["beta"] for c in chain_results], axis=0),
-            "alpha": np.stack([c["alpha"] for c in chain_results], axis=0),
-        }
-        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
-        coords = {"coefficient": list(self._feature_names)}
-        dims = {"beta": ["coefficient"]}
-
-        self._idata = gibbs_to_inference_data(
-            posterior_samples=posterior_samples,
-            log_likelihood={"obs": log_lik},
-            observed_data={"obs": self._y_int_vec},
-            coords=coords,
-            dims=dims,
-        )
-        return self._idata
 
     def _compute_spatial_effects_posterior(
         self,
@@ -1950,120 +1827,22 @@ class SARNegBinFlowSeparablePanel(SARFlowSeparablePanel):
         progressbar: bool = True,
         n_jobs: int = -1,
     ) -> az.InferenceData:
-        """Sample posterior via reduced-form PG-Gibbs (separable 2-ρ panel).
+        """Sample posterior via reduced-form PG-Gibbs (separable 2-ρ panel)."""
+        from ..flow._nb_gibbs import run_negbin_flow_gibbs
 
-        Identical model to the cross-sectional :class:`SARNegBinFlowSeparable`
-        Gibbs but with ``T`` periods sharing the per-period Kronecker system
-        ``A = L_o ⊗ L_d``: two ``n × n`` factorisations cover all periods per
-        candidate ρ.
-        """
-        from ...models._base._shared import gelman_default_beta_prior
-        from ...samplers._utils._idata import gibbs_to_inference_data
-        from ...samplers.gaussian._chain_runner import run_chains
-        from ...samplers.negbin_reduced._flow import (
-            FlowReducedGibbsCache,
-            FlowReducedGibbsPriors,
-            FlowReducedGibbsState,
-            run_chain_separable,
-        )
-
-        X = self._X
-        y = self._y_int_vec.astype(np.float64)
-        k = X.shape[1]
-        W_csc = self._W_sparse.tocsc()
-        T = self._T
-
-        cache = FlowReducedGibbsCache(
-            Wd=self._Wd,
-            Wo=self._Wo,
-            Ww=self._Ww,
-            W_csc=W_csc,
-            n=self._n,
+        return run_negbin_flow_gibbs(
+            self,
             separable=True,
-            rho_lower=self.priors.get("rho_lower", -0.999),
-            rho_upper=self.priors.get("rho_upper", 0.999),
-            T=T,
-        )
-
-        default_beta_mu, default_beta_sigma = gelman_default_beta_prior(
-            self._y, X, list(self._feature_names)
-        )
-        priors = FlowReducedGibbsPriors(
-            beta_mu=self.priors.get("beta_mu", default_beta_mu),
-            beta_sigma=self.priors.get("beta_sigma", default_beta_sigma),
-            alpha_sigma=self.priors.get("alpha_sigma", 2.5),
-            alpha_nu=self.priors.get("alpha_nu", 3.0),
-            rho_lower=self.priors.get("rho_lower", -0.999),
-            rho_upper=self.priors.get("rho_upper", 0.999),
-        )
-
-        def _make_init(rng: np.random.Generator) -> FlowReducedGibbsState:
-            beta0 = rng.normal(0.0, 0.1, size=k)
-            rho_d0 = rng.uniform(-0.1, 0.1)
-            rho_o0 = rng.uniform(-0.1, 0.1)
-            alpha0 = 1.0
-            omega0 = np.ones(self._N_flow * T, dtype=np.float64) * 0.5
-            return FlowReducedGibbsState(
-                beta=beta0,
-                rho_d=rho_d0,
-                rho_o=rho_o0,
-                rho_w=None,
-                alpha=alpha0,
-                omega=omega0,
-            )
-
-        def _chain_fn(chain_id, seed, progress_manager=None, chain_id_kw=0):
-            rng = np.random.default_rng(seed)
-            init = _make_init(rng)
-            return run_chain_separable(
-                y=y,
-                X=X,
-                W_csc=W_csc,
-                n=self._n,
-                priors=priors,
-                cache=cache,
-                init=init,
-                draws=draws,
-                tune=tune,
-                thin=1,
-                rng=rng,
-                chain_id=chain_id,
-                progress_manager=progress_manager,
-            )
-
-        chain_results = run_chains(
-            chain_fn=_chain_fn,
-            n_chains=chains,
-            seeds=[random_seed + i for i in range(chains)]
-            if random_seed is not None
-            else None,
-            n_jobs=n_jobs,
-            progressbar=progressbar,
-            parallel=n_jobs != 1,
+            model_type="nb_sar_flow_sep_panel",
+            omega_size=self._N_flow * self._T,
+            T=self._T,
             draws=draws,
             tune=tune,
-            model_type="nb_sar_flow_sep_panel",
+            chains=chains,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            n_jobs=n_jobs,
         )
-
-        posterior_samples = {
-            "rho_d": np.stack([c["rho_d"] for c in chain_results], axis=0),
-            "rho_o": np.stack([c["rho_o"] for c in chain_results], axis=0),
-            "rho_w": np.stack([c["rho_w"] for c in chain_results], axis=0),
-            "beta": np.stack([c["beta"] for c in chain_results], axis=0),
-            "alpha": np.stack([c["alpha"] for c in chain_results], axis=0),
-        }
-        log_lik = np.stack([c["log_lik"] for c in chain_results], axis=0)
-        coords = {"coefficient": list(self._feature_names)}
-        dims = {"beta": ["coefficient"]}
-
-        self._idata = gibbs_to_inference_data(
-            posterior_samples=posterior_samples,
-            log_likelihood={"obs": log_lik},
-            observed_data={"obs": self._y_int_vec},
-            coords=coords,
-            dims=dims,
-        )
-        return self._idata
 
     def _compute_spatial_effects_posterior(
         self,
@@ -2377,8 +2156,9 @@ class SEMFlowPanel(_ResolventFlowPanelMixin, _SEMFlowPanelMixin, FlowPanelModel)
     model : int, default 0
         Fixed-effects transform: ``0`` pooled, ``1`` pair FE, ``2`` time
         FE, ``3`` two-way FE.
-    logdet_method : str, default "traces"
-        Log-determinant method. Only ``"traces"`` is supported here.
+    logdet_method : str, default "resolvent"
+        Log-determinant method.  The default ``"resolvent"`` samples via the
+        per-period resolvent-gradient sampler (recommended).
     restrict_positive : bool, default True
         If True, use ``pm.Dirichlet("lam_simplex", a=ones(4))`` to enforce
         :math:`\\lambda_d, \\lambda_o, \\lambda_w \\geq 0` and
@@ -2390,14 +2170,6 @@ class SEMFlowPanel(_ResolventFlowPanelMixin, _SEMFlowPanelMixin, FlowPanelModel)
         to heavy-tailed outliers. Adds a ``nu`` parameter with prior
         :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`,
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
-    miter : int, default 30
-        Trace polynomial order for the log-determinant.
-    titer : int, default 800
-        Geometric tail cutoff for the log-determinant series.
-    trace_riter : int, default 50
-        Number of Monte Carlo probes for trace estimation.
-    trace_seed : int, optional
-        Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
         If ``None`` (default), origin and destination design blocks are
         compared and symmetry is auto-detected.
@@ -2517,15 +2289,6 @@ class SEMFlowSeparablePanel(_SEMFlowPanelMixin, FlowPanelModel):
         to heavy-tailed outliers. Adds a ``nu`` parameter with prior
         :math:`\\nu \\sim \\mathrm{TruncExp}(\\lambda_\\nu, \\mathrm{lower}=2)`,
         rate ``nu_lam`` (default 1/30, mean ≈ 30).
-    miter : int, default 30
-        Polynomial / approximation order (used by ``"chebyshev"`` /
-
-    titer : int, default 800
-        Geometric tail cutoff for series-based variants.
-    trace_riter : int, default 50
-        Number of Monte Carlo probes (used by
-    trace_seed : int, optional
-        Random seed for trace estimation reproducibility.
     symmetric_xo_xd : bool, optional
         If ``None`` (default), origin and destination design blocks are
         compared and symmetry is auto-detected.

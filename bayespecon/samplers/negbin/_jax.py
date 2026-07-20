@@ -52,6 +52,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from bayespecon._jax_dispatch import ensure_x64
+
 from ._core import JAXGibbsState
 
 
@@ -210,7 +212,7 @@ def _make_gibbs_step_with_data(
     import jax.numpy as jnp
     from jax.scipy.linalg import cho_solve, solve_triangular
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     use_cholgraph = cholgraph_pattern is not None
 
@@ -233,8 +235,6 @@ def _make_gibbs_step_with_data(
     beta_sigma2_jax = jnp.broadcast_to(
         jnp.asarray(priors.beta_sigma, dtype=jnp.float64) ** 2, (k,)
     )
-    jnp.float64(priors.sigma2_alpha)
-    jnp.float64(priors.sigma2_beta)
     rho_lower_jax = jnp.float64(priors.rho_lower)
     rho_upper_jax = jnp.float64(priors.rho_upper)
 
@@ -798,7 +798,7 @@ def run_chain_jax(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     if rng is None:
         rng = np.random.default_rng()
@@ -1028,7 +1028,7 @@ def run_chains_jax_vectorized(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     chains = len(inits)
     n, k = X.shape

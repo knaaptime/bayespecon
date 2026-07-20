@@ -81,9 +81,6 @@ class TestFlowModelConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         assert model._n == self.n
         assert model._N == self.N
@@ -96,25 +93,20 @@ class TestFlowModelConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         np.testing.assert_allclose(model._y_vec, self.y_vec, atol=1e-12)
 
     def test_sar_flow_separable_builds(self):
         from bayespecon.models.flow import SARFlowSeparable
 
-        model = SARFlowSeparable(
-            self.y_vec, self.G, self.X, col_names=self.col_names, trace_seed=0
-        )
+        model = SARFlowSeparable(self.y_vec, self.G, self.X, col_names=self.col_names)
         assert model._n == self.n
 
     def test_wrong_y_length_raises(self):
         from bayespecon.models.flow import SARFlow
 
         with pytest.raises(ValueError, match="N="):
-            SARFlow(np.zeros(self.N + 1), self.G, self.X, miter=5, trace_seed=0)
+            SARFlow(np.zeros(self.N + 1), self.G, self.X)
 
     def test_asymmetric_beta_shapes_work_in_dgp(self):
         """generate_flow_data should support beta_d and beta_o of different lengths."""
@@ -145,9 +137,6 @@ class TestFlowModelConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         with pytest.raises(NotImplementedError, match="resolvent"):
             model._build_pymc_model()
@@ -155,9 +144,7 @@ class TestFlowModelConstruction:
     def test_pymc_model_separable_builds_without_error(self):
         from bayespecon.models.flow import SARFlowSeparable
 
-        model = SARFlowSeparable(
-            self.y_vec, self.G, self.X, col_names=self.col_names, trace_seed=0
-        )
+        model = SARFlowSeparable(self.y_vec, self.G, self.X, col_names=self.col_names)
         pm_model = model._build_pymc_model()
         assert pm_model is not None
 
@@ -371,9 +358,6 @@ class TestSARFlowFitSmoke:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
@@ -387,9 +371,7 @@ class TestSARFlowFitSmoke:
     def test_sar_flow_separable_fit_posterior_keys(self):
         from bayespecon.models.flow import SARFlowSeparable
 
-        model = SARFlowSeparable(
-            self.y, self.G, self.X, col_names=self.col_names, trace_seed=0
-        )
+        model = SARFlowSeparable(self.y, self.G, self.X, col_names=self.col_names)
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
         posterior = idata.posterior
         assert "rho_d" in posterior
@@ -405,9 +387,6 @@ class TestSARFlowFitSmoke:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
@@ -426,9 +405,6 @@ class TestSARFlowFitSmoke:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         assert model.inference_data is None  # before fit
         model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
@@ -459,9 +435,7 @@ class TestEffectsAccountingIdentity:
             seed=7,
         )
         G = out["G"]
-        model = SARFlowSeparable(
-            out["y_vec"], G, out["X"], col_names=out["col_names"], trace_seed=0
-        )
+        model = SARFlowSeparable(out["y_vec"], G, out["X"], col_names=out["col_names"])
         # Use minimal posterior (mock-style: just run prior predictive)
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         effects = model._compute_spatial_effects_posterior(draws=5)
@@ -599,33 +573,12 @@ RHO_O_SEP_TRUE = 0.30
 # harder posterior surface — more obs improves identification reliably
 FLOW_N_SEP = 12  # 144 O-D pairs (vs 64 for unrestricted model)
 
-# Poisson-specific true values
-POI_RHO_D_TRUE = 0.3
-POI_RHO_O_TRUE = 0.2
-POI_RHO_W_TRUE = 0.1
-
-# Separable Poisson — asymmetric for the same reason
-POI_RHO_D_SEP_TRUE = 0.40
-POI_RHO_O_SEP_TRUE = 0.30
-
-# Poisson models are more expensive per step (no conjugacy); use fewer samples
-POISSON_SAMPLE_KWARGS: dict = dict(
-    tune=400, draws=600, chains=2, random_seed=42, progressbar=False
-)
-# Separable Poisson: bilinear rho_w term makes the posterior harder to tune;
-# extra steps ensure the mass matrix adapts before drawing
-POISSON_SEP_SAMPLE_KWARGS: dict = dict(
-    tune=400, draws=400, chains=2, random_seed=42, progressbar=False
-)
-
 # Tolerances — wider than standard panel models because 3 spatial
 # parameters are harder to identify simultaneously
 ABS_TOL_RHO = 0.20
 ABS_TOL_RHO_SEP = 0.25  # separable model: slightly wider
-ABS_TOL_RHO_POI = 0.20  # Poisson: tighter after removing spurious Jacobian
 ABS_TOL_BETA = 0.35
 ABS_TOL_BETA_SEP = 0.40
-ABS_TOL_BETA_POI = 0.35  # Poisson beta: tighter after removing spurious Jacobian
 ABS_TOL_SIGMA = 0.35
 
 
@@ -659,8 +612,6 @@ class TestSARFlowSeparableLogdetMethods:
             out["X"],
             col_names=out["col_names"],
             logdet_method=request.param,
-            miter=15,
-            trace_seed=0,
         )
         idata = model.fit(**{**SAMPLE_KWARGS, "draws": 50, "tune": 50, "chains": 1})
         return idata, request.param
@@ -735,9 +686,6 @@ class TestSARFlowRecovery:
             G,
             out["X"],
             col_names=out["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         idata = model.fit(**SAMPLE_KWARGS)
@@ -793,7 +741,6 @@ class TestSARFlowSeparableRecovery:
             G,
             out["X"],
             col_names=out["col_names"],
-            trace_seed=0,
         )
         idata = model.fit(**SAMPLE_KWARGS)
         return idata
@@ -889,7 +836,6 @@ class TestFlowSpatialEffectsAndPPC:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            trace_seed=0,
         )
         model.fit(draws=40, tune=40, chains=1, progressbar=False, random_seed=0)
         return model
@@ -1023,7 +969,6 @@ class TestFlowEffectsLeSageDecomposition:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            trace_seed=0,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
 
@@ -1168,7 +1113,6 @@ class TestFlowPanelSpatialEffectsAndPPC:
             X=X,
             T=T,
             col_names=col_names,
-            trace_seed=0,
         )
         model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
         return model
@@ -1311,7 +1255,6 @@ class TestFlowEffectsAsymmetricAndIntra:
             G,
             design.combined,
             col_names=design.feature_names,
-            trace_seed=0,
         )
         assert model._symmetric_xo_xd is False
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
@@ -1340,7 +1283,6 @@ class TestFlowEffectsAsymmetricAndIntra:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            trace_seed=0,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         df_combined = model.spatial_effects(mode="combined")
@@ -1462,9 +1404,6 @@ class TestFlowLogLikelihood:
             self.G,
             self.gauss["X"],
             col_names=self.gauss["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
@@ -1478,7 +1417,6 @@ class TestFlowLogLikelihood:
             self.G,
             self.gauss["X"],
             col_names=self.gauss["col_names"],
-            trace_seed=0,
         )
         idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata)
@@ -1506,9 +1444,6 @@ class TestFlowLogLikelihood:
             self.G,
             self.gauss["X"],
             col_names=self.gauss["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         m_sep = SARFlowSeparable(
@@ -1516,7 +1451,6 @@ class TestFlowLogLikelihood:
             self.G,
             self.gauss["X"],
             col_names=self.gauss["col_names"],
-            trace_seed=0,
         )
         m_ols = OLSFlow(
             self.gauss["y_vec"],

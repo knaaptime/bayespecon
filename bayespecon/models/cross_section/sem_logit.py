@@ -34,6 +34,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from ..._lazy_deps import az
+from ...samplers._utils._cholgraph_utils import resolve_pg_jax_backend
 from ...samplers._utils._idata import gibbs_to_inference_data
 from ...samplers._utils._slice import SliceWidthState
 from ...samplers._utils._spatial_normal import CholmodFactor
@@ -260,59 +261,19 @@ class SEMLogit(SpatialModel):
         cholmod_factor = CholmodFactor(_P0)
 
         # Map the resolved backend onto the sampler's solve/logdet/sample paths.
-        if backend == "jax":
-            from ..._jax_dispatch import _cholgraph_available, _cholmod_jax_enabled
-
-            if _cholmod_jax_enabled() and _cholgraph_available():
-                solve_method = "cholmod_jax"
-                logdet_P_method = "cholmod_jax"
-                sample_method = "cholmod_jax"
-            else:
-                solve_method = "jax_dense"
-                logdet_P_method = "jax_dense"
-                sample_method = "jax_dense"
-        else:  # "numpy" → CHOLMOD factorisation
-            solve_method = "cholmod"
-            logdet_P_method = "cholmod"
-            sample_method = "cholmod"
-
-        # Precompute JAX dense components if using jax_dense or cholmod_jax path
-        W_sym_dense = None
-        WtW_dense = None
-        logdet_jax = None
-        cholgraph_pattern = None
-        if solve_method in ("jax_dense", "cholmod_jax"):
-            import jax
-            import jax.numpy as jnp
-
-            jax.config.update("jax_enable_x64", True)
-
-            # Only the dense-Cholesky fallback needs the dense (W+Wᵀ) and WᵀW;
-            # the cholmod_jax path assembles P from the sparse COO pattern and
-            # does its matvecs via BCOO, so we never densify W there.
-            if solve_method == "jax_dense":
-                W_sym_dense = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
-                WtW_dense = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
-
-            from ..._logdet import make_logdet_jax_fn
-
-            bounds = self._logdet_bounds
-            logdet_jax = make_logdet_jax_fn(
-                W_sparse,
-                method=bounds.method,
-                rho_min=bounds.rho_min,
-                rho_max=bounds.rho_max,
-            )
-
-            if solve_method == "cholmod_jax":
-                from ...samplers._utils._cholgraph_utils import (
-                    precompute_cholgraph_pattern,
-                )
-
-                # Pass the raw (row-standardised) W; the helper derives
-                # W+Wᵀ and WᵀW internally.  Passing W_sym here would double
-                # the symmetric part and corrupt WᵀW.
-                cholgraph_pattern = precompute_cholgraph_pattern(W_sparse.tocsc(), n)
+        method, _jax_parts = resolve_pg_jax_backend(
+            backend,
+            W_sparse=W_sparse,
+            W_sym=W_sym,
+            WtW=WtW,
+            n=n,
+            logdet_bounds=self._logdet_bounds,
+        )
+        solve_method = logdet_P_method = sample_method = method
+        W_sym_dense = _jax_parts["W_sym_dense"]
+        WtW_dense = _jax_parts["WtW_dense"]
+        logdet_jax = _jax_parts["logdet_jax"]
+        cholgraph_pattern = _jax_parts["cholgraph_pattern"]
 
         cache = SEMLogitGibbsCache(
             W_sparse=W_sparse,

@@ -22,7 +22,6 @@ works for both cross-section (``self._W_sparse @ X``) and panel
 from __future__ import annotations
 
 import numpy as np
-import pytensor.tensor as pt
 
 from ..._backends.sampler_helpers import use_jax_likelihood
 from ..._lazy_deps import pm
@@ -184,6 +183,8 @@ class GaussianLikelihoodMixin:
 
     def _build_pymc_model_no_jacobian(self) -> pm.Model:
         """Build PyMC model for OLS or SLX (no spatial autoregressive term)."""
+        import pytensor.tensor as pt
+
         self._validate_wx_columns()
         Z = self._design_matrix()
         names = self._design_names()
@@ -222,6 +223,8 @@ class GaussianLikelihoodMixin:
         compute_log_likelihood: bool = False,
     ) -> pm.Model:
         """Build PyMC model for SAR or SDM (spatial lag with ρ Jacobian)."""
+        import pytensor.tensor as pt
+
         self._validate_wx_columns()
         Z = self._design_matrix()
         names = self._design_names()
@@ -266,6 +269,8 @@ class GaussianLikelihoodMixin:
 
     def _build_pymc_model_lam(self, *, nuts_sampler: str = "pymc") -> pm.Model:
         """Build PyMC model for SEM or SDEM (spatial error with λ Jacobian)."""
+        import pytensor.tensor as pt
+
         self._validate_wx_columns()
         Z = self._design_matrix()
         names = self._design_names()

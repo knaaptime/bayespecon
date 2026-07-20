@@ -1,38 +1,5 @@
-"""Cross-sectional spatial regression models."""
+"""Cross-sectional spatial regression models (lazily loaded — SPEC 1)."""
 
-from .logit import Logit
-from .negbin import NegBin
-from .ols import OLS
-from .sar import SAR
-from .sar_logit import SARLogit
-from .sar_negbin import SARNegBin
-from .sar_negbin_structural import SARNegBinStructural
-from .sar_probit import SARProbit
-from .sar_zinb import SARZINB
-from .sdem import SDEM
-from .sdm import SDM
-from .sem import SEM
-from .sem_logit import SEMLogit
-from .slx import SLX
-from .tobit import SARTobit, SDMTobit, SEMTobit
+import lazy_loader as _lazy
 
-__all__ = [
-    "Logit",
-    "NegBin",
-    "OLS",
-    "SAR",
-    "SDEM",
-    "SDM",
-    "SEM",
-    "SLX",
-    "SARNegBin",
-    "SARNegBinStructural",
-    "SARNegBinStructural",
-    "SEMLogit",
-    "SARLogit",
-    "SARProbit",
-    "SARTobit",
-    "SDMTobit",
-    "SEMTobit",
-    "SARZINB",
-]
+__getattr__, __dir__, __all__ = _lazy.attach_stub(__name__, __file__)

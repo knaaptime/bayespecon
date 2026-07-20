@@ -451,18 +451,3 @@ Graph Utilities
    network_weights
 
 
-Gibbs Samplers
---------------
-
-Block-Gibbs samplers for Gaussian spatial models.  These bypass NUTS
-entirely and exploit conditional conjugacy for faster sampling.
-
-.. currentmodule:: bayespecon.samplers
-
-.. autosummary::
-   :toctree: generated/
-
-   GibbsEstimation
-   GaussianSARGibbs
-   GaussianSEMGibbs
-   GaussianGibbsPriors

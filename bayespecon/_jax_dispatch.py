@@ -28,6 +28,17 @@ import warnings
 from functools import lru_cache
 
 
+def ensure_x64() -> None:
+    """Enable JAX float64 mode (idempotent).
+
+    Every JAX entry point in the package requires ``jax_enable_x64``;
+    call this instead of scattering ``jax.config.update`` at each site.
+    """
+    import jax
+
+    jax.config.update("jax_enable_x64", True)
+
+
 @lru_cache(maxsize=1)
 def _eqx_available() -> bool:
     """Return ``True`` when optional ``equinox`` is importable."""

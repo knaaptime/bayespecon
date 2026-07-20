@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from bayespecon._jax_dispatch import ensure_x64
+
 from .._utils._jax_polyagamma import jax_polyagamma
 
 # ---------------------------------------------------------------------------
@@ -442,7 +444,7 @@ def _make_reduced_gibbs_step(
     import jax.numpy as jnp
     from jax.scipy.linalg import cho_solve, solve_triangular
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     # Prior hyperparameters
     beta_mu = priors.beta_mu
@@ -848,7 +850,7 @@ def run_chains_jax_reduced(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     from .._utils._progress import GibbsProgressBarManager
 

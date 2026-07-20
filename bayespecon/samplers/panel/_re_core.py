@@ -1034,9 +1034,6 @@ def run_re_chain(
     # Precompute Wy for SAR
     Wy = cache.Wy
 
-    # Precompute group counts for α sampling
-    np.bincount(unit_idx, minlength=N)
-
     for i in range(total_iters):
         # Expand α to observation level
         alpha_expanded = state.alpha[unit_idx]

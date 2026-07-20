@@ -20,18 +20,13 @@ from .._backends.sampler_helpers import (
     use_jax_likelihood,
 )
 from .._lazy_deps import az, pm
-from .._logdet import (
-    make_logdet_fn,
-    make_logdet_grad_numpy_vec_fn,
-    make_logdet_numpy_fn,
-    make_logdet_numpy_vec_fn,
-)
-from ._base._shared import SharedSpatialMethods, _is_row_standardized_csr
-from ._base._structure import PanelStructure
-from .base import (
+from ._base._shared import (
+    SharedSpatialMethods,
+    _is_row_standardized_csr,
     _pointwise_gaussian_loglik,
     _write_log_likelihood_to_idata,
 )
+from ._base._structure import PanelStructure
 
 # ---------------------------------------------------------------------------
 # Effects specification helpers
@@ -324,6 +319,10 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
     # weight matrices. Tests may monkeypatch this value.
     _DENSE_W_WARN_BYTES: int = 100 * 1024 * 1024
 
+    # Use the Panel-prefixed LM tests and panel decision specs in the shared
+    # spatial_diagnostics_decision (see SharedSpatialMethods).
+    _panel_diagnostics = True
+
     # Subclasses that include WX coefficients in the posterior beta
     # vector (SDM, SDEM, SLX) should set this to True.
     _has_wx_in_beta: bool = False
@@ -533,85 +532,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
         return self._structure.batch_spatial_lag(resid, T_eff)
 
     @property
-    def _logdet_numpy_fn(self):
-        """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
-        if self._logdet_numpy_fn_cache is None:
-            eigs = (
-                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
-            )
-            self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
-                self._W_sparse,
-                eigs,
-                method=self.logdet_method,
-                T=self._T,
-            )
-        return self._logdet_numpy_fn_cache
-
-    @property
-    def _logdet_numpy_vec_fn(self):
-        """Vectorised pure-numpy logdet evaluator (lazy)."""
-        if self._logdet_numpy_vec_fn_cache is None:
-            eigs = (
-                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
-            )
-            self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
-                self._W_sparse,
-                eigs,
-                method=self.logdet_method,
-                T=self._T,
-            )
-        return self._logdet_numpy_vec_fn_cache
-
-    @property
-    def _logdet_grad_numpy_vec_fn(self):
-        """Vectorised ``(rho_arr) -> g(ρ)`` gradient of the **N×N** logdet (lazy).
-
-        Built with ``T=1`` — the direct-effect trace is a per-period property of
-        the N×N spatial multiplier, independent of the number of periods.
-        """
-        if self._logdet_grad_numpy_vec_fn_cache is None:
-            eigs = (
-                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
-            )
-            self._logdet_grad_numpy_vec_fn_cache = make_logdet_grad_numpy_vec_fn(
-                self._W_sparse,
-                eigs,
-                method=self.logdet_method,
-                T=1,
-            )
-        return self._logdet_grad_numpy_vec_fn_cache
-
-    def _batch_mean_diag(self, rho_draws: np.ndarray) -> np.ndarray:
-        """``(1/N) tr((I - ρW)⁻¹)`` per draw via the resolvent identity.
-
-        ``tr(S)/N = 1 − (ρ/N)·g(ρ)`` with ``g = d/dρ log|I − ρW|``, so the
-        direct-effect trace rides the fast logdet surrogate and needs no
-        O(N³) eigendecomposition (unless the method is already eigenvalue).
-        """
-        rho_draws = np.asarray(rho_draws, dtype=np.float64)
-        N = int(self._W_sparse.shape[0])
-        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
-        return 1.0 - (rho_draws / N) * g
-
-    def _batch_mean_diag_MW(self, rho_draws: np.ndarray) -> np.ndarray:
-        """``(1/N) tr((I - ρW)⁻¹ W)`` per draw — equals ``−g(ρ)/N``."""
-        rho_draws = np.asarray(rho_draws, dtype=np.float64)
-        N = int(self._W_sparse.shape[0])
-        g = np.asarray(self._logdet_grad_numpy_vec_fn(rho_draws), dtype=np.float64)
-        return -g / N
-
-    @property
-    def _logdet_pytensor_fn(self):
-        """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
-        if self._logdet_pytensor_fn_cache is None:
-            self._logdet_pytensor_fn_cache = make_logdet_fn(
-                self._W_for_logdet,
-                method=self.logdet_method,
-                T=self._T,
-            )
-        return self._logdet_pytensor_fn_cache
-
-    @property
     def _W_dense(self) -> np.ndarray:
         """Dense (N*T)×(N*T) weight matrix, materialised lazily on first access."""
         if self._W_dense_cache is None:
@@ -650,88 +570,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
         sparse weight operator.
         """
         return self._structure.W_pt_sparse()
-
-    def _batch_mean_row_sum(self, rho_draws: np.ndarray) -> np.ndarray:
-        """Compute mean row sum of (I - rho*W)^{-1} for each posterior draw.
-
-        Uses the N×N cross-sectional weights matrix (not the (N*T)×(N*T)
-        Kronecker product), because spatial effects are defined in terms
-        of the cross-sectional spatial multiplier.
-
-        For row-standardised W this is the scalar ``1/(1 - rho)``.
-        For non-row-standardised W the eigenvalue decomposition is used:
-        ``mean_row_sum = (1/n) * ones' V diag(1/(1-rho*omega)) V^{-1} ones``,
-        where the vector ``c = V^{-1} ones`` is pre-computed once.
-
-        Parameters
-        ----------
-        rho_draws : np.ndarray, shape (G,)
-            Spatial autoregressive parameter draws.
-
-        Returns
-        -------
-        np.ndarray, shape (G,)
-            Mean row sum for each draw.
-        """
-        if self._is_row_std:
-            return 1.0 / (1.0 - rho_draws)
-
-        # Eigenvalue-based computation on the N×N cross-sectional W matrix.
-        # Spatial effects are defined per cross-sectional unit, so we use
-        # the N×N W (not the (N*T)×(N*T) Kronecker product).
-        if not hasattr(self, "_eig_inv_ones_N"):
-            Wn = self._W_sparse.toarray().astype(np.float64)
-            eigs, V = np.linalg.eig(Wn)
-            self._W_eigs_N = eigs.astype(np.complex128)
-            self._V_N = V.astype(np.complex128)
-            self._eig_inv_ones_N = np.linalg.solve(
-                self._V_N, np.ones(Wn.shape[0], dtype=np.complex128)
-            )
-
-        c = self._eig_inv_ones_N
-        eigs = self._W_eigs_N
-        V_col_sums = self._V_N.sum(axis=0)  # (N,)
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        return _chunked_eig_means(rho_draws, eigs, weights=V_col_sums * c)
-
-    def _batch_mean_row_sum_MW(self, rho_draws: np.ndarray) -> np.ndarray:
-        """Compute mean row sum of (I - rho*W)^{-1} W for each posterior draw.
-
-        Uses the N×N cross-sectional weights matrix (not the (N*T)×(N*T)
-        Kronecker product), because spatial effects are defined in terms
-        of the cross-sectional spatial multiplier.
-
-        For row-standardised W this equals ``1/(1 - rho)`` (same as
-        ``_batch_mean_row_sum``) because row sums of M@W = row sums of M
-        when W is row-standardised.
-
-        For non-row-standardised W the eigenvalue decomposition is used:
-        ``mean_row_sum_MW = (1/n) * ones' V diag(omega/(1-rho*omega)) V^{-1} ones``.
-
-        Parameters
-        ----------
-        rho_draws : np.ndarray, shape (G,)
-            Spatial autoregressive parameter draws.
-
-        Returns
-        -------
-        np.ndarray, shape (G,)
-            Mean row sum of M@W for each draw.
-        """
-        if self._is_row_std:
-            return 1.0 / (1.0 - rho_draws)
-
-        # Ensure N×N eigenvalue decomposition is available
-        if not hasattr(self, "_eig_inv_ones_N"):
-            _ = self._batch_mean_row_sum(rho_draws[:1])
-
-        c = self._eig_inv_ones_N
-        eigs = self._W_eigs_N
-        V_col_sums = self._V_N.sum(axis=0)  # (N,)
-        from ..diagnostics.spatial_effects import _chunked_eig_means
-
-        return _chunked_eig_means(rho_draws, eigs, weights=eigs * V_col_sums * c)
 
     @property
     def _intercept_dropped(self) -> bool:
@@ -1183,157 +1021,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
             has not been fit yet.
         """
         return self._pymc_model
-
-    def spatial_diagnostics(self) -> pd.DataFrame:
-        """Run Bayesian LM specification tests and return a summary table.
-
-        Looks up the diagnostic suite registered for this model class
-        and calls each test function on this fitted model, collecting the
-        results into a tidy DataFrame.  The set of tests depends on the
-        model type — for example, an OLSPanelFE model runs Panel-LM-Lag,
-        Panel-LM-Error, Panel-LM-SDM-Joint, and Panel-LM-SLX-Error-Joint.
-
-        Requires the model to have been fit (``.fit()`` called) and a
-        spatial weights matrix ``W`` to have been supplied at construction
-        time.
-
-        Returns
-        -------
-        pandas.DataFrame
-            DataFrame indexed by test name with columns:
-
-            ==============  =====================================================
-            Column          Description
-            ==============  =====================================================
-            statistic       Posterior mean of the LM statistic
-            median          Posterior median of the LM statistic
-            df              Degrees of freedom for the :math:`\\chi^2` reference
-            p_value         Bayesian p-value: ``1 - chi2.cdf(mean, df)``
-            ci_lower        Lower bound of 95% credible interval (2.5%)
-            ci_upper        Upper bound of 95% credible interval (97.5%)
-            ==============  =====================================================
-
-            The DataFrame has ``attrs["model_type"]`` (class name) and
-            ``attrs["n_draws"]`` (total posterior draws) metadata.
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been fit yet.
-
-        See Also
-        --------
-        spatial_diagnostics_decision : Model-selection decision based on
-            the test results.
-        """
-        from ..diagnostics.lmtests.registry import get_diagnostic_suite
-        from .base import SpatialModel
-
-        self._require_fit()
-        suite = get_diagnostic_suite(self)
-        if suite is None:
-            raise ValueError(
-                f"No diagnostic suite registered for {type(self).__name__}. "
-                f"Register one in bayespecon.diagnostics.lmtests.registry."
-            )
-        return SpatialModel._run_lm_diagnostics(self, suite.tests)
-
-    def spatial_diagnostics_decision(
-        self, alpha: float = 0.05, format: str = "graphviz"
-    ) -> Any:
-        """Return a model-selection decision from Bayesian LM test results.
-
-        Implements the decision tree from :cite:t:`koley2024UseNot`
-        (the Bayesian analogue of the classical ``stge_kb`` procedure
-        in :cite:t:`anselin1996SimpleDiagnostic`), adapted for panel models
-        following :cite:t:`elhorst2014SpatialEconometrics`.
-
-        Parameters
-        ----------
-        alpha : float, default 0.05
-            Significance level for the Bayesian p-values.
-        format : {"graphviz", "ascii", "model"}, default "graphviz"
-            Output format. ``"model"`` returns the recommended-model name
-            string. ``"ascii"`` returns an indented box-drawing rendering
-            of the full decision tree with the chosen path highlighted.
-            ``"graphviz"`` returns a :class:`graphviz.Digraph` object that
-            renders inline in Jupyter; if the optional ``graphviz`` package
-            is not installed a :class:`UserWarning` is issued and the
-            ASCII rendering is returned instead.
-
-        Returns
-        -------
-        str or graphviz.Digraph
-            Recommended model name when ``format="model"``, an ASCII tree
-            string when ``format="ascii"``, or a ``graphviz.Digraph`` when
-            ``format="graphviz"`` (with ASCII fallback on missing dep).
-
-        See Also
-        --------
-        spatial_diagnostics : Compute the Bayesian LM test statistics.
-
-        References
-        ----------
-        :cite:t:`koley2024UseNot`, :cite:t:`anselin1996SimpleDiagnostic`,
-        :cite:t:`elhorst2014SpatialEconometrics`
-        """
-        from ..diagnostics import _decision_trees as _dt
-
-        diag = self.spatial_diagnostics()
-        model_type = self.__class__.__name__
-
-        def _sig(test_name: str) -> bool:
-            if test_name not in diag.index:
-                return False
-            pval = diag.loc[test_name, "p_value"]
-            return not np.isnan(pval) and pval < alpha
-
-        def _lag_le_error() -> bool:
-            return (
-                diag.loc["Panel-LM-Lag", "p_value"]
-                <= diag.loc["Panel-LM-Error", "p_value"]
-            )
-
-        def _robust_lag_le_error() -> bool:
-            # Panel-OLS tree tie-break.  See cross-sectional analogue in
-            # ``base.SpatialModel.spatial_diagnostics_decision``.
-            return (
-                diag.loc["Panel-Robust-LM-Lag", "p_value"]
-                <= diag.loc["Panel-Robust-LM-Error", "p_value"]
-            )
-
-        def _lag_sdm_le_error_sdem() -> bool:
-            return (
-                diag.loc["Panel-Robust-LM-Lag-SDM", "p_value"]
-                <= diag.loc["Panel-Robust-LM-Error-SDEM", "p_value"]
-            )
-
-        spec = _dt.get_panel_spec(model_type)
-        decision, path = _dt.evaluate(
-            spec,
-            sig_lookup=_sig,
-            predicate_lookup={
-                "panel_lag_pval_le_error_pval": _lag_le_error,
-                "panel_robust_lag_pval_le_error_pval": _robust_lag_le_error,
-                "panel_lag_sdm_pval_le_error_sdem_pval": _lag_sdm_le_error_sdem,
-            },
-        )
-
-        p_values: dict[str, float] = {}
-        for test_name in diag.index:
-            pv = diag.loc[test_name, "p_value"]
-            if not np.isnan(pv):
-                p_values[str(test_name)] = float(pv)
-
-        return _dt.render(
-            spec,
-            path,
-            decision,
-            p_values=p_values,
-            alpha=alpha,
-            fmt=format,
-            title=f"{model_type} decision tree (alpha={alpha})",
-        )
 
     def __repr__(self) -> str:
         n, k = self._X.shape

@@ -389,7 +389,6 @@ class SARPanelRE(SpatialPanelModel):
         priors = REGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_alpha_sigma=self.priors.get("sigma_alpha_sigma", 10.0),
             rho_lower=self._logdet_bounds.rho_min,
             rho_upper=self._logdet_bounds.rho_max,
         )
@@ -865,7 +864,6 @@ class SEMPanelRE(SpatialPanelModel):
         priors = REGibbsPriors(
             beta_mu=self.priors.get("beta_mu", 0.0),
             beta_sigma=self.priors.get("beta_sigma", 1e6),
-            sigma_alpha_sigma=self.priors.get("sigma_alpha_sigma", 10.0),
             rho_lower=self._logdet_bounds.rho_min,
             rho_upper=self._logdet_bounds.rho_max,
         )

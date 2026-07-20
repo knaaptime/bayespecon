@@ -42,6 +42,8 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from bayespecon._jax_dispatch import ensure_x64
+
 __all__ = [
     "FlowKron",
     "FlowKronJax",
@@ -505,7 +507,7 @@ def _make_flow_kron_jax(kron: FlowKron, probes: np.ndarray, n_quad: int = 8):
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     from bayespecon._jax_dispatch import _klujax_available
 

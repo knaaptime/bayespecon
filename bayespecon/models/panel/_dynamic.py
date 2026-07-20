@@ -345,7 +345,12 @@ class _DynamicPanelMixin:
             eps = resid - spatial_draws[:, None] * w_resid
 
         ll_data = _pointwise_gaussian_loglik(eps, sigma_draws, nu_draws)
-        jacobian = self._logdet_numpy_vec_fn(spatial_draws) * self._n_time_eff
+        # _logdet_numpy_vec_fn is scaled by the full panel length T, but the
+        # dynamic design only spans the T-1 effective periods — rescale so the
+        # Jacobian is T_eff * logdet(I - rho W), matching the sampled model.
+        jacobian = self._logdet_numpy_vec_fn(spatial_draws) * (
+            self._n_time_eff / self._T
+        )
         ll_total = ll_data + jacobian[:, None] / n_obs
 
         n_chains = idata.posterior.sizes["chain"]
@@ -354,6 +359,52 @@ class _DynamicPanelMixin:
             idata,
             ll_total.reshape(n_chains, n_draws_per_chain, n_obs),
         )
+
+    def _fit_dynamic(
+        self,
+        spatial_param: str,
+        *,
+        draws: int = 2000,
+        tune: int = 1000,
+        chains: int = 4,
+        target_accept: float = 0.9,
+        random_seed: int | None = None,
+        idata_kwargs: dict | None = None,
+        **sample_kwargs,
+    ):
+        """Shared NUTS fit for spatial dynamic panels.
+
+        Dynamic panel builders use ``pm.Normal("obs", observed=y)``, which
+        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
+        Jacobian term that is not captured.  When ``log_likelihood=True`` is
+        requested, the Jacobian-corrected log-likelihood is reconstructed
+        post-sampling via :meth:`_reconstruct_dynamic_log_likelihood`.
+        """
+        idata_kwargs = idata_kwargs or {}
+        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
+        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
+        progressbar = sample_kwargs.pop("progressbar", True)
+
+        _, compute_log_likelihood = self._fit_nuts(
+            draws=draws,
+            tune=tune,
+            chains=chains,
+            target_accept=target_accept,
+            random_seed=random_seed,
+            progressbar=progressbar,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs=idata_kwargs,
+            compute_log_likelihood=compute_log_likelihood,
+            sample_kwargs=sample_kwargs,
+        )
+
+        if compute_log_likelihood:
+            self._reconstruct_dynamic_log_likelihood(
+                spatial_param=spatial_param,
+                nuts_sampler=nuts_sampler,
+            )
+
+        return self._idata
 
 
 class OLSPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
@@ -562,38 +613,17 @@ class SDMRPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         idata_kwargs: dict | None = None,
         **sample_kwargs,
     ):
-        """Sample posterior and attach Jacobian-corrected log-likelihood.
-
-        The SDMR panel model uses ``pm.Normal("obs", observed=y)`` which
-        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
-        Jacobian term that is not captured.  When ``log_likelihood=True``
-        is requested, the Jacobian correction is added post-sampling.
-        """
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        progressbar = sample_kwargs.pop("progressbar", True)
-
-        _, compute_log_likelihood = self._fit_nuts(
+        """Sample posterior and attach Jacobian-corrected log-likelihood."""
+        return self._fit_dynamic(
+            "rho",
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
+            **sample_kwargs,
         )
-
-        if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(
-                spatial_param="rho",
-                nuts_sampler=nuts_sampler,
-            )
-
-        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -751,38 +781,17 @@ class SDMUPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         idata_kwargs: dict | None = None,
         **sample_kwargs,
     ):
-        """Sample posterior and attach Jacobian-corrected log-likelihood.
-
-        The SDMU panel model uses ``pm.Normal("obs", observed=y)`` which
-        auto-captures the Gaussian log-likelihood, plus a ``pm.Potential``
-        Jacobian term that is not captured.  When ``log_likelihood=True``
-        is requested, the Jacobian correction is added post-sampling.
-        """
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        progressbar = sample_kwargs.pop("progressbar", True)
-
-        _, compute_log_likelihood = self._fit_nuts(
+        """Sample posterior and attach Jacobian-corrected log-likelihood."""
+        return self._fit_dynamic(
+            "rho",
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
+            **sample_kwargs,
         )
-
-        if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(
-                spatial_param="rho",
-                nuts_sampler=nuts_sampler,
-            )
-
-        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -930,31 +939,16 @@ class SARPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         **sample_kwargs,
     ):
         """Sample posterior and attach Jacobian-corrected log-likelihood."""
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        progressbar = sample_kwargs.pop("progressbar", True)
-
-        _, compute_log_likelihood = self._fit_nuts(
+        return self._fit_dynamic(
+            "rho",
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
+            **sample_kwargs,
         )
-
-        if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(
-                spatial_param="rho",
-                nuts_sampler=nuts_sampler,
-            )
-
-        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -1157,31 +1151,16 @@ class SEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         **sample_kwargs,
     ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics."""
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        progressbar = sample_kwargs.pop("progressbar", True)
-
-        _, compute_log_likelihood = self._fit_nuts(
+        return self._fit_dynamic(
+            "lam",
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
+            **sample_kwargs,
         )
-
-        if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(
-                spatial_param="lam",
-                nuts_sampler=nuts_sampler,
-            )
-
-        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()
@@ -1390,31 +1369,16 @@ class SDEMPanelDynamic(_DynamicPanelMixin, SpatialPanelModel):
         **sample_kwargs,
     ):
         """Sample posterior and attach pointwise log-likelihood for IC metrics."""
-        idata_kwargs = idata_kwargs or {}
-        compute_log_likelihood = bool(idata_kwargs.get("log_likelihood", False))
-        nuts_sampler = sample_kwargs.pop("nuts_sampler", "pymc")
-        progressbar = sample_kwargs.pop("progressbar", True)
-
-        _, compute_log_likelihood = self._fit_nuts(
+        return self._fit_dynamic(
+            "lam",
             draws=draws,
             tune=tune,
             chains=chains,
             target_accept=target_accept,
             random_seed=random_seed,
-            progressbar=progressbar,
-            nuts_sampler=nuts_sampler,
             idata_kwargs=idata_kwargs,
-            compute_log_likelihood=compute_log_likelihood,
-            sample_kwargs=sample_kwargs,
+            **sample_kwargs,
         )
-
-        if compute_log_likelihood:
-            self._reconstruct_dynamic_log_likelihood(
-                spatial_param="lam",
-                nuts_sampler=nuts_sampler,
-            )
-
-        return self._idata
 
     def _fitted_mean_from_posterior(self) -> np.ndarray:
         self._prepare_dynamic_design()

@@ -1,27 +1,5 @@
-from ._dynamic import (
-    OLSPanelDynamic,
-    SARPanelDynamic,
-    SDEMPanelDynamic,
-    SDMRPanelDynamic,
-    SDMUPanelDynamic,
-    SEMPanelDynamic,
-    SLXPanelDynamic,
-)
-from ._fe import (
-    OLSPanelFE,
-    SARPanelFE,
-    SDEMPanelFE,
-    SDMPanelFE,
-    SEMPanelFE,
-    SLXPanelFE,
-)
-from ._re import (
-    OLSPanelRE,
-    SARPanelRE,
-    SDEMPanelRE,
-    SEMPanelRE,
-)
-from ._tobit import (
-    SARPanelTobit,
-    SEMPanelTobit,
-)
+"""Panel spatial regression models (lazily loaded — SPEC 1)."""
+
+import lazy_loader as _lazy
+
+__getattr__, __dir__, __all__ = _lazy.attach_stub(__name__, __file__)

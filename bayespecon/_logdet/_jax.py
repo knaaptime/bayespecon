@@ -21,10 +21,6 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
-from ._cheb_stochastic import (
-    cheb_stochastic_logdet_eval,
-    cheb_stochastic_logdet_precompute,
-)
 from ._chebyshev import chebyshev
 from ._config import resolve_logdet_method
 from ._slq import slq_logdet_precompute
@@ -129,23 +125,9 @@ def make_logdet_jax_fn(
         # Precompute stochastic moments in numpy, then evaluate at Chebyshev
         # nodes in ρ-space and fit a Chebyshev-in-ρ polynomial for JAX
         # Clenshaw evaluation (differentiable, JIT-compatible).
-        pre = cheb_stochastic_logdet_precompute(W_sparse)
-        # Evaluate at 20 Chebyshev nodes in [rho_min, rho_max]
-        _k_nodes = np.arange(1, 21)
-        _nodes_cos = np.cos((2 * _k_nodes - 1) * np.pi / 40)
-        _rho_nodes = 0.5 * (rho_max - rho_min) * _nodes_cos + 0.5 * (rho_max + rho_min)
-        _logdet_vals = np.array(
-            [cheb_stochastic_logdet_eval(pre, float(r)) for r in _rho_nodes]
-        )
-        # DCT-I → Chebyshev coefficients in ρ
-        coeffs = np.zeros(20, dtype=np.float64)
-        for j in range(20):
-            scale = 2.0 / 20 if j > 0 else 1.0 / 20
-            coeffs[j] = scale * np.sum(
-                _logdet_vals * np.cos(j * (2 * _k_nodes - 1) * np.pi / 40)
-            )
-        rmin_cb = float(rho_min)
-        rmax_cb = float(rho_max)
+        from ._factories import _cheb_stochastic_coeffs
+
+        coeffs, rmin_cb, rmax_cb = _cheb_stochastic_coeffs(W_sparse, rho_min, rho_max)
 
         def _jax_cheb_stochastic(rho):
             val = jax_logdet_chebyshev(rho, coeffs, rmin=rmin_cb, rmax=rmax_cb)

@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from bayespecon._jax_dispatch import ensure_x64
+
 from .._utils._jax_polyagamma import jax_polyagamma
 from ._core import JAXLogitGibbsState
 
@@ -136,7 +138,7 @@ def _make_gibbs_step_with_data(
 
     from .._utils._jax_slice import jax_slice_sample_1d
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     use_cholgraph = cholgraph_pattern is not None
 
@@ -447,7 +449,7 @@ def run_chain_jax(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     if rng is None:
         rng = np.random.default_rng()
@@ -575,7 +577,7 @@ def _make_gibbs_step_with_data_sem(
     from .._utils._jax_slice import jax_slice_sample_1d
     from ._core import JAXSEMLogitGibbsState
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     use_cholgraph = cholgraph_pattern is not None
 
@@ -829,7 +831,7 @@ def run_chain_jax_sem(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     from ._core import JAXSEMLogitGibbsState
 
@@ -1104,7 +1106,7 @@ def run_chains_jax_vectorized(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     chains = len(inits)
     n, k = X.shape
@@ -1266,7 +1268,7 @@ def run_chains_jax_sem_vectorized(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     from ._core import JAXSEMLogitGibbsState
 

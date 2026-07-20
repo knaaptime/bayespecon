@@ -28,6 +28,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from bayespecon._jax_dispatch import ensure_x64
+
 
 class _ChainOutput(NamedTuple):
     """Raw output from a single JAX chain scan."""
@@ -162,7 +164,7 @@ def run_gaussian_panel_flow_chain_jax(
     from ._state import PanelGaussianPriors, PanelGaussianTrace
     from ._state_jax import JAXPanelGaussianState
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     # ── Validate and prepare data ──
     y = np.asarray(y, dtype=np.float64)

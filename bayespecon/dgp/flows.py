@@ -29,6 +29,134 @@ from .utils import (
     pairwise_distance_matrix,
 )
 
+# ---------------------------------------------------------------------------
+# Shared building blocks
+#
+# The twelve public generators share the flow-filter assembly, the singular-
+# matrix error handling, the beta-vector layout, and a couple of drawing
+# blocks.  Everything else (parameter inference rules, design-matrix choice,
+# noise placement, observation family, return schema — and, critically, the
+# per-generator rng draw order) is generator-specific and stays explicit in
+# each function.  None of these helpers consumes rng draws except
+# ``_hetero_flow_eps``, which performs the exact draw the callers previously
+# made inline.
+# ---------------------------------------------------------------------------
+
+
+def _flow_system(G: Graph, r_d: float, r_o: float, r_w: float) -> sp.csr_matrix:
+    """Assemble the N×N flow filter ``I_N - r_d W_d - r_o W_o - r_w W_w``."""
+    wms = flow_weight_matrices(G)
+    Wd, Wo, Ww = wms["destination"], wms["origin"], wms["network"]
+    N = Wd.shape[0]
+    I_N = sp.eye(N, format="csr", dtype=np.float64)
+    return I_N - r_d * Wd - r_o * Wo - r_w * Ww
+
+
+def _singular_flow_message(letter: str, prefix: str) -> str:
+    return (
+        f"{letter} = I_N - {prefix}_d*Wd - {prefix}_o*Wo - {prefix}_w*Ww is singular. "
+        f"Check that {prefix}_d + {prefix}_o + {prefix}_w < 1 for row-stochastic W."
+    )
+
+
+def _spsolve_flow(A, rhs, letter: str = "A", prefix: str = "rho") -> np.ndarray:
+    """``A^{-1} rhs`` with the standard singular-filter error message."""
+    try:
+        return sp.linalg.spsolve(A, rhs)
+    except sp.linalg.MatrixRankWarning as exc:
+        raise ValueError(_singular_flow_message(letter, prefix)) from exc
+
+
+def _factorized_flow(A, letter: str = "A", prefix: str = "rho"):
+    """Factorise ``A`` once (panel reuse) with the standard error message."""
+    try:
+        return sp.linalg.factorized(A.tocsc())
+    except RuntimeError as exc:
+        raise ValueError(_singular_flow_message(letter, prefix)) from exc
+
+
+def _warn_flow_stability(
+    r_d: float, r_o: float, r_w: float, prefix: str, filter_desc: str
+) -> None:
+    """Warn when the sufficient stability bound ``|r_d|+|r_o|+|r_w| < 1`` fails.
+
+    For row-standardised W_d/W_o/W_w each has spectral radius 1, so the bound
+    is sufficient (and necessary for guaranteed invertibility across all valid
+    weight inputs); a tighter eigenvalue check would require an O(N^3) solve
+    on N = n^2.
+    """
+    r_sum = abs(r_d) + abs(r_o) + abs(r_w)
+    if r_sum >= 1.0:
+        warnings.warn(
+            f"|{prefix}_d|+|{prefix}_o|+|{prefix}_w| = {r_sum:g} >= 1; "
+            f"{filter_desc} may be singular or "
+            "numerically unstable. Reduce parameters to satisfy the "
+            f"sufficient stability bound |{prefix}_d|+|{prefix}_o|+|{prefix}_w| < 1.",
+            stacklevel=3,
+        )
+
+
+def _flow_beta_full(
+    p: int,
+    beta_d_arr: np.ndarray,
+    beta_o_arr: np.ndarray,
+    gamma_dist: float,
+    intercept: float = 0.0,
+) -> np.ndarray:
+    """Full coefficient vector on the O-D design layout.
+
+    Layout: ``[intercept, intra_indicator=0, beta_d..., beta_o...,
+    intra_x=0..., gamma_dist]`` — the intra coefficients stay 0 in every DGP
+    and the trailing log-distance coefficient carries the distance decay.
+    """
+    k_d, k_o = len(beta_d_arr), len(beta_o_arr)
+    beta_full = np.zeros(p, dtype=np.float64)
+    beta_full[0] = intercept
+    beta_full[2 : 2 + k_d] = beta_d_arr
+    beta_full[2 + k_d : 2 + k_d + k_o] = beta_o_arr
+    beta_full[-1] = gamma_dist
+    return beta_full
+
+
+def _resolve_nb_flow_betas(
+    beta_d, beta_o, k: int, k_d: int | None, k_o: int | None
+) -> tuple[np.ndarray, np.ndarray, int, int]:
+    """NB-generator coefficient/column-count inference (scalar broadcast)."""
+    if beta_d is not None:
+        beta_d_arr = np.asarray(beta_d, dtype=float).ravel()
+        k_d_val = k_d if k_d is not None else len(beta_d_arr)
+    else:
+        k_d_val = k_d if k_d is not None else k
+        beta_d_arr = np.ones(k_d_val, dtype=float)
+
+    if beta_o is not None:
+        beta_o_arr = np.asarray(beta_o, dtype=float).ravel()
+        k_o_val = k_o if k_o is not None else len(beta_o_arr)
+    else:
+        k_o_val = k_o if k_o is not None else k
+        beta_o_arr = np.ones(k_o_val, dtype=float)
+
+    return beta_d_arr, beta_o_arr, k_d_val, k_o_val
+
+
+def _hetero_flow_eps(
+    rng: np.random.Generator,
+    sigma: float,
+    X_d_arr: np.ndarray,
+    X_o_arr: np.ndarray,
+    n: int,
+) -> np.ndarray:
+    """Heteroskedastic innovations: sd ``sigma*sqrt(1+||x_dest||²+||x_orig||²)``."""
+    N = n * n
+    dest_idx = np.repeat(np.arange(n), n)  # row = destination unit
+    orig_idx = np.tile(np.arange(n), n)  # col = origin unit
+    scale_vec = sigma * np.sqrt(
+        1.0
+        + np.sum(X_d_arr[dest_idx] ** 2, axis=1)
+        + np.sum(X_o_arr[orig_idx] ** 2, axis=1)
+    )
+    return rng.standard_normal(N) * scale_vec
+
 
 def generate_flow_data(
     n: Optional[int] = None,
@@ -231,65 +359,27 @@ def generate_flow_data(
             log_distance=True,
         )
 
-    # Assemble A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww
-    wms = flow_weight_matrices(G)
-    Wd = wms["destination"]
-    Wo = wms["origin"]
-    Ww = wms["network"]
-    I_N = sp.eye(N, format="csr", dtype=np.float64)
-    A = I_N - rho_d * Wd - rho_o * Wo - rho_w * Ww
+    A = _flow_system(G, rho_d, rho_o, rho_w)
+    _warn_flow_stability(
+        rho_d,
+        rho_o,
+        rho_w,
+        prefix="rho",
+        filter_desc="the flow filter (I_N - rho_d W_d - rho_o W_o - rho_w W_w)",
+    )
 
-    # Joint stability check: for row-standardised W_d/W_o/W_w each has
-    # spectral radius 1, so |rho_d| + |rho_o| + |rho_w| < 1 is sufficient
-    # (and necessary for guaranteed invertibility of A across all valid
-    # weight inputs). A tighter eigenvalue check would require an O(N^3)
-    # solve on N = n^2; we use the sufficient bound here.
-    rho_sum = abs(rho_d) + abs(rho_o) + abs(rho_w)
-    if rho_sum >= 1.0:
-        warnings.warn(
-            f"|rho_d|+|rho_o|+|rho_w| = {rho_sum:g} >= 1; the flow filter "
-            "(I_N - rho_d W_d - rho_o W_o - rho_w W_w) may be singular or "
-            "numerically unstable. Reduce parameters to satisfy the "
-            "sufficient stability bound |rho_d|+|rho_o|+|rho_w| < 1.",
-            stacklevel=2,
-        )
-
-    # Build deterministic component: X_design @ beta_extended
-    # beta_extended layout: [alpha, 0, beta_d..., beta_o..., 0...(intra), gamma_dist]
-    p = design.combined.shape[1]
-    beta_full = np.zeros(p, dtype=np.float64)
-    beta_full[0] = alpha  # intercept
-    # intra_indicator coefficient stays 0 in DGP
-    beta_full[2 : 2 + k_d] = beta_d_arr  # destination block
-    beta_full[2 + k_d : 2 + k_d + k_o] = beta_o_arr  # origin block
-    # intra coefficients remain 0; the trailing log_distance coefficient
-    # is set to gamma_dist so the DGP exhibits distance decay.
-    beta_full[-1] = gamma_dist
+    beta_full = _flow_beta_full(
+        design.combined.shape[1], beta_d_arr, beta_o_arr, gamma_dist, intercept=alpha
+    )
 
     Xbeta = design.combined @ beta_full  # (N,)
 
     # Solve y = A^{-1}(Xbeta + epsilon)
     if err_hetero:
-        # Cell-level standard deviations: sigma * sqrt(1 + ||x_dest||^2 + ||x_orig||^2)
-        dest_idx = np.repeat(np.arange(n), n)  # row = destination unit
-        orig_idx = np.tile(np.arange(n), n)  # col = origin unit
-        scale_vec = sigma * np.sqrt(
-            1.0
-            + np.sum(X_d_arr[dest_idx] ** 2, axis=1)
-            + np.sum(X_o_arr[orig_idx] ** 2, axis=1)
-        )
-        eps = rng.standard_normal(N) * scale_vec
+        eps = _hetero_flow_eps(rng, sigma, X_d_arr, X_o_arr, n)
     else:
         eps = rng.normal(scale=sigma, size=N)
-    rhs = Xbeta + eps
-
-    try:
-        eta_vec = sp.linalg.spsolve(A, rhs)
-    except sp.linalg.MatrixRankWarning as exc:
-        raise ValueError(
-            "A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww is singular. "
-            "Check that rho_d + rho_o + rho_w < 1 for row-stochastic W."
-        ) from exc
+    eta_vec = _spsolve_flow(A, Xbeta + eps)
 
     if distribution == "lognormal":
         y_vec = np.exp(eta_vec)
@@ -455,22 +545,11 @@ def generate_negbin_flow_data(
     # --- Resolve spatial weights & geometry ---
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
     W = _graph_to_csr(G)
-    N = n * n
 
     # --- Coefficient vectors ---
-    if beta_d is not None:
-        beta_d_arr = np.asarray(beta_d, dtype=float).ravel()
-        k_d_val = k_d if k_d is not None else len(beta_d_arr)
-    else:
-        k_d_val = k_d if k_d is not None else k
-        beta_d_arr = np.ones(k_d_val, dtype=float)
-
-    if beta_o is not None:
-        beta_o_arr = np.asarray(beta_o, dtype=float).ravel()
-        k_o_val = k_o if k_o is not None else len(beta_o_arr)
-    else:
-        k_o_val = k_o if k_o is not None else k
-        beta_o_arr = np.ones(k_o_val, dtype=float)
+    beta_d_arr, beta_o_arr, k_d_val, k_o_val = _resolve_nb_flow_betas(
+        beta_d, beta_o, k, k_d, k_o
+    )
 
     # --- Regional attributes ---
     Xd_raw = rng.standard_normal((n, k_d_val))
@@ -488,32 +567,16 @@ def generate_negbin_flow_data(
         log_distance=True,
     )
 
-    # --- Build deterministic component: X_design @ beta_extended ---
-    # beta layout: [alpha=0, intra=0, beta_d..., beta_o..., intra_x=0..., gamma_dist]
-    p = design.combined.shape[1]
-    beta_full = np.zeros(p, dtype=np.float64)
-    beta_full[2 : 2 + k_d_val] = beta_d_arr  # destination block
-    beta_full[2 + k_d_val : 2 + k_d_val + k_o_val] = beta_o_arr  # origin block
-    beta_full[-1] = gamma_dist
+    beta_full = _flow_beta_full(
+        design.combined.shape[1], beta_d_arr, beta_o_arr, gamma_dist
+    )
 
     Xbeta = design.combined @ beta_full  # (N,)
 
-    # --- Assemble A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww ---
-    wms = flow_weight_matrices(G)
-    Wd = wms["destination"]
-    Wo = wms["origin"]
-    Ww = wms["network"]
-    I_N = sp.eye(N, format="csr", dtype=np.float64)
-    A = I_N - rho_d * Wd - rho_o * Wo - rho_w * Ww
+    A = _flow_system(G, rho_d, rho_o, rho_w)
 
     # --- Solve A eta = Xbeta  (reduced form: no sigma, no noise) ---
-    try:
-        eta_vec = sp.linalg.spsolve(A, Xbeta)
-    except sp.linalg.MatrixRankWarning as exc:
-        raise ValueError(
-            "A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww is singular. "
-            "Check that rho_d + rho_o + rho_w < 1 for row-stochastic W."
-        ) from exc
+    eta_vec = _spsolve_flow(A, Xbeta)
 
     lambda_vec = np.exp(eta_vec)
     p_nb = alpha / (alpha + lambda_vec)
@@ -694,22 +757,9 @@ def generate_panel_flow_data(
     k_d_val = len(beta_d_arr)
     k_o_val = len(beta_o_arr)
 
-    # Build Kronecker weight matrices (same for every period)
-    wms = flow_weight_matrices(G)
-    Wd = wms["destination"]
-    Wo = wms["origin"]
-    Ww = wms["network"]
-    I_N = sp.eye(N, format="csr", dtype=np.float64)
-    A = I_N - rho_d * Wd - rho_o * Wo - rho_w * Ww
-
-    # Factorize A once (same A for every period)
-    try:
-        solve_A = sp.linalg.factorized(A.tocsc())
-    except RuntimeError as exc:
-        raise ValueError(
-            "A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww is singular. "
-            "Check that rho_d + rho_o + rho_w < 1 for row-stochastic W."
-        ) from exc
+    # Assemble and factorize A once (same A for every period)
+    A = _flow_system(G, rho_d, rho_o, rho_w)
+    solve_A = _factorized_flow(A)
 
     # Draw O-D-pair random effects once
     alpha = rng.normal(0.0, sigma_alpha, N) if sigma_alpha > 0 else np.zeros(N)
@@ -733,13 +783,9 @@ def generate_panel_flow_data(
         if col_names is None:
             col_names = design.feature_names
 
-        # Build beta_full: [alpha=0, intra=0, beta_d..., beta_o..., 0...,
-        # gamma_dist]
-        p = design.combined.shape[1]
-        beta_full = np.zeros(p, dtype=np.float64)
-        beta_full[2 : 2 + k_d_val] = beta_d_arr
-        beta_full[2 + k_d_val : 2 + k_d_val + k_o_val] = beta_o_arr
-        beta_full[-1] = gamma_dist
+        beta_full = _flow_beta_full(
+            design.combined.shape[1], beta_d_arr, beta_o_arr, gamma_dist
+        )
 
         Xbeta = design.combined @ beta_full  # (N,)
         eps = rng.normal(scale=sigma, size=N)
@@ -892,39 +938,14 @@ def generate_panel_negbin_flow_data(
 
     n, G, gdf = _resolve_flow_geometry(n=n, G=G, gdf=gdf, knn_k=knn_k)
     _graph_to_csr(G)
-    N = n * n
 
-    # Coefficient vectors
-    if beta_d is not None:
-        beta_d_arr = np.asarray(beta_d, dtype=float).ravel()
-        k_d_val = k_d if k_d is not None else len(beta_d_arr)
-    else:
-        k_d_val = k_d if k_d is not None else k
-        beta_d_arr = np.ones(k_d_val, dtype=float)
+    beta_d_arr, beta_o_arr, k_d_val, k_o_val = _resolve_nb_flow_betas(
+        beta_d, beta_o, k, k_d, k_o
+    )
 
-    if beta_o is not None:
-        beta_o_arr = np.asarray(beta_o, dtype=float).ravel()
-        k_o_val = k_o if k_o is not None else len(beta_o_arr)
-    else:
-        k_o_val = k_o if k_o is not None else k
-        beta_o_arr = np.ones(k_o_val, dtype=float)
-
-    # Build Kronecker weight matrices (same for every period)
-    wms = flow_weight_matrices(G)
-    Wd = wms["destination"]
-    Wo = wms["origin"]
-    Ww = wms["network"]
-    I_N = sp.eye(N, format="csr", dtype=np.float64)
-    A = I_N - rho_d * Wd - rho_o * Wo - rho_w * Ww
-
-    # Factorize A once
-    try:
-        solve_A = sp.linalg.factorized(A.tocsc())
-    except RuntimeError as exc:
-        raise ValueError(
-            "A = I_N - rho_d*Wd - rho_o*Wo - rho_w*Ww is singular. "
-            "Check that rho_d + rho_o + rho_w < 1 for row-stochastic W."
-        ) from exc
+    # Assemble and factorize A once (same A for every period)
+    A = _flow_system(G, rho_d, rho_o, rho_w)
+    solve_A = _factorized_flow(A)
 
     y_list, X_list, lambda_list = [], [], []
     col_names = None
@@ -947,13 +968,9 @@ def generate_panel_negbin_flow_data(
         if col_names is None:
             col_names = design.feature_names
 
-        # Build beta_full: [alpha=0, intra=0, beta_d..., beta_o..., 0...,
-        # gamma_dist]
-        p = design.combined.shape[1]
-        beta_full = np.zeros(p, dtype=np.float64)
-        beta_full[2 : 2 + k_d_val] = beta_d_arr
-        beta_full[2 + k_d_val : 2 + k_d_val + k_o_val] = beta_o_arr
-        beta_full[-1] = gamma_dist
+        beta_full = _flow_beta_full(
+            design.combined.shape[1], beta_d_arr, beta_o_arr, gamma_dist
+        )
 
         Xbeta = design.combined @ beta_full  # (N,)
 
@@ -1231,51 +1248,27 @@ def generate_sem_flow_data(
             log_distance=True,
         )
 
-    wms = flow_weight_matrices(G)
-    Wd = wms["destination"]
-    Wo = wms["origin"]
-    Ww = wms["network"]
-    I_N = sp.eye(N, format="csr", dtype=np.float64)
-    B = I_N - lam_d * Wd - lam_o * Wo - lam_w * Ww
+    B = _flow_system(G, lam_d, lam_o, lam_w)
+    _warn_flow_stability(
+        lam_d,
+        lam_o,
+        lam_w,
+        prefix="lam",
+        filter_desc="the SEM flow filter B = (I_N - lam_d W_d - lam_o W_o - lam_w W_w)",
+    )
 
-    rho_sum = abs(lam_d) + abs(lam_o) + abs(lam_w)
-    if rho_sum >= 1.0:
-        warnings.warn(
-            f"|lam_d|+|lam_o|+|lam_w| = {rho_sum:g} >= 1; the SEM flow filter "
-            "B = (I_N - lam_d W_d - lam_o W_o - lam_w W_w) may be singular or "
-            "numerically unstable. Reduce parameters to satisfy the "
-            "sufficient stability bound |lam_d|+|lam_o|+|lam_w| < 1.",
-            stacklevel=2,
-        )
-
-    p = design.combined.shape[1]
-    beta_full = np.zeros(p, dtype=np.float64)
-    beta_full[0] = alpha
-    beta_full[2 : 2 + k_d] = beta_d_arr
-    beta_full[2 + k_d : 2 + k_d + k_o] = beta_o_arr
-    beta_full[-1] = gamma_dist
+    beta_full = _flow_beta_full(
+        design.combined.shape[1], beta_d_arr, beta_o_arr, gamma_dist, intercept=alpha
+    )
 
     Xbeta = design.combined @ beta_full
 
     if err_hetero:
-        dest_idx = np.repeat(np.arange(n), n)
-        orig_idx = np.tile(np.arange(n), n)
-        scale_vec = sigma * np.sqrt(
-            1.0
-            + np.sum(X_d_arr[dest_idx] ** 2, axis=1)
-            + np.sum(X_o_arr[orig_idx] ** 2, axis=1)
-        )
-        eps = rng.standard_normal(N) * scale_vec
+        eps = _hetero_flow_eps(rng, sigma, X_d_arr, X_o_arr, n)
     else:
         eps = rng.normal(scale=sigma, size=N)
 
-    try:
-        u = sp.linalg.spsolve(B, eps)
-    except sp.linalg.MatrixRankWarning as exc:
-        raise ValueError(
-            "B = I_N - lam_d*Wd - lam_o*Wo - lam_w*Ww is singular. "
-            "Check that lam_d + lam_o + lam_w < 1 for row-stochastic W."
-        ) from exc
+    u = _spsolve_flow(B, eps, letter="B", prefix="lam")
 
     eta_vec = Xbeta + u
 
@@ -1388,20 +1381,8 @@ def generate_panel_sem_flow_data(
     k_d_val = len(beta_d_arr)
     k_o_val = len(beta_o_arr)
 
-    wms = flow_weight_matrices(G)
-    Wd = wms["destination"]
-    Wo = wms["origin"]
-    Ww = wms["network"]
-    I_N = sp.eye(N, format="csr", dtype=np.float64)
-    B = I_N - lam_d * Wd - lam_o * Wo - lam_w * Ww
-
-    try:
-        solve_B = sp.linalg.factorized(B.tocsc())
-    except RuntimeError as exc:
-        raise ValueError(
-            "B = I_N - lam_d*Wd - lam_o*Wo - lam_w*Ww is singular. "
-            "Check that lam_d + lam_o + lam_w < 1 for row-stochastic W."
-        ) from exc
+    B = _flow_system(G, lam_d, lam_o, lam_w)
+    solve_B = _factorized_flow(B, letter="B", prefix="lam")
 
     alpha = rng.normal(0.0, sigma_alpha, N) if sigma_alpha > 0 else np.zeros(N)
     dist = pairwise_distance_matrix(gdf)
@@ -1420,11 +1401,9 @@ def generate_panel_sem_flow_data(
         if col_names is None:
             col_names = design.feature_names
 
-        p = design.combined.shape[1]
-        beta_full = np.zeros(p, dtype=np.float64)
-        beta_full[2 : 2 + k_d_val] = beta_d_arr
-        beta_full[2 + k_d_val : 2 + k_d_val + k_o_val] = beta_o_arr
-        beta_full[-1] = gamma_dist
+        beta_full = _flow_beta_full(
+            design.combined.shape[1], beta_d_arr, beta_o_arr, gamma_dist
+        )
 
         Xbeta = design.combined @ beta_full
         eps = rng.normal(scale=sigma, size=N)

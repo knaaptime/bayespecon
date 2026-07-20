@@ -317,8 +317,6 @@ class TestModelAsymmetric:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            miter=5,
-            trace_seed=0,
         )
         assert model._k_d == 2
         assert model._k_o == 1

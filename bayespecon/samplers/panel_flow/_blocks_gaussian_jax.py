@@ -34,6 +34,8 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
+from bayespecon._jax_dispatch import ensure_x64
+
 
 def _check_jax_available() -> None:
     """Raise ImportError if JAX or equinox is not installed."""
@@ -215,7 +217,7 @@ def _make_gibbs_step_with_data(
     )
     from ._state_jax import JAXPanelGaussianState
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     n2 = n * n
 

@@ -7,48 +7,17 @@ gaussian
 panel
     Panel (FE/RE) Gibbs samplers.
 negbin
-    Negative Binomial (Pólya-Gamma) Gibbs samplers.
+    Negative Binomial (P\u00f3lya-Gamma) Gibbs samplers.
 _utils
     Internal utilities (not public API).
 
-Re-exports
-----------
-The most commonly-used symbols are re-exported here for backward
-compatibility.  New code should import from subpackages directly::
+Import from the subpackages directly::
 
     from bayespecon.samplers.gaussian import GaussianSARGibbs
     from bayespecon.samplers.panel import REGibbsEstimation
     from bayespecon.samplers.negbin import run_chain
+
+This module intentionally re-exports nothing: sampler families register
+their Gibbs entries on *their own* import, and every model module imports
+the family it needs \u2014 keeping ``bayespecon.models`` imports fast.
 """
-
-from .gaussian import (
-    GaussianGibbsPriors,
-    GaussianSARGibbs,
-    GaussianSEMGibbs,
-    GibbsEstimation,
-)
-from .negbin import GibbsCache, GibbsPriors, GibbsState, run_chain
-from .panel import (
-    GaussianSARREGibbs,
-    GaussianSEMREGibbs,
-    REGibbsEstimation,
-    REGibbsPriors,
-)
-
-__all__ = [
-    # Gaussian
-    "GibbsEstimation",
-    "GaussianSARGibbs",
-    "GaussianSEMGibbs",
-    "GaussianGibbsPriors",
-    # Panel
-    "REGibbsEstimation",
-    "GaussianSARREGibbs",
-    "GaussianSEMREGibbs",
-    "REGibbsPriors",
-    # NegBin
-    "GibbsState",
-    "GibbsPriors",
-    "GibbsCache",
-    "run_chain",
-]

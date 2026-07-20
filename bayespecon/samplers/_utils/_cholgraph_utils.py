@@ -120,101 +120,6 @@ def precompute_cholgraph_pattern(
     }
 
 
-def assemble_Ax_logit(
-    omega: "jnp.ndarray",  # noqa: F821
-    rho: "jnp.ndarray",  # noqa: F821
-    pattern: dict,
-) -> "jnp.ndarray":  # noqa: F821
-    """Assemble the COO values ``Ax(ρ, ω)`` for the logit precision matrix.
-
-    For logit models (σ² = 1):
-
-    .. math::
-
-        P = I + \\mathrm{diag}(\\omega) - \\rho (W + W^T) + \\rho^2 W^T W
-
-    Parameters
-    ----------
-    omega : jax.numpy.ndarray, shape (n,)
-        PG auxiliary variables.
-    rho : jax.numpy.ndarray (scalar)
-        Spatial autoregressive parameter.
-    pattern : dict
-        Output of :func:`precompute_cholgraph_pattern`.
-
-    Returns
-    -------
-    jax.numpy.ndarray, shape (nnz,)
-        COO values for the precision matrix at ``(ρ, ω)``.
-    """
-    import jax.numpy as jnp
-
-    W_sym_vals = jnp.asarray(pattern["W_sym_vals"], dtype=jnp.float64)
-    WtW_vals = jnp.asarray(pattern["WtW_vals"], dtype=jnp.float64)
-    diag_idx = jnp.asarray(pattern["diag_idx"], dtype=jnp.int32)
-    nnz = len(pattern["Ai"])
-
-    # Start with the ρ-dependent off-diagonal part.
-    Ax = -rho * W_sym_vals + rho**2 * WtW_vals
-
-    # Add the diagonal: 1 + ω_i at diagonal positions.
-    diag_vals = jnp.zeros(nnz, dtype=jnp.float64)
-    diag_vals = diag_vals.at[diag_idx].set(1.0 + omega)
-    Ax = Ax + diag_vals
-
-    return Ax
-
-
-def assemble_Ax_negbin(
-    omega: "jnp.ndarray",  # noqa: F821
-    rho: "jnp.ndarray",  # noqa: F821
-    sigma2: "jnp.ndarray",  # noqa: F821
-    pattern: dict,
-) -> "jnp.ndarray":  # noqa: F821
-    """Assemble the COO values ``Ax(ρ, ω, σ²)`` for the negbin precision matrix.
-
-    For negative-binomial models:
-
-    .. math::
-
-        P = I/\\sigma^2 + \\mathrm{diag}(\\omega)
-            - (\\rho/\\sigma^2)(W + W^T) + (\\rho^2/\\sigma^2) W^T W
-
-    Parameters
-    ----------
-    omega : jax.numpy.ndarray, shape (n,)
-        PG auxiliary variables.
-    rho : jax.numpy.ndarray (scalar)
-        Spatial autoregressive parameter.
-    sigma2 : jax.numpy.ndarray (scalar)
-        Residual variance.
-    pattern : dict
-        Output of :func:`precompute_cholgraph_pattern`.
-
-    Returns
-    -------
-    jax.numpy.ndarray, shape (nnz,)
-        COO values for the precision matrix at ``(ρ, ω, σ²)``.
-    """
-    import jax.numpy as jnp
-
-    W_sym_vals = jnp.asarray(pattern["W_sym_vals"], dtype=jnp.float64)
-    WtW_vals = jnp.asarray(pattern["WtW_vals"], dtype=jnp.float64)
-    diag_idx = jnp.asarray(pattern["diag_idx"], dtype=jnp.int32)
-    nnz = len(pattern["Ai"])
-    inv_s2 = 1.0 / sigma2
-
-    # Off-diagonal: −(ρ/σ²)(W+Wᵀ) + (ρ²/σ²)WᵀW
-    Ax = -rho * W_sym_vals * inv_s2 + rho**2 * WtW_vals * inv_s2
-
-    # Diagonal: 1/σ² + ω_i
-    diag_vals = jnp.zeros(nnz, dtype=jnp.float64)
-    diag_vals = diag_vals.at[diag_idx].set(inv_s2 + omega)
-    Ax = Ax + diag_vals
-
-    return Ax
-
-
 def make_cholgraph_ops(Ai, Aj, n: int):
     """Return ``(eta_sample, solve_logdet)`` factor-once closures over a fixed pattern.
 
@@ -267,15 +172,79 @@ def make_cholgraph_ops(Ai, Aj, n: int):
     return eta_sample, solve_logdet
 
 
-def cholgraph_mvn_sample(Ai, Aj, Ax, mean_term, key, n: int):
-    """Draw from ``N(P⁻¹ mean_term, P⁻¹)`` (thin wrapper over :func:`make_cholgraph_ops`).
+def resolve_pg_jax_backend(backend, *, W_sparse, W_sym, WtW, n, logdet_bounds):
+    """Resolve the PG-Gibbs backend method and its JAX precomputes.
 
-    Kept for callers/tests; delegates to the factor-once ``eta_sample`` closure so
-    the draw costs a single factorization on cholgraph >= 0.4.
+    Shared by the SAR-logit / SEM-logit / structural SAR-NB Gibbs fits, which
+    previously each carried this ~40-line block verbatim.
+
+    Parameters
+    ----------
+    backend : {"jax", "numpy"}
+        Resolved execution backend.
+    W_sparse, W_sym, WtW : scipy.sparse matrices
+        Raw row-standardised ``W``, ``W + Wᵀ`` and ``WᵀW``.
+    n : int
+        Number of observations.
+    logdet_bounds : LogdetBounds
+        The model's resolved logdet bounds (method, rho_min, rho_max).
+
+    Returns
+    -------
+    method : str
+        One of ``"cholmod"`` (numpy), ``"jax_dense"``, ``"cholmod_jax"`` —
+        used for all three of the cache's solve/logdet_P/sample methods.
+    jax_parts : dict
+        ``W_sym_dense``, ``WtW_dense``, ``logdet_jax``, ``cholgraph_pattern``
+        (all ``None`` on the numpy path).
     """
-    import jax
+    jax_parts = {
+        "W_sym_dense": None,
+        "WtW_dense": None,
+        "logdet_jax": None,
+        "cholgraph_pattern": None,
+    }
+    if backend != "jax":
+        return "cholmod", jax_parts
+
+    from bayespecon._jax_dispatch import (
+        _cholgraph_available,
+        _cholmod_jax_enabled,
+        ensure_x64,
+    )
+
+    method = (
+        "cholmod_jax"
+        if _cholmod_jax_enabled() and _cholgraph_available()
+        else "jax_dense"
+    )
+
     import jax.numpy as jnp
 
-    z = jax.random.normal(key, shape=(n,), dtype=jnp.float64)
-    eta_sample, _ = make_cholgraph_ops(Ai, Aj, n)
-    return eta_sample(Ax, mean_term, z)
+    ensure_x64()
+
+    # Only the dense-Cholesky fallback needs the dense (W+Wᵀ) and WᵀW; the
+    # cholmod_jax path assembles P from the sparse COO pattern and does its
+    # matvecs via BCOO, so we never densify W there.
+    if method == "jax_dense":
+        jax_parts["W_sym_dense"] = jnp.asarray(W_sym.toarray(), dtype=jnp.float64)
+        jax_parts["WtW_dense"] = jnp.asarray(WtW.toarray(), dtype=jnp.float64)
+
+    from bayespecon._logdet import make_logdet_jax_fn
+
+    jax_parts["logdet_jax"] = make_logdet_jax_fn(
+        W_sparse,
+        method=logdet_bounds.method,
+        rho_min=logdet_bounds.rho_min,
+        rho_max=logdet_bounds.rho_max,
+    )
+
+    if method == "cholmod_jax":
+        # Pass the raw (row-standardised) W; the helper derives W+Wᵀ and WᵀW
+        # internally.  Passing W_sym here would double the symmetric part and
+        # corrupt WᵀW.
+        jax_parts["cholgraph_pattern"] = precompute_cholgraph_pattern(
+            W_sparse.tocsc(), n
+        )
+
+    return method, jax_parts

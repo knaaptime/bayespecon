@@ -36,9 +36,6 @@ class TestNegativeBinomialFlowConstruction:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         pm_model = model._build_pymc_model()
         assert "alpha" in pm_model.named_vars
@@ -50,7 +47,6 @@ class TestNegativeBinomialFlowConstruction:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            trace_seed=0,
         )
         pm_model = model._build_pymc_model()
         assert "alpha" in pm_model.named_vars
@@ -77,9 +73,6 @@ class TestNegativeBinomialPanelFlowConstruction:
             T=3,
             col_names=data["col_names"],
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         pm_model = model._build_pymc_model()
         assert "alpha" in pm_model.named_vars
@@ -93,7 +86,6 @@ class TestNegativeBinomialPanelFlowConstruction:
             T=3,
             col_names=data["col_names"],
             effects=0,
-            trace_seed=0,
         )
         pm_model = model._build_pymc_model()
         assert "alpha" in pm_model.named_vars
@@ -184,9 +176,6 @@ class TestNegativeBinomialFlowRecovery:
             out["G"],
             out["X"],
             col_names=out["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         idata = model.fit(
             sampler="gibbs",
@@ -240,7 +229,6 @@ class TestNegativeBinomialFlowRecovery:
             out["G"],
             out["X"],
             col_names=out["col_names"],
-            trace_seed=0,
         )
         idata = model.fit(
             sampler="gibbs",
@@ -301,9 +289,6 @@ class TestNegativeBinomialPanelFlowRecovery:
             T=5,
             col_names=out["col_names"],
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         idata = model.fit(
             sampler="gibbs",
@@ -367,7 +352,6 @@ class TestNegativeBinomialPanelFlowRecovery:
             T=6,
             col_names=out["col_names"],
             effects=0,
-            trace_seed=0,
         )
         idata = model.fit(
             sampler="gibbs",

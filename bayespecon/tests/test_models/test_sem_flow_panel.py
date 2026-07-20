@@ -81,8 +81,6 @@ class TestSemFlowPanelConstruction:
             self.data["X"],
             T=self.T,
             col_names=self.data["col_names"],
-            miter=5,
-            trace_seed=0,
         )
         assert model._n == self.n
         assert model._T == self.T
@@ -96,7 +94,6 @@ class TestSemFlowPanelConstruction:
             self.data["X"],
             T=self.T,
             col_names=self.data["col_names"],
-            trace_seed=0,
         )
         assert model._n == self.n
 
@@ -110,8 +107,6 @@ class TestSemFlowPanelConstruction:
             self.data["X"],
             T=self.T,
             col_names=self.data["col_names"],
-            miter=5,
-            trace_seed=0,
         )
         with pytest.raises(NotImplementedError, match="resolvent"):
             model._build_pymc_model()
@@ -143,9 +138,6 @@ class TestSemFlowPanelRecovery:
             data["X"],
             T=4,
             col_names=data["col_names"],
-            miter=15,
-            trace_riter=30,
-            trace_seed=0,
         )
         idata = model.fit(
             draws=300,
@@ -185,8 +177,6 @@ class TestSemFlowPanelRecovery:
             data["X"],
             T=3,
             col_names=data["col_names"],
-            miter=10,
-            trace_seed=0,
         )
         idata = model.fit(
             draws=200,

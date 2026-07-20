@@ -50,6 +50,8 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
+from bayespecon._jax_dispatch import ensure_x64
+
 from ..._jax_dispatch import _eqx_available
 from ...models.priors import GibbsPriors
 from .._utils._polyagamma import sample_polyagamma
@@ -324,7 +326,7 @@ def _sample_eta(
         # JAX Chebyshev path: build dense P, use vmap over draws
         import jax
 
-        jax.config.update("jax_enable_x64", True)
+        ensure_x64()
         import jax.numpy as jnp
 
         omega_jax = jnp.asarray(omega)
@@ -655,14 +657,18 @@ def _sample_rho(
 
     # Lanczos RNG: use a child seed so the slice sampler's ρ path
     # is reproducible but doesn't interfere with the main Gibbs RNG.
-    _lanczos_rng = np.random.default_rng(rng.integers(2**31))
+    _lanczos_rng = (
+        np.random.default_rng(rng.integers(2**31))
+        if logdet_P_method == "lanczos"
+        else None
+    )
 
     # JAX dense backend: precompute dense components for P construction
     use_jax = solve_method == "jax_dense"
     if use_jax:
         import jax
 
-        jax.config.update("jax_enable_x64", True)
+        ensure_x64()
         import jax.numpy as jnp
 
         from bayespecon.samplers._utils._spatial_normal import _jax_log_density_core
@@ -1051,9 +1057,8 @@ def run_chain(
         # --- Block 2: η | ω, ρ, β, σ² ---
         state.eta, _ = _sample_eta(state, y, X, W_sparse, rng=rng, cache=cache)
 
-        # Recompute A_rho_eta and Xbeta with new eta
-        A_rho = sp.eye(n, format="csr") - state.rho * W_sparse
-        A_rho_eta = A_rho @ state.eta
+        # Recompute A_rho_eta and Xbeta with new eta (no matrix build)
+        A_rho_eta = state.eta - state.rho * (W_sparse @ state.eta)
         Xbeta = X @ state.beta
 
         # --- Block 3: β | η, ρ, σ² ---

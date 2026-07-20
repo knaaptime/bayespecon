@@ -458,9 +458,6 @@ class TestFlowPanelLogLikelihood:
             T=T,
             col_names=col_names,
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata, n_obs=n * n * T)
@@ -476,7 +473,6 @@ class TestFlowPanelLogLikelihood:
             T=T,
             col_names=col_names,
             effects=0,
-            trace_seed=0,
         )
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata, n_obs=n * n * T)
@@ -503,9 +499,6 @@ class TestFlowPanelLogLikelihood:
             T=T,
             col_names=col_names,
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         m_sep = SARFlowSeparablePanel(
             y=y,
@@ -514,7 +507,6 @@ class TestFlowPanelLogLikelihood:
             T=T,
             col_names=col_names,
             effects=0,
-            trace_seed=0,
         )
         m_ols = OLSFlowPanel(y=y, G=G, X=X, T=T, col_names=col_names, effects=0)
         idata_sar = m_sar.fit(**kw)
