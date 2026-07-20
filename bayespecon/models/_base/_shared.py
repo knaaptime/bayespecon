@@ -636,7 +636,20 @@ class SharedSpatialMethods:
         """
         return self._structure.logdet_W_operand()
 
-    @property
+    @cached_property
+    def _logdet_eigs(self) -> np.ndarray | None:
+        """Eigenvalues when the resolved method needs them, else ``None``.
+
+        The single place that decides whether the O(n³) eigendecomposition is
+        required.  Every logdet evaluator reads this instead of re-deriving it
+        from the method name, so the decision cannot drift between them.
+        """
+        self._require_W()
+        if self._logdet_bounds.method != "eigenvalue":
+            return None
+        return self._W_eigs
+
+    @cached_property
     def _W_for_logdet(self):
         """Argument passed to ``make_logdet_fn`` — eigenvalues or the
         structure-specific ``W`` operand (:attr:`_logdet_W_operand`).
@@ -644,12 +657,8 @@ class SharedSpatialMethods:
         Computed lazily so that init never forces an eigendecomposition for
         chebyshev / sparse-grid methods.
         """
-        if self._W_for_logdet_cache is None:
-            if self._resolved_logdet_method == "eigenvalue":
-                self._W_for_logdet_cache = self._W_eigs
-            else:
-                self._W_for_logdet_cache = self._logdet_W_operand
-        return self._W_for_logdet_cache
+        eigs = self._logdet_eigs
+        return self._logdet_W_operand if eigs is None else eigs
 
     def spatial_effects(
         self, return_posterior_samples: bool = False
@@ -802,37 +811,33 @@ class SharedSpatialMethods:
     # Lazy logdet evaluators (cross-section is the T=1 case)
     # ------------------------------------------------------------------
 
-    @property
+    @cached_property
     def _logdet_numpy_fn(self):
         """Pure-numpy ``(rho) -> float`` logdet evaluator (lazy)."""
-        if self._logdet_numpy_fn_cache is None:
-            eigs = (
-                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
-            )
-            self._logdet_numpy_fn_cache = make_logdet_numpy_fn(
-                self._W_sparse,
-                eigs,
-                method=self.logdet_method,
-                T=getattr(self, "_T", 1),
-            )
-        return self._logdet_numpy_fn_cache
+        self._require_W()
+        return make_logdet_numpy_fn(
+            self._W_sparse,
+            self._logdet_eigs,
+            method=self._logdet_bounds.method,
+            rho_min=self._logdet_bounds.rho_min,
+            rho_max=self._logdet_bounds.rho_max,
+            T=getattr(self, "_T", 1),
+        )
 
-    @property
+    @cached_property
     def _logdet_numpy_vec_fn(self):
         """Vectorised pure-numpy logdet evaluator (lazy)."""
-        if self._logdet_numpy_vec_fn_cache is None:
-            eigs = (
-                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
-            )
-            self._logdet_numpy_vec_fn_cache = make_logdet_numpy_vec_fn(
-                self._W_sparse,
-                eigs,
-                method=self.logdet_method,
-                T=getattr(self, "_T", 1),
-            )
-        return self._logdet_numpy_vec_fn_cache
+        self._require_W()
+        return make_logdet_numpy_vec_fn(
+            self._W_sparse,
+            self._logdet_eigs,
+            method=self._logdet_bounds.method,
+            rho_min=self._logdet_bounds.rho_min,
+            rho_max=self._logdet_bounds.rho_max,
+            T=getattr(self, "_T", 1),
+        )
 
-    @property
+    @cached_property
     def _logdet_grad_numpy_vec_fn(self):
         """Vectorised ``(rho_arr) -> g(ρ)`` gradient of the **N×N** logdet (lazy).
 
@@ -843,32 +848,27 @@ class SharedSpatialMethods:
         only touches the eigenvalue path when that is genuinely the
         resolved method (tiny n).
         """
-        if self._logdet_grad_numpy_vec_fn_cache is None:
-            eigs = (
-                self._W_eigs if self._resolved_logdet_method == "eigenvalue" else None
-            )
-            self._logdet_grad_numpy_vec_fn_cache = make_logdet_grad_numpy_vec_fn(
-                self._W_sparse,
-                eigs,
-                method=self._logdet_bounds.method,
-                rho_min=self._logdet_bounds.rho_min,
-                rho_max=self._logdet_bounds.rho_max,
-                T=1,
-            )
-        return self._logdet_grad_numpy_vec_fn_cache
+        self._require_W()
+        return make_logdet_grad_numpy_vec_fn(
+            self._W_sparse,
+            self._logdet_eigs,
+            method=self._logdet_bounds.method,
+            rho_min=self._logdet_bounds.rho_min,
+            rho_max=self._logdet_bounds.rho_max,
+            T=1,
+        )
 
-    @property
+    @cached_property
     def _logdet_pytensor_fn(self):
         """PyTensor logdet evaluator used inside ``_build_pymc_model`` (lazy)."""
-        if self._logdet_pytensor_fn_cache is None:
-            self._logdet_pytensor_fn_cache = make_logdet_fn(
-                self._W_for_logdet,
-                method=self.logdet_method,
-                rho_min=self._logdet_bounds.rho_min,
-                rho_max=self._logdet_bounds.rho_max,
-                T=getattr(self, "_T", 1),
-            )
-        return self._logdet_pytensor_fn_cache
+        self._require_W()
+        return make_logdet_fn(
+            self._W_for_logdet,
+            method=self._logdet_bounds.method,
+            rho_min=self._logdet_bounds.rho_min,
+            rho_max=self._logdet_bounds.rho_max,
+            T=getattr(self, "_T", 1),
+        )
 
     # ------------------------------------------------------------------
     # Eigendecomposition-backed spatial-effect helpers

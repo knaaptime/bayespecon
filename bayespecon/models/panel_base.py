@@ -300,8 +300,14 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
         each subclass docstring lists its keys with defaults.
     logdet_method : str, optional
         How to compute :math:`\\log|I - \\rho W|`. ``None`` (default)
-        auto-selects from the cross-sectional ``N x N`` weights size:
-        ``"eigenvalue"`` for ``N <= 2000`` else ``"chebyshev"``.
+        auto-selects from the size and symmetry of the cross-sectional
+        ``N x N`` weights: ``"eigenvalue"`` for ``N <= 500``; for
+        ``N <= 20000`` the exact interpolating methods ``"cheb_cholesky"``
+        (symmetric ``W``) or ``"aaa"`` (non-symmetric ``W``); and
+        ``"cheb_stochastic"`` above that.  Stochastic opt-ins
+        (``"chebyshev"``, ``"slq"``) and the environment variables
+        controlling the cutoffs are documented on the cross-sectional
+        ``SpatialModel`` base class.
     robust : bool, default False
         If True, replace the Normal error with Student-t for robustness
         to heavy-tailed outliers. Adds a ``nu`` parameter with a
@@ -486,17 +492,6 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
                 self._wx_feature_names = [
                     self._feature_names[j] for j in self._wx_column_indices
                 ]
-
-        # Logdet builders are constructed lazily on first access — see the
-        # ``_logdet_numpy_fn``, ``_logdet_numpy_vec_fn`` and
-        # ``_logdet_pytensor_fn`` properties.  Caches are seeded as None so
-        # that init never triggers the underlying eigendecomposition for
-        # methods that do not need it (chebyshev, sparse_grid, etc.).
-        self._logdet_numpy_fn_cache = None
-        self._logdet_numpy_vec_fn_cache = None
-        self._logdet_grad_numpy_vec_fn_cache = None
-        self._logdet_pytensor_fn_cache = None
-        self._W_for_logdet_cache = None
 
         self._Wy = self._sparse_panel_lag(self._y)
         if self._wx_column_indices:
@@ -882,10 +877,8 @@ class SpatialPanelModel(SharedSpatialMethods, ABC):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type=self._model_type,
-            W_eigs=self._W_eigs
-            if self._resolved_logdet_method == "eigenvalue"
-            else None,
-            logdet_method=self.logdet_method,
+            W_eigs=self._logdet_eigs,
+            logdet_method=self._logdet_bounds.method,
             T=self._T,
         )
         # SAR/SDM need Wy; SEM/SDEM do not.

@@ -22,7 +22,6 @@ from .._lazy_deps import az, pm
 from .._logdet import (
     resolve_logdet_bounds,
 )
-from .._logdet._config import _auto_logdet_method
 from ._base._shared import (
     SharedSpatialMethods,
     _parse_W,
@@ -61,22 +60,28 @@ class SpatialModel(SharedSpatialMethods, ABC):
     priors : dict, optional
         Override default priors. Keys depend on the model subclass; see
         each model's docstring for supported keys.
-    logdet_method : str
-        How to compute ``log|I - rho*W|``. ``"eigenvalue"`` (default for
-        ``n <= 500``) pre-computes W's eigenvalues once and evaluates
-        O(n) per step; ``"exact"`` uses symbolic pytensor det (slow for
-        ``n > 500``); ``"grid_dense"`` uses dense eigenvalue grid +
-        cubic-spline interpolation (MATLAB-style ``lndetfull`` for dense
-        W); ``"grid_sparse"`` uses sparse-LU grid + cubic-spline
-        interpolation (``lndetfull`` style for large sparse W);
-        ``"sparse_spline"`` uses sparse-LU + spline on
-        ``[max(rho_min, 0), rho_max]`` (``lndetint`` style); ``"grid_mc"``
-        uses Monte Carlo trace approximation (``lndetmc``); ``"grid_ilu"``
-        uses ILU-based approximation (``lndetichol`` analog);
-        ``"chebyshev"`` (default for ``n > 500``) uses a Chebyshev
-        polynomial approximation evaluated via Clenshaw's algorithm.
-        For large ``n`` the Chebyshev coefficients are built from
-        Barry-Pace Hutchinson stochastic trace estimates.
+    logdet_method : str, optional
+        How to compute ``log|I - rho*W|``.  ``None`` (default) auto-selects
+        from the size and symmetry of ``W``:
+
+        - ``"eigenvalue"`` for ``n <= 500``: exact; one ``O(n^3)``
+          eigendecomposition, then ``O(n)`` per evaluation.
+        - ``"cheb_cholesky"`` for symmetric ``W`` (undirected graph) with
+          ``n <= 20000``: exact; sparse Cholesky at Chebyshev nodes with
+          symbolic reuse, then ~1.3 us per rho via Clenshaw recurrence.
+        - ``"aaa"`` for non-symmetric ``W`` (directed graph: KNN, travel
+          time, flows) with ``n <= 20000``: exact; sparse LU on an adaptive
+          coarse grid with AAA rational interpolation, ~5 us per rho.
+        - ``"cheb_stochastic"`` for larger ``n``, where factorisation
+          fill-in gets expensive: stochastic Chebyshev expansion (Han et
+          al. 2015), with probe information computed once and reused.
+
+        Both cutoffs are settable via the ``BAYESPECON_LOGDET_EIGEN_MAX_N``
+        and ``BAYESPECON_LOGDET_CHEB_MAX_N`` environment variables.
+        ``"chebyshev"`` (Barry-Pace Hutchinson stochastic traces) and
+        ``"slq"`` (stochastic Lanczos quadrature) are available as explicit
+        opt-ins; both inject stochastic error into the log-density.  The
+        resolved choice is recorded on ``_resolved_logdet_method``.
     robust : bool, default False
         If True, use a Student-t error distribution instead of Normal,
         yielding a model that is robust to heavy-tailed outliers. When
@@ -165,26 +170,19 @@ class SpatialModel(SharedSpatialMethods, ABC):
             # Dense conversion is deferred to _W_dense (lazy property).
             self._W_sparse, self._is_row_std = _parse_W(W, len(self._y))
             self._structure = CrossSectionStructure(self._W_sparse)
-            # Eigenvalues are computed lazily via the _W_eigs cached property
-            # to avoid the O(n³) eigendecomposition for large n where trace
-            # or Chebyshev methods are used instead.
-            # Resolve the logdet method up-front so the lazy property
-            # accessors know whether eigenvalues are required.
-            self._resolved_logdet_method = (
-                self.logdet_method
-                if self.logdet_method is not None
-                else _auto_logdet_method(self._W_sparse.shape[0], W=self._W_sparse)
-            )
-            # Resolve rho/lambda bounds from method and priors.
-            # For row-standardised W the spectral stability interval is
-            # always approximately (-1, 1), so no eigenvalue computation
-            # is needed here.
+            # Resolve the logdet method and rho/lambda bounds exactly once.
+            # Eigenvalues stay lazy (see the ``_logdet_eigs`` cached property)
+            # so init never pays the O(n³) eigendecomposition for methods that
+            # do not need it.  For row-standardised W the spectral stability
+            # interval is approximately (-1, 1), so no eigenvalues are needed
+            # to resolve the bounds either.
             self._logdet_bounds = resolve_logdet_bounds(
                 self.logdet_method,
                 n=len(self._y),
                 priors=self.priors,
                 W=self._W_sparse,
             )
+            self._resolved_logdet_method = self._logdet_bounds.method
             self._wx_column_indices = self._spatial_lag_column_indices(
                 self._X, self._feature_names
             )
@@ -203,16 +201,6 @@ class SpatialModel(SharedSpatialMethods, ABC):
             self._wx_feature_names = [
                 self._feature_names[i] for i in self._wx_column_indices
             ]
-            # Logdet builders are constructed lazily on first access — see
-            # the _logdet_numpy_fn, _logdet_numpy_vec_fn and
-            # _logdet_pytensor_fn properties.  Caches are seeded as None so
-            # that init never triggers the underlying eigendecomposition for
-            # chebyshev / trace methods.
-            self._logdet_numpy_fn_cache = None
-            self._logdet_numpy_vec_fn_cache = None
-            self._logdet_grad_numpy_vec_fn_cache = None
-            self._logdet_pytensor_fn_cache = None
-            self._W_for_logdet_cache = None
             self._Wy: np.ndarray = np.asarray(
                 self._W_sparse @ self._y, dtype=np.float64
             )
@@ -614,10 +602,8 @@ class SpatialModel(SharedSpatialMethods, ABC):
             logdet_vec_fn=self._logdet_numpy_vec_fn,
             feature_names=feature_names,
             model_type=self._model_type,
-            W_eigs=self._W_eigs
-            if self._resolved_logdet_method == "eigenvalue"
-            else None,
-            logdet_method=self.logdet_method,
+            W_eigs=self._logdet_eigs,
+            logdet_method=self._logdet_bounds.method,
         )
         # SAR/SDM need Wy; SEM/SDEM do not
         if self._jacobian_param == "rho":

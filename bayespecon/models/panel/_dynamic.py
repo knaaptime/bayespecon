@@ -27,6 +27,7 @@ Nickell, S. (1981). Biases in dynamic models with fixed effects.
 
 from __future__ import annotations
 
+from functools import cached_property
 from typing import Union
 
 import numpy as np
@@ -71,7 +72,6 @@ class _DynamicPanelMixin:
     _WX_dyn: np.ndarray
     _Z_dyn: np.ndarray
     _n_time_eff: int
-    _W_dense_dyn_cache: np.ndarray | None
 
     def _compute_spatial_effects_posterior(
         self,
@@ -194,9 +194,8 @@ class _DynamicPanelMixin:
             self._Z_dyn = self._X_dyn
 
         self._n_time_eff = T - 1
-        self._W_dense_dyn_cache = None
 
-    @property
+    @cached_property
     def _W_dense_dyn(self) -> np.ndarray:
         """Dense (N*(T-1)) x (N*(T-1)) block-diagonal W for dynamic period.
 
@@ -207,54 +206,44 @@ class _DynamicPanelMixin:
            with ``T_eff=self._n_time_eff`` for batch log-likelihood paths.
            This property is retained for diagnostics requiring the full matrix.
         """
-        if self._W_dense_dyn_cache is None:
-            import warnings
+        import warnings
 
-            n = self._N * self._n_time_eff
-            nbytes = n * n * 8
-            if nbytes > 100 * 1024 * 1024:
-                warnings.warn(
-                    f"Materialising a {n}×{n} dense dynamic-panel weight matrix "
-                    f"({nbytes / 1024**2:.0f} MB).  Use _batch_sparse_lag with "
-                    "T_eff=self._n_time_eff instead.",
-                    ResourceWarning,
-                    stacklevel=3,
-                )
-            Wn = (
-                self._W_sparse.toarray()
-                if hasattr(self._W_sparse, "toarray")
-                else np.asarray(self._W_sparse)
+        n = self._N * self._n_time_eff
+        nbytes = n * n * 8
+        if nbytes > 100 * 1024 * 1024:
+            warnings.warn(
+                f"Materialising a {n}×{n} dense dynamic-panel weight matrix "
+                f"({nbytes / 1024**2:.0f} MB).  Use _batch_sparse_lag with "
+                "T_eff=self._n_time_eff instead.",
+                ResourceWarning,
+                stacklevel=3,
             )
-            self._W_dense_dyn_cache = np.kron(np.eye(self._n_time_eff), Wn)
-        return self._W_dense_dyn_cache
+        Wn = (
+            self._W_sparse.toarray()
+            if hasattr(self._W_sparse, "toarray")
+            else np.asarray(self._W_sparse)
+        )
+        return np.kron(np.eye(self._n_time_eff), Wn)
 
-    @property
+    @cached_property
     def _W_sparse_dyn(self):
         """Sparse (N*(T-1))×(N*(T-1)) Kronecker block weight ``I_{T-1} ⊗ W_n``."""
-        if not hasattr(self, "_W_sparse_dyn_cache") or self._W_sparse_dyn_cache is None:
-            import scipy.sparse as sp
+        import scipy.sparse as sp
 
-            W = self._W_sparse
-            # Force ``csr_matrix`` (not ``csr_array``) for pytensor.sparse compatibility.
-            self._W_sparse_dyn_cache = sp.csr_matrix(
-                sp.kron(sp.eye(self._n_time_eff, format="csr"), W, format="csr")
+        # Force ``csr_matrix`` (not ``csr_array``) for pytensor.sparse compatibility.
+        return sp.csr_matrix(
+            sp.kron(
+                sp.eye(self._n_time_eff, format="csr"), self._W_sparse, format="csr"
             )
-        return self._W_sparse_dyn_cache
+        )
 
-    @property
+    @cached_property
     def _W_pt_sparse_dyn(self):
         """PyTensor sparse variable wrapping :attr:`_W_sparse_dyn`."""
-        if (
-            not hasattr(self, "_W_pt_sparse_dyn_cache")
-            or self._W_pt_sparse_dyn_cache is None
-        ):
-            import scipy.sparse as sp
-            from pytensor import sparse as pts
+        import scipy.sparse as sp
+        from pytensor import sparse as pts
 
-            self._W_pt_sparse_dyn_cache = pts.as_sparse_variable(
-                sp.csc_matrix(self._W_sparse_dyn)
-            )
-        return self._W_pt_sparse_dyn_cache
+        return pts.as_sparse_variable(sp.csc_matrix(self._W_sparse_dyn))
 
     def _beta_names(self) -> list[str]:
         if self._wx_feature_names:
@@ -263,11 +252,14 @@ class _DynamicPanelMixin:
             ]
         return self._feature_names
 
+    @cached_property
+    def _dynamic_logdet_cache(self) -> dict:
+        """Per-model store of dynamic logdet callables, keyed by rho bounds."""
+        return {}
+
     def _dynamic_logdet_fn(self, lower: float, upper: float):
         """Build and cache dynamic-panel logdet callable keyed by bounds."""
-        if not hasattr(self, "_dynamic_logdet_cache"):
-            self._dynamic_logdet_cache = {}
-        method = getattr(self, "_resolved_logdet_method", self.logdet_method)
+        method = self._logdet_bounds.method
         key = (method, float(lower), float(upper), int(self._n_time_eff))
         fn = self._dynamic_logdet_cache.get(key)
         if fn is None:

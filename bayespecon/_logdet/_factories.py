@@ -500,7 +500,13 @@ def make_logdet_fn(
         # eigenvalue path: materialize dense
         W = np.asarray(W_sparse.toarray(), dtype=np.float64)
     else:
-        W = np.asarray(W, dtype=np.float64)
+        # A 1-D eigenvalue array keeps its dtype: row-standardised directed W
+        # has a complex spectrum, and both downstream consumers
+        # (``logdet_eigenvalue``, ``chebyshev``) need the imaginary parts.
+        # Narrowing to float64 here silently drops them and biases log|I-rhoW|.
+        W = np.asarray(W)
+        if W.ndim != 1:
+            W = W.astype(np.float64)
 
     if W.ndim == 1:
         # 1-D eigenvalue array

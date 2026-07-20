@@ -6,6 +6,7 @@
 
 Home <self>
 installation
+Architecture <architecture>
 ```
 
 ```{toctree}
