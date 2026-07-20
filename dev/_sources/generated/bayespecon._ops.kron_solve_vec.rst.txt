@@ -1,6 +1,0 @@
-﻿bayespecon.\_ops.kron\_solve\_vec
-=================================
-
-.. currentmodule:: bayespecon._ops
-
-.. autofunction:: kron_solve_vec

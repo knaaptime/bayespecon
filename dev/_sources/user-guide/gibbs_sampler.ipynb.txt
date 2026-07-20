@@ -23,7 +23,7 @@
     "| **Posterior geometry** | Handles banana/funnel shapes via adaptation | Avoids banana geometry via conjugacy |\n",
     "| **Speed** | Slow for large $n$ (gradient through Jacobian) | Fast (direct draws for β, σ²; 1-D slice/MALA for ρ/λ) |\n",
     "| **Robust models** | ✅ Student-t errors | ❌ Not supported |\n",
-    "| **Non-Gaussian** | ✅ NB, Probit, Tobit | ❌ Not supported |\n",
+    "| **Non-Gaussian** | NB, Probit, Tobit | NB, Logit |\n",
     "| **ESS/s** | Low for spatial models | High (conjugate blocks mix well) |\n",
     "| **Tuning** | 1000+ tuning steps needed | Minimal (adaptive slice width or MALA step size) |\n",
     "\n",
@@ -151,6 +151,27 @@
   {
    "cell_type": "code",
    "execution_count": null,
+   "id": "266202e7-2f73-492c-83f2-6dd817253433",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# --- Gibbs (numpy path) ---\n",
+    "model_gibbs_numpy = SAR(y=y, X=X, W=W)\n",
+    "idata_gibbs_numpy = model_gibbs.fit(\n",
+    "    sampler=\"gibbs\",\n",
+    "    gibbs_backend=\"numpy\",\n",
+    "    draws=2000,\n",
+    "    tune=1000,\n",
+    "    chains=4,\n",
+    "    random_seed=42,\n",
+    "    n_jobs=1,\n",
+    "    idata_kwargs={\"log_likelihood\": True},\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
    "id": "e5461a2f",
    "metadata": {},
    "outputs": [],
@@ -166,6 +187,16 @@
    "outputs": [],
    "source": [
     "az.summary(idata_gibbs)[\"ess_bulk\"]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "2f6a7211",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "az.summary(idata_gibbs_numpy)[\"ess_bulk\"]"
    ]
   },
   {
@@ -187,16 +218,16 @@
     "\n",
     "The Gibbs sampler supports two execution backends:\n",
     "\n",
-    "| Backend | `gibbs_method` | ρ/λ update | JIT compiled | Requires |\n",
+    "| Backend | `gibbs_backend` | ρ/λ update | JIT compiled | Requires |\n",
     "|---|---|---|---|---|\n",
-    "| **NumPy** | `\"numpy\"` (default) | Adaptive slice sampling | No | NumPy only |\n",
-    "| **JAX** | `\"jax\"` | Slice sampling (default), MALA, or RW-MH | Yes (`@eqx.filter_jit`) | JAX + equinox |\n",
+    "| **NumPy** | `\"numpy\"` | Adaptive slice sampling | No | NumPy only |\n",
+    "| **JAX** | `\"jax\"` (default) | Slice sampling (default), MALA, or RW-MH | Yes (`@eqx.filter_jit`) | JAX + equinox |\n",
     "\n",
-    "### NumPy path (default)\n",
+    "### NumPy path \n",
     "\n",
     "The NumPy path uses adaptive slice sampling for ρ/λ. It's pure Python/NumPy — no JAX dependency. Best for moderate $n$ (up to ~1000). Chains run in **parallel by default** (`n_jobs=-1` uses all CPUs via `joblib`). Set `n_jobs=1` for sequential execution with progress bars.\n",
     "\n",
-    "### JAX path\n",
+    "### JAX path (default when installed)\n",
     "\n",
     "The JAX path compiles the entire 3-block Gibbs step into a single XLA kernel via `@eqx.filter_jit`. It supports three ρ/λ samplers:\n",
     "\n",
@@ -214,34 +245,18 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "# JAX Gibbs with MALA (gradient-guided proposals)\n",
-    "model_jax_mala = SAR(y=y, X=X, W=W)\n",
-    "idata_jax_mala = model_jax_mala.fit(\n",
-    "    sampler=\"gibbs\",\n",
-    "    gibbs_method=\"jax\",\n",
-    "    draws=2000,\n",
-    "    tune=1000,\n",
-    "    chains=4,\n",
-    "    random_seed=42,\n",
-    "    use_mala=True,\n",
-    "    use_slice=False,  # MALA instead of slice\n",
-    ")\n",
-    "\n",
     "# JAX Gibbs with slice sampling (default for JAX path)\n",
     "model_jax_slice = SAR(y=y, X=X, W=W)\n",
     "idata_jax_slice = model_jax_slice.fit(\n",
     "    sampler=\"gibbs\",\n",
-    "    gibbs_method=\"jax\",  # slice sampling is the default\n",
+    "    gibbs_backend=\"jax\",  # slice sampling is the default\n",
     "    draws=2000,\n",
     "    tune=1000,\n",
     "    chains=4,\n",
     "    random_seed=42,\n",
     ")\n",
     "\n",
-    "print(\"JAX MALA posterior means:\")\n",
-    "print(f\"  rho   = {float(idata_jax_mala.posterior['rho'].mean()):.4f}\")\n",
-    "print(f\"  sigma = {float(idata_jax_mala.posterior['sigma'].mean()):.4f}\")\n",
-    "print()\n",
+    "\n",
     "print(\"JAX Slice posterior means:\")\n",
     "print(f\"  rho   = {float(idata_jax_slice.posterior['rho'].mean()):.4f}\")\n",
     "print(f\"  sigma = {float(idata_jax_slice.posterior['sigma'].mean()):.4f}\")"
@@ -260,32 +275,9 @@
     "|---|---|---|---|---|---|---|\n",
     "| Eigenvalue | `\"eigenvalue\"` | — | O(n³) | O(n) | ✅ | n < 500 |\n",
     "| Chebyshev | `\"chebyshev\"` | exact coefficients when feasible | O(n³) or O(nm) | O(m) | ✅ | default for n ≥ 500 |\n",
-    "| Chebyshev + stochastic traces | `\"chebyshev\"` | `trace_estimator=\"hutchpp\"` (default), `\"hutchinson\"`, or `\"xtrace\"` | O(kmn) | O(m) | ✅ | large sparse W |\n",
+    "| Chebyshev + stochastic traces | `\"chebyshev\"` | Barry-Pace Hutchinson (built-in) | O(kmn) | O(m) | ✅ | large sparse W |\n",
     "\n",
     "The Gibbs sampler automatically uses the same logdet configuration as the model. For the JAX path, the supported public choices are JIT-compatible."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "fa380e82",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# Chebyshev logdet with JAX Gibbs\n",
-    "model_cheb = SAR(y=y, X=X, W=W, logdet_method=\"chebyshev\")\n",
-    "idata_cheb = model_cheb.fit(\n",
-    "    sampler=\"gibbs\",\n",
-    "    gibbs_method=\"jax\",\n",
-    "    draws=2000,\n",
-    "    tune=1000,\n",
-    "    chains=4,\n",
-    "    random_seed=42,\n",
-    ")\n",
-    "\n",
-    "print(\n",
-    "    f\"Chebyshev logdet + JAX Gibbs: rho = {float(idata_cheb.posterior['rho'].mean()):.4f}\"\n",
-    ")"
    ]
   },
   {
@@ -351,7 +343,6 @@
     "    chains=4,\n",
     "    random_seed=42,\n",
     "    n_jobs=-1,\n",
-    "    chain_method=\"parallel\",\n",
     ")\n",
     "print(\n",
     "    f\"SDEM Gibbs: lam = {float(idata_sdem.posterior['lam'].mean()):.4f}, \"\n",
@@ -377,6 +368,14 @@
     "## InferenceData Compatibility\n",
     "\n",
     "The Gibbs sampler produces the same `az.InferenceData` output as NUTS, with `posterior`, `log_likelihood`, and `observed_data` groups. This means all ArviZ diagnostics (LOO, WAIC, summary, etc.) work seamlessly."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "99355d6e",
+   "metadata": {},
+   "source": [
+    "**CAUTION**: LOO and WAIC are misleading for models with spatial autoregressive terms. Use the package's model diagnostics to help guide model fit; this section intends to show that these models are fully compatible with `arviz`"
    ]
   },
   {
@@ -411,7 +410,10 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "az.plot_trace(idata_gibbs)"
+    "import matplotlib.pyplot as plt\n",
+    "\n",
+    "az.plot_trace(idata_gibbs)\n",
+    "plt.tight_layout()"
    ]
   },
   {
@@ -462,17 +464,17 @@
     "idata = model.fit(sampler=\"gibbs\", draws=2000, tune=1000, chains=4, n_jobs=1)\n",
     "\n",
     "# JAX Gibbs with slice sampling (default for JAX path)\n",
-    "idata = model.fit(sampler=\"gibbs\", gibbs_method=\"jax\", draws=2000, tune=1000, chains=4)\n",
+    "idata = model.fit(sampler=\"gibbs\", gibbs_backend=\"jax\", draws=2000, tune=1000, chains=4)\n",
     "\n",
     "# JAX Gibbs with MALA\n",
-    "idata = model.fit(sampler=\"gibbs\", gibbs_method=\"jax\", use_mala=True, use_slice=False, draws=2000, tune=1000, chains=4)\n",
+    "idata = model.fit(sampler=\"gibbs\", gibbs_backend=\"jax\", use_mala=True, use_slice=False, draws=2000, tune=1000, chains=4)\n",
     "\n",
     "# JAX Gibbs with RW-MH\n",
-    "idata = model.fit(sampler=\"gibbs\", gibbs_method=\"jax\", use_mala=False, use_slice=False, draws=2000, tune=1000, chains=4)\n",
+    "idata = model.fit(sampler=\"gibbs\", gibbs_backend=\"jax\", use_mala=False, use_slice=False, draws=2000, tune=1000, chains=4)\n",
     "\n",
     "# Chebyshev logdet + JAX Gibbs\n",
     "model = SAR(y=y, X=X, W=W, logdet_method=\"chebyshev\")\n",
-    "idata = model.fit(sampler=\"gibbs\", gibbs_method=\"jax\", draws=2000, tune=1000, chains=4)\n",
+    "idata = model.fit(sampler=\"gibbs\", gibbs_backend=\"jax\", draws=2000, tune=1000, chains=4)\n",
     "```"
    ]
   },
@@ -483,9 +485,11 @@
    "source": []
   },
   {
-   "cell_type": "markdown",
-   "id": "27b5d56e",
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "031ccef9-e75e-4f24-a4cc-890d181445f7",
    "metadata": {},
+   "outputs": [],
    "source": []
   }
  ],

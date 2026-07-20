@@ -1,6 +1,0 @@
-﻿bayespecon.\_logdet.make\_logdet\_jax\_fn
-=========================================
-
-.. currentmodule:: bayespecon._logdet
-
-.. autofunction:: make_logdet_jax_fn

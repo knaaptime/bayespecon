@@ -1,6 +1,0 @@
-﻿bayespecon.\_logdet.clear\_logdet\_fn\_cache
-============================================
-
-.. currentmodule:: bayespecon._logdet
-
-.. autofunction:: clear_logdet_fn_cache

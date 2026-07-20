@@ -1,6 +1,0 @@
-﻿bayespecon.\_logdet.resolve\_logdet\_bounds
-===========================================
-
-.. currentmodule:: bayespecon._logdet
-
-.. autofunction:: resolve_logdet_bounds

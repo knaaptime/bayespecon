@@ -102,7 +102,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "from bayespecon import OLS\n",
+    "from bayespecon.models import OLS\n",
     "\n",
     "ols = OLS(formula=form, W=G, data=gdf)\n",
     "ols.fit(draws=1000, tune=500, chains=2, random_seed=42)\n",
@@ -216,7 +216,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "from bayespecon import SAR\n",
+    "from bayespecon.models import SAR\n",
     "\n",
     "sar = SAR(formula=form, W=G, data=gdf)\n",
     "sar.fit(draws=2000, tune=100, chains=4, random_seed=42)\n",
@@ -265,9 +265,9 @@
  ],
  "metadata": {
   "kernelspec": {
-   "display_name": "Python [conda env:bayespreg]",
+   "display_name": "bayespreg",
    "language": "python",
-   "name": "conda-env-bayespreg-py"
+   "name": "python3"
   },
   "language_info": {
    "codemirror_mode": {

@@ -1,0 +1,6 @@
+﻿bayespecon.diagnostics.lmtests.NEGBIN\_SUITE
+============================================
+
+.. currentmodule:: bayespecon.diagnostics.lmtests
+
+.. autodata:: NEGBIN_SUITE

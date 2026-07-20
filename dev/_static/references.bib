@@ -152,7 +152,6 @@
   pages = {649--658},
   doi = {10.1017/S0266466600008111},
 }
-
 @article{bera2019RobustLM,
   title = {Robust {{LM}} Tests for Spatial Dynamic Panel Data Models},
   author = {Bera, Anil K. and Doğan, Osman and Taşpınar, Süleyman and Leiluo,
@@ -207,6 +206,31 @@
   url = {https://linkinghub.elsevier.com/retrieve/pii/S1572312711000165},
   urldate = {2023-10-25},
   langid = {english},
+}
+@article{dinapoli2016EfficientEstimation,
+  title = {Efficient Estimation of Eigenvalue Counts in an Interval},
+  author = {Di Napoli, Edoardo and Polizzi, Eric and Saad, Yousef},
+  year = 2016,
+  journal = {Numerical Linear Algebra with Applications},
+  volume = {23},
+  number = {4},
+  pages = {674--692},
+  doi = {10.1002/nla.2048},
+  url = {https://onlinelibrary.wiley.com/doi/abs/10.1002/nla.2048},
+  abstract = {Summary Estimating the number of eigenvalues located in a given
+              interval of a large sparse Hermitian matrix is an important problem
+              in certain applications, and it is a prerequisite of eigensolvers
+              based on a divide-and-conquer paradigm. Often, an exact count is
+              not necessary, and methods based on stochastic estimates can be
+              utilized to yield rough approximations. This paper examines a
+              number of techniques tailored to this specific task. It reviews
+              standard approaches and explores new ones based on polynomial and
+              rational approximation filtering combined with a stochastic
+              procedure. We also discuss how the latter method is particularly
+              well-suited for the FEAST eigensolver. Copyright \copyright{} 2016
+              John Wiley \& Sons, Ltd.},
+  keywords = {Chebyshev polynomials,eigenproblem resolvent,eigenvalue count,
+              FEAST,stochastic trace estimate,subspace projector},
 }
 
 @article{dogan2021BayesianRobust,
@@ -430,6 +454,44 @@
   langid = {english},
 }
 
+@article{han2017ApproximatingSpectrala,
+  title = {Approximating {{Spectral Sums}} of {{Large-Scale Matrices}} Using {{
+           Stochastic Chebyshev Approximations}}},
+  author = {Han, Insu and Malioutov, Dmitry and Avron, Haim and Shin, Jinwoo},
+  year = 2017,
+  month = jan,
+  journal = {SIAM Journal on Scientific Computing},
+  volume = {39},
+  number = {4},
+  pages = {A1558-A1585},
+  publisher = {{Society for Industrial and Applied Mathematics}},
+  issn = {1064-8275},
+  doi = {10.1137/16M1078148},
+  url = {https://epubs.siam.org/doi/10.1137/16M1078148},
+  abstract = {Computation of the trace of a matrix function plays an important
+              role in many scientific computing applications, including
+              applications in machine learning, computational physics (e.g.,
+              lattice quantum chromodynamics), network analysis, and
+              computational biology (e.g., protein folding), just to name a few
+              application areas. We propose a linear-time randomized algorithm
+              for approximating the trace of matrix functions of large symmetric
+              matrices. Our algorithm is based on coupling function approximation
+              using Chebyshev interpolation with stochastic trace estimators
+              (Hutchinson's method), and as such requires only implicit access to
+              the matrix, in the form of a function that maps a vector to the
+              product of the matrix and the vector. We provide rigorous
+              approximation error in terms of the extremal eigenvalue of the
+              input matrix, and the Bernstein ellipse that corresponds to the
+              function at hand. Based on our general scheme, we provide
+              algorithms with provable guarantees for important matrix
+              computations, including log-determinant, trace of matrix inverse,
+              Estrada index, Schatten {$p$}-norm, and testing positive
+              definiteness. We experimentally evaluate our algorithm and
+              demonstrate its effectiveness on matrices with tens of millions
+              dimensions.Keywordsspectral functionmatrix computationChebyshev
+              approximationHutchinson's methodMSC codes68W25},
+}
+
 @article{kass1995BayesFactors,
   title = {Bayes Factors},
   author = {Kass, Robert E. and Raftery, Adrian E.},
@@ -482,7 +544,33 @@
   keywords = {C12,C21,common factor restriction,parametric misspecification,
               Rao's score (RS) tests,robust RS tests,SDM,specification testing},
 }
-
+@article{krisztin2022SpatialMultinomial,
+  title = {A Spatial Multinomial Logit Model for Analysing Urban Expansion},
+  author = {Krisztin, Tamás and Piribauer, Philipp and Wögerer, Michael},
+  date = {2022-04-03},
+  journaltitle = {Spatial Economic Analysis},
+  volume = {17},
+  number = {2},
+  pages = {223--244},
+  publisher = {Routledge},
+  issn = {1742-1772},
+  doi = {10.1080/17421772.2021.1933579},
+  url = {https://doi.org/10.1080/17421772.2021.1933579},
+  urldate = {2026-06-18},
+  abstract = {The paper proposes a Bayesian multinomial logit model to analyse
+              spatial patterns of urban expansion. The specification assumes that
+              the log-odds of each class follow a spatial autoregressive process.
+              Using recent advances in Bayesian computing, our model allows for a
+              computationally efficient treatment of the spatial multinomial
+              logit model. This allows us to assess spillovers between regions
+              and across land-use classes. In a series of Monte Carlo studies, we
+              benchmark our model against other competing specifications. The
+              paper also showcases the performance of the proposed specification
+              using European regional data. Our results indicate that spatial
+              dependence plays a key role in the land-sealing process of cropland
+              and grassland. Moreover, we uncover land-sealing spillovers across
+              multiple classes of arable land.},
+}
 @article{lesage2008SpatialEconometric,
   title = {Spatial {{Econometric Modeling Of Origin-Destination Flows}}},
   author = {LeSage, James P. and Pace, R Kelley},
@@ -529,6 +617,7 @@
   isbn = {978-3-642-03647-7},
   langid = {english},
 }
+
 @article{lesage2014SpatialEconometric,
   title = {Spatial Econometric Panel Data Model Specification: {{A Bayesian}}
            Approach},
@@ -546,6 +635,7 @@
   urldate = {2023-07-25},
   langid = {english},
 }
+
 @incollection{lesageInterpretingSpatialEconometric2014,
   title = {Interpreting {{Spatial Econometric Models}}},
   booktitle = {Handbook of {{Regional Science}}},
@@ -571,7 +661,6 @@
               econometrics.},
   isbn = {978-3-642-23430-9},
 }
-
 @article{makowski2019bayestestR,
   title = {bayestestR: Describing Effects and their Uncertainty, Existence and
            Significance within the {Bayesian} Framework},
@@ -584,7 +673,6 @@
   pages = {1541},
   doi = {10.21105/joss.01541},
 }
-
 @article{meng1996SimulatingRatios,
   title = {Simulating {{Ratios}} of {{Normalizing Constants Via}} a {{Simple
            Identity}}: {{A Theoretical Exploration}}},

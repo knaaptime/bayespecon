@@ -1,6 +1,0 @@
-﻿bayespecon.\_logdet.logdet\_mc\_poly\_pytensor
-==============================================
-
-.. currentmodule:: bayespecon._logdet
-
-.. autofunction:: logdet_mc_poly_pytensor

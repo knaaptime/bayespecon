@@ -1,6 +1,0 @@
-﻿bayespecon.\_logdet.traceax\_available
-======================================
-
-.. currentmodule:: bayespecon._logdet
-
-.. autofunction:: traceax_available

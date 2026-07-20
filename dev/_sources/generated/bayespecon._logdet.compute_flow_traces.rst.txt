@@ -1,6 +1,0 @@
-﻿bayespecon.\_logdet.compute\_flow\_traces
-=========================================
-
-.. currentmodule:: bayespecon._logdet
-
-.. autofunction:: compute_flow_traces

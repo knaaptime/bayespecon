@@ -1,6 +1,0 @@
-﻿bayespecon.dgp.generate\_poisson\_flow\_data
-============================================
-
-.. currentmodule:: bayespecon.dgp
-
-.. autofunction:: generate_poisson_flow_data
