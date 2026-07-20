@@ -18,6 +18,7 @@ import warnings
 
 import numpy as np
 
+from ..._logdet import make_logdet_numpy_fn
 from .._utils._slice import SliceWidthState
 from ._blocks_gaussian import (
     _sample_beta_panel,
@@ -41,28 +42,6 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _logdet_eigenvalue_numpy(rho: float, eigs: np.ndarray) -> float:
-    r"""Compute :math:`\log|I_n - \rho W|` from eigenvalues.
-
-    .. math::
-
-        \log|I_n - \rho W| = \sum_{i=1}^{n} \log(1 - \rho \lambda_i)
-
-    Parameters
-    ----------
-    rho : float
-        Spatial autoregressive parameter.
-    eigs : ndarray of shape (n,)
-        Real eigenvalues of :math:`W`.
-
-    Returns
-    -------
-    float
-        Log-determinant value.
-    """
-    return float(np.sum(np.log(np.maximum(1.0 - rho * eigs, 1e-300))))
 
 
 def _validate_and_reshape_y(y: np.ndarray, n: int) -> np.ndarray:
@@ -224,9 +203,10 @@ def run_gaussian_panel_flow_chain(
     if n2 <= VkronV_threshold:
         VkronV = np.kron(V, V)
 
-    # Logdet function
-    def logdet_fn(rho):
-        return _logdet_eigenvalue_numpy(rho, eigs_W)
+    # Logdet function — shared eigenvalue evaluator from _logdet (the
+    # sampler's rho bounds keep 1 - rho*lambda positive, so this matches the
+    # old local np.maximum-clamped form exactly within bounds).
+    logdet_fn = make_logdet_numpy_fn(None, eigs=eigs_W, method="eigenvalue")
 
     # Stability bounds for ρ
     eig_max = np.max(np.abs(eigs_W))

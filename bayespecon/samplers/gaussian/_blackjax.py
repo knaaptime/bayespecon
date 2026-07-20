@@ -50,6 +50,8 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
+from bayespecon._jax_dispatch import ensure_x64
+
 
 def _check_blackjax_available() -> None:
     """Raise ImportError if JAX or blackjax is not installed."""
@@ -133,7 +135,7 @@ def make_sar_joint_logdensity(
     import jax.numpy as jnp
     from jax.scipy.special import gammaln
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     y_j = jnp.asarray(np.asarray(y, dtype=np.float64))
     X_j = jnp.asarray(np.asarray(X, dtype=np.float64))
@@ -300,7 +302,7 @@ def run_chain_blackjax_gaussian(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     y = np.asarray(y, dtype=np.float64)
     X = np.asarray(X, dtype=np.float64)

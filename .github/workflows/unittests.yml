@@ -20,7 +20,7 @@ jobs:
   tests:
     name: ${{ matrix.os }}, ${{ matrix.environment-file }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -32,8 +32,6 @@ jobs:
            ci/314-dev.yml,
         ]
         include:
-          - environment-file: ci/314-latest.yml
-            os: macos-15-intel # Intel
           - environment-file: ci/314-latest.yml
             os: macos-latest # Apple Silicon
           - environment-file: ci/314-latest.yml

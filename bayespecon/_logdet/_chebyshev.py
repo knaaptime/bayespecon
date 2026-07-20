@@ -62,6 +62,36 @@ def _barry_pace_traces(
 # ---------------------------------------------------------------------------
 
 
+def chebyshev_gauss_nodes(order: int, lo: float, hi: float):
+    """Chebyshev-Gauss nodes ``cos((2k-1)\u03c0/(2\u00b7order))`` mapped to ``[lo, hi]``.
+
+    Returns ``(mapped_nodes, nodes_cos)`` for ``k = 1..order``.  Pair with
+    :func:`chebyshev_coeffs_dct1` — the single source for the node/DCT-I
+    combination used by every Chebyshev-in-\u03c1 logdet surrogate.
+    """
+    k = np.arange(1, order + 1)
+    nodes_cos = np.cos((2 * k - 1) * np.pi / (2 * order))
+    return 0.5 * (hi - lo) * nodes_cos + 0.5 * (hi + lo), nodes_cos
+
+
+def chebyshev_coeffs_dct1(values: np.ndarray) -> np.ndarray:
+    """Chebyshev coefficients from values at Chebyshev-Gauss nodes (DCT-I).
+
+    ``values[k-1] = f(x_k)`` at the nodes from :func:`chebyshev_gauss_nodes`;
+    returns ``coeffs`` such that ``f(x) \u2248 \u03a3_j coeffs[j] T_j(x)``.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    order = len(values)
+    k = np.arange(1, order + 1)
+    coeffs = np.zeros(order, dtype=np.float64)
+    for j in range(order):
+        scale = 2.0 / order if j > 0 else 1.0 / order
+        coeffs[j] = scale * np.sum(
+            values * np.cos(j * (2 * k - 1) * np.pi / (2 * order))
+        )
+    return coeffs
+
+
 def chebyshev(
     W,
     order: int = 20,
@@ -140,12 +170,7 @@ def chebyshev(
         method_used = "mc"
 
     # Chebyshev coefficients via DCT-I
-    coeffs = np.zeros(order, dtype=np.float64)
-    for j in range(order):
-        scale = 2.0 / order if j > 0 else 1.0 / order
-        coeffs[j] = scale * np.sum(
-            logdet_at_nodes * np.cos(j * (2 * k - 1) * np.pi / (2 * order))
-        )
+    coeffs = chebyshev_coeffs_dct1(logdet_at_nodes)
 
     result = {
         "coeffs": coeffs,

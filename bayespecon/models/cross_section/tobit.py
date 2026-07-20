@@ -268,12 +268,59 @@ class SARTobit(_SpatialTobitBase):
         rho_f = rho.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
-        I_n = np.eye(n)
-        W = self._W_dense
+        W_sp = self._W_sparse
+        n = self._y.shape[0]
         Xb = beta_f @ self._X.T
         mu = np.empty((s, n), dtype=np.float64)
-        for i in range(s):
-            mu[i] = np.linalg.solve(I_n - rho_f[i] * W, Xb[i])
+        # Prefer klujax (cached symbolic analysis, fast batched solve)
+        # over dense np.linalg.solve loop.
+        from ..._jax_dispatch import _klujax_available
+
+        if _klujax_available():
+            import klujax
+            import scipy.sparse as _sp
+
+            # Fixed COO pattern for (I - ρW): only values change with ρ
+            I_coo = _sp.eye(n, format="coo")
+            W_coo = W_sp.tocoo()
+            # Merge I and W patterns
+            all_rows = np.concatenate([I_coo.row, W_coo.row])
+            all_cols = np.concatenate([I_coo.col, W_coo.col])
+            shape = (n, n)
+            const_coo = _sp.coo_matrix(
+                (
+                    np.concatenate([np.ones(I_coo.nnz), np.zeros(W_coo.nnz)]),
+                    (all_rows, all_cols),
+                ),
+                shape=shape,
+            )
+            const_coo.sum_duplicates()
+            w_coo = _sp.coo_matrix(
+                (
+                    np.concatenate([np.zeros(I_coo.nnz), W_coo.data]),
+                    (all_rows, all_cols),
+                ),
+                shape=shape,
+            )
+            w_coo.sum_duplicates()
+            Ai = np.asarray(const_coo.row, dtype=np.int32)
+            Aj = np.asarray(const_coo.col, dtype=np.int32)
+            const_vals = np.asarray(const_coo.data, dtype=np.float64)
+            w_vals = np.asarray(w_coo.data, dtype=np.float64)
+            symbolic = klujax.analyze(Ai, Aj, n)
+            for i in range(s):
+                Ax = const_vals - rho_f[i] * w_vals
+                mu[i] = np.asarray(
+                    klujax.solve_with_symbol(Ai, Aj, Ax, Xb[i], symbolic),
+                    dtype=np.float64,
+                )
+        else:
+            from ..._ops._backend import _solve_sparse_vector
+
+            I_sp = _sp.eye(n, format="csc")
+            for i in range(s):
+                A_csc = (I_sp - rho_f[i] * W_sp).tocsc()
+                mu[i] = _solve_sparse_vector(A_csc, Xb[i])
         nu_f = idata.posterior["nu"].values.reshape(s) if self.robust else None
         ll = _tobit_pointwise_loglik(
             self._y, mu, sigma_f, self._censored_mask, self.censoring, nu_f
@@ -575,12 +622,55 @@ class SDMTobit(_SpatialTobitBase):
         rho_f = rho.reshape(s)
         beta_f = beta.reshape(s, beta.shape[-1])
         sigma_f = sigma.reshape(s)
-        I_n = np.eye(n)
-        W = self._W_dense
+        W_sp = self._W_sparse
         Zb = beta_f @ Z.T
         mu = np.empty((s, n), dtype=np.float64)
-        for i in range(s):
-            mu[i] = np.linalg.solve(I_n - rho_f[i] * W, Zb[i])
+        # Prefer klujax (cached symbolic analysis) over dense solve loop
+        from ..._jax_dispatch import _klujax_available
+
+        if _klujax_available():
+            import klujax
+            import scipy.sparse as _sp
+
+            I_coo = _sp.eye(n, format="coo")
+            W_coo = W_sp.tocoo()
+            all_rows = np.concatenate([I_coo.row, W_coo.row])
+            all_cols = np.concatenate([I_coo.col, W_coo.col])
+            shape = (n, n)
+            const_coo = _sp.coo_matrix(
+                (
+                    np.concatenate([np.ones(I_coo.nnz), np.zeros(W_coo.nnz)]),
+                    (all_rows, all_cols),
+                ),
+                shape=shape,
+            )
+            const_coo.sum_duplicates()
+            w_coo = _sp.coo_matrix(
+                (
+                    np.concatenate([np.zeros(I_coo.nnz), W_coo.data]),
+                    (all_rows, all_cols),
+                ),
+                shape=shape,
+            )
+            w_coo.sum_duplicates()
+            Ai = np.asarray(const_coo.row, dtype=np.int32)
+            Aj = np.asarray(const_coo.col, dtype=np.int32)
+            const_vals = np.asarray(const_coo.data, dtype=np.float64)
+            w_vals = np.asarray(w_coo.data, dtype=np.float64)
+            symbolic = klujax.analyze(Ai, Aj, n)
+            for i in range(s):
+                Ax = const_vals - rho_f[i] * w_vals
+                mu[i] = np.asarray(
+                    klujax.solve_with_symbol(Ai, Aj, Ax, Zb[i], symbolic),
+                    dtype=np.float64,
+                )
+        else:
+            from ..._ops._backend import _solve_sparse_vector
+
+            I_sp = _sp.eye(n, format="csc")
+            for i in range(s):
+                A_csc = (I_sp - rho_f[i] * W_sp).tocsc()
+                mu[i] = _solve_sparse_vector(A_csc, Zb[i])
         nu_f = idata.posterior["nu"].values.reshape(s) if self.robust else None
         ll = _tobit_pointwise_loglik(
             self._y, mu, sigma_f, self._censored_mask, self.censoring, nu_f

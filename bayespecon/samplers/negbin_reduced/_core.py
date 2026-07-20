@@ -169,19 +169,24 @@ class _CholmodNormalEqSolver:
         return self._cholmod.solve(Atb)
 
 
-def _factor_A(rho: float, W_csc: sp.csc_matrix, n: int) -> spla.SuperLU:
-    """Factorise :math:`A_\\rho = I - \\rho W` via sparse LU (``splu``).
+def _factor_A(rho: float, W_csc: sp.csc_matrix, n: int):
+    """Factorise :math:`A_\\rho = I - \\rho W` via the backend sparse solver.
 
-    Returns a :class:`scipy.sparse.linalg.SuperLU` object whose
-    :meth:`solve` method handles single and multiple right-hand sides.
+    Returns a factor object whose ``.solve(rhs)`` method handles single
+    and multiple right-hand sides.  Uses KLU/UMFPACK via
+    :func:`bayespecon._ops._backend._sparse_factor` when available,
+    falling back to scipy SuperLU.
 
     .. deprecated::
         Used only as a fallback when CHOLMOD is not available.
         The CHOLMOD normal-equations path (``_CholmodNormalEqSolver``)
         is preferred to avoid UMFPACK deadlocks on macOS.
     """
+    from bayespecon._ops._backend import _select_sparse_backend, _sparse_factor
+
     A = (sp.eye(n, format="csc") - rho * W_csc).tocsc()
-    return spla.splu(A)
+    backend = _select_sparse_backend()
+    return _sparse_factor(A, backend)
 
 
 def _make_cholmod_pattern(
@@ -225,7 +230,7 @@ def _make_solver(
     W_csc: sp.csc_matrix,
     n: int,
     cholmod_solver: _CholmodNormalEqSolver | None = None,
-) -> _CholmodNormalEqSolver | spla.SuperLU:
+) -> _CholmodNormalEqSolver | object:
     """Return a solver for ``(I − ρW) x = b``.
 
     When ``cholmod_solver`` is provided (CHOLMOD available), factorises

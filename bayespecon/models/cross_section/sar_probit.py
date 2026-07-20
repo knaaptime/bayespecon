@@ -20,15 +20,15 @@ from typing import Any, Optional, Union
 import numpy as np
 import pandas as pd
 import pytensor.tensor as pt
-from formulaic import model_matrix
 from libpysal.graph import Graph
 
 from ..._backends.sampler_helpers import prepare_compile_kwargs, prepare_idata_kwargs
 from ..._lazy_deps import az, pm
+from .._base._shared import SharedSpatialMethods
 from ..priors import SARProbitPriors, priors_as_dict, resolve_priors
 
 
-class SARProbit:
+class SARProbit(SharedSpatialMethods):
     """Bayesian spatial probit with regional random effects.
 
     A binary-response model in which the latent utility includes a
@@ -135,6 +135,10 @@ class SARProbit:
 
         self._W_dense = self._as_dense_region_W(W)
         self._m = self._W_dense.shape[0]
+        # The weights matrix is region-level (m x m), not observation-level;
+        # inherited observation-level W machinery (spatial_diagnostics, ...)
+        # is not applicable and _require_W raises cleanly.
+        self._W_sparse = None
 
         if formula is not None:
             if data is None:
@@ -158,6 +162,9 @@ class SARProbit:
             raise ValueError(
                 "Provide either (formula, data, region_col) or (y, X, region_ids/mobs)."
             )
+
+        # Shared parsers keep y as passed; flatten possible (n, 1) columns.
+        self._y = np.asarray(self._y, dtype=np.float64).reshape(-1)
 
         if self._X.shape[0] != self._y.shape[0]:
             raise ValueError("X and y must have the same number of observations.")
@@ -212,28 +219,6 @@ class SARProbit:
         return W_csr.toarray()
 
     @staticmethod
-    def _parse_formula(formula: str, data: pd.DataFrame):
-        lhs_name, rhs = formula.split("~", 1)
-        lhs_name = lhs_name.strip()
-        rhs = rhs.strip()
-        X_mm = model_matrix(rhs, data)
-        feature_names = list(X_mm.columns)
-        X_arr = np.asarray(X_mm, dtype=np.float64)
-        y_arr = np.asarray(data[lhs_name], dtype=np.float64).reshape(-1)
-        return y_arr, X_arr, feature_names
-
-    @staticmethod
-    def _parse_matrices(y, X):
-        y_arr = np.asarray(y, dtype=np.float64).reshape(-1)
-        if isinstance(X, pd.DataFrame):
-            feature_names = list(X.columns)
-            X_arr = X.to_numpy(dtype=np.float64)
-        else:
-            X_arr = np.asarray(X, dtype=np.float64)
-            feature_names = [f"x{i}" for i in range(X_arr.shape[1])]
-        return y_arr, X_arr, feature_names
-
-    @staticmethod
     def _parse_regions(
         nobs: int,
         region_ids: Optional[Union[np.ndarray, pd.Series]],
@@ -257,10 +242,9 @@ class SARProbit:
         raise ValueError("Provide either region_ids or mobs in matrix mode.")
 
     def _model_coords(self) -> dict[str, list[str]]:
-        return {
-            "coefficient": list(self._feature_names),
-            "region": list(self._region_names),
-        }
+        coords = super()._model_coords()
+        coords["region"] = list(self._region_names)
+        return coords
 
     def _build_pymc_model(self) -> pm.Model:
         k = self._X.shape[1]
@@ -347,29 +331,18 @@ class SARProbit:
         """
         return self._pymc_model
 
-    def _require_fit(self):
-        if self._idata is None:
-            raise RuntimeError("Model has not been fit yet. Call .fit() first.")
-
     @staticmethod
     def _rename_summary_index(summary_df: pd.DataFrame) -> pd.DataFrame:
-        renamed = []
-        for label in summary_df.index.astype(str):
-            if label.startswith("beta[") and label.endswith("]"):
-                renamed.append(label[5:-1])
-            elif label.startswith("a[") and label.endswith("]"):
-                renamed.append(f"a:{label[2:-1]}")
-            else:
-                renamed.append(label)
-        out = summary_df.copy()
-        out.index = renamed
+        # Shared version strips beta[...]; additionally relabel the regional
+        # effects a[...] -> a:...
+        out = SharedSpatialMethods._rename_summary_index(summary_df)
+        out.index = [
+            f"a:{label[2:-1]}"
+            if label.startswith("a[") and label.endswith("]")
+            else label
+            for label in out.index.astype(str)
+        ]
         return out
-
-    def summary(self, var_names: Optional[list] = None, **kwargs) -> pd.DataFrame:
-        """Return posterior summary table."""
-        self._require_fit()
-        summary_df = az.summary(self._idata, var_names=var_names, **kwargs)
-        return self._rename_summary_index(summary_df)
 
     def random_effects_mean(self) -> pd.Series:
         """Return posterior mean regional effects."""

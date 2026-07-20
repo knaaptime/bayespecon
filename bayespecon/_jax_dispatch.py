@@ -28,6 +28,17 @@ import warnings
 from functools import lru_cache
 
 
+def ensure_x64() -> None:
+    """Enable JAX float64 mode (idempotent).
+
+    Every JAX entry point in the package requires ``jax_enable_x64``;
+    call this instead of scattering ``jax.config.update`` at each site.
+    """
+    import jax
+
+    jax.config.update("jax_enable_x64", True)
+
+
 @lru_cache(maxsize=1)
 def _eqx_available() -> bool:
     """Return ``True`` when optional ``equinox`` is importable."""
@@ -47,6 +58,28 @@ def _jax_available() -> bool:
 def _klujax_available() -> bool:
     """Return ``True`` when optional ``klujax`` is importable."""
     return importlib.util.find_spec("klujax") is not None
+
+
+@lru_cache(maxsize=1)
+def _cholgraph_available() -> bool:
+    """Return ``True`` when optional ``cholgraph`` is importable.
+
+    ``cholgraph`` exposes CHOLMOD sparse SPD Cholesky as JIT-compatible
+    JAX primitives (``solve``, ``logdet``, ``update_solve``) with custom
+    VJP gradients and vmap batching.  It is CPU-only and requires
+    ``jax_enable_x64=True``.
+
+    A real import is attempted (not just ``find_spec``) so that broken
+    installs — e.g. a stale editable install whose source tree has moved —
+    count as unavailable instead of crashing at op-registration time.
+    """
+    if importlib.util.find_spec("cholgraph") is None:
+        return False
+    try:
+        importlib.import_module("cholgraph")
+    except Exception:
+        return False
+    return True
 
 
 @lru_cache(maxsize=1)
@@ -74,6 +107,10 @@ def _warn_jax_auto_fallback_once(missing: str, target: str) -> None:
         install_hint = " Install 'scikit-sparse' to enable the UMFPACK callback path."
     elif missing == "klujax":
         install_hint = " Install 'klujax' to enable the faster JAX-native sparse path."
+    elif missing == "cholgraph":
+        install_hint = (
+            " Install 'cholgraph' to enable the JAX-native sparse SPD Cholesky path."
+        )
     warnings.warn(
         "BAYESPECON_JAX_SPARSE_BACKEND=auto selected fallback backend "
         f"'{target}' because optional dependency '{missing}' is not installed. "
@@ -89,8 +126,9 @@ def _select_jax_sparse_backend() -> str:
 
     Environment
     -----------
-    BAYESPECON_JAX_SPARSE_BACKEND : {"auto", "callback", "klujax"}
-        Default ``auto``. ``auto`` prefers ``klujax`` when available.
+    BAYESPECON_JAX_SPARSE_BACKEND : {"auto", "callback", "klujax", "cholgraph"}
+        Default ``auto``. ``auto`` prefers ``cholgraph`` (SPD-exact) when
+        available, then ``klujax``.
     BAYESPECON_JAX_SPARSE_STRICT : {"0", "1", "false", "true"}
         If truthy, missing requested optional backends raise ImportError.
     """
@@ -103,17 +141,20 @@ def _select_jax_sparse_backend() -> str:
     }
 
     if requested in {"", "auto"}:
+        if _cholgraph_available():
+            return "cholgraph"
         if _klujax_available():
             return "klujax"
         # JAX path fallback chain:
-        #   1) klujax
-        #   2) callback + umfpack
-        #   3) callback + scipy
+        #   1) cholgraph (SPD-exact, JAX-native)
+        #   2) klujax (LU-based, JAX-native)
+        #   3) callback + umfpack
+        #   4) callback + scipy
         # The callback solver selection is handled in ops._select_sparse_backend.
         if _umfpack_available():
-            _warn_jax_auto_fallback_once("klujax", "callback+umfpack")
+            _warn_jax_auto_fallback_once("cholgraph", "callback+umfpack")
         else:
-            _warn_jax_auto_fallback_once("klujax", "callback+scipy")
+            _warn_jax_auto_fallback_once("cholgraph", "callback+scipy")
             _warn_jax_auto_fallback_once("sksparse.umfpack", "callback+scipy")
         return "callback"
 
@@ -132,13 +173,27 @@ def _select_jax_sparse_backend() -> str:
         warnings.warn(msg, RuntimeWarning)
         return "callback"
 
+    if requested in {"cholmod", "cholgraph"}:
+        if _cholgraph_available():
+            return "cholgraph"
+        msg = (
+            "BAYESPECON_JAX_SPARSE_BACKEND=cholgraph requested, but optional "
+            "dependency 'cholgraph' is not installed. Falling back to callback backend."
+        )
+        if strict:
+            raise ImportError(msg)
+        warnings.warn(msg, RuntimeWarning)
+        return "callback"
+
     msg = (
         f"Unknown BAYESPECON_JAX_SPARSE_BACKEND='{requested}'. "
-        "Valid values are: auto, callback, klujax. Falling back to auto."
+        "Valid values are: auto, callback, klujax, cholgraph. Falling back to auto."
     )
     if strict:
         raise ValueError(msg)
     warnings.warn(msg, RuntimeWarning)
+    if _cholgraph_available():
+        return "cholgraph"
     return "klujax" if _klujax_available() else "callback"
 
 
@@ -148,6 +203,28 @@ def _strict_env() -> bool:
         "true",
         "yes",
         "on",
+    }
+
+
+@lru_cache(maxsize=1)
+def _cholmod_jax_enabled() -> bool:
+    """Return ``True`` unless the cholgraph JAX Gibbs path is opted *out*.
+
+    Environment
+    -----------
+    BAYESPECON_JAX_CHOLMOD : {"0", "1", "false", "true", ...}
+        Default **enabled**.  When ``cholgraph`` is installed (checked
+        separately via :func:`_cholgraph_available`), the JAX Gibbs samplers
+        use its sparse SPD Cholesky instead of the dense ``jnp.linalg.cholesky``
+        stopgap.  Set to a falsy value (``0``/``false``/``no``/``off``) to force
+        the dense path — useful for benchmarking, debugging, or GPU experiments
+        (cholgraph is CPU-only).
+    """
+    return os.environ.get("BAYESPECON_JAX_CHOLMOD", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
     }
 
 
@@ -178,19 +255,24 @@ def _resolve_auto_sar_solver(n: int) -> str:
        (default 0, i.e. opt-in only). The eigen path materialises three
        N×N complex128 matrices plus a dense N×N float64 W and triggers
        multi-minute XLA compile times for n > ~500, so we keep it gated.
-    2. ``klujax`` when installed. Per
+    2. ``cholgraph`` when installed (default; disable via
+       ``BAYESPECON_JAX_CHOLMOD=0``).  SPD-exact sparse CHOLMOD via JAX FFI;
+       supplies its own VJP.  CPU-only.  Requires D-symmetrizable W.
+    3. ``klujax`` when installed. Per
        ``scripts/benchmarks/lineax_sar_benchmark.csv``, klujax is the
        fastest pure sparse path in JAX (0.54 ms at n=1024 vs 0.72 ms
        for lineax-bicgstab) and is robust at the boundary of the
        stationary region where the iterative Krylov paths can stall.
-    3. ``lineax`` when installed but klujax is not. Matrix-free
+    4. ``lineax`` when installed but klujax is not. Matrix-free
        iterative solve; can return NaN near singular operators (NUTS
        rejects those steps).
-    4. ``callback`` as the final fallback (scipy splu via host
+    5. ``callback`` as the final fallback (scipy splu via host
        callback). Always available since scipy is a hard dependency.
     """
     if n <= _JAX_SAR_EIGEN_N_MAX:
         return "eigen"
+    if _cholmod_jax_enabled() and _cholgraph_available():
+        return "cholgraph"
     if _klujax_available():
         return "klujax"
     if _lineax_available():
@@ -209,13 +291,12 @@ def _select_jax_sar_solver() -> str:
 
     Environment
     -----------
-    BAYESPECON_JAX_SAR_SOLVER : {"auto", "eigen", "callback", "klujax", "lineax"}
+    BAYESPECON_JAX_SAR_SOLVER : {"auto", "eigen", "callback", "klujax", "cholgraph", "lineax"}
         Default ``auto``. ``auto`` selects ``eigen`` when
         N ≤ ``BAYESPECON_JAX_SAR_EIGEN_N_MAX`` (default 0, i.e. opt-in),
-        otherwise ``klujax`` when installed, else ``lineax`` when
-        installed, else ``callback``. ``eigen`` is a pure-JAX
-        eigendecomposition path that avoids sparse LU factorisation
-        entirely. ``callback`` wraps scipy via host callback.
+        otherwise ``cholgraph`` when installed (default; disable via
+        ``BAYESPECON_JAX_CHOLMOD=0``), else ``klujax`` when installed, else
+        ``lineax`` when installed, else ``callback``.
     BAYESPECON_JAX_SAR_EIGEN_N_MAX : int, default 0
         Maximum N for which ``auto`` selects the eigen path. Default
         0 disables eigen in ``auto`` because the dense materialisation
@@ -248,6 +329,18 @@ def _select_jax_sar_solver() -> str:
         warnings.warn(msg, RuntimeWarning)
         return "callback"
 
+    if requested in {"cholmod", "cholgraph"}:
+        if _cholgraph_available():
+            return "cholgraph"
+        msg = (
+            "BAYESPECON_JAX_SAR_SOLVER=cholgraph requested, but optional "
+            "dependency 'cholgraph' is not installed. Falling back to callback."
+        )
+        if strict:
+            raise ImportError(msg)
+        warnings.warn(msg, RuntimeWarning)
+        return "callback"
+
     if requested == "lineax":
         if _lineax_available():
             return "lineax"
@@ -265,7 +358,7 @@ def _select_jax_sar_solver() -> str:
 
     msg = (
         f"Unknown BAYESPECON_JAX_SAR_SOLVER='{requested}'. "
-        "Valid values are: auto, eigen, callback, klujax, lineax, jax_gmres. Falling back to auto."
+        "Valid values are: auto, eigen, callback, klujax, cholgraph, lineax, jax_gmres. Falling back to auto."
     )
     if strict:
         raise ValueError(msg)
@@ -1060,6 +1153,76 @@ def register_jax_dispatch() -> bool:
             def sparse_sar_solve(rho, b):
                 Ax = const_vals - rho * w_vals
                 return klujax.solve_with_symbol(Ai, Aj, Ax, b, symbolic)
+
+            return sparse_sar_solve
+
+        if resolved == "cholgraph":
+            import cholgraph as _chj
+
+            from ._logdet._chol_cheb import _d_symmetrize
+
+            n = op._n
+            # D-symmetrise W: raises ValueError if not symmetrizable.
+            W_sym_sp = _d_symmetrize(op._W)  # csc_matrix, symmetric
+
+            # Build COO pattern for I − ρW_sym (upper triangle + diagonal).
+            W_sym_coo = W_sym_sp.tocoo()
+            mask_upper = W_sym_coo.row <= W_sym_coo.col
+            upper_rows = W_sym_coo.row[mask_upper]
+            upper_cols = W_sym_coo.col[mask_upper]
+            upper_vals = W_sym_coo.data[mask_upper]
+
+            # Add missing diagonal entries (for I, since W_sym has zero
+            # diagonal for graphs without self-loops).
+            existing_diag = set(zip(upper_rows.tolist(), upper_cols.tolist()))
+            diag_rows = []
+            diag_cols = []
+            for i in range(n):
+                if (i, i) not in existing_diag:
+                    diag_rows.append(i)
+                    diag_cols.append(i)
+
+            _Ai = jnp.asarray(
+                np.concatenate(
+                    [
+                        upper_rows.astype(np.int32),
+                        np.array(diag_rows, dtype=np.int32),
+                    ]
+                )
+            )
+            _Aj = jnp.asarray(
+                np.concatenate(
+                    [
+                        upper_cols.astype(np.int32),
+                        np.array(diag_cols, dtype=np.int32),
+                    ]
+                )
+            )
+            # W_sym values at pattern positions (0 for added diagonal)
+            _w_vals = jnp.asarray(
+                np.concatenate(
+                    [
+                        upper_vals.astype(np.float64),
+                        np.zeros(len(diag_rows), dtype=np.float64),
+                    ]
+                )
+            )
+            # Diagonal indices
+            _diag_idx = np.full(n, -1, dtype=np.int32)
+            all_rows = np.concatenate([upper_rows, np.array(diag_rows)])
+            all_cols = np.concatenate([upper_cols, np.array(diag_cols)])
+            for k_idx in range(len(all_rows)):
+                if all_rows[k_idx] == all_cols[k_idx]:
+                    _diag_idx[all_rows[k_idx]] = k_idx
+            _diag_idx = jnp.asarray(_diag_idx)
+
+            def sparse_sar_solve(rho, b):
+                # Ax = I − ρW_sym at pattern positions
+                Ax = -rho * _w_vals
+                diag_vals = jnp.zeros_like(_w_vals)
+                diag_vals = diag_vals.at[_diag_idx].set(1.0)
+                Ax = Ax + diag_vals
+                return _chj.solve(_Ai, _Aj, Ax, b)
 
             return sparse_sar_solve
 

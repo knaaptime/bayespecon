@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from bayespecon._jax_dispatch import ensure_x64
+
 from .._utils._jax_polyagamma import jax_polyagamma
 from ._core import JAXLogitGibbsState
 
@@ -56,10 +58,20 @@ def _check_jax_available() -> None:
         )
 
 
+def _build_w_bcoo(W_sparse):
+    """Build ``(W, Wᵀ)`` as JAX BCOO sparse matrices — never densify W."""
+    from jax.experimental import sparse as jsparse
+
+    W_bcoo = jsparse.BCOO.from_scipy_sparse(W_sparse.tocsr())
+    Wt_bcoo = jsparse.BCOO.from_scipy_sparse(W_sparse.T.tocsr())
+    return W_bcoo, Wt_bcoo
+
+
 def _make_gibbs_step_with_data(
     y_jax,
     X_jax,
-    W_dense_jax,
+    W_bcoo,
+    Wt_bcoo,
     n,
     k,
     W_sym_dense,
@@ -69,6 +81,7 @@ def _make_gibbs_step_with_data(
     priors,
     n_probes,
     lanczos_deg,
+    cholgraph_pattern=None,
 ):
     """Build a JIT-compiled Gibbs step with data bound into the closure.
 
@@ -82,16 +95,18 @@ def _make_gibbs_step_with_data(
         Binary response vector (JAX array).
     X_jax : jax.numpy.ndarray of shape (n, k)
         Design matrix (JAX array).
-    W_dense_jax : jax.numpy.ndarray of shape (n, n)
-        Original row-standardised W matrix (JAX array).
+    W_bcoo : jax.experimental.sparse.BCOO of shape (n, n)
+        Row-standardised W as a sparse BCOO matrix (for ``W @ x``).
+    Wt_bcoo : jax.experimental.sparse.BCOO of shape (n, n)
+        Transpose ``Wᵀ`` as a sparse BCOO matrix (for ``Wᵀ @ x``).
     n : int
         Number of spatial units.
     k : int
         Number of regression coefficients.
-    W_sym_dense : jax.numpy.ndarray of shape (n, n)
-        Dense (W + W^T).
-    WtW_dense : jax.numpy.ndarray of shape (n, n)
-        Dense W^T W.
+    W_sym_dense : jax.numpy.ndarray of shape (n, n) or None
+        Dense (W + W^T).  Only needed for the dense-Cholesky fallback.
+    WtW_dense : jax.numpy.ndarray of shape (n, n) or None
+        Dense W^T W.  Only needed for the dense-Cholesky fallback.
     logdet_jax : callable
         JAX-native function ``(rho) -> jax.numpy.ndarray`` computing
         log|I - rho*W|.
@@ -123,11 +138,22 @@ def _make_gibbs_step_with_data(
 
     from .._utils._jax_slice import jax_slice_sample_1d
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
-    # Convert constants to JAX arrays
-    W_sym = jnp.asarray(W_sym_dense, dtype=jnp.float64)
-    WtW = jnp.asarray(WtW_dense, dtype=jnp.float64)
+    use_cholgraph = cholgraph_pattern is not None
+
+    # Sparse W matvecs — never densify W: W @ x and Wᵀ @ x go through BCOO.
+    def W_matvec(x):
+        return W_bcoo @ x
+
+    def Wt_matvec(x):
+        return Wt_bcoo @ x
+
+    # Dense (W+Wᵀ) and WᵀW are only needed to assemble the dense P in the
+    # no-cholgraph fallback; skip building them on the sparse path.
+    if not use_cholgraph:
+        W_sym = jnp.asarray(W_sym_dense, dtype=jnp.float64)
+        WtW = jnp.asarray(WtW_dense, dtype=jnp.float64)
     # Prior hyperparameters
     beta_mu_jax = jnp.broadcast_to(jnp.asarray(priors.beta_mu, dtype=jnp.float64), (k,))
     beta_sigma2_jax = jnp.broadcast_to(
@@ -144,8 +170,31 @@ def _make_gibbs_step_with_data(
     # For logit: h = 1 always, kappa = y - 0.5
     kappa = y_jax - 0.5
 
-    # Precompute W^T X for the β-marginalised density
-    WtX = W_dense_jax.T @ X_jax  # (n, k)
+    # Precompute W^T X for the β-marginalised density (sparse, O(nnz·k))
+    WtX = Wt_bcoo @ X_jax  # (n, k)
+
+    # ── cholgraph setup (optional sparse SPD Cholesky path) ──
+    if use_cholgraph:
+        _Ai = jnp.asarray(cholgraph_pattern["Ai"], dtype=jnp.int32)
+        _Aj = jnp.asarray(cholgraph_pattern["Aj"], dtype=jnp.int32)
+        _W_sym_vals = jnp.asarray(cholgraph_pattern["W_sym_vals"], dtype=jnp.float64)
+        _WtW_vals = jnp.asarray(cholgraph_pattern["WtW_vals"], dtype=jnp.float64)
+        _diag_idx = jnp.asarray(cholgraph_pattern["diag_idx"], dtype=jnp.int32)
+        _nnz = len(cholgraph_pattern["Ai"])
+        _n_static = int(cholgraph_pattern["n"])
+        # Factor-once closures: η-draw and each ρ-density eval do exactly ONE
+        # numeric factorization via cholgraph 0.4 sample_gaussian / factor_solve
+        # (0.3 fallback inside).
+        from .._utils._cholgraph_utils import make_cholgraph_ops
+
+        _eta_sample, _solve_logdet = make_cholgraph_ops(_Ai, _Aj, _n_static)
+
+        def _assemble_Ax(omega, rho_val):
+            """Assemble COO values for P = I + diag(ω) − ρ(W+Wᵀ) + ρ²WᵀW."""
+            Ax = -rho_val * _W_sym_vals + rho_val**2 * _WtW_vals
+            diag_vals = jnp.zeros(_nnz, dtype=jnp.float64)
+            diag_vals = diag_vals.at[_diag_idx].set(1.0 + omega)
+            return Ax + diag_vals
 
     @eqx.filter_jit
     def gibbs_step(state, key, slice_width):
@@ -176,23 +225,30 @@ def _make_gibbs_step_with_data(
         # ── Block 1: ω ~ PG(1, η) — exact Exp method (h = 1) ──
         omega_new = jax_polyagamma(jnp.ones(n), eta, key=key_omega, method="exp")
 
-        # ── Block 2: η | ω, ρ, β — dense Cholesky solve (σ² = 1) ──
+        # ── Block 2: η | ω, ρ, β — Cholesky solve (σ² = 1) ──
         # P = I + diag(ω) - ρ(W+W^T) + ρ²W^TW  (no 1/σ² scaling)
-        P_diag = jnp.ones(n) + omega_new
-        P = jnp.diag(P_diag) - rho * W_sym + rho**2 * WtW
-        P = P + 1e-6 * jnp.eye(n)  # regularisation for numerical stability
-
         Xbeta = X_jax @ beta
-        # RHS: Xbeta - ρ W'Xbeta + κ  (σ² = 1)
-        rhs = Xbeta - rho * (W_dense_jax.T @ Xbeta) + kappa
+        # RHS: Xbeta - ρ W'Xbeta + κ  (σ² = 1); W'Xbeta = (WᵀX)β reuses WtX.
+        rhs = Xbeta - rho * (WtX @ beta) + kappa
 
-        L = jnp.linalg.cholesky(P)
-        P_inv_rhs = cho_solve((L, True), rhs)
-        z_eta = jax.random.normal(key_eta, shape=(n,), dtype=jnp.float64)
-        eta_new = P_inv_rhs + solve_triangular(L.T, z_eta, lower=False)
+        if use_cholgraph:
+            # Sparse SPD Cholesky via cholgraph — mean + draw ~ N(P⁻¹ rhs, P⁻¹)
+            # from ONE factorization.
+            Ax = _assemble_Ax(omega_new, rho)
+            z_eta = jax.random.normal(key_eta, shape=(n,), dtype=jnp.float64)
+            eta_new = _eta_sample(Ax, rhs, z_eta)
+        else:
+            P_diag = jnp.ones(n) + omega_new
+            P = jnp.diag(P_diag) - rho * W_sym + rho**2 * WtW
+            P = P + 1e-6 * jnp.eye(n)  # regularisation for numerical stability
+
+            L = jnp.linalg.cholesky(P)
+            P_inv_rhs = cho_solve((L, True), rhs)
+            z_eta = jax.random.normal(key_eta, shape=(n,), dtype=jnp.float64)
+            eta_new = P_inv_rhs + solve_triangular(L.T, z_eta, lower=False)
 
         # ── Block 3: β | η, ρ — conjugate normal (σ² = 1) ──
-        A_rho_eta = eta_new - rho * W_dense_jax @ eta_new
+        A_rho_eta = eta_new - rho * W_matvec(eta_new)
         # Σ_β⁻¹ = Λ₀⁻¹ + X^TX  (no 1/σ² scaling)
         Sigma_beta_inv = beta_prior_prec + XtX_jax
         # rhs = Λ₀⁻¹μ₀ + X^T A_ρη  (no 1/σ² scaling)
@@ -218,27 +274,32 @@ def _make_gibbs_step_with_data(
         def log_density_rho(rho_val):
             """Doubly-collapsed log-density of ρ (η and β integrated out).
 
-            Uses one dense Cholesky of P_η with (k+1) right-hand sides
+            Uses one Cholesky of P_η with (k+1) right-hand sides
             to obtain both the κ quadratic form and the β-marginal
             terms.
             """
-            # P_η = I + diag(ω) - ρ(W+W^T) + ρ²W^TW  (σ² = 1)
-            P_diag_r = jnp.ones(n) + omega_new
-            P_r = jnp.diag(P_diag_r) - rho_val * W_sym + rho_val**2 * WtW
-            P_r = P_r + 1e-6 * jnp.eye(n)
-
             # u = X - ρ W^T X  — (n, k)
             u = X_jax - rho_val * WtX
 
             # Multi-RHS: P_η [z | M] = [κ | u]
             rhs_stack = jnp.column_stack([kappa, u])  # (n, k+1)
-            L_r = jnp.linalg.cholesky(P_r)
-            sol = cho_solve((L_r, True), rhs_stack)  # (n, k+1)
+
+            if use_cholgraph:
+                Ax_r = _assemble_Ax(omega_new, rho_val)
+                # Multi-RHS solve + logdet from one factorization (factor_solve).
+                sol, log_det_P = _solve_logdet(Ax_r, rhs_stack)  # sol: (n, k+1)
+            else:
+                # P_η = I + diag(ω) - ρ(W+W^T) + ρ²W^TW  (σ² = 1)
+                P_diag_r = jnp.ones(n) + omega_new
+                P_r = jnp.diag(P_diag_r) - rho_val * W_sym + rho_val**2 * WtW
+                P_r = P_r + 1e-6 * jnp.eye(n)
+
+                L_r = jnp.linalg.cholesky(P_r)
+                sol = cho_solve((L_r, True), rhs_stack)  # (n, k+1)
+                log_det_P = 2.0 * jnp.sum(jnp.log(jnp.diag(L_r)))
+
             z_vec = sol[:, 0]  # P_η⁻¹ κ  — (n,)
             M_mat = sol[:, 1:]  # P_η⁻¹ u  — (n, k)
-
-            # log|P_η|
-            log_det_P = 2.0 * jnp.sum(jnp.log(jnp.diag(L_r)))
 
             # Σ_β*⁻¹ = X^TX + V₀⁻¹ - u^T M  — (k, k)
             Sig_beta_inv = XtX_jax + beta_prior_prec - u.T @ M_mat
@@ -388,7 +449,7 @@ def run_chain_jax(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     if rng is None:
         rng = np.random.default_rng()
@@ -402,9 +463,8 @@ def run_chain_jax(
     X_jax = jnp.asarray(X, dtype=jnp.float64)
     XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
 
-    # Extract W_dense (original row-standardised W, not W_sym)
-    W_dense = W_sparse.toarray()
-    W_dense_jax = jnp.asarray(W_dense, dtype=jnp.float64)
+    # Sparse W as BCOO — never densify W for the O(nnz) matvecs.
+    W_bcoo, Wt_bcoo = _build_w_bcoo(W_sparse)
 
     # Initialize state
     state = JAXLogitGibbsState(
@@ -425,7 +485,8 @@ def run_chain_jax(
     gibbs_step = _make_gibbs_step_with_data(
         y_jax=y_jax,
         X_jax=X_jax,
-        W_dense_jax=W_dense_jax,
+        W_bcoo=W_bcoo,
+        Wt_bcoo=Wt_bcoo,
         n=n,
         k=k,
         W_sym_dense=W_sym_dense,
@@ -487,7 +548,8 @@ def run_chain_jax(
 def _make_gibbs_step_with_data_sem(
     y_jax,
     X_jax,
-    W_dense_jax,
+    W_bcoo,
+    Wt_bcoo,
     n,
     k,
     W_sym_dense,
@@ -496,6 +558,7 @@ def _make_gibbs_step_with_data_sem(
     priors,
     n_probes,
     lanczos_deg,
+    cholgraph_pattern=None,
 ):
     """Build a JIT-compiled SEM-logit Gibbs step with data bound into the closure.
 
@@ -514,10 +577,29 @@ def _make_gibbs_step_with_data_sem(
     from .._utils._jax_slice import jax_slice_sample_1d
     from ._core import JAXSEMLogitGibbsState
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
-    W_sym = jnp.asarray(W_sym_dense, dtype=jnp.float64)
-    WtW = jnp.asarray(WtW_dense, dtype=jnp.float64)
+    use_cholgraph = cholgraph_pattern is not None
+
+    # Sparse W matvecs — never densify W.  (W+Wᵀ)@x and (WᵀW)@x compose the
+    # base W @ x / Wᵀ @ x BCOO matvecs, so no dense W_sym/WtW is materialised.
+    def W_matvec(x):
+        return W_bcoo @ x
+
+    def Wt_matvec(x):
+        return Wt_bcoo @ x
+
+    def Wsym_matvec(x):
+        return W_matvec(x) + Wt_matvec(x)
+
+    def WtW_matvec(x):
+        return Wt_matvec(W_matvec(x))
+
+    # Dense (W+Wᵀ) and WᵀW are only needed to assemble the dense P in the
+    # no-cholgraph fallback; skip building them on the sparse path.
+    if not use_cholgraph:
+        W_sym = jnp.asarray(W_sym_dense, dtype=jnp.float64)
+        WtW = jnp.asarray(WtW_dense, dtype=jnp.float64)
     beta_mu_jax = jnp.broadcast_to(jnp.asarray(priors.beta_mu, dtype=jnp.float64), (k,))
     beta_sigma2_jax = jnp.broadcast_to(
         jnp.asarray(priors.beta_sigma, dtype=jnp.float64) ** 2, (k,)
@@ -529,6 +611,27 @@ def _make_gibbs_step_with_data_sem(
     beta_mu_jax / beta_sigma2_jax  # V₀⁻¹ b₀
 
     kappa = y_jax - 0.5
+
+    # ── cholgraph setup (optional sparse SPD Cholesky path) ──
+    if use_cholgraph:
+        _Ai = jnp.asarray(cholgraph_pattern["Ai"], dtype=jnp.int32)
+        _Aj = jnp.asarray(cholgraph_pattern["Aj"], dtype=jnp.int32)
+        _W_sym_vals = jnp.asarray(cholgraph_pattern["W_sym_vals"], dtype=jnp.float64)
+        _WtW_vals = jnp.asarray(cholgraph_pattern["WtW_vals"], dtype=jnp.float64)
+        _diag_idx = jnp.asarray(cholgraph_pattern["diag_idx"], dtype=jnp.int32)
+        _nnz = len(cholgraph_pattern["Ai"])
+        _n_static = int(cholgraph_pattern["n"])
+        # Factor-once closures (cholgraph 0.4 sample_gaussian / factor_solve).
+        from .._utils._cholgraph_utils import make_cholgraph_ops
+
+        _eta_sample, _solve_logdet = make_cholgraph_ops(_Ai, _Aj, _n_static)
+
+        def _assemble_Ax(omega, lam_val):
+            """Assemble COO values for P = I + diag(ω) − λ(W+Wᵀ) + λ²WᵀW."""
+            Ax = -lam_val * _W_sym_vals + lam_val**2 * _WtW_vals
+            diag_vals = jnp.zeros(_nnz, dtype=jnp.float64)
+            diag_vals = diag_vals.at[_diag_idx].set(1.0 + omega)
+            return Ax + diag_vals
 
     @eqx.filter_jit
     def gibbs_step(state, key, slice_width):
@@ -544,25 +647,31 @@ def _make_gibbs_step_with_data_sem(
 
         # ── Block 2: η | ω, β, λ — SEM-specific rhs ──
         # P = I + diag(ω) - λ(W+W^T) + λ²W^TW
-        P_diag = jnp.ones(n) + omega_new
-        P = jnp.diag(P_diag) - lam * W_sym + lam**2 * WtW
-        P = P + 1e-6 * jnp.eye(n)
-
         Xbeta = X_jax @ beta
         # SEM rhs: A_λ'A_λXβ + κ = Xβ - λ(W+W')Xβ + λ²W'WXβ + κ
-        WsymXbeta = W_sym @ Xbeta
-        WtWXbeta = WtW @ Xbeta
+        WsymXbeta = Wsym_matvec(Xbeta)
+        WtWXbeta = WtW_matvec(Xbeta)
         rhs = Xbeta - lam * WsymXbeta + lam**2 * WtWXbeta + kappa
 
-        L = jnp.linalg.cholesky(P)
-        P_inv_rhs = cho_solve((L, True), rhs)
-        z_eta = jax.random.normal(key_eta, shape=(n,), dtype=jnp.float64)
-        eta_new = P_inv_rhs + solve_triangular(L.T, z_eta, lower=False)
+        if use_cholgraph:
+            # Mean + draw ~ N(P⁻¹ rhs, P⁻¹) from ONE factorization.
+            Ax = _assemble_Ax(omega_new, lam)
+            z_eta = jax.random.normal(key_eta, shape=(n,), dtype=jnp.float64)
+            eta_new = _eta_sample(Ax, rhs, z_eta)
+        else:
+            P_diag = jnp.ones(n) + omega_new
+            P = jnp.diag(P_diag) - lam * W_sym + lam**2 * WtW
+            P = P + 1e-6 * jnp.eye(n)
+
+            L = jnp.linalg.cholesky(P)
+            P_inv_rhs = cho_solve((L, True), rhs)
+            z_eta = jax.random.normal(key_eta, shape=(n,), dtype=jnp.float64)
+            eta_new = P_inv_rhs + solve_triangular(L.T, z_eta, lower=False)
 
         # ── Block 3: β | η, λ — SEM-style transformed data ──
         # X* = (I - λW)X,  η* = (I - λW)η
-        A_lam_eta = eta_new - lam * W_dense_jax @ eta_new
-        X_star = X_jax - lam * (W_dense_jax @ X_jax)
+        A_lam_eta = eta_new - lam * W_matvec(eta_new)
+        X_star = X_jax - lam * W_matvec(X_jax)
         eta_star = A_lam_eta
 
         XstXs = X_star.T @ X_star
@@ -584,25 +693,36 @@ def _make_gibbs_step_with_data_sem(
         # MALA requires (autodiff through Cholesky + solve is ~3× the
         # forward cost).
 
+        # Hoist the λ-independent matvecs out of the slice density: Xβ and the
+        # (W+Wᵀ)Xβ, WᵀWXβ products are constant across every stepping-out /
+        # shrink evaluation, so a single set of sparse matvecs per sweep
+        # replaces recomputing them dozens of times.
+        Xbeta_r = X_jax @ beta_new
+        WsymXbeta_r = Wsym_matvec(Xbeta_r)
+        WtWXbeta_r = WtW_matvec(Xbeta_r)
+
         def log_density_lam(lam_val):
             """Collapsed log-density of λ (η integrated out, β conditioned).
 
-            Uses one dense Cholesky of P_r to obtain log|P_r| and the
+            Uses one Cholesky of P_r to obtain log|P_r| and the
             quadratic form exactly.
             """
-            P_diag_r = jnp.ones(n) + omega_new
-            P_r = jnp.diag(P_diag_r) - lam_val * W_sym + lam_val**2 * WtW
-            P_r = P_r + 1e-6 * jnp.eye(n)
-
-            Xbeta_r = X_jax @ beta_new
-            WsymXbeta_r = W_sym @ Xbeta_r
-            WtWXbeta_r = WtW @ Xbeta_r
             rhs_r = Xbeta_r - lam_val * WsymXbeta_r + lam_val**2 * WtWXbeta_r + kappa
 
-            L_r = jnp.linalg.cholesky(P_r)
-            log_det_P = 2.0 * jnp.sum(jnp.log(jnp.diag(L_r)))
-            v = solve_triangular(L_r, rhs_r, lower=True)
-            quad_r = v @ v
+            if use_cholgraph:
+                Ax_r = _assemble_Ax(omega_new, lam_val)
+                # Solve + logdet from one factorization (factor_solve).
+                m, log_det_P = _solve_logdet(Ax_r, rhs_r)
+                quad_r = rhs_r @ m
+            else:
+                P_diag_r = jnp.ones(n) + omega_new
+                P_r = jnp.diag(P_diag_r) - lam_val * W_sym + lam_val**2 * WtW
+                P_r = P_r + 1e-6 * jnp.eye(n)
+
+                L_r = jnp.linalg.cholesky(P_r)
+                log_det_P = 2.0 * jnp.sum(jnp.log(jnp.diag(L_r)))
+                v = solve_triangular(L_r, rhs_r, lower=True)
+                quad_r = v @ v
 
             logdet_W = logdet_jax(lam_val)
 
@@ -711,7 +831,7 @@ def run_chain_jax_sem(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     from ._core import JAXSEMLogitGibbsState
 
@@ -726,9 +846,8 @@ def run_chain_jax_sem(
     y_jax = jnp.asarray(y, dtype=jnp.float64)
     X_jax = jnp.asarray(X, dtype=jnp.float64)
 
-    # Extract W_dense (original row-standardised W, not W_sym)
-    W_dense = W_sparse.toarray()
-    W_dense_jax = jnp.asarray(W_dense, dtype=jnp.float64)
+    # Sparse W as BCOO — never densify W for the O(nnz) matvecs.
+    W_bcoo, Wt_bcoo = _build_w_bcoo(W_sparse)
 
     # Initialize state
     state = JAXSEMLogitGibbsState(
@@ -749,7 +868,8 @@ def run_chain_jax_sem(
     gibbs_step = _make_gibbs_step_with_data_sem(
         y_jax=y_jax,
         X_jax=X_jax,
-        W_dense_jax=W_dense_jax,
+        W_bcoo=W_bcoo,
+        Wt_bcoo=Wt_bcoo,
         n=n,
         k=k,
         W_sym_dense=W_sym_dense,
@@ -945,6 +1065,7 @@ def run_chains_jax_vectorized(
     n_probes: int = 5,
     lanczos_deg: int = 15,
     progressbar: bool = True,
+    cholgraph_pattern=None,
 ) -> list[dict]:
     """Run multiple SAR-logit Gibbs chains in parallel via ``jax.vmap``.
 
@@ -985,7 +1106,7 @@ def run_chains_jax_vectorized(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     chains = len(inits)
     n, k = X.shape
@@ -993,12 +1114,13 @@ def run_chains_jax_vectorized(
     y_jax = jnp.asarray(y, dtype=jnp.float64)
     X_jax = jnp.asarray(X, dtype=jnp.float64)
     XtX_jax = jnp.asarray(X.T @ X, dtype=jnp.float64)
-    W_dense_jax = jnp.asarray(W_sparse.toarray(), dtype=jnp.float64)
+    W_bcoo, Wt_bcoo = _build_w_bcoo(W_sparse)
 
     gibbs_step = _make_gibbs_step_with_data(
         y_jax=y_jax,
         X_jax=X_jax,
-        W_dense_jax=W_dense_jax,
+        W_bcoo=W_bcoo,
+        Wt_bcoo=Wt_bcoo,
         n=n,
         k=k,
         W_sym_dense=W_sym_dense,
@@ -1008,6 +1130,7 @@ def run_chains_jax_vectorized(
         priors=priors,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
+        cholgraph_pattern=cholgraph_pattern,
     )
 
     init_states = _stack_chain_inits(inits, JAXLogitGibbsState, "rho")
@@ -1134,6 +1257,7 @@ def run_chains_jax_sem_vectorized(
     n_probes: int = 5,
     lanczos_deg: int = 15,
     progressbar: bool = True,
+    cholgraph_pattern=None,
 ) -> list[dict]:
     """Run multiple SEM-logit Gibbs chains in parallel via ``jax.vmap``.
 
@@ -1144,7 +1268,7 @@ def run_chains_jax_sem_vectorized(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     from ._core import JAXSEMLogitGibbsState
 
@@ -1153,12 +1277,13 @@ def run_chains_jax_sem_vectorized(
 
     y_jax = jnp.asarray(y, dtype=jnp.float64)
     X_jax = jnp.asarray(X, dtype=jnp.float64)
-    W_dense_jax = jnp.asarray(W_sparse.toarray(), dtype=jnp.float64)
+    W_bcoo, Wt_bcoo = _build_w_bcoo(W_sparse)
 
     gibbs_step = _make_gibbs_step_with_data_sem(
         y_jax=y_jax,
         X_jax=X_jax,
-        W_dense_jax=W_dense_jax,
+        W_bcoo=W_bcoo,
+        Wt_bcoo=Wt_bcoo,
         n=n,
         k=k,
         W_sym_dense=W_sym_dense,
@@ -1167,6 +1292,7 @@ def run_chains_jax_sem_vectorized(
         priors=priors,
         n_probes=n_probes,
         lanczos_deg=lanczos_deg,
+        cholgraph_pattern=cholgraph_pattern,
     )
 
     init_states = _stack_chain_inits(inits, JAXSEMLogitGibbsState, "lam")

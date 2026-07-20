@@ -89,6 +89,8 @@ def _check_jax_available() -> None:
 # JAX Gaussian Gibbs state (equinox Module)
 # ---------------------------------------------------------------------------
 
+from bayespecon._jax_dispatch import ensure_x64
+
 from .._utils._jax_base import make_jax_state_class
 
 JAXGaussianGibbsState = make_jax_state_class(
@@ -250,7 +252,7 @@ def _make_gaussian_gibbs_step(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     is_sar = model_type in ("sar", "sdm")
 
@@ -555,7 +557,7 @@ def run_chain_jax_gaussian(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     from ._loglik import (
         sar_pointwise_loglik_vectorized,
@@ -792,7 +794,7 @@ def run_chains_jax_gibbs_vectorized(
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    ensure_x64()
 
     from ._loglik import (
         sar_pointwise_loglik_vectorized,

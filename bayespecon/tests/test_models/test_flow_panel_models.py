@@ -17,7 +17,6 @@ from bayespecon.models.flow_panel import (
     SARFlowPanel,
     SARFlowSeparablePanel,
 )
-from bayespecon.tests.helpers import SAMPLE_KWARGS
 
 
 def _flow_test_graph(n: int):
@@ -61,9 +60,6 @@ class TestFlowPanelModelConstruction:
             T=T,
             col_names=col_names,
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
 
         assert model._n == n
@@ -86,9 +82,6 @@ class TestFlowPanelModelConstruction:
             T=T,
             col_names=col_names,
             effects=1,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
 
         y2 = model._y.reshape(T, n * n)
@@ -107,9 +100,6 @@ class TestFlowPanelModelConstruction:
                 X=X,
                 T=T,
                 col_names=col_names,
-                miter=5,
-                titer=50,
-                trace_seed=0,
             )
 
 
@@ -127,7 +117,6 @@ class TestSeparablePanelModelBuild:
             T=T,
             col_names=col_names,
             effects=0,
-            trace_seed=0,
         )
 
         pm_model = model._build_pymc_model()
@@ -150,12 +139,9 @@ def test_sar_flow_panel_fit_smoke():
         T=T,
         col_names=col_names,
         effects=0,
-        miter=5,
-        titer=30,
-        trace_seed=0,
         restrict_positive=True,
     )
-    idata = model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
+    idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
     assert "rho_d" in idata.posterior
     assert "rho_o" in idata.posterior
     assert "rho_w" in idata.posterior
@@ -167,9 +153,9 @@ def test_sar_flow_panel_fit_smoke():
 # Parameter recovery tests (slow — deselected by default)
 # ---------------------------------------------------------------------------
 
-# Panel flow dimensions
-PANEL_FLOW_N = 6  # 36 O-D pairs per period
-PANEL_FLOW_T = 5  # 5 periods → 180 total obs
+# Panel flow dimensions — larger n for reliable recovery with the resolvent sampler
+PANEL_FLOW_N = 8  # 64 O-D pairs per period
+PANEL_FLOW_T = 5  # 5 periods → 320 total obs
 
 # True parameter values
 PF_RHO_D_TRUE = 0.25
@@ -185,10 +171,10 @@ PF_SIGMA_ALPHA_TRUE = 0.5
 PF_RHO_D_SEP_TRUE = 0.40
 PF_RHO_O_SEP_TRUE = 0.30
 
-# Tolerances
-ABS_TOL_RHO = 0.25
-ABS_TOL_BETA = 0.40
-ABS_TOL_SIGMA = 0.35
+# Tolerances — tightened for meaningful recovery
+ABS_TOL_RHO = 0.15
+ABS_TOL_BETA = 0.30
+ABS_TOL_SIGMA = 0.25
 
 
 @pytest.mark.slow
@@ -222,12 +208,17 @@ class TestSARFlowPanelRecovery:
             T=PANEL_FLOW_T,
             col_names=out["col_names"],
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
-        idata = model.fit(**SAMPLE_KWARGS)
+        idata = model.fit(
+            draws=1000,
+            tune=1000,
+            chains=2,
+            progressbar=False,
+            random_seed=42,
+            n_probes=48,
+            n_quad=8,
+        )
         return idata
 
     def test_sar_flow_panel_recovers_rho_d(self, fitted_panel):
@@ -298,9 +289,15 @@ class TestSARFlowSeparablePanelRecovery:
             T=PANEL_FLOW_T,
             col_names=out["col_names"],
             effects=0,
-            trace_seed=0,
         )
-        idata = model.fit(**SAMPLE_KWARGS)
+        idata = model.fit(
+            draws=1000,
+            tune=1000,
+            chains=2,
+            target_accept=0.95,
+            progressbar=False,
+            random_seed=42,
+        )
         return idata
 
     def test_separable_panel_recovers_rho_d(self, fitted_separable_panel):
@@ -461,9 +458,6 @@ class TestFlowPanelLogLikelihood:
             T=T,
             col_names=col_names,
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata, n_obs=n * n * T)
@@ -479,7 +473,6 @@ class TestFlowPanelLogLikelihood:
             T=T,
             col_names=col_names,
             effects=0,
-            trace_seed=0,
         )
         idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata, n_obs=n * n * T)
@@ -506,9 +499,6 @@ class TestFlowPanelLogLikelihood:
             T=T,
             col_names=col_names,
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         m_sep = SARFlowSeparablePanel(
             y=y,
@@ -517,7 +507,6 @@ class TestFlowPanelLogLikelihood:
             T=T,
             col_names=col_names,
             effects=0,
-            trace_seed=0,
         )
         m_ols = OLSFlowPanel(y=y, G=G, X=X, T=T, col_names=col_names, effects=0)
         idata_sar = m_sar.fit(**kw)
@@ -528,21 +517,22 @@ class TestFlowPanelLogLikelihood:
         assert len(comp) == 3
 
 
-class TestFlowPanelGibbsDispatch:
-    """Flow panel models should dispatch sampler='gibbs' to fit_gibbs."""
+class TestFlowPanelSamplerDispatch:
+    """Flow panel models should dispatch sampler='gibbs'/'nuts' correctly."""
 
-    def test_sar_flow_separable_panel_sampler_gibbs(self):
+    def test_sar_flow_panel_sampler_gibbs(self):
+        """Unrestricted SARFlowPanel with sampler='gibbs' uses the resolvent sampler."""
         n, T = 4, 3
         G = _flow_test_graph(n)
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=50)
-        m = SARFlowSeparablePanel(
+        m = SARFlowPanel(
             y=y,
             G=G,
             X=X,
             T=T,
             col_names=col_names,
             effects=0,
-            trace_seed=0,
+            restrict_positive=True,
         )
         idata = m.fit(
             draws=20,
@@ -555,12 +545,11 @@ class TestFlowPanelGibbsDispatch:
         assert "beta" in idata.posterior.data_vars
         assert "rho_d" in idata.posterior.data_vars
         assert "rho_o" in idata.posterior.data_vars
-        assert "sigma2_y" in idata.posterior.data_vars
-        assert "sigma2_u" in idata.posterior.data_vars
-        assert "gamma" in idata.posterior.data_vars
+        assert "rho_w" in idata.posterior.data_vars
+        assert "sigma" in idata.posterior.data_vars
 
-    def test_sar_flow_panel_sampler_gibbs_raises(self):
-        """Unrestricted SARFlowPanel should raise NotImplementedError."""
+    def test_sar_flow_panel_sampler_nuts(self):
+        """Unrestricted SARFlowPanel with sampler='nuts' uses PyMC NUTS."""
         n, T = 4, 3
         G = _flow_test_graph(n)
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=51)
@@ -571,22 +560,22 @@ class TestFlowPanelGibbsDispatch:
             T=T,
             col_names=col_names,
             effects=0,
-            miter=5,
-            titer=50,
-            trace_seed=0,
+            restrict_positive=True,
         )
-        with pytest.raises(NotImplementedError, match="fit_gibbs"):
-            m.fit(
-                draws=10,
-                tune=10,
-                chains=1,
-                progressbar=False,
-                random_seed=0,
-                sampler="gibbs",
-            )
+        idata = m.fit(
+            draws=10,
+            tune=10,
+            chains=1,
+            progressbar=False,
+            random_seed=0,
+            sampler="nuts",
+        )
+        assert "beta" in idata.posterior.data_vars
+        assert "rho_d" in idata.posterior.data_vars
+        assert "sigma" in idata.posterior.data_vars
 
-    def test_sampler_nuts_backward_compatible(self):
-        """Default sampler='nuts' still works for all flow panel models."""
+    def test_sar_flow_separable_panel_sampler_nuts(self):
+        """Separable panel with sampler='nuts' uses PyMC NUTS (default)."""
         n, T = 4, 2
         G = _flow_test_graph(n)
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=52)
@@ -597,7 +586,6 @@ class TestFlowPanelGibbsDispatch:
             T=T,
             col_names=col_names,
             effects=0,
-            trace_seed=0,
         )
         idata = m.fit(
             draws=10,
@@ -615,14 +603,14 @@ class TestFlowPanelGibbsDispatch:
         n, T = 4, 2
         G = _flow_test_graph(n)
         y, X, col_names = _panel_flow_stack(n=n, T=T, k=2, seed=53)
-        m = SARFlowSeparablePanel(
+        m = SARFlowPanel(
             y=y,
             G=G,
             X=X,
             T=T,
             col_names=col_names,
             effects=0,
-            trace_seed=0,
+            restrict_positive=True,
         )
         with pytest.raises(ValueError, match="sampler must be"):
             m.fit(

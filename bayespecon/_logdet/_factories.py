@@ -22,7 +22,7 @@ from ._cheb_stochastic import (
     cheb_stochastic_logdet_eval,
     cheb_stochastic_logdet_precompute,
 )
-from ._chebyshev import chebyshev
+from ._chebyshev import chebyshev, chebyshev_coeffs_dct1, chebyshev_gauss_nodes
 from ._clenshaw import clenshaw_scalar as _clenshaw_scalar
 from ._clenshaw import clenshaw_vec as _clenshaw_vec
 from ._config import (
@@ -50,19 +50,11 @@ def _cheb_stochastic_coeffs(W_sparse, rho_min, rho_max):
     recurrence.
     """
     pre = cheb_stochastic_logdet_precompute(W_sparse)
-    k_nodes = np.arange(1, 21)
-    nodes_cos = np.cos((2 * k_nodes - 1) * np.pi / 40)
-    rho_nodes = 0.5 * (rho_max - rho_min) * nodes_cos + 0.5 * (rho_max + rho_min)
+    rho_nodes, _ = chebyshev_gauss_nodes(20, rho_min, rho_max)
     logdet_vals = np.array(
         [cheb_stochastic_logdet_eval(pre, float(r)) for r in rho_nodes]
     )
-    coeffs = np.zeros(20, dtype=np.float64)
-    for j in range(20):
-        scale = 2.0 / 20 if j > 0 else 1.0 / 20
-        coeffs[j] = scale * np.sum(
-            logdet_vals * np.cos(j * (2 * k_nodes - 1) * np.pi / 40)
-        )
-    return coeffs, float(rho_min), float(rho_max)
+    return chebyshev_coeffs_dct1(logdet_vals), float(rho_min), float(rho_max)
 
 
 # ---------------------------------------------------------------------------
@@ -435,25 +427,9 @@ def make_logdet_fn(
             # Stochastic Chebyshev → Clenshaw-like eval (PyTensor-differentiable)
             # Build Cheb coeffs at Chebyshev nodes in ρ-space, then use logdet_chebyshev
             # for the differentiable Clenshaw evaluation.
-            pre = cheb_stochastic_logdet_precompute(W_sparse)
-            # Precompute Chebyshev-in-ρ coefficients from stochastic moments
-            # Evaluate at order Chebyshev nodes in [rho_min, rho_max], fit polynomial
-            k_nodes = np.arange(1, 21)
-            nodes_cos = np.cos((2 * k_nodes - 1) * np.pi / 40)
-            rho_nodes = 0.5 * (rho_max - rho_min) * nodes_cos + 0.5 * (
-                rho_max + rho_min
+            coeffs_np, rmin_cb, rmax_cb = _cheb_stochastic_coeffs(
+                W_sparse, rho_min, rho_max
             )
-            logdet_vals = np.array(
-                [cheb_stochastic_logdet_eval(pre, float(r)) for r in rho_nodes]
-            )
-            # DCT-I → Chebyshev coefficients in ρ
-            coeffs_np = np.zeros(20, dtype=np.float64)
-            for j in range(20):
-                scale = 2.0 / 20 if j > 0 else 1.0 / 20
-                coeffs_np[j] = scale * np.sum(
-                    logdet_vals * np.cos(j * (2 * k_nodes - 1) * np.pi / 40)
-                )
-            rmin_cb, rmax_cb = rho_min, rho_max
 
             def _cheb_stoch_sparse(rho):
                 val = logdet_chebyshev(rho, coeffs_np, rmin=rmin_cb, rmax=rmax_cb)
@@ -551,20 +527,7 @@ def make_logdet_fn(
     method = resolve_logdet_method(method, n=W_dense.shape[0], W=W_dense)
     if method == "cheb_stochastic":
         # Stochastic Chebyshev → Clenshaw (PyTensor-differentiable via ρ-space coeffs)
-        pre = cheb_stochastic_logdet_precompute(W_dense)
-        k_nodes = np.arange(1, 21)
-        nodes_cos = np.cos((2 * k_nodes - 1) * np.pi / 40)
-        rho_nodes = 0.5 * (rho_max - rho_min) * nodes_cos + 0.5 * (rho_max + rho_min)
-        logdet_vals = np.array(
-            [cheb_stochastic_logdet_eval(pre, float(r)) for r in rho_nodes]
-        )
-        coeffs_np = np.zeros(20, dtype=np.float64)
-        for j in range(20):
-            scale = 2.0 / 20 if j > 0 else 1.0 / 20
-            coeffs_np[j] = scale * np.sum(
-                logdet_vals * np.cos(j * (2 * k_nodes - 1) * np.pi / 40)
-            )
-        rmin_cb, rmax_cb = rho_min, rho_max
+        coeffs_np, rmin_cb, rmax_cb = _cheb_stochastic_coeffs(W_dense, rho_min, rho_max)
 
         def _cheb_stoch_dense(rho):
             val = logdet_chebyshev(rho, coeffs_np, rmin=rmin_cb, rmax=rmax_cb)
@@ -690,6 +653,9 @@ def get_cached_logdet_fn(
         n_w = int(np.asarray(W).shape[0])
     resolved_method = resolve_logdet_method(method, n=n_w, W=W)
 
+    # NOTE: the key carries no rng/seed component by design — the stochastic
+    # precomputes (SLQ, cheb_stochastic) default to a fixed rng(0), so the
+    # cached callable is deterministic for a given (W, method, bounds, T).
     key = (
         _logdet_w_signature(W),
         resolved_method,

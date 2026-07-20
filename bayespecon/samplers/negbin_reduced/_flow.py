@@ -106,6 +106,16 @@ class FlowReducedGibbsCache:
         Maximum |Δρ| for Krylov basis reuse.  Default 0.15.
     n_rho_omega_cycles : int
         Number of (ω, ρ, β) Gibbs cycles per sweep.  Default 1.
+    positive : bool
+        If True (the model-level ``restrict_positive``), reject any
+        ``ρ_k < 0`` in the unrestricted ρ conditionals — the Gibbs
+        counterpart of the Dirichlet-simplex prior used by the NUTS
+        path.  Ignored for the separable variant (which, like its NUTS
+        counterpart, always uses the box prior).
+    T : int
+        Number of panel periods sharing the same per-period system
+        matrix ``A`` (``1`` for the cross-section).  ``y``/``X`` are
+        stacked time-first with ``N_f·T`` rows, ``N_f = n²``.
     """
 
     def __init__(
@@ -121,6 +131,8 @@ class FlowReducedGibbsCache:
         krylov_degree: int = _KRYLOV_DEGREE_DEFAULT,
         krylov_dmax: float = _KRYLOV_DMAX_DEFAULT,
         n_rho_omega_cycles: int = 1,
+        positive: bool = False,
+        T: int = 1,
     ):
         self.Wd = Wd
         self.Wo = Wo
@@ -133,6 +145,9 @@ class FlowReducedGibbsCache:
         self.krylov_degree = krylov_degree
         self.krylov_dmax = krylov_dmax
         self.n_rho_omega_cycles = n_rho_omega_cycles
+        self.positive = positive
+        self.T = int(T)
+        self.Nf = int(Wd.shape[0])  # per-period flow count (n²)
 
         # Eigenvalue bounds for the regional W (n×n).
         # For row-standardised W: eigenvalues in [-1, 1].
@@ -172,13 +187,40 @@ def _assemble_A_unrestricted(
     return eye - rho_d * Wd - rho_o * Wo - rho_w * Ww
 
 
+def _stack_periods(X: np.ndarray, Nf: int, T: int) -> np.ndarray:
+    """Reshape a time-first stacked ``(Nf·T, k)`` RHS to ``(Nf, T·k)``.
+
+    Lets one factorisation of the per-period ``A`` (``Nf × Nf``) cover all
+    ``T`` period blocks in a single batched backsolve.
+    """
+    k = X.shape[1]
+    return X.reshape(T, Nf, k).transpose(1, 0, 2).reshape(Nf, T * k)
+
+
+def _unstack_periods(U: np.ndarray, Nf: int, T: int) -> np.ndarray:
+    """Inverse of :func:`_stack_periods`: ``(Nf, T·k)`` → ``(Nf·T, k)``."""
+    k = U.shape[1] // T
+    return U.reshape(Nf, T, k).transpose(1, 0, 2).reshape(T * Nf, k)
+
+
 def _solve_A_unrestricted(
     A: sp.csr_matrix,
     X: np.ndarray,
+    T: int = 1,
 ) -> np.ndarray:
-    """Solve A η = X via sparse LU, returning η = A⁻¹X."""
-    lu = spla.splu(A.tocsc())
-    return lu.solve(X)
+    """Solve (I_T ⊗ A) η = X via sparse LU, returning η = A⁻¹X per period.
+
+    ``A`` is the per-period ``Nf × Nf`` system matrix; ``X`` is the
+    time-first stacked ``(Nf·T, k)`` RHS.  One factorisation covers all
+    periods.  Uses KLU/UMFPACK (scikit-sparse) when available, falling
+    back to scipy SuperLU.
+    """
+    from ..._ops._backend import _solve_sparse_matrix
+
+    if T == 1:
+        return _solve_sparse_matrix(A, X)
+    Nf = A.shape[0]
+    return _unstack_periods(_solve_sparse_matrix(A, _stack_periods(X, Nf, T)), Nf, T)
 
 
 def _solve_A_separable(
@@ -187,18 +229,23 @@ def _solve_A_separable(
     X: np.ndarray,
     W_csc: sp.csc_matrix,
     n: int,
+    T: int = 1,
 ) -> np.ndarray:
-    """Solve (L_d ⊗ L_o) η = X via Kronecker two-step solve.
+    """Solve (I_T ⊗ L_o ⊗ L_d) η = X via Kronecker two-step solve.
 
     L_k = I_n - rho_k * W (n×n).
-    X has shape (N, k) where N = n².
+    X has shape (Nf·T, k) where Nf = n², stacked time-first.
     """
     from ..._ops import kron_solve_matrix
 
     I_n = sp.eye(n, format="csr", dtype=np.float64)
     Ld = (I_n - rho_d * W_csc).tocsr()
     Lo = (I_n - rho_o * W_csc).tocsr()
-    return kron_solve_matrix(Lo, Ld, X, n)
+    if T == 1:
+        return kron_solve_matrix(Lo, Ld, X, n)
+    Nf = n * n
+    Xb = _stack_periods(X, Nf, T)
+    return _unstack_periods(kron_solve_matrix(Lo, Ld, Xb, n), Nf, T)
 
 
 def _compute_eta_unrestricted(
@@ -208,10 +255,18 @@ def _compute_eta_unrestricted(
     Xbeta: np.ndarray,
     cache: FlowReducedGibbsCache,
 ) -> np.ndarray:
-    """Compute η = A⁻¹ Xβ for the unrestricted model."""
-    N = cache.Wd.shape[0]
-    A = _assemble_A_unrestricted(rho_d, rho_o, rho_w, cache.Wd, cache.Wo, cache.Ww, N)
-    return spla.spsolve(A.tocsc(), Xbeta)
+    """Compute η = A⁻¹ Xβ (per period) for the unrestricted model.
+
+    Uses KLU/UMFPACK (scikit-sparse) when available, falling back to
+    scipy SuperLU.
+    """
+    from ..._ops._backend import _solve_sparse_vector
+
+    Nf = cache.Nf
+    A = _assemble_A_unrestricted(rho_d, rho_o, rho_w, cache.Wd, cache.Wo, cache.Ww, Nf)
+    if cache.T == 1:
+        return _solve_sparse_vector(A, Xbeta)
+    return _solve_A_unrestricted(A, Xbeta.reshape(-1, 1), T=cache.T).ravel()
 
 
 def _compute_eta_separable(
@@ -220,17 +275,10 @@ def _compute_eta_separable(
     Xbeta: np.ndarray,
     W_csc: sp.csc_matrix,
     n: int,
+    T: int = 1,
 ) -> np.ndarray:
-    """Compute η = A⁻¹ Xβ for the separable model via Kronecker solve."""
-    I_n = sp.eye(n, format="csr", dtype=np.float64)
-    Ld = (I_n - rho_d * W_csc).tocsr()
-    Lo = (I_n - rho_o * W_csc).tocsr()
-    # kron_solve_matrix expects (N, k) — reshape Xbeta to (N, 1)
-    Xbeta_mat = Xbeta.reshape(-1, 1)
-    from ..._ops import kron_solve_matrix
-
-    eta_mat = kron_solve_matrix(Lo, Ld, Xbeta_mat, n)
-    return eta_mat.ravel()
+    """Compute η = A⁻¹ Xβ (per period) for the separable model."""
+    return _solve_A_separable(rho_d, rho_o, Xbeta.reshape(-1, 1), W_csc, n, T=T).ravel()
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +327,16 @@ def _rho_log_density_marginal_flow(
     else:
         raise ValueError(f"Unknown rho_name: {rho_name}")
 
-    N = X.shape[0]
+    if not cache.separable:
+        # Joint stability wall: |ρ_d|+|ρ_o|+|ρ_w| < 1 is the sufficient
+        # invertibility bound for row-standardised weights.  Without it the
+        # box prior admits a near-singular likelihood ridge (e.g. large ρ_w
+        # with negative ρ_d/ρ_o) that the NUTS path excludes by prior.
+        if abs(rho_d) + abs(rho_o) + abs(rho_w) >= cache.rho_upper:
+            return -np.inf
+        if cache.positive and (rho_d < 0.0 or rho_o < 0.0 or rho_w < 0.0):
+            return -np.inf
+
     k = X.shape[1]
     n = cache.n
     omega = state.omega
@@ -299,23 +356,23 @@ def _rho_log_density_marginal_flow(
     else:
         mu0 = np.asarray(beta_mu, dtype=np.float64)
 
-    # Compute U = A⁻¹X at the candidate ρ
+    # Compute U = A⁻¹X at the candidate ρ (per period for panels)
     try:
         if cache.separable:
-            # Use Krylov basis if available
-            if basis is not None and basis.degree > 0:
+            # Use Krylov basis if available (cross-section only)
+            if basis is not None and basis.degree > 0 and cache.T == 1:
                 drho = rho_val - basis.rho_basis
                 if abs(drho) <= cache.krylov_dmax:
                     U = _eval_U_from_basis(basis, drho)
                 else:
-                    U = _solve_A_separable(rho_d, rho_o, X, cache.W_csc, n)
+                    U = _solve_A_separable(rho_d, rho_o, X, cache.W_csc, n, T=cache.T)
             else:
-                U = _solve_A_separable(rho_d, rho_o, X, cache.W_csc, n)
+                U = _solve_A_separable(rho_d, rho_o, X, cache.W_csc, n, T=cache.T)
         else:
             A = _assemble_A_unrestricted(
-                rho_d, rho_o, rho_w, cache.Wd, cache.Wo, cache.Ww, N
+                rho_d, rho_o, rho_w, cache.Wd, cache.Wo, cache.Ww, cache.Nf
             )
-            U = _solve_A_unrestricted(A, X)
+            U = _solve_A_unrestricted(A, X, T=cache.T)
     except (RuntimeError, ValueError, spla.ArpackNoConvergence):
         return -np.inf
 
@@ -369,6 +426,8 @@ def _sample_rho_k(
     """1-D adaptive slice on one ρ parameter with β marginalised."""
     rho_lower = cache.rho_lower
     rho_upper = cache.rho_upper
+    if cache.positive and not cache.separable:
+        rho_lower = max(rho_lower, 0.0)
 
     # Get current value and width state
     if rho_name == "rho_d":
@@ -503,10 +562,7 @@ def run_chain_unrestricted(
     )
 
     for i in range(total_iters):
-        # Compute η = A⁻¹ Xβ at current ρ's
-        A = _assemble_A_unrestricted(
-            state.rho_d, state.rho_o, state.rho_w, Wd, Wo, Ww, N
-        )
+        # Compute η = A⁻¹ Xβ at current ρ's (per period for panels)
         Xbeta = X @ state.beta
         eta = _compute_eta_unrestricted(
             state.rho_d, state.rho_o, state.rho_w, Xbeta, cache
@@ -565,9 +621,9 @@ def run_chain_unrestricted(
 
             # --- β | ρ, ω, α, y ---
             A = _assemble_A_unrestricted(
-                state.rho_d, state.rho_o, state.rho_w, Wd, Wo, Ww, N
+                state.rho_d, state.rho_o, state.rho_w, Wd, Wo, Ww, cache.Nf
             )
-            Xtilde = _solve_A_unrestricted(A, X)
+            Xtilde = _solve_A_unrestricted(A, X, T=cache.T)
 
             state.beta = _sample_beta(
                 beta_current=state.beta,
@@ -713,13 +769,15 @@ def run_chain_separable(
         rho_upper=priors.rho_upper,
     )
 
-    use_krylov = cache.krylov_degree > 0
+    use_krylov = cache.krylov_degree > 0 and cache.T == 1
     krylov_degree = cache.krylov_degree
 
     for i in range(total_iters):
-        # Compute η = A⁻¹ Xβ at current ρ's
+        # Compute η = A⁻¹ Xβ at current ρ's (per period for panels)
         Xbeta = X @ state.beta
-        eta = _compute_eta_separable(state.rho_d, state.rho_o, Xbeta, W_csc, n)
+        eta = _compute_eta_separable(
+            state.rho_d, state.rho_o, Xbeta, W_csc, n, T=cache.T
+        )
         psi = eta - np.log(state.alpha)
 
         # --- Block 1: ω ---
@@ -790,7 +848,9 @@ def run_chain_separable(
             )
 
             # --- β | ρ, ω, α, y ---
-            Xtilde = _solve_A_separable(state.rho_d, state.rho_o, X, W_csc, n)
+            Xtilde = _solve_A_separable(
+                state.rho_d, state.rho_o, X, W_csc, n, T=cache.T
+            )
 
             state.beta = _sample_beta(
                 beta_current=state.beta,

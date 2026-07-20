@@ -382,9 +382,8 @@ def run_zinb_chain(
         )
         sel_state.eta = state.eta_sel
 
-        # Recompute A_λ η^sel for the γ draw
-        A_lam = sp.eye(n, format="csr") - state.lam * W_sel_sparse
-        A_lam_eta_sel = A_lam @ state.eta_sel
+        # Recompute A_λ η^sel for the γ draw (no matrix build)
+        A_lam_eta_sel = state.eta_sel - state.lam * (W_sel_sparse @ state.eta_sel)
 
         # Block 3: γ | η^sel, λ
         ZtZ = sel_cache.XtX  # reused: Z^T Z stored as XtX in logit cache

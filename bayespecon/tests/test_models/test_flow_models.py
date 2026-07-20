@@ -48,192 +48,6 @@ class TestBarryPaceTraces:
         np.testing.assert_allclose(out[0, :], 0.0, atol=1e-12)
 
 
-class TestComputeFlowTraces:
-    def test_shape(self):
-        from bayespecon._logdet import compute_flow_traces
-        from bayespecon.dgp.flows import generate_flow_data
-
-        n = 6
-        G = generate_flow_data(n=n, seed=0)["G"]
-        W = G.sparse.tocsr().astype(np.float64)
-        traces = compute_flow_traces(W, miter=5, riter=20, random_state=0)
-        assert traces.shape == (5,)
-
-    def test_tr_W2_close_to_exact(self):
-        """tr(W^2) estimate should be within 20% of exact for ring graph."""
-        from bayespecon._logdet import compute_flow_traces
-        from bayespecon.dgp.flows import generate_flow_data
-
-        n = 10
-        G = generate_flow_data(n=n, seed=0)["G"]
-        W = G.sparse.tocsr().astype(np.float64)
-        exact_tr_W2 = float(W.multiply(W.T).sum())
-        traces = compute_flow_traces(W, miter=5, riter=200, random_state=42)
-        # traces[1] = tr(W^2) (exact override from _barry_pace_traces)
-        np.testing.assert_allclose(traces[1], exact_tr_W2, atol=1e-10)
-
-
-class TestFlowLogdetPolyCoeffs:
-    def test_output_tuple_length(self):
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-
-        n = 5
-        miter = 3
-        traces = np.zeros(miter)
-        result = _flow_logdet_poly_coeffs(traces, n, miter)
-        assert len(result) == 8
-
-    def test_array_shapes_consistent(self):
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-
-        n = 5
-        miter = 4
-        traces = np.array([0.0, 2.0, 0.0, 0.1])
-        poly_a, poly_b, poly_c, poly_coeffs, m_a, m_b, m_c, m_coeffs = (
-            _flow_logdet_poly_coeffs(traces, n, miter)
-        )
-        # All poly arrays same length
-        assert len(poly_a) == len(poly_b) == len(poly_c) == len(poly_coeffs)
-        # miter arrays same length
-        assert len(m_a) == len(m_b) == len(m_c) == len(m_coeffs)
-        # miter triples: (miter+1)(miter+2)//2 combinations
-        expected_miter = (miter + 1) * (miter + 2) // 2
-        assert len(m_a) == expected_miter
-
-    def test_k1_terms_zero_for_zero_diagonal_W(self):
-        """For zero-diagonal W (tr(W)=0), all k=1 poly_coeffs should be 0."""
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-
-        n = 6
-        miter = 5
-        # traces[0] = tr(W) = 0 for zero-diagonal W
-        traces = np.array([0.0, 3.0, 0.0, 0.5, 0.1])
-        poly_a, poly_b, poly_c, poly_coeffs, *_ = _flow_logdet_poly_coeffs(
-            traces, n, miter
-        )
-        # k=1 triples: a+b+c=1 → (1,0,0), (0,1,0), (0,0,1)
-        k1_mask = (poly_a + poly_b + poly_c) == 1
-        np.testing.assert_allclose(poly_coeffs[k1_mask], 0.0, atol=1e-10)
-
-    def test_raises_wrong_traces_length(self):
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-
-        with pytest.raises(ValueError, match=r"len\(traces\)"):
-            _flow_logdet_poly_coeffs(np.zeros(4), n=5, miter=3)
-
-
-class TestFlowLogdetSeparableIdentity:
-    """Verify that flow_logdet_pytensor matches the exact log-det at a test point."""
-
-    def test_zero_rho_gives_zero_logdet(self):
-        """log|I| = 0, so at rho=0 the log-det should be ~0."""
-        import pytensor.tensor as pt
-
-        from bayespecon._logdet import (
-            compute_flow_traces,
-            flow_logdet_pytensor,
-        )
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-        from bayespecon.dgp.flows import generate_flow_data
-
-        n = 5
-        G = generate_flow_data(n=n, seed=0)["G"]
-        W = G.sparse.tocsr().astype(np.float64)
-        miter = 10
-        traces = compute_flow_traces(W, miter=miter, riter=50, random_state=7)
-        result = _flow_logdet_poly_coeffs(traces, n, miter)
-        poly_a, poly_b, poly_c, poly_coeffs = result[:4]
-        miter_a, miter_b, miter_c, miter_coeffs = result[4:]
-
-        rho_d_pt = pt.scalar("rho_d")
-        rho_o_pt = pt.scalar("rho_o")
-        rho_w_pt = pt.scalar("rho_w")
-
-        expr = flow_logdet_pytensor(
-            rho_d_pt,
-            rho_o_pt,
-            rho_w_pt,
-            poly_a,
-            poly_b,
-            poly_c,
-            poly_coeffs,
-            miter_a,
-            miter_b,
-            miter_c,
-            miter_coeffs,
-            miter=miter,
-            titer=800,
-        )
-        import pytensor
-
-        fn = pytensor.function([rho_d_pt, rho_o_pt, rho_w_pt], expr)
-        val = float(fn(0.0, 0.0, 0.0))
-        np.testing.assert_allclose(val, 0.0, atol=1e-6)
-
-    def test_separable_identity(self):
-        """For rho_w = -rho_d*rho_o the flow log-det should equal
-        n*logdet_eigenvalue(rho_d, eigs) + n*logdet_eigenvalue(rho_o, eigs)."""
-        import pytensor
-        import pytensor.tensor as pt
-
-        from bayespecon._logdet import (
-            compute_flow_traces,
-            flow_logdet_pytensor,
-            logdet_eigenvalue,
-        )
-        from bayespecon._logdet._flow import _flow_logdet_poly_coeffs
-        from bayespecon.dgp.flows import generate_flow_data
-
-        n = 5
-        G = generate_flow_data(n=n, seed=0)["G"]
-        W = G.sparse.tocsr().astype(np.float64)
-        eigs = np.linalg.eigvals(W.toarray()).real
-
-        miter = 15
-        traces = compute_flow_traces(W, miter=miter, riter=100, random_state=7)
-        result = _flow_logdet_poly_coeffs(traces, n, miter)
-        poly_a, poly_b, poly_c, poly_coeffs = result[:4]
-        miter_a, miter_b, miter_c, miter_coeffs = result[4:]
-
-        rd, ro = 0.3, 0.2
-        rw = -rd * ro
-
-        # Flow log-det via trace series
-        rho_d_pt = pt.scalar("rho_d")
-        rho_o_pt = pt.scalar("rho_o")
-        rho_w_pt = pt.scalar("rho_w")
-        expr = flow_logdet_pytensor(
-            rho_d_pt,
-            rho_o_pt,
-            rho_w_pt,
-            poly_a,
-            poly_b,
-            poly_c,
-            poly_coeffs,
-            miter_a,
-            miter_b,
-            miter_c,
-            miter_coeffs,
-            miter=miter,
-            titer=800,
-        )
-        fn_flow = pytensor.function([rho_d_pt, rho_o_pt, rho_w_pt], expr)
-        flow_val = float(fn_flow(rd, ro, rw))
-
-        # Exact separable log-det via eigenvalues
-        rho_scalar = pt.scalar("rho")
-        fn_eig = pytensor.function([rho_scalar], logdet_eigenvalue(rho_scalar, eigs))
-        separable_val = n * float(fn_eig(rd)) + n * float(fn_eig(ro))
-
-        # Should match within Monte Carlo trace estimation error (~1% tolerance)
-        np.testing.assert_allclose(flow_val, separable_val, rtol=0.05)
-
-
-# ---------------------------------------------------------------------------
-# FlowModel construction
-# ---------------------------------------------------------------------------
-
-
 class TestFlowModelConstruction:
     def setup_method(self):
         from bayespecon.dgp.flows import generate_flow_data
@@ -267,9 +81,6 @@ class TestFlowModelConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         assert model._n == self.n
         assert model._N == self.N
@@ -282,25 +93,20 @@ class TestFlowModelConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         np.testing.assert_allclose(model._y_vec, self.y_vec, atol=1e-12)
 
     def test_sar_flow_separable_builds(self):
         from bayespecon.models.flow import SARFlowSeparable
 
-        model = SARFlowSeparable(
-            self.y_vec, self.G, self.X, col_names=self.col_names, trace_seed=0
-        )
+        model = SARFlowSeparable(self.y_vec, self.G, self.X, col_names=self.col_names)
         assert model._n == self.n
 
     def test_wrong_y_length_raises(self):
         from bayespecon.models.flow import SARFlow
 
         with pytest.raises(ValueError, match="N="):
-            SARFlow(np.zeros(self.N + 1), self.G, self.X, miter=5, trace_seed=0)
+            SARFlow(np.zeros(self.N + 1), self.G, self.X)
 
     def test_asymmetric_beta_shapes_work_in_dgp(self):
         """generate_flow_data should support beta_d and beta_o of different lengths."""
@@ -322,7 +128,8 @@ class TestFlowModelConstruction:
         assert data["beta_d"].shape == (1,)
         assert data["beta_o"].shape == (2,)
 
-    def test_pymc_model_builds_without_error(self):
+    def test_pymc_model_raises_not_implemented(self):
+        """SARFlow samples via the resolvent sampler; the PyMC path was removed."""
         from bayespecon.models.flow import SARFlow
 
         model = SARFlow(
@@ -330,19 +137,14 @@ class TestFlowModelConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
-        pm_model = model._build_pymc_model()
-        assert pm_model is not None
+        with pytest.raises(NotImplementedError, match="resolvent"):
+            model._build_pymc_model()
 
     def test_pymc_model_separable_builds_without_error(self):
         from bayespecon.models.flow import SARFlowSeparable
 
-        model = SARFlowSeparable(
-            self.y_vec, self.G, self.X, col_names=self.col_names, trace_seed=0
-        )
+        model = SARFlowSeparable(self.y_vec, self.G, self.X, col_names=self.col_names)
         pm_model = model._build_pymc_model()
         assert pm_model is not None
 
@@ -556,9 +358,6 @@ class TestSARFlowFitSmoke:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
@@ -572,9 +371,7 @@ class TestSARFlowFitSmoke:
     def test_sar_flow_separable_fit_posterior_keys(self):
         from bayespecon.models.flow import SARFlowSeparable
 
-        model = SARFlowSeparable(
-            self.y, self.G, self.X, col_names=self.col_names, trace_seed=0
-        )
+        model = SARFlowSeparable(self.y, self.G, self.X, col_names=self.col_names)
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
         posterior = idata.posterior
         assert "rho_d" in posterior
@@ -590,9 +387,6 @@ class TestSARFlowFitSmoke:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         idata = model.fit(draws=50, tune=50, chains=1, progressbar=False, random_seed=0)
@@ -611,9 +405,6 @@ class TestSARFlowFitSmoke:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         assert model.inference_data is None  # before fit
         model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
@@ -644,9 +435,7 @@ class TestEffectsAccountingIdentity:
             seed=7,
         )
         G = out["G"]
-        model = SARFlowSeparable(
-            out["y_vec"], G, out["X"], col_names=out["col_names"], trace_seed=0
-        )
+        model = SARFlowSeparable(out["y_vec"], G, out["X"], col_names=out["col_names"])
         # Use minimal posterior (mock-style: just run prior predictive)
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         effects = model._compute_spatial_effects_posterior(draws=5)
@@ -784,33 +573,12 @@ RHO_O_SEP_TRUE = 0.30
 # harder posterior surface — more obs improves identification reliably
 FLOW_N_SEP = 12  # 144 O-D pairs (vs 64 for unrestricted model)
 
-# Poisson-specific true values
-POI_RHO_D_TRUE = 0.3
-POI_RHO_O_TRUE = 0.2
-POI_RHO_W_TRUE = 0.1
-
-# Separable Poisson — asymmetric for the same reason
-POI_RHO_D_SEP_TRUE = 0.40
-POI_RHO_O_SEP_TRUE = 0.30
-
-# Poisson models are more expensive per step (no conjugacy); use fewer samples
-POISSON_SAMPLE_KWARGS: dict = dict(
-    tune=400, draws=600, chains=2, random_seed=42, progressbar=False
-)
-# Separable Poisson: bilinear rho_w term makes the posterior harder to tune;
-# extra steps ensure the mass matrix adapts before drawing
-POISSON_SEP_SAMPLE_KWARGS: dict = dict(
-    tune=400, draws=400, chains=2, random_seed=42, progressbar=False
-)
-
 # Tolerances — wider than standard panel models because 3 spatial
 # parameters are harder to identify simultaneously
 ABS_TOL_RHO = 0.20
 ABS_TOL_RHO_SEP = 0.25  # separable model: slightly wider
-ABS_TOL_RHO_POI = 0.20  # Poisson: tighter after removing spurious Jacobian
 ABS_TOL_BETA = 0.35
 ABS_TOL_BETA_SEP = 0.40
-ABS_TOL_BETA_POI = 0.35  # Poisson beta: tighter after removing spurious Jacobian
 ABS_TOL_SIGMA = 0.35
 
 
@@ -844,8 +612,6 @@ class TestSARFlowSeparableLogdetMethods:
             out["X"],
             col_names=out["col_names"],
             logdet_method=request.param,
-            miter=15,
-            trace_seed=0,
         )
         idata = model.fit(**{**SAMPLE_KWARGS, "draws": 50, "tune": 50, "chains": 1})
         return idata, request.param
@@ -920,9 +686,6 @@ class TestSARFlowRecovery:
             G,
             out["X"],
             col_names=out["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         idata = model.fit(**SAMPLE_KWARGS)
@@ -978,7 +741,6 @@ class TestSARFlowSeparableRecovery:
             G,
             out["X"],
             col_names=out["col_names"],
-            trace_seed=0,
         )
         idata = model.fit(**SAMPLE_KWARGS)
         return idata
@@ -1074,7 +836,6 @@ class TestFlowSpatialEffectsAndPPC:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            trace_seed=0,
         )
         model.fit(draws=40, tune=40, chains=1, progressbar=False, random_seed=0)
         return model
@@ -1208,7 +969,6 @@ class TestFlowEffectsLeSageDecomposition:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            trace_seed=0,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
 
@@ -1353,7 +1113,6 @@ class TestFlowPanelSpatialEffectsAndPPC:
             X=X,
             T=T,
             col_names=col_names,
-            trace_seed=0,
         )
         model.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
         return model
@@ -1496,7 +1255,6 @@ class TestFlowEffectsAsymmetricAndIntra:
             G,
             design.combined,
             col_names=design.feature_names,
-            trace_seed=0,
         )
         assert model._symmetric_xo_xd is False
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
@@ -1525,7 +1283,6 @@ class TestFlowEffectsAsymmetricAndIntra:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            trace_seed=0,
         )
         model.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
         df_combined = model.spatial_effects(mode="combined")
@@ -1647,9 +1404,6 @@ class TestFlowLogLikelihood:
             self.G,
             self.gauss["X"],
             col_names=self.gauss["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
@@ -1663,7 +1417,6 @@ class TestFlowLogLikelihood:
             self.G,
             self.gauss["X"],
             col_names=self.gauss["col_names"],
-            trace_seed=0,
         )
         idata = m.fit(draws=30, tune=30, chains=1, progressbar=False, random_seed=0)
         self._check_loo(idata)
@@ -1691,9 +1444,6 @@ class TestFlowLogLikelihood:
             self.G,
             self.gauss["X"],
             col_names=self.gauss["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
             restrict_positive=True,
         )
         m_sep = SARFlowSeparable(
@@ -1701,7 +1451,6 @@ class TestFlowLogLikelihood:
             self.G,
             self.gauss["X"],
             col_names=self.gauss["col_names"],
-            trace_seed=0,
         )
         m_ols = OLSFlow(
             self.gauss["y_vec"],
@@ -1716,48 +1465,3 @@ class TestFlowLogLikelihood:
         comp = az.compare({"sar": idata_sar, "sep": idata_sep, "ols": idata_ols})
         assert "rank" in comp.columns
         assert len(comp) == 3
-
-    def test_sar_flow_jacobian_matches_pytensor(self):
-        """SARFlow._compute_jacobian_log_det matches pytensor logdet at draws."""
-        import pytensor
-        import pytensor.tensor as pt
-
-        from bayespecon._logdet import flow_logdet_pytensor
-        from bayespecon.models.flow import SARFlow
-
-        m = SARFlow(
-            self.gauss["y_vec"],
-            self.G,
-            self.gauss["X"],
-            col_names=self.gauss["col_names"],
-            miter=5,
-            titer=50,
-            trace_seed=0,
-            restrict_positive=True,
-        )
-        idata = m.fit(draws=20, tune=20, chains=1, progressbar=False, random_seed=0)
-        post = idata.posterior
-        np_jac = m._compute_jacobian_log_det(post)
-
-        a, b, c = pt.scalar("a"), pt.scalar("b"), pt.scalar("c")
-        expr = flow_logdet_pytensor(
-            a,
-            b,
-            c,
-            m._poly_a,
-            m._poly_b,
-            m._poly_c,
-            m._poly_coeffs,
-            m._miter_a,
-            m._miter_b,
-            m._miter_c,
-            m._miter_coeffs,
-            m.miter,
-            m.titer,
-        )
-        fn = pytensor.function([a, b, c], expr)
-        rd = post["rho_d"].values.reshape(-1)
-        ro = post["rho_o"].values.reshape(-1)
-        rw = post["rho_w"].values.reshape(-1)
-        pt_jac = np.array([float(fn(x, y, z)) for x, y, z in zip(rd, ro, rw)])
-        np.testing.assert_allclose(np_jac, pt_jac, atol=1e-10)

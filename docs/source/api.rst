@@ -5,37 +5,10 @@
 API reference
 =============
 
-The public API of ``bayespecon`` is everything reachable from the
-top-level ``bayespecon`` namespace (model classes, samplers, DGPs,
-diagnostics, graph helpers).  Internal subpackages are prefixed with
-an underscore (``_logdet``, ``_ops``, ``_backends``, ``_jax_dispatch``,
-``_numba_dispatch``); they are documented here for reference but their
-APIs are not covered by the package's stability guarantees and may
-change without deprecation.
-
-
-Base Classes
-------------
-
-.. currentmodule:: bayespecon.models.base
-
-.. autosummary::
-   :toctree: generated/
-
-   SpatialModel
-
-.. currentmodule:: bayespecon.models.panel_base
-
-.. autosummary::
-   :toctree: generated/
-
-   SpatialPanelModel
-
-
 Cross-Sectional Spatial Models
 ------------------------------
 
-.. currentmodule:: bayespecon
+.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
@@ -95,21 +68,17 @@ Non-Linear Spatial Models
 .. autosummary::
    :toctree: generated/
 
-   SpatialProbit
+   SARProbit
    SARTobit
    SEMTobit
    SDMTobit
    SARNegBin
    SARNegBinStructural
-   ZINBSAR
+   SARZINB
    Logit
-   NegativeBinomial
-   SARSpatialLogit
-   SEMSpatialLogit
-   Logit
-   NegativeBinomial
-   SARSpatialLogit
-   SEMSpatialLogit
+   NegBin
+   SARLogit
+   SEMLogit
 
 
 Panel Spatial Models (Tobit)
@@ -125,18 +94,17 @@ Panel Spatial Models (Tobit)
 Flow Models
 -----------
 
-.. currentmodule:: bayespecon.models.flow
+.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
 
-   FlowModel
    OLSFlow
    SARFlow
    SARFlowSeparable
-   NegativeBinomialFlow
-   NegativeBinomialSARFlow
-   NegativeBinomialSARFlowSeparable
+   NegBinFlow
+   SARNegBinFlow
+   SARNegBinFlowSeparable
    SEMFlow
    SEMFlowSeparable
 
@@ -144,20 +112,82 @@ Flow Models
 Panel Flow Models
 ^^^^^^^^^^^^^^^^^
 
-.. currentmodule:: bayespecon.models.flow_panel
+.. currentmodule:: bayespecon.models
 
 .. autosummary::
    :toctree: generated/
 
-   FlowPanelModel
    OLSFlowPanel
    SARFlowPanel
    SARFlowSeparablePanel
-   NegativeBinomialFlowPanel
-   NegativeBinomialSARFlowPanel
-   NegativeBinomialSARFlowSeparablePanel
+   NegBinFlowPanel
+   SARNegBinFlowPanel
+   SARNegBinFlowSeparablePanel
    SEMFlowPanel
    SEMFlowSeparablePanel
+
+Default Gibbs Priors
+---------------------
+
+.. currentmodule:: bayespecon.models.priors
+
+.. autosummary::
+   :toctree: generated/
+
+   GibbsBasePriors
+   GaussianGibbsPriors
+   GibbsPriors
+   ReducedGibbsPriors
+   FlowReducedGibbsPriors
+   ZINBGibbsPriors
+   LogitGibbsPriors
+   SEMLogitGibbsPriors
+   REGibbsPriors
+   PanelGaussianPriors
+
+Default NUTS Priors
+---------------------
+
+.. currentmodule:: bayespecon.models.priors
+
+.. autosummary::
+   :toctree: generated/
+
+   OLSPriors
+   SLXPriors
+   SARPriors
+   SEMPriors
+   SDMPriors
+   SDEMPriors
+   NegBinPriors
+   SARNegBinPriors
+   SARTobitPriors
+   SEMTobitPriors
+   SDMTobitPriors
+   SARProbitPriors
+   SARLogitPriors
+   SEMLogitPriors
+   PanelBasePriors
+   PanelOLSPriors
+   PanelSLXPriors
+   PanelSARPriors
+   PanelSEMPriors
+   PanelSDMPriors
+   PanelSDEMPriors
+   PanelOLSREPriors
+   PanelSARREPriors
+   PanelSEMREPriors
+   PanelSDEMREPriors
+   PanelSARTobitPriors
+   PanelSEMTobitPriors
+   PanelDynamicBasePriors
+   PanelOLSDynamicPriors
+   PanelSLXDynamicPriors
+   PanelSARDynamicPriors
+   PanelSEMDynamicPriors
+   PanelSDMRDynamicPriors
+   PanelSDMUDynamicPriors
+   PanelSDEMDynamicPriors
 
 
 Bayesian Diagnostics
@@ -192,7 +222,7 @@ Bayesian Diagnostics
 GLM Bayesian LM Tests
 ^^^^^^^^^^^^^^^^^^^^^
 
-Pólya–Gamma augmented LM tests for non-Gaussian models (Logit, NegBin).
+Pólya-Gamma augmented LM tests for non-Gaussian models (Logit, NegBin).
 
 .. autosummary::
    :toctree: generated/
@@ -291,9 +321,6 @@ Bayesian Model Comparison
 
    ModelComparison
    bayes_factor_compare_models
-   bic_to_bf
-   compile_log_posterior
-   post_prob
 
 
 MCMC Efficiency
@@ -424,158 +451,3 @@ Graph Utilities
    network_weights
 
 
-Gibbs Samplers
---------------
-
-Block-Gibbs samplers for Gaussian spatial models.  These bypass NUTS
-entirely and exploit conditional conjugacy for faster sampling.  All
-four symbols are re-exported from the top-level ``bayespecon``
-namespace.
-
-.. currentmodule:: bayespecon
-
-.. autosummary::
-   :toctree: generated/
-
-   GibbsEstimation
-   GaussianSARGibbs
-   GaussianSEMGibbs
-   GaussianGibbsPriors
-
-
-Configuration
--------------
-
-.. currentmodule:: bayespecon
-
-.. autosummary::
-   :toctree: generated/
-
-   enable_compile_cache
-
-
-Internal Modules
-----------------
-
-The following subpackages are private (underscore-prefixed).  They
-back the public model classes and samplers and may change without
-deprecation; they are documented here for reference and for users
-writing custom extensions.
-
-Custom PyTensor Ops (``bayespecon._ops``)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Differentiable sparse and Kronecker-structured linear solves with
-adjoint-method gradients, used inside the flow-model PyMC graphs.
-
-.. currentmodule:: bayespecon._ops
-
-.. autosummary::
-   :toctree: generated/
-
-   SparseFlowSolveOp
-   SparseFlowSolveMatrixOp
-   KroneckerFlowSolveOp
-   KroneckerFlowSolveMatrixOp
-   kron_solve_vec
-   kron_solve_matrix
-
-
-Log-Determinant Methods (``bayespecon._logdet``)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. currentmodule:: bayespecon._logdet
-
-Five methods are supported:
-
-* ``eigenvalue`` — exact, O(n) per call after O(n³) setup.  Auto-selected for n ≤ 500.
-* ``chebyshev`` — deterministic Chebyshev from exact eigenvalues; O(m) per call.  Auto-selected for 500 < n ≤ 2000.
-* ``cheb_stochastic`` — stochastic Chebyshev expansion (Han et al. 2015); geometric convergence via Bernstein ellipse, avoids O(n³).  Auto-selected for n > 2000.
-* ``slq`` — Stochastic Lanczos Quadrature; D-symmetrised batched Lanczos with Gauss quadrature.
-* ``traces`` — multinomial trace expansion for unrestricted 3-parameter flow models.
-
-Method resolution and bound handling
-""""""""""""""""""""""""""""""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   LogDetMethod
-   LogdetBounds
-   resolve_logdet_method
-   resolve_logdet_bounds
-
-Factories
-"""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   make_logdet_fn
-   make_logdet_numpy_fn
-   make_logdet_numpy_vec_fn
-   make_logdet_jax_fn
-   get_cached_logdet_fn
-   clear_logdet_fn_cache
-
-PyTensor kernels
-""""""""""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   logdet_eigenvalue
-   logdet_chebyshev
-
-Stochastic Chebyshev (Han et al. 2015)
-""""""""""""""""""""""""""""""""""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   ChebStochasticPrecompute
-   cheb_stochastic_logdet_precompute
-   cheb_stochastic_logdet_eval
-   cheb_stochastic_logdet_eval_vec
-
-Stochastic Lanczos Quadrature
-""""""""""""""""""""""""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   SLQPrecompute
-   slq_logdet_precompute
-   slq_logdet_eval
-   slq_logdet_eval_vec
-   slq_to_chebyshev_coeffs
-
-Chebyshev coefficient builder
-""""""""""""""""""""""""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   chebyshev
-   clear_chebyshev_cache
-
-JAX kernels
-"""""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   jax_logdet_chebyshev
-   jax_slq_logdet_precompute
-
-Flow log-determinants
-"""""""""""""""""""""
-
-.. autosummary::
-   :toctree: generated/
-
-   flow_logdet_pytensor
-   flow_logdet_numpy
-   compute_flow_traces
-   make_flow_separable_logdet
-   make_flow_separable_logdet_numpy

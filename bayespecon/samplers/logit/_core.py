@@ -41,7 +41,6 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 from ...models.priors import LogitGibbsPriors, SEMLogitGibbsPriors
@@ -88,6 +87,8 @@ class LogitGibbsState(GibbsBaseState):
 
 
 # JAX-compatible state class (equinox.Module when available, stub otherwise).
+from bayespecon._jax_dispatch import ensure_x64
+
 from .._utils._jax_base import make_jax_state_class
 
 JAXLogitGibbsState = make_jax_state_class(
@@ -112,9 +113,12 @@ class LogitGibbsCache(NamedTuple):
     cholmod_factor: CholmodFactor | None = None
     W_sym: sp.csr_matrix | None = None  # W + W^T (not divided by σ²)
     WtW: sp.csr_matrix | None = None  # W^T W (not divided by σ²)
-    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense"
-    logdet_P_method: str = "cholmod"  # "cholmod" | "lanczos" | "jax_dense"
-    sample_method: str = "cholmod"  # "cholmod" | "jax_dense"
+    WtX: np.ndarray | None = None  # (n, k) = W^T X, ρ-constant
+    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense" | "cholmod_jax"
+    logdet_P_method: str = (
+        "cholmod"  # "cholmod" | "lanczos" | "jax_dense" | "cholmod_jax"
+    )
+    sample_method: str = "cholmod"  # "cholmod" | "jax_dense" | "cholmod_jax"
     lanczos_n_probes: int = 10
     lanczos_deg: int = 30
     # JAX dense backend fields
@@ -228,7 +232,7 @@ def _sample_eta(
         # JAX dense path: build dense P, use Chebyshev or Cholesky
         import jax
 
-        jax.config.update("jax_enable_x64", True)
+        ensure_x64()
         import jax.numpy as jnp
 
         from .._utils._spatial_normal import jax_build_P_dense, jax_chebyshev_sample
@@ -406,17 +410,21 @@ def _sample_rho(
     V0_inv_diag = 1.0 / beta_sigma_arr**2
     V0_inv_b0 = beta_mu_arr * V0_inv_diag
     XtX_mat = cache.XtX  # (k, k), σ² = 1 so no division
-    WtX = W.T @ X  # (n, k), constant in ρ
+    WtX = cache.WtX if cache.WtX is not None else W.T @ X  # (n, k), ρ-constant
 
-    # Lanczos RNG
-    _lanczos_rng = np.random.default_rng(rng.integers(2**31))
+    # Lanczos RNG (only needed on the Lanczos logdet path)
+    _lanczos_rng = (
+        np.random.default_rng(rng.integers(2**31))
+        if logdet_P_method == "lanczos"
+        else None
+    )
 
     # JAX dense backend
     use_jax = solve_method == "jax_dense"
     if use_jax:
         import jax
 
-        jax.config.update("jax_enable_x64", True)
+        ensure_x64()
         import jax.numpy as jnp
 
         from .._utils._spatial_normal import _jax_log_density_core
@@ -665,9 +673,8 @@ def run_chain(
         # --- Block 2: η | ω, ρ, β ---
         state.eta, _ = _sample_eta(state, y, X, W_sparse, rng=rng, cache=cache)
 
-        # Recompute A_rho_eta with new eta
-        A_rho = sp.eye(n, format="csr") - state.rho * W_sparse
-        A_rho_eta = A_rho @ state.eta
+        # Recompute A_rho_eta with new eta (no matrix build)
+        A_rho_eta = state.eta - state.rho * (W_sparse @ state.eta)
 
         # --- Block 3: β | η, ρ ---
         state.beta = _sample_beta(state, X, XtX, priors, A_rho_eta, rng=rng)
@@ -781,9 +788,11 @@ class SEMLogitGibbsCache(NamedTuple):
     cholmod_factor: CholmodFactor | None = None
     W_sym: sp.csr_matrix | None = None  # W + W^T
     WtW: sp.csr_matrix | None = None  # W^T W
-    solve_method: str = "cholmod"
-    logdet_P_method: str = "cholmod"
-    sample_method: str = "cholmod"
+    solve_method: str = "cholmod"  # "cholmod" | "cg" | "jax_dense" | "cholmod_jax"
+    logdet_P_method: str = (
+        "cholmod"  # "cholmod" | "lanczos" | "jax_dense" | "cholmod_jax"
+    )
+    sample_method: str = "cholmod"  # "cholmod" | "jax_dense" | "cholmod_jax"
     lanczos_n_probes: int = 10
     lanczos_deg: int = 30
     # JAX dense backend fields
@@ -878,7 +887,7 @@ def _sample_eta_sem(
     if sample_method == "jax_dense":
         import jax
 
-        jax.config.update("jax_enable_x64", True)
+        ensure_x64()
         import jax.numpy as jnp
 
         from .._utils._spatial_normal import jax_build_P_dense, jax_chebyshev_sample
@@ -1058,14 +1067,18 @@ def _sample_lam(
     WtWXbeta = WtW @ Xbeta if WtW is not None else (W.T @ W) @ Xbeta
 
     # Lanczos RNG
-    _lanczos_rng = np.random.default_rng(rng.integers(2**31))
+    _lanczos_rng = (
+        np.random.default_rng(rng.integers(2**31))
+        if logdet_P_method == "lanczos"
+        else None
+    )
 
     # JAX dense backend
     use_jax = solve_method == "jax_dense"
     if use_jax:
         import jax
 
-        jax.config.update("jax_enable_x64", True)
+        ensure_x64()
         import jax.numpy as jnp
 
         omega_jax = jnp.asarray(omega)
@@ -1288,13 +1301,11 @@ def _sem_logit_collapsed_log_density(
     # log|I - λW|
     logdet = logdet_fn(lam)
 
-    # log|P| via LU
-    P_csc = sp.csc_matrix(P)
-    lu = spla.splu(P_csc, permc_spec="MMD_AT_PLUS_A")
-    log_det_P = np.sum(np.log(np.abs(lu.U.diagonal())))
+    # log|P| via LU — prefer KLU/UMFPACK (scikit-sparse) over scipy SuperLU
+    from ..._ops._backend import _factor_solve_logdet
 
-    # Solve P m = rhs
-    m = lu.solve(rhs)
+    P_csc = sp.csc_matrix(P)
+    m, log_det_P = _factor_solve_logdet(P_csc, rhs)
     quad = float(rhs @ m)
 
     # Missing term from SEM prior: -½Xβ'A_λ'A_λXβ
@@ -1389,9 +1400,8 @@ def run_chain_sem(
         # --- Block 2: η | ω, β, λ (SEM-specific rhs) ---
         state.eta, _ = _sample_eta_sem(state, y, X, W_sparse, rng=rng, cache=cache)
 
-        # Recompute A_λ η with new eta
-        A_lam = sp.eye(n, format="csr") - state.lam * W_sparse
-        A_lam_eta = A_lam @ state.eta
+        # Recompute A_λ η with new eta (no matrix build)
+        A_lam_eta = state.eta - state.lam * (W_sparse @ state.eta)
 
         # --- Block 3: β | η, λ (SEM-style transformed data) ---
         state.beta = _sample_beta_sem(state, X, priors, A_lam_eta, W_sparse, rng=rng)

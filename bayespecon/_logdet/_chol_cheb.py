@@ -54,6 +54,7 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
+from ._chebyshev import chebyshev_coeffs_dct1
 from ._clenshaw import clenshaw_scalar, clenshaw_vec
 
 
@@ -257,12 +258,7 @@ def chol_cheb_logdet_precompute(
         logdet_vals[i] = factor.logdet()
 
     # DCT-I → Chebyshev coefficients
-    coeffs = np.zeros(order, dtype=np.float64)
-    for j in range(order):
-        scale = 2.0 / order if j > 0 else 1.0 / order
-        coeffs[j] = scale * np.sum(
-            logdet_vals * np.cos(j * (2 * k - 1) * np.pi / (2 * order))
-        )
+    coeffs = chebyshev_coeffs_dct1(logdet_vals)
 
     return CholChebPrecompute(
         coeffs=coeffs,

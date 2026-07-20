@@ -37,8 +37,9 @@ from typing import Any, Optional
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import splu, spsolve
 from scipy.special import logsumexp
+
+from .._ops._backend import _solve_sparse_vector as _backend_spsolve
 
 __all__ = ["SpatialCVResult", "spatial_kfold"]
 
@@ -231,17 +232,16 @@ def _fold_elpd(
         s2 = float(sigma[g]) ** 2
         A = eye_n - theta * W_full  # I - rho*W or I - lambda*W
         Xb = design_full @ beta[g]
-        mu = spsolve(A.tocsc(), Xb) if kind == "lag" else Xb
+        mu = _backend_spsolve(A, Xb) if kind == "lag" else Xb
         Lam = (A.T @ A).tocsc() / s2  # full precision
         r = y_full - mu
         z = Lam @ r
         z_test = z[test_idx]
         Lam_tt = Lam[test_idx, :][:, test_idx].tocsc()
         try:
-            lu = splu(Lam_tt)
-            v = lu.solve(z_test)
-            diagU = lu.U.diagonal()
-            logdet = float(np.sum(np.log(np.abs(diagU))))
+            from .._ops._backend import _factor_solve_logdet
+
+            v, logdet = _factor_solve_logdet(Lam_tt, z_test)
         except Exception:
             Lam_tt_dense = Lam_tt.toarray()
             v = np.linalg.solve(Lam_tt_dense, z_test)

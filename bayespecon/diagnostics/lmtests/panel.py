@@ -1490,10 +1490,8 @@ def bayesian_panel_lm_lag_sdem_test(
     WX = model._WX
     Wy = model._Wy
     W_sp = model._W_sparse
-    W_dense = model._W_dense
     N = model._N
     T = model._T
-    n = N * T
 
     idata = model.inference_data
     beta_draws = _get_posterior_draws(idata, "beta")
@@ -1511,10 +1509,10 @@ def bayesian_panel_lm_lag_sdem_test(
 
     lam_mean = float(np.mean(lam_draws))
     _, sigma2_mean = _posterior_mean_sigma2(idata)
-    A_lam = np.eye(n) - lam_mean * W_dense
     Z = np.hstack([X, WX])
-    Z_tilde = A_lam @ Z
-    z_rho = A_lam @ Wy  # whitened lag vector
+    # A_λ @ v = v - λ̄((I_T ⊗ W) @ v) — per-period sparse matvec, no dense matrix
+    Z_tilde = Z - lam_mean * _panel_spatial_lag(W_sp, Z.T, N, T).T
+    z_rho = Wy - lam_mean * _panel_spatial_lag(W_sp, Wy, N, T)  # whitened lag
 
     S = np.dot(eps, z_rho)
 

@@ -319,7 +319,12 @@ def test_sparse_sar_jax_klujax_path_runs(monkeypatch):
     pytest.importorskip("klujax")
 
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "klujax")
+    monkeypatch.setenv("BAYESPECON_JAX_SAR_SOLVER", "klujax")
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "1")
+    _reset_jax_dispatch_caches()
+    from bayespecon._jax_dispatch import register_jax_dispatch
+
+    register_jax_dispatch()
 
     W = _line_W(5)
     op = SparseSARSolveOp(W)
@@ -341,11 +346,26 @@ def test_sparse_sar_jax_klujax_path_runs(monkeypatch):
     )
 
 
+def test_jax_auto_prefers_cholgraph_when_available(monkeypatch):
+    from bayespecon._jax_dispatch import _select_jax_sparse_backend
+
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "auto")
+    monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "0")
+    monkeypatch.setattr("bayespecon._jax_dispatch._cholgraph_available", lambda: True)
+    monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: True)
+    monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: True)
+
+    _select_jax_sparse_backend.cache_clear()
+    assert _select_jax_sparse_backend() == "cholgraph"
+    _select_jax_sparse_backend.cache_clear()
+
+
 def test_jax_auto_prefers_klujax_when_available(monkeypatch):
     from bayespecon._jax_dispatch import _select_jax_sparse_backend
 
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "auto")
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "0")
+    monkeypatch.setattr("bayespecon._jax_dispatch._cholgraph_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: True)
     monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: True)
 
@@ -358,6 +378,7 @@ def test_jax_auto_falls_to_callback_when_only_umfpack_available(monkeypatch):
 
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "auto")
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "0")
+    monkeypatch.setattr("bayespecon._jax_dispatch._cholgraph_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: True)
 
@@ -375,6 +396,7 @@ def test_jax_auto_falls_to_callback_scipy_when_no_optional_backends(monkeypatch)
 
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_BACKEND", "auto")
     monkeypatch.setenv("BAYESPECON_JAX_SPARSE_STRICT", "0")
+    monkeypatch.setattr("bayespecon._jax_dispatch._cholgraph_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._umfpack_available", lambda: False)
 
@@ -559,6 +581,7 @@ def test_sparse_sar_jax_eigen_autodiff_vs_manual_vjp(monkeypatch, lineax_env_res
 def test_jax_auto_falls_to_jax_gmres_when_no_lineax(monkeypatch):
     from bayespecon._jax_dispatch import _resolve_auto_sar_solver
 
+    monkeypatch.setattr("bayespecon._jax_dispatch._cholgraph_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._klujax_available", lambda: False)
     monkeypatch.setattr("bayespecon._jax_dispatch._lineax_available", lambda: False)
     assert _resolve_auto_sar_solver(100) == "jax_gmres"

@@ -42,6 +42,8 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from ._chebyshev import chebyshev_coeffs_dct1
+
 
 @dataclass(frozen=True)
 class SLQPrecompute:
@@ -493,12 +495,7 @@ def slq_to_chebyshev_coeffs(
         logdet_at_nodes[idx] = -powers @ td
 
     # DCT-I → Chebyshev coefficients
-    coeffs = np.zeros(order, dtype=np.float64)
-    for j in range(order):
-        scale = 2.0 / order if j > 0 else 1.0 / order
-        coeffs[j] = scale * np.sum(
-            logdet_at_nodes * np.cos(j * (2 * k_arr - 1) * np.pi / (2 * order))
-        )
+    coeffs = chebyshev_coeffs_dct1(logdet_at_nodes)
 
     return {
         "coeffs": coeffs,

@@ -50,19 +50,35 @@ from ._factories import (
     make_logdet_numpy_vec_fn,
 )
 from ._flow import (
-    compute_flow_traces,
-    flow_logdet_numpy,
-    flow_logdet_pytensor,
     make_flow_separable_logdet,
     make_flow_separable_logdet_numpy,
 )
-from ._flow_resolvent import (
-    FlowKron,
-    flow_logdet_grad,
-    flow_logdet_grad_exact,
-    flow_logdet_value,
-    flow_logdet_value_and_grad,
+
+# Flow-resolvent exports are resolved lazily (see __getattr__ below):
+# _flow_resolvent pulls in the quadrature/JAX machinery, which the
+# cross-sectional import path never needs.
+_FLOW_RESOLVENT_EXPORTS = frozenset(
+    {
+        "FlowKron",
+        "FlowKronJax",
+        "flow_logdet_grad",
+        "flow_logdet_grad_exact",
+        "flow_logdet_grad_jax",
+        "flow_logdet_value",
+        "flow_logdet_value_and_grad",
+        "flow_logdet_value_and_grad_jax",
+    }
 )
+
+
+def __getattr__(name):
+    if name in _FLOW_RESOLVENT_EXPORTS:
+        from . import _flow_resolvent
+
+        return getattr(_flow_resolvent, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 from ._jax import jax_logdet_chebyshev, make_logdet_jax_fn
 from ._pytensor import logdet_chebyshev, logdet_eigenvalue
 from ._resolvent import (
@@ -106,10 +122,7 @@ __all__ = [
     "logdet_grad_chebyshev",
     "logdet_grad_aaa",
     "logdet_grad_slq",
-    # Flow
-    "flow_logdet_pytensor",
-    "flow_logdet_numpy",
-    "compute_flow_traces",
+    # Flow (separable factorisation)
     "make_flow_separable_logdet",
     "make_flow_separable_logdet_numpy",
     # Flow resolvent-Kronecker gradient (scalable, eigenvalue-free)

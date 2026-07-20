@@ -30,7 +30,9 @@ dependencies:
   - pip
   - pip:
     - klujax
-  
+    - git+https://github.com/knaaptime/cholgraph
+    - jax # force from pip to allow windows 
+
   # docs
   - twine
   - sphinx>=1.4.3

@@ -22,6 +22,27 @@ Example
 >>> from bayespecon.models.priors import SARPriors
 >>> SAR(y=y, X=X, W=W, priors=SARPriors(rho_lower=0.0))           # typed form
 >>> SAR(y=y, X=X, W=W, priors={"rho_lower": 0.0})                  # dict form
+
+Class hierarchy
+---------------
+
+Two independent families live here:
+
+* **User-facing model priors** — validated hyperparameter containers passed
+  as ``priors=...`` to model constructors.  ``BasePriors`` (cross-section)
+  and ``PanelBasePriors`` (panel) hold the common Gaussian-family keys;
+  each model subclass narrows or extends them (``SARPriors``,
+  ``SEMPriors``, ``TobitPriors``, ``SARProbitPriors``, flow/panel/dynamic
+  variants, ...).  These are pinned by
+  ``tests/test_models/test_priors_defaults_pin.py``.
+
+* **Internal Gibbs-sampler structs** — resolved-hyperparameter containers
+  the numpy/JAX kernels consume (``GibbsBasePriors`` →
+  ``GaussianGibbsPriors`` / ``LogitGibbsPriors`` / ``REGibbsPriors``;
+  standalone ``GibbsPriors``, ``ReducedGibbsPriors``,
+  ``FlowReducedGibbsPriors``, ``ZINBGibbsPriors``, ``SEMLogitGibbsPriors``,
+  ``PanelGaussianPriors``).  Models build these internally in
+  ``_fit_gibbs``; they are not part of the user-facing ``priors=`` API.
 """
 
 from __future__ import annotations
@@ -543,10 +564,6 @@ class GaussianGibbsPriors:
     sigma2_beta: float = 1.0
     rho_lower: float = -0.999
     rho_upper: float = 0.999
-    # Accepted for backward compatibility with callers that still pass
-    # ``sigma_sigma=...`` (e.g. panel models).  Ignored by the sampler;
-    # use ``sigma2_alpha`` / ``sigma2_beta`` instead.
-    sigma_sigma: float = 10.0
 
 
 @dataclass
@@ -647,28 +664,11 @@ class SEMLogitGibbsPriors:
 class REGibbsPriors(GibbsBasePriors):
     """Prior hyperparameters for RE panel Gibbs sampler.
 
-    Parameters
-    ----------
-    beta_mu : float or ndarray
-        Prior mean for β.  Scalar is broadcast to all coefficients.
-    beta_sigma : float or ndarray
-        Prior standard deviation for β.  Scalar is broadcast.
-    sigma_sigma : float
-        **Deprecated / unused.**  The σ² block uses a weakly informative
-        Jeffreys prior p(σ²) ∝ 1/σ² (approximated as Inv-Γ(ε, ε) with
-        ε = 1e-3).  Kept for backward compatibility.
-    sigma_alpha_sigma : float
-        **Deprecated / unused.**  The σ_α² block uses a weakly informative
-        Jeffreys prior p(σ_α²) ∝ 1/σ_α² (approximated as Inv-Γ(ε, ε)
-        with ε = 1e-3).  Kept for backward compatibility.
-    rho_lower : float
-        Lower bound for ρ/λ (from spectral stability).
-    rho_upper : float
-        Upper bound for ρ/λ (from spectral stability).
+    Inherits ``beta_mu`` / ``beta_sigma`` / ``rho_lower`` / ``rho_upper``
+    from :class:`GibbsBasePriors`.  The σ² and σ_α² blocks use weakly
+    informative Jeffreys priors p(·) ∝ 1/(·) (approximated as
+    Inv-Γ(ε, ε) with ε = 1e-3) and take no hyperparameters.
     """
-
-    sigma_sigma: float = 10.0
-    sigma_alpha_sigma: float = 10.0
 
 
 @dataclass

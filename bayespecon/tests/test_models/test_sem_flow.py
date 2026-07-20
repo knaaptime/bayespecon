@@ -113,9 +113,6 @@ class TestSemFlowConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
         assert model._n == self.n
         assert model._N == self.N
@@ -132,11 +129,11 @@ class TestSemFlowConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            trace_seed=0,
         )
         assert model._n == self.n
 
     def test_pymc_model_builds(self):
+        """SEMFlow samples via the resolvent sampler; the PyMC path was removed."""
         from bayespecon.models.flow._flow import SEMFlow
 
         model = SEMFlow(
@@ -144,12 +141,9 @@ class TestSemFlowConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            miter=5,
-            titer=50,
-            trace_seed=0,
         )
-        pm_model = model._build_pymc_model()
-        assert pm_model is not None
+        with pytest.raises(NotImplementedError, match="resolvent"):
+            model._build_pymc_model()
 
     def test_pymc_model_separable_builds(self):
         from bayespecon.models.flow._flow import SEMFlowSeparable
@@ -159,7 +153,6 @@ class TestSemFlowConstruction:
             self.G,
             self.X,
             col_names=self.col_names,
-            trace_seed=0,
         )
         pm_model = model._build_pymc_model()
         assert pm_model is not None
@@ -198,9 +191,6 @@ class TestSemFlowRecovery:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            miter=20,
-            trace_riter=30,
-            trace_seed=0,
         )
         idata = model.fit(
             draws=400,
@@ -254,8 +244,6 @@ class TestSemFlowRecovery:
             data["G"],
             data["X"],
             col_names=data["col_names"],
-            miter=10,
-            trace_seed=0,
         )
         idata = model.fit(
             draws=200,

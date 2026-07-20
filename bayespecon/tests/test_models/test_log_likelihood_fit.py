@@ -11,7 +11,7 @@ is automatically created by PyMC. For Pattern B (pm.Potential), the model's fit(
 manually compute and attach the log_likelihood.
 
 Pattern A+J models (SAR, SDM, etc.) auto-capture the Gaussian part and then add the Jacobian
-correction via _attach_jacobian_corrected_log_likelihood().
+correction via _reconstruct_cross_sectional_log_likelihood().
 """
 
 from __future__ import annotations

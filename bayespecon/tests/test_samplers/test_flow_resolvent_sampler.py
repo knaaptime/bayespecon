@@ -11,7 +11,27 @@ from __future__ import annotations
 import numpy as np
 
 from bayespecon._logdet._flow_resolvent import flow_logdet_grad_exact
-from bayespecon.samplers.gaussian._flow_resolvent import FlowResolventTarget
+from bayespecon.samplers.gaussian._flow_resolvent import (
+    FlowResolventTarget,
+    SEMFlowResolventTarget,
+)
+
+
+def _directed_sem_data(n, seed):
+    """SEM flow: y = Xβ + u, A(λ) u = ε."""
+    rng = np.random.default_rng(seed)
+    A = (rng.uniform(size=(n, n)) < 0.2).astype(float)
+    np.fill_diagonal(A, 0.0)
+    A[A.sum(1) == 0, 0] = 1.0
+    W = A / A.sum(1, keepdims=True)
+    N = n * n
+    Ide = np.eye(n)
+    WF = 0.3 * np.kron(Ide, W) + 0.2 * np.kron(W, Ide) - 0.05 * np.kron(W, W)
+    X = np.column_stack([np.ones(N), rng.standard_normal(N)])
+    beta = np.array([1.0, -0.5])
+    u = np.linalg.solve(np.eye(N) - WF, 0.4 * rng.standard_normal(N))
+    y = X @ beta + u
+    return W, y, X
 
 
 def _directed_flow_data(n, seed):
@@ -82,6 +102,331 @@ def test_beta_sigma2_gibbs_runs():
     )
     assert beta.shape == (2,)
     assert np.isfinite(beta).all() and np.isfinite(sigma2) and sigma2 > 0
+
+
+def test_sample_flow_resolvent_returns_inferencedata():
+    """The model-facing entry point returns InferenceData and recovers dominant ρ."""
+    from bayespecon.samplers.gaussian._flow_resolvent import sample_flow_resolvent
+
+    W, y, X = _directed_flow_data(n=15, seed=7)
+    idata = sample_flow_resolvent(
+        W,
+        y,
+        X,
+        draws=300,
+        tune=300,
+        chains=2,
+        step_size=6e-4,
+        coord_names=["const", "x1"],
+        logdet_value_and_grad=_exact_value_and_grad(W),
+        random_seed=1,
+    )
+    for v in ("rho_d", "rho_o", "rho_w", "sigma", "beta"):
+        assert v in idata.posterior.data_vars
+    assert idata.posterior["rho_d"].shape == (2, 300)
+    assert idata.posterior["beta"].shape == (2, 300, 2)
+    # Dominant components recover (true ρ_d=0.3, ρ_o=0.2).
+    assert 0.15 < float(idata.posterior["rho_d"].mean()) < 0.45
+    assert 0.05 < float(idata.posterior["rho_o"].mean()) < 0.35
+
+
+def _directed_panel_sar_data(n, T, seed):
+    """Panel SAR flow: for each period t, A y_t = X_t β + ε_t (stacked period-major)."""
+    rng = np.random.default_rng(seed)
+    A = (rng.uniform(size=(n, n)) < 0.2).astype(float)
+    np.fill_diagonal(A, 0.0)
+    A[A.sum(1) == 0, 0] = 1.0
+    W = A / A.sum(1, keepdims=True)
+    Nf = n * n
+    Ide = np.eye(n)
+    WF = 0.3 * np.kron(Ide, W) + 0.2 * np.kron(W, Ide) - 0.05 * np.kron(W, W)
+    Ainv = np.linalg.inv(np.eye(Nf) - WF)
+    beta = np.array([1.0, -0.5])
+    ys, Xs = [], []
+    for _ in range(T):
+        Xt = np.column_stack([np.ones(Nf), rng.standard_normal(Nf)])
+        yt = Ainv @ (Xt @ beta + 0.4 * rng.standard_normal(Nf))
+        ys.append(yt)
+        Xs.append(Xt)
+    return W, np.concatenate(ys), np.vstack(Xs)
+
+
+def test_panel_rho_gradient_matches_finite_difference():
+    """Panel (T>1) ρ-gradient matches a finite difference; log-det scaled by T."""
+    T = 3
+    W, y, X = _directed_panel_sar_data(n=12, T=T, seed=0)
+    tgt = FlowResolventTarget(
+        W, y, X, T=T, logdet_value_and_grad=_exact_value_and_grad(W)
+    )
+    assert tgt.T == T and tgt.Ntot == y.shape[0]
+    beta = np.array([0.8, -0.4])
+    sigma2 = 0.3
+    h = 1e-6
+    for rho in ([0.3, 0.2, -0.05], [0.5, 0.1, 0.1]):
+        rho = np.array(rho)
+        _, grad = tgt.logpost_and_grad(rho, beta, sigma2)
+        fd = np.zeros(3)
+        for k in range(3):
+            rp, rm = rho.copy(), rho.copy()
+            rp[k] += h
+            rm[k] -= h
+            vp, _ = tgt.logpost_and_grad(rp, beta, sigma2)
+            vm, _ = tgt.logpost_and_grad(rm, beta, sigma2)
+            fd[k] = (vp - vm) / (2 * h)
+        np.testing.assert_allclose(grad, fd, rtol=1e-4, atol=1e-3)
+
+
+def test_panel_sample_recovers_dominant_rho():
+    """A short panel run (T>1, exact ld) recovers the dominant ρ components."""
+    from bayespecon.samplers.gaussian._flow_resolvent import sample_flow_resolvent
+
+    T = 3
+    W, y, X = _directed_panel_sar_data(n=12, T=T, seed=4)
+    idata = sample_flow_resolvent(
+        W,
+        y,
+        X,
+        T=T,
+        draws=300,
+        tune=300,
+        chains=2,
+        step_size=5e-4,
+        coord_names=["const", "x1"],
+        logdet_value_and_grad=_exact_value_and_grad(W),
+        random_seed=1,
+    )
+    assert idata.posterior["rho_d"].shape == (2, 300)
+    assert 0.15 < float(idata.posterior["rho_d"].mean()) < 0.45
+    assert 0.05 < float(idata.posterior["rho_o"].mean()) < 0.35
+
+
+def test_sem_rho_gradient_matches_finite_difference():
+    """SEM target's λ-gradient equals a finite difference of its value (exact ld)."""
+    W, y, X = _directed_sem_data(n=15, seed=0)
+    tgt = SEMFlowResolventTarget(
+        W, y, X, logdet_value_and_grad=_exact_value_and_grad(W)
+    )
+    beta = np.array([0.8, -0.4])
+    sigma2 = 0.3
+    h = 1e-6
+    for rho in ([0.3, 0.2, -0.05], [0.5, 0.1, 0.1], [-0.2, 0.4, -0.1]):
+        rho = np.array(rho)
+        _, grad = tgt.logpost_and_grad(rho, beta, sigma2)
+        fd = np.zeros(3)
+        for k in range(3):
+            rp, rm = rho.copy(), rho.copy()
+            rp[k] += h
+            rm[k] -= h
+            vp, _ = tgt.logpost_and_grad(rp, beta, sigma2)
+            vm, _ = tgt.logpost_and_grad(rm, beta, sigma2)
+            fd[k] = (vp - vm) / (2 * h)
+        np.testing.assert_allclose(grad, fd, rtol=1e-4, atol=1e-3)
+
+
+def test_sample_sem_flow_resolvent_returns_inferencedata():
+    """The SEM entry point returns InferenceData (lam_*) and recovers dominant λ."""
+    from bayespecon.samplers.gaussian._flow_resolvent import sample_sem_flow_resolvent
+
+    W, y, X = _directed_sem_data(n=15, seed=7)
+    idata = sample_sem_flow_resolvent(
+        W,
+        y,
+        X,
+        draws=300,
+        tune=300,
+        chains=2,
+        step_size=6e-4,
+        coord_names=["const", "x1"],
+        logdet_value_and_grad=_exact_value_and_grad(W),
+        random_seed=1,
+    )
+    for v in ("lam_d", "lam_o", "lam_w", "sigma", "beta"):
+        assert v in idata.posterior.data_vars
+    assert idata.posterior["lam_d"].shape == (2, 300)
+    assert 0.1 < float(idata.posterior["lam_d"].mean()) < 0.5
+
+
+def test_inferencedata_carries_jacobian_and_loglik():
+    """The resolvent InferenceData attaches per-draw log|A| and a pointwise
+    log_likelihood whose per-draw sum equals Gaussian density + T·log|A|."""
+    import arviz as az
+
+    from bayespecon.samplers.gaussian._flow_resolvent import (
+        FlowResolventTarget,
+        sample_flow_resolvent,
+    )
+
+    W, y, X = _directed_flow_data(n=15, seed=7)
+    vg = _exact_value_and_grad(W)
+    idata = sample_flow_resolvent(
+        W,
+        y,
+        X,
+        draws=200,
+        tune=200,
+        chains=2,
+        step_size=6e-4,
+        coord_names=["const", "x1"],
+        logdet_value_and_grad=vg,
+        random_seed=1,
+    )
+    assert "log_likelihood" in idata.groups() and "sample_stats" in idata.groups()
+    assert idata.sample_stats["log_abs_det"].shape == (2, 200)
+    assert idata.log_likelihood["obs"].shape == (2, 200, 15 * 15)
+    # az.loo consumes the pointwise log-likelihood without error.
+    az.loo(idata)
+
+    # The Jacobian is genuinely inside the pointwise ll: Σ_obs ll == gaussian + log|A|.
+    tgt = FlowResolventTarget(W, y, X, logdet_value_and_grad=vg)
+    post = idata.posterior
+    rho = np.array(
+        [
+            float(post["rho_d"][0, 0]),
+            float(post["rho_o"][0, 0]),
+            float(post["rho_w"][0, 0]),
+        ]
+    )
+    beta = post["beta"][0, 0].values
+    s2 = float(post["sigma"][0, 0]) ** 2
+    r = tgt.residual(rho, beta)
+    gauss = float(
+        (-0.5 * np.log(2 * np.pi) - 0.5 * np.log(s2) - 0.5 * (r * r) / s2).sum()
+    )
+    ld_val, _ = vg(rho[0], rho[1], rho[2])
+    ll_sum = float(idata.log_likelihood["obs"][0, 0].sum())
+    np.testing.assert_allclose(ll_sum, gauss + ld_val, atol=1e-6)
+    np.testing.assert_allclose(
+        float(idata.sample_stats["log_abs_det"][0, 0]), ld_val, atol=1e-8
+    )
+
+
+def test_panel_jacobian_scales_with_T_in_loglik():
+    """For the panel (T>1) the joint per-draw ll includes T·log|A|, and the stored
+    log_abs_det equals T·log|A|."""
+    from bayespecon.samplers.gaussian._flow_resolvent import (
+        FlowResolventTarget,
+        sample_flow_resolvent,
+    )
+
+    T = 3
+    W, y, X = _directed_panel_sar_data(n=12, T=T, seed=4)
+    vg = _exact_value_and_grad(W)
+    idata = sample_flow_resolvent(
+        W,
+        y,
+        X,
+        T=T,
+        draws=150,
+        tune=150,
+        chains=2,
+        step_size=5e-4,
+        coord_names=["const", "x1"],
+        logdet_value_and_grad=vg,
+        random_seed=1,
+    )
+    assert idata.log_likelihood["obs"].shape == (2, 150, T * 12 * 12)
+    tgt = FlowResolventTarget(W, y, X, T=T, logdet_value_and_grad=vg)
+    post = idata.posterior
+    rho = np.array(
+        [
+            float(post["rho_d"][0, 0]),
+            float(post["rho_o"][0, 0]),
+            float(post["rho_w"][0, 0]),
+        ]
+    )
+    beta = post["beta"][0, 0].values
+    s2 = float(post["sigma"][0, 0]) ** 2
+    r = tgt.residual(rho, beta)
+    gauss = float(
+        (-0.5 * np.log(2 * np.pi) - 0.5 * np.log(s2) - 0.5 * (r * r) / s2).sum()
+    )
+    ld_val, _ = vg(rho[0], rho[1], rho[2])
+    ll_sum = float(idata.log_likelihood["obs"][0, 0].sum())
+    np.testing.assert_allclose(ll_sum, gauss + T * ld_val, atol=1e-6)
+    np.testing.assert_allclose(
+        float(idata.sample_stats["log_abs_det"][0, 0]), T * ld_val, atol=1e-8
+    )
+
+
+def test_compute_log_likelihood_false_omits_group_keeps_jacobian():
+    """``compute_log_likelihood=False`` skips the pointwise group but still records
+    the cheap per-draw Jacobian log|A| in sample_stats."""
+    from bayespecon.samplers.gaussian._flow_resolvent import sample_flow_resolvent
+
+    W, y, X = _directed_flow_data(n=12, seed=1)
+    idata = sample_flow_resolvent(
+        W,
+        y,
+        X,
+        draws=50,
+        tune=50,
+        chains=2,
+        step_size=6e-4,
+        logdet_value_and_grad=_exact_value_and_grad(W),
+        random_seed=1,
+        compute_log_likelihood=False,
+    )
+    assert "log_likelihood" not in idata.groups()
+    assert "log_abs_det" in idata.sample_stats.data_vars
+
+
+def test_attach_flow_log_abs_det_is_diagnostic_not_loglik():
+    """The count-model helper writes per-draw log|A| to sample_stats and does NOT
+    create/alter a log_likelihood group (the discrete count LOO must stay clean).
+    At small n the exact eigenvalue path is used, so the value matches the reference
+    exactly and scales exactly with T."""
+    import arviz as az
+
+    from bayespecon.samplers.gaussian._flow_resolvent import attach_flow_log_abs_det
+
+    W, y, X = _directed_flow_data(n=14, seed=2)  # n << exact_max_n → exact path
+    nchain, ndraw = 2, 4
+    rd, ro, rw = 0.3, 0.2, -0.05
+    idata = az.from_dict(
+        posterior={
+            "rho_d": rd * np.ones((nchain, ndraw)),
+            "rho_o": ro * np.ones((nchain, ndraw)),
+            "rho_w": rw * np.ones((nchain, ndraw)),
+            "beta": np.random.default_rng(0).standard_normal((nchain, ndraw, 2)),
+        },
+        coords={"coefficient": ["const", "x1"]},
+        dims={"beta": ["coefficient"]},
+    )
+    attach_flow_log_abs_det(idata, W, T=1)
+    assert "sample_stats" in idata.groups()
+    assert "log_likelihood" not in idata.groups()  # never pollutes the count LOO
+    lad1 = idata.sample_stats["log_abs_det"].values
+    assert lad1.shape == (nchain, ndraw)
+
+    lam = np.linalg.eigvals(W)
+    li, lj = lam[:, None], lam[None, :]
+    exact = float(np.sum(np.log(np.abs(1.0 - (ro * li + rd * lj + rw * (li * lj))))))
+    np.testing.assert_allclose(lad1, exact, atol=1e-9)  # exact path is exact
+
+    # T only rescales the (same) log|A| — an exact ×3.
+    attach_flow_log_abs_det(idata, W, T=3)
+    np.testing.assert_allclose(
+        idata.sample_stats["log_abs_det"].values, 3.0 * exact, atol=1e-9
+    )
+
+
+def test_attach_flow_log_abs_det_skips_aspatial_posterior():
+    """A posterior without the spatial-filter parameters (aspatial NegBinFlow) is
+    skipped gracefully rather than raising."""
+    import arviz as az
+
+    from bayespecon.samplers.gaussian._flow_resolvent import attach_flow_log_abs_det
+
+    W, y, X = _directed_flow_data(n=10, seed=0)
+    idata = az.from_dict(
+        posterior={"alpha": np.ones((2, 3)), "beta": np.zeros((2, 3, 2))},
+        coords={"coefficient": ["const", "x1"]},
+        dims={"beta": ["coefficient"]},
+    )
+    attach_flow_log_abs_det(idata, W, T=1)  # must not raise
+    assert "log_abs_det" not in (
+        idata.sample_stats.data_vars if "sample_stats" in idata.groups() else {}
+    )
 
 
 def test_short_chain_with_exact_logdet_recovers_signs():
