@@ -123,10 +123,20 @@ def resolve_logdet_method(
 
 
 def _is_symmetric_W(W) -> bool:
-    """Check whether ``W`` is symmetric (undirected graph).
+    """Check whether ``W`` describes an undirected graph → the Cholesky logdet.
 
-    Uses ``libpysal.graph.Graph.asymmetry(intrinsic=False)`` when ``W`` is a
-    Graph object, falling back to sparse/dense matrix comparison otherwise.
+    The discriminator is **D-symmetrizability**, not literal matrix symmetry:
+    a *row-standardised* undirected graph ``W = D⁻¹A`` (``A`` symmetric) is not
+    literally symmetric, yet ``cheb_cholesky`` handles it via D-symmetrisation.
+    Only genuinely directed graphs (asymmetric adjacency, e.g. KNN / travel time
+    / migration) fall through to the LU-based ``aaa`` path.
+
+    Uses ``libpysal.graph.Graph.asymmetry(intrinsic=False)`` (a topology check)
+    when ``W`` is a Graph.  For a sparse/dense matrix — which is what the models
+    actually pass (``self._W_sparse``) — a literally symmetric matrix returns
+    ``True`` immediately; otherwise D-symmetrizability is tested with the same
+    ``_d_symmetrize`` routine ``cheb_cholesky`` relies on, so this predicate
+    agrees exactly with whether the Cholesky path is applicable.
     """
     import numpy as np
     import scipy.sparse as sp
@@ -134,7 +144,8 @@ def _is_symmetric_W(W) -> bool:
     if W is None:
         return True  # default: assume symmetric
 
-    # libpysal Graph: use built-in asymmetry check
+    # libpysal Graph: use built-in topology asymmetry check (intrinsic=False
+    # ignores weight values, so row-standardisation does not read as directed).
     if hasattr(W, "asymmetry"):
         try:
             asym = W.asymmetry(intrinsic=False)
@@ -144,15 +155,33 @@ def _is_symmetric_W(W) -> bool:
 
     if sp.issparse(W):
         # Sparse difference stays sparse — never densify (n=20k dense is ~3.2GB).
-        diff = (W.tocsr() - W.T.tocsr()).tocoo()
-        if diff.nnz == 0:
+        Wc = W.tocsr()
+        diff = (Wc - Wc.T).tocoo()
+        if diff.nnz == 0 or bool(np.all(np.abs(diff.data) <= 1e-10)):
             return True
-        return bool(np.all(np.abs(diff.data) <= 1e-10))
+        # Not literally symmetric: may still be a D-symmetrizable (row-
+        # standardised undirected) graph, which cheb_cholesky handles.  Test
+        # with the actual symmetrisation so routing == applicability.
+        try:
+            from ._chol_cheb import _d_symmetrize
+
+            _d_symmetrize(Wc)
+            return True
+        except Exception:
+            return False
     else:
         W_arr = np.asarray(W)
         if W_arr.ndim != 2:
             return True  # 1-D eigenvalue array — not applicable
-        return np.allclose(W_arr, W_arr.T, atol=1e-10)
+        if np.allclose(W_arr, W_arr.T, atol=1e-10):
+            return True
+        try:
+            from ._chol_cheb import _d_symmetrize
+
+            _d_symmetrize(sp.csr_matrix(W_arr))
+            return True
+        except Exception:
+            return False
 
 
 def _auto_logdet_method(n: int, W=None) -> str:

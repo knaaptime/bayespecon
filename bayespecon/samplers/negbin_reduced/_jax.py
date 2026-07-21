@@ -54,25 +54,87 @@ from .._utils._jax_polyagamma import jax_polyagamma
 # ---------------------------------------------------------------------------
 
 
-def _build_krylov_basis_jax(rho_c, X_jax, W_dense_jax, n, k, degree):
-    """Build a shift-invert Krylov basis at ρ_c in JAX.
+def _build_sparse_ctx(W_sparse, n) -> dict:
+    """Build the sparse klujax solve context for ``I − ρW`` (never densify W).
 
-    Factorises A_c = I − ρ_c W once via LU, then solves (m+1) RHS
-    to build V_stack[j] = A_c⁻¹ (W V_{j-1}) for j = 1..m,
-    with V_0 = A_c⁻¹ X.
+    Returns the constant COO pattern of ``I − ρW`` with aligned value vectors
+    (so ``Ax(ρ) = eye_vals − ρ·w_vals``), a cached klujax symbolic
+    factorisation, and a BCOO ``W`` for sparse matvecs.  The symbolic
+    analysis (AMD ordering + elimination tree) is done once and reused for
+    every numeric factorisation across the whole run.
+    """
+    import klujax
+    from jax.experimental import sparse as jsparse
+
+    from ._flow_jax import build_sar_pattern
+
+    pat = build_sar_pattern(W_sparse, n)
+    pat["symbolic"] = klujax.analyze(pat["Ai"], pat["Aj"], n)
+    pat["W_bcoo"] = jsparse.BCOO.from_scipy_sparse(W_sparse.tocsr())
+    return pat
+
+
+def _make_sparse_solvers(sparse_ctx):
+    """Build klujax solve closures over a sparse context (W never densified).
+
+    Returns ``(factor_at, solve_num, matvec_W, solve_at)`` where
+
+    - ``factor_at(rho)`` → numeric klujax factorisation of ``I − ρW`` (reusable
+      across right-hand sides via ``solve_num``),
+    - ``solve_num(numeric, rhs)`` → ``(I − ρW)⁻¹ rhs`` reusing a factorisation,
+    - ``matvec_W(v)`` → ``W @ v`` via BCOO,
+    - ``solve_at(rho, rhs)`` → one-shot ``(I − ρW)⁻¹ rhs`` (factor + solve).
+
+    All closures close over the cached symbolic factorisation, so the AMD
+    ordering / elimination tree is computed once for the whole run.
+    """
+    import jax.numpy as jnp
+    import klujax
+
+    Ai = jnp.asarray(sparse_ctx["Ai"])
+    Aj = jnp.asarray(sparse_ctx["Aj"])
+    eye_vals = jnp.asarray(sparse_ctx["eye_vals"])
+    w_vals = jnp.asarray(sparse_ctx["w_vals"])
+    symbolic = sparse_ctx["symbolic"]
+    W_bcoo = sparse_ctx["W_bcoo"]
+
+    def factor_at(rho):
+        return klujax.factor(Ai, Aj, eye_vals - rho * w_vals, symbolic)
+
+    def solve_num(numeric, rhs):
+        return klujax.solve_with_numeric(numeric, rhs, symbolic)
+
+    def matvec_W(v):
+        return W_bcoo @ v
+
+    def solve_at(rho, rhs):
+        return solve_num(factor_at(rho), rhs)
+
+    return factor_at, solve_num, matvec_W, solve_at
+
+
+def _build_krylov_basis_jax(numeric_c, X_jax, solve_num, matvec_W, n, k, degree):
+    """Build a shift-invert Krylov basis at ρ_c in JAX (sparse).
+
+    Given a *single* klujax numeric factorisation ``numeric_c`` of
+    ``A_c = I − ρ_c W`` (built once by the caller and reused), solves (m+1)
+    RHS to build ``V_stack[j] = A_c⁻¹ (W V_{j-1})`` for ``j = 1..m`` with
+    ``V_0 = A_c⁻¹ X``.  ``W`` is never densified: the ``W @ V_j`` products go
+    through the sparse ``matvec_W`` (BCOO) and the solves through
+    ``solve_num`` (klujax ``solve_with_numeric``, reusing ``numeric_c``).
 
     Parameters
     ----------
-    rho_c : jax.numpy.ndarray (scalar)
-        Centre point for the basis.
+    numeric_c : klujax numeric handle
+        Numeric factorisation of ``I − ρ_c W`` at the basis centre ρ_c.
     X_jax : jax.numpy.ndarray, shape (n, k)
         Design matrix.
-    W_dense_jax : jax.numpy.ndarray, shape (n, n)
-        Dense row-standardised W matrix.
-    n : int
-        Number of spatial units.
-    k : int
-        Number of regression coefficients.
+    solve_num : callable ``(numeric, rhs) -> A_c⁻¹ rhs``
+        klujax ``solve_with_numeric`` closure (reuses one factorisation).
+    matvec_W : callable ``(v) -> W @ v``
+        Sparse (BCOO) matvec.
+    n, k : int
+        Spatial units and regression coefficients.
     degree : int
         Krylov degree m (number of correction terms beyond V_0).
 
@@ -82,24 +144,17 @@ def _build_krylov_basis_jax(rho_c, X_jax, W_dense_jax, n, k, degree):
         Krylov basis vectors.
     """
     import jax.numpy as jnp
-    from jax.scipy.linalg import lu_factor, lu_solve
-
-    I_n = jnp.eye(n, dtype=jnp.float64)
-    A_c = I_n - rho_c * W_dense_jax
-
-    # LU factorise once
-    lu_and_piv = lu_factor(A_c)
 
     m = degree
     V_stack = jnp.empty((m + 1, n, k), dtype=jnp.float64)
 
     # V_0 = A_c⁻¹ X
-    V_stack = V_stack.at[0].set(lu_solve(lu_and_piv, X_jax))
+    V_stack = V_stack.at[0].set(solve_num(numeric_c, X_jax))
 
     # V_{j+1} = A_c⁻¹ (W @ V_j)
     for j in range(m):
-        Wv = W_dense_jax @ V_stack[j]
-        V_stack = V_stack.at[j + 1].set(lu_solve(lu_and_piv, Wv))
+        Wv = matvec_W(V_stack[j])
+        V_stack = V_stack.at[j + 1].set(solve_num(numeric_c, Wv))
 
     return V_stack
 
@@ -145,15 +200,14 @@ def _rho_log_density_marginal_jax(
     intercept_col,
     krylov_dmax,
     X_jax=None,
-    W_dense_jax=None,
-    I_n=None,
+    solve_at=None,
 ):
     """β-marginalised log-density of ρ for the reduced form.
 
     Evaluates U(ρ) via the Krylov basis when |Δρ| ≤ dmax,
-    otherwise falls back to a direct ``jnp.linalg.solve``.
-    This matches the NumPy path's CG iterative-solve fallback
-    and ensures the slice sampler can explore the full ρ support.
+    otherwise falls back to a direct sparse klujax solve (``solve_at``).
+    This matches the NumPy path's direct-solve fallback and ensures the
+    slice sampler can explore the full ρ support.
 
     The density is:
 
@@ -179,13 +233,10 @@ def _rho_log_density_marginal_jax(
 
     U_krylov = _eval_U_from_basis_jax(V_stack, drho)
 
-    # Direct solve fallback (O(n³) but correct for any ρ)
-    has_fallback = (
-        (X_jax is not None) and (W_dense_jax is not None) and (I_n is not None)
-    )
+    # Direct sparse solve fallback (klujax; correct for any ρ)
+    has_fallback = (X_jax is not None) and (solve_at is not None)
     if has_fallback:
-        A_rho = I_n - rho_val * W_dense_jax
-        U_direct = jnp.linalg.solve(A_rho, X_jax)
+        U_direct = solve_at(rho_val, X_jax)
         U = jnp.where(use_basis, U_krylov, U_direct)
     else:
         U = U_krylov
@@ -265,8 +316,7 @@ def _slice_sample_rho_jax(
     slice_width,
     key,
     X_jax=None,
-    W_dense_jax=None,
-    I_n=None,
+    solve_at=None,
 ):
     """1-D slice sampler for ρ using jax.lax.while_loop.
 
@@ -285,8 +335,8 @@ def _slice_sample_rho_jax(
         Stepping-out width for the slice sampler.
     key : jax.random.PRNGKey
         JAX random key.
-    X_jax, W_dense_jax, I_n :
-        Passed to the log-density for the direct-solve fallback
+    X_jax, solve_at :
+        Passed to the log-density for the direct sparse-solve fallback
         when candidates are outside the Krylov radius.
 
     Returns
@@ -310,8 +360,7 @@ def _slice_sample_rho_jax(
             intercept_col,
             krylov_dmax,
             X_jax=X_jax,
-            W_dense_jax=W_dense_jax,
-            I_n=I_n,
+            solve_at=solve_at,
         )
 
     log_y0 = log_density(rho_current)
@@ -388,7 +437,7 @@ def _slice_sample_rho_jax(
 def _make_reduced_gibbs_step(
     y_jax,
     X_jax,
-    W_dense_jax,
+    sparse_ctx,
     n,
     k,
     priors,
@@ -410,8 +459,11 @@ def _make_reduced_gibbs_step(
         Response vector (JAX array).
     X_jax : jax.numpy.ndarray of shape (n, k)
         Design matrix (JAX array).
-    W_dense_jax : jax.numpy.ndarray of shape (n, n)
-        Row-standardised W matrix (JAX array, dense).
+    sparse_ctx : dict
+        Sparse klujax context from :func:`_build_sparse_ctx`: keys ``Ai``,
+        ``Aj``, ``eye_vals``, ``w_vals`` (aligned COO of ``I − ρW``),
+        ``symbolic`` (cached klujax symbolic factorisation) and ``W_bcoo``
+        (BCOO ``W`` for matvecs).  ``W`` is never densified.
     n : int
         Number of spatial units.
     k : int
@@ -446,6 +498,9 @@ def _make_reduced_gibbs_step(
 
     ensure_x64()
 
+    # ── Sparse klujax solve closures (W is never densified) ──
+    _factor_at, _solve_num, _matvec_W, _solve_at = _make_sparse_solvers(sparse_ctx)
+
     # Prior hyperparameters
     beta_mu = priors.beta_mu
     beta_sigma = priors.beta_sigma
@@ -462,8 +517,6 @@ def _make_reduced_gibbs_step(
     rho_upper_jax = jnp.float64(priors.rho_upper)
     alpha_sigma_jax = jnp.float64(priors.alpha_sigma)
     alpha_nu_jax = jnp.float64(priors.alpha_nu)
-
-    I_n = jnp.eye(n, dtype=jnp.float64)
 
     _intercept_col = intercept_col
     _krylov_degree = krylov_degree
@@ -497,16 +550,19 @@ def _make_reduced_gibbs_step(
         key_rho, key_beta, key_alpha = jax.random.split(key, 3)
 
         # ── Block 0: ω ~ PG(y + α, η) ──
-        # Compute η = (I − ρW)⁻¹ Xβ at current ρ
-        A_rho = I_n - rho * W_dense_jax
-        eta = jnp.linalg.solve(A_rho, X_jax @ beta)
+        # Factorise A = (I − ρW) once at the current ρ (sparse klujax); reuse
+        # it for both η and the Krylov basis (W never densified).
+        numeric_c = _factor_at(rho)
+        eta = _solve_num(numeric_c, X_jax @ beta)
         key, key_pg = jax.random.split(key)
         h = jnp.maximum(y_jax + alpha, 1e-3)
         z = jnp.clip(eta - jnp.log(alpha), -20.0, 20.0)
         omega = jax_polyagamma(h, z, key=key_pg, method="callback")
 
         # ── Block 1: ρ — slice sampling with Krylov basis ──
-        V_stack = _build_krylov_basis_jax(rho, X_jax, W_dense_jax, n, k, _krylov_degree)
+        V_stack = _build_krylov_basis_jax(
+            numeric_c, X_jax, _solve_num, _matvec_W, n, k, _krylov_degree
+        )
 
         rho_new = _slice_sample_rho_jax(
             rho_current=rho,
@@ -524,16 +580,14 @@ def _make_reduced_gibbs_step(
             slice_width=slice_width,
             key=key_rho,
             X_jax=X_jax,
-            W_dense_jax=W_dense_jax,
-            I_n=I_n,
+            solve_at=_solve_at,
         )
 
         # ── Block 2: β | ρ, ω, α, y — conjugate normal ──
         drho_new = rho_new - rho
         use_basis = jnp.abs(drho_new) <= _krylov_dmax
         Xtilde_krylov = _eval_U_from_basis_jax(V_stack, drho_new)
-        A_rho_new = I_n - rho_new * W_dense_jax
-        Xtilde_direct = jnp.linalg.solve(A_rho_new, X_jax)
+        Xtilde_direct = _solve_at(rho_new, X_jax)
         Xtilde = jnp.where(use_basis, Xtilde_krylov, Xtilde_direct)
 
         reparam_beta = (_intercept_col >= 0) & (jnp.abs(rho_new) > 1e-8)
@@ -859,7 +913,7 @@ def run_chains_jax_reduced(
 
     y_jax = jnp.asarray(y, dtype=jnp.float64)
     X_jax = jnp.asarray(X, dtype=jnp.float64)
-    W_dense_jax = jnp.asarray(W_sparse.toarray(), dtype=jnp.float64)
+    sparse_ctx = _build_sparse_ctx(W_sparse, n)
 
     slice_width_jax = jnp.float64(slice_width)
 
@@ -885,7 +939,7 @@ def run_chains_jax_reduced(
             gibbs_step = _make_reduced_gibbs_step(
                 y_jax=y_jax,
                 X_jax=X_jax,
-                W_dense_jax=W_dense_jax,
+                sparse_ctx=sparse_ctx,
                 n=n,
                 k=k,
                 priors=priors,
@@ -946,9 +1000,7 @@ def run_chains_jax_reduced(
                 beta_samples = beta_samples[::thin]
                 alpha_samples = alpha_samples[::thin]
 
-            # Compute pointwise log-likelihood (NumPy)
-            W_sparse.toarray().astype(np.float64)
-            np.eye(n, dtype=np.float64)
+            # Compute pointwise log-likelihood (NumPy, sparse solves)
             n_keep = rho_samples.shape[0]
             log_lik = np.empty((n_keep, n), dtype=np.float64)
             # Prefer klujax (cached symbolic analysis) over dense solve loop

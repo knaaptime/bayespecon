@@ -10,7 +10,12 @@ from __future__ import annotations
 import numpy as np
 from scipy.special import erf
 
-from .cross_sectional import simulate_sar, simulate_sdm, simulate_sem
+from .cross_sectional import (
+    _attach_optional_gdf,
+    simulate_sar,
+    simulate_sdm,
+    simulate_sem,
+)
 from .utils import (
     _hetero_scale,
     _left_censor,
@@ -213,6 +218,8 @@ def simulate_sar_logit(
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
     **kwargs,
 ) -> dict:
     """Simulate SAR-logit binary outcome data.
@@ -235,12 +242,21 @@ def simulate_sar_logit(
         Random state controls.
     contiguity : str, default="queen"
         GeoDataFrame neighbor rule when ``W`` is omitted.
+    create_gdf : bool, default=False
+        If ``True`` (or a source ``gdf`` is supplied), return a
+        GeoDataFrame carrying ``y`` and ``X_*`` columns instead of the
+        dict, matching the other cross-sectional simulators.
+    geometry_type : {"point", "polygon"}, default="polygon"
+        Geometry to generate when ``create_gdf=True`` and no source
+        ``gdf`` is provided.
 
     Returns
     -------
-    dict
-        Keys: ``y``, ``X``, ``W_sparse``, ``W_graph``, ``eta_true``,
-        ``params_true``.
+    dict or geopandas.GeoDataFrame
+        Dict with keys ``y``, ``X``, ``W_sparse``, ``W_graph``,
+        ``eta_true``, ``params_true``.  When ``create_gdf=True`` (or a
+        source ``gdf`` is supplied) a GeoDataFrame with ``y`` and
+        ``X_*`` columns is returned instead.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
@@ -268,7 +284,7 @@ def simulate_sar_logit(
     probs = 1.0 / (1.0 + np.exp(-eta))
     y = rng.binomial(1, probs).astype(float)
 
-    return {
+    out = {
         "y": y,
         "X": X,
         "W_sparse": W_sparse,
@@ -279,6 +295,12 @@ def simulate_sar_logit(
             "beta": beta,
         },
     }
+    return _attach_optional_gdf(
+        out,
+        source_gdf=gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )
 
 
 def simulate_sem_logit(
@@ -290,6 +312,8 @@ def simulate_sem_logit(
     rng: np.random.Generator | None = None,
     seed: int | None = None,
     contiguity: str = "queen",
+    create_gdf: bool = False,
+    geometry_type: str = "polygon",
     **kwargs,
 ) -> dict:
     """Simulate SEM-logit binary outcome data.
@@ -312,12 +336,21 @@ def simulate_sem_logit(
         Random state controls.
     contiguity : str, default "queen"
         GeoDataFrame neighbor rule when ``W`` is omitted.
+    create_gdf : bool, default=False
+        If ``True`` (or a source ``gdf`` is supplied), return a
+        GeoDataFrame carrying ``y`` and ``X_*`` columns instead of the
+        dict, matching the other cross-sectional simulators.
+    geometry_type : {"point", "polygon"}, default="polygon"
+        Geometry to generate when ``create_gdf=True`` and no source
+        ``gdf`` is provided.
 
     Returns
     -------
-    dict
-        Keys: ``y``, ``X``, ``W_sparse``, ``W_graph``, ``eta_true``,
-        ``params_true``.
+    dict or geopandas.GeoDataFrame
+        Dict with keys ``y``, ``X``, ``W_sparse``, ``W_graph``,
+        ``eta_true``, ``params_true``.  When ``create_gdf=True`` (or a
+        source ``gdf`` is supplied) a GeoDataFrame with ``y`` and
+        ``X_*`` columns is returned instead.
     """
     rng = ensure_rng(rng, seed)
     Wd, Wg = resolve_weights(W=W, gdf=gdf, n=n, contiguity=contiguity)
@@ -343,7 +376,7 @@ def simulate_sem_logit(
     probs = 1.0 / (1.0 + np.exp(-eta))
     y = rng.binomial(1, probs).astype(float)
 
-    return {
+    out = {
         "y": y,
         "X": X,
         "W_sparse": W_sparse,
@@ -354,3 +387,9 @@ def simulate_sem_logit(
             "beta": beta,
         },
     }
+    return _attach_optional_gdf(
+        out,
+        source_gdf=gdf,
+        create_gdf=create_gdf,
+        geometry_type=geometry_type,
+    )

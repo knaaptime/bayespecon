@@ -32,8 +32,10 @@ from bayespecon.samplers.negbin_reduced import (
 )
 from bayespecon.samplers.negbin_reduced._jax import (
     _build_krylov_basis_jax,
+    _build_sparse_ctx,
     _eval_U_from_basis_jax,
     _make_reduced_gibbs_step,
+    _make_sparse_solvers,
     _rho_log_density_marginal_jax,
     _sample_alpha_jax_reduced,
     _slice_sample_rho_jax,
@@ -59,6 +61,14 @@ def _make_problem(n: int = 25, k: int = 3, seed: int = 42):
     return y, X, W
 
 
+def _krylov_basis(W, X_jax, rho_c, n, k, degree):
+    """Build a Krylov basis via the sparse klujax path (W never densified)."""
+    ctx = _build_sparse_ctx(sp.csr_matrix(W), n)
+    factor_at, solve_num, matvec_W, _ = _make_sparse_solvers(ctx)
+    numeric_c = factor_at(rho_c)
+    return _build_krylov_basis_jax(numeric_c, X_jax, solve_num, matvec_W, n, k, degree)
+
+
 # ---------------------------------------------------------------------------
 # Krylov basis tests
 # ---------------------------------------------------------------------------
@@ -80,7 +90,7 @@ class TestKrylovBasis:
         W_jax = jnp.asarray(W.toarray())
         rho_c = jnp.float64(0.3)
 
-        V_stack = _build_krylov_basis_jax(rho_c, X_jax, W_jax, n, k, degree)
+        V_stack = _krylov_basis(W, X_jax, rho_c, n, k, degree)
         assert V_stack.shape == (degree + 1, n, k)
 
     def test_krylov_basis_v0_matches_solve(self, problem):
@@ -91,7 +101,7 @@ class TestKrylovBasis:
         W_jax = jnp.asarray(W.toarray())
         rho_c = jnp.float64(0.3)
 
-        V_stack = _build_krylov_basis_jax(rho_c, X_jax, W_jax, n, k, degree=8)
+        V_stack = _krylov_basis(W, X_jax, rho_c, n, k, 8)
         I_n = jnp.eye(n)
         U_exact = jnp.linalg.solve(I_n - rho_c * W_jax, X_jax)
 
@@ -107,7 +117,7 @@ class TestKrylovBasis:
         W_jax = jnp.asarray(W.toarray())
         rho_c = jnp.float64(0.3)
 
-        V_stack = _build_krylov_basis_jax(rho_c, X_jax, W_jax, n, k, degree=8)
+        V_stack = _krylov_basis(W, X_jax, rho_c, n, k, 8)
         U_eval = _eval_U_from_basis_jax(V_stack, jnp.float64(0.0))
 
         np.testing.assert_allclose(
@@ -123,7 +133,7 @@ class TestKrylovBasis:
         rho_c = jnp.float64(0.3)
         drho = jnp.float64(0.05)
 
-        V_stack = _build_krylov_basis_jax(rho_c, X_jax, W_jax, n, k, degree=8)
+        V_stack = _krylov_basis(W, X_jax, rho_c, n, k, 8)
         U_krylov = _eval_U_from_basis_jax(V_stack, drho)
 
         rho_new = rho_c + drho
@@ -160,7 +170,7 @@ class TestRhoLogDensity:
         omega = jnp.full(n, 0.25)
         alpha = jnp.float64(1.0)
 
-        V_stack = _build_krylov_basis_jax(rho_c, X_jax, W_jax, n, k, degree=8)
+        V_stack = _krylov_basis(W, X_jax, rho_c, n, k, 8)
 
         log_dens = _rho_log_density_marginal_jax(
             rho_c,
@@ -191,7 +201,7 @@ class TestRhoLogDensity:
         omega = jnp.full(n, 0.25)
         alpha = jnp.float64(1.0)
 
-        V_stack = _build_krylov_basis_jax(rho_c, X_jax, W_jax, n, k, degree=8)
+        V_stack = _krylov_basis(W, X_jax, rho_c, n, k, 8)
 
         # Test with Δρ = 0.5 > dmax = 0.15
         rho_far = jnp.float64(0.8)
@@ -237,7 +247,7 @@ class TestSliceSampleRho:
         omega = jnp.full(n, 0.25)
         alpha = jnp.float64(1.0)
 
-        V_stack = _build_krylov_basis_jax(rho_c, X_jax, W_jax, n, k, degree=8)
+        V_stack = _krylov_basis(W, X_jax, rho_c, n, k, 8)
 
         key = jax.random.PRNGKey(0)
         rho_new = _slice_sample_rho_jax(
