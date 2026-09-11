@@ -603,24 +603,32 @@ class TestAdaptiveNCoarse:
     coarse-grid nodes.  These tests pin the corrected, adaptive behavior.
     """
 
-    def test_adaptive_narrow_interval_is_16(self):
-        # Default [0.1, 0.8]: clear of the ±1 singularities → trimmed grid.
-        assert _adaptive_n_coarse(0.1, 0.8) == 16
+    def test_adaptive_narrow_interval_floor_20(self):
+        # Default [0.1, 0.8]: clear of the ±1 singularities; the rate term
+        # asks 4, the uniform 20-node floor binds (sup-norm there ~3e-10).
+        assert _adaptive_n_coarse(0.1, 0.8) == 20
 
-    def test_adaptive_wide_intervals_scale_with_bernstein_rate(self):
-        # These used to all read 30 because the cap sat there and saturated
-        # them; the cap is now 96, so they report what the rule actually asks
-        # for.  Monotone in proximity to the ±1 singularities.
-        assert _adaptive_n_coarse(-0.5, 0.95) == 44
-        assert _adaptive_n_coarse(-0.95, 0.95) == 50
-        # Narrow but hugging the singularity → still needs a full-ish grid.
-        assert _adaptive_n_coarse(0.85, 0.99) == 31
+    def test_adaptive_wide_intervals_floor_at_20(self):
+        # The tilt-targeted recalibration (aaa_full_interval_small_budget) showed
+        # the old 16/ln(ρ_B) constant overshot: what a posterior can resolve is
+        # the *tilt* of the error over a 95% window, and the full stability
+        # region needs only ~20-24 nodes for that — not the 96 the cap forced.
+        # Wide intervals now draw the 20-node floor (sup-norm stays O(1e-4)
+        # there, so even worst-case concentration inside a window is ~17x
+        # under the 1.8e-3 tilt threshold).
+        assert _adaptive_n_coarse(-0.5, 0.95) == 20
+        assert _adaptive_n_coarse(-0.95, 0.95) == 20
+        # Narrow but hugging the singularity → the rate term lifts above the
+        # floor: [0.85, 0.99] has ln ρ_B ≈ 0.53, ⌈3.4/0.53⌉ = 7 → floor 20.
+        assert _adaptive_n_coarse(0.85, 0.99) == 20
 
-    def test_adaptive_full_stability_region_is_capped_at_96(self):
-        # The unclamped rule asks for 113 on [-0.99, 0.99]; AAA saturates near
-        # 1e-7--1e-8 by ~96 nodes and is flat and non-monotone beyond, so the
-        # cap binds here and nowhere narrower.
-        assert _adaptive_n_coarse(-0.99, 0.99) == 96
+    def test_adaptive_full_stability_region_draws_24(self):
+        # ⌈3.4 / ln(1.1526)⌉ = 24 — the tilt-adequate budget measured on the
+        # full interval (worst design rook 10k clears 1.8×10⁻³ at 20; 24 sits
+        # ~7× below the threshold).  The old rule asked 113 and clamped to 96,
+        # a 4-5× setup overshoot buying sup-norm accuracy no posterior spends
+        # (sup-norm there is O(0.1-2) at every budget tested).
+        assert _adaptive_n_coarse(-0.99, 0.99) == 24
 
     def test_n_coarse_equals_lu_factorization_count(self):
         """`_aaa_algorithm_lazy` evaluates exactly n_coarse times (one LU each)."""
@@ -659,7 +667,7 @@ class TestAdaptiveNCoarse:
         assert counter["n"] == 12
 
     def test_default_precompute_uses_adaptive(self, monkeypatch):
-        """With n_coarse unset, the default interval factorizes 16 times."""
+        """With n_coarse unset, the default interval factorizes 20 times."""
         import neighbayes._logdet._aaa as aaa_mod
 
         W = _knn_W(200, k=6)
@@ -676,8 +684,8 @@ class TestAdaptiveNCoarse:
             return wrapped
 
         monkeypatch.setattr(aaa_mod, "_make_reusable_lu_logdet", counting_factory)
-        aaa_logdet_precompute(W, rho_min=0.1, rho_max=0.8)  # adaptive → 16
-        assert counter["n"] == 16
+        aaa_logdet_precompute(W, rho_min=0.1, rho_max=0.8)  # adaptive → 20 (floor)
+        assert counter["n"] == 20
 
 
 class TestWideIntervalAccuracy:

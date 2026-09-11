@@ -333,8 +333,8 @@ class LogdetRefitter:
 
             n = int(self.W_sparse.shape[0])
             return int(cheb_order_for_tolerance(prior_min, prior_max, n))
-        # AAA selects m ≤ n_coarse // 2 support points, and n_coarse is capped
-        # at 96 by ``_adaptive_n_coarse``.
+        # AAA selects m ≤ n_coarse // 2 support points; ``_adaptive_n_coarse``
+        # floors at 16 and caps at 96 (tilt-targeted recalibration 2026-09-11).
         return 32
 
     def _fit(

@@ -28,8 +28,9 @@ For very large ``n`` (>20,000), use ``cheb_stochastic`` (avoids
 factorization entirely).
 
 **Cost**: ``n_coarse`` sparse LU factorizations + ``O(m)`` per-ρ
-evaluation, where ``n_coarse`` is the coarse-grid size (adaptive: 16 for the
-narrow default interval, up to 96 for wide/near-singular intervals) and
+evaluation, where ``n_coarse`` is the coarse-grid size (adaptive: 20–24 on
+every interval the tilt sweep serves, floor 20 and cap 96 — see
+:func:`_adaptive_n_coarse`) and
 ``m ≤ n_coarse // 2`` is the number of AAA support points actually selected.
 All ``I - ρW`` share one sparsity pattern, so KLU's symbolic analysis is
 computed once and reused for every subsequent numeric factorization (measured
@@ -677,13 +678,42 @@ def _adaptive_n_coarse(rho_min: float, rho_max: float) -> int:
     grid, capped at ``n_coarse // 2``) is what determines accuracy, and both
     grow as the interval widens toward the ``ρ = ±1`` logdet singularities.
 
-    Empirically (rook + knn, n∈{1936, 10000, 40000}), scoring on the *closed*
-    interval with the endpoints included: the default narrow interval
-    ``[0.1, 0.8]`` reaches ~1e-10 max error with only 16 nodes, while the full
-    stability region ``[-0.99, 0.99]`` needs ~64-80 for 1e-6 and ~96 to reach
-    the ~1e-10 range.  The cap sits at 96 because that is where the accuracy a
-    posterior can use is already reached, not because the method stops
-    improving there.
+    The target is *posterior relevance*, not functional sup-norm exactness:
+    what a sampler can resolve is the variation of the error over a realistic
+    95% posterior window — the *tilt*.  The calibration experiment
+    (``experiments/aaa_full_interval_small_budget.py`` +
+    ``results/aaa_full_interval_small_budget.csv``, rook + knn, n ∈ {2500,
+    10000}, tilt threshold 1.8×10⁻³ log-units, the incumbent's
+    demonstrated-invisible slope-tilt) shows the required budget is nearly
+    flat in the Bernstein rate on the tilt axis: the full stability region
+    ``[-0.99, 0.99]`` — the interval an MCMC sampler actually has to serve —
+    needs only ~20 (worst design, rook 10k; 24 clears it by ~7×) versus 16 on
+    the narrow default ``[0.1, 0.8]``.  The previous ``16/ln ρ_B`` rule asked
+    for 113 on the full interval and hit the cap at 96 — a 4–5× setup-cost
+    overshoot that buys nothing a posterior can spend, since the sup-norm
+    there stays O(0.1–2) even at 96 nodes regardless.
+
+    The rule keeps the inverse-``ln ρ_B`` shape with a tilt-calibrated
+    constant 3.4 and raises the floor from 8 to 20 — the minimum budget the
+    sweep shows to be tilt-adequate anywhere (worst design, rook 10k, clears
+    the threshold at 20):
+
+    - full ``[-0.99, 0.99]``: ⌈3.4/0.142⌉ = 24 (tilt 2.5×10⁻⁴, ~7× under
+      threshold)
+    - wide ``[-0.5, 0.95]``: ⌈3.4/0.369⌉ = 10 → floor 20 (sup-norm 1×10⁻⁴,
+      so even worst-case concentration of that error inside a posterior
+      window stays ~17× under the tilt threshold)
+    - near-singular narrow ``[0.85, 0.99]``: ⌈3.4/0.528⌉ = 7 → floor 20
+      (sup-norm 1.6×10⁻³ < threshold as an upper bound on tilt; the actual
+      tilt is far lower because the error concentrates at the interval edge,
+      away from the posterior windows)
+    - narrow default ``[0.1, 0.8]``: ⌈3.4/1.024⌉ = 4 → floor 20 (sup-norm
+      ~3×10⁻¹⁰, a hair under the incumbent 16's 2.7×10⁻⁹)
+
+    The floor replacing the old cap-as-default matters for wide intervals:
+    ``[-0.5, 0.95]`` had drifted to 44 under the roundoff-floor-targeted
+    constant and ``[-0.99, 0.99]`` sat at the 96 cap; both now draw 20–24,
+    matching what the tilt sweep shows is needed.
 
     An earlier version of this docstring described a ~1e-7--1e-8 "floor where
     AAA saturates" past ~96 nodes.  That floor was an artefact of the greedy
@@ -692,9 +722,12 @@ def _adaptive_n_coarse(rho_min: float, rho_max: float) -> int:
     tolerance and best-iterate retention the delivered error keeps falling with
     the node count and the non-monotonicity is gone.
 
-    The cap matters only for callers that stay on a wide interval.  A
-    post-warmup refit narrows ``[rho_min, rho_max]``, which raises the
-    Bernstein rate and pulls the count back down through the same formula.
+    The cap still binds only on intervals that hug ``±1`` more closely than
+    ``[-0.99, 0.99]`` (``ln ρ_B < 3.4/96 ≈ 0.0354``, i.e. intervals within
+    ~0.0177 of the singularity).  A post-warmup refit narrows ``[rho_min,
+    rho_max]``, which raises the Bernstein rate; the floor 20 keeps the
+    narrow-refit budget at the minimum tilt-adequate level while the rate term
+    allows it to grow again for refit windows that themselves hug ``±1``.
 
     This mirrors :func:`~._chebyshev.cheb_order_for_tolerance`, which sizes the
     Chebyshev order the same way.  At matched node counts on the full interval
@@ -713,20 +746,21 @@ def _adaptive_n_coarse(rho_min: float, rho_max: float) -> int:
     """
     from ._chebyshev import bernstein_rho
 
-    # Scale inversely with the Bernstein-ellipse rate, the same quantity that
-    # sets the Chebyshev order — distance to the ρ = ±1 singularities, not
-    # interval width.  The constant is calibrated so the applied default
-    # [0.1, 0.8] still draws 16 points (the value the width-keyed rule this
-    # replaced was tuned to), which fixes both directions the old rule got
-    # wrong: it returned 16 for any narrow interval, however far from ±1, and
-    # so could not exploit a post-warmup range at all.
+    # Tilt-calibrated inverse-Bernstein rule with a uniform 20-node floor.
+    # The constant 3.4 places the full stability interval at 24
+    # nodes, where the measured tilt is 2.5×10⁻⁴ — ~7× below the 1.8×10⁻³
+    # posterior-resolution threshold — and the floor 20 is the minimum
+    # tilt-adequate budget the sweep shows anywhere (rook 10k clears the
+    # threshold at 20).  It rescues the wide-interval cases whose extra nodes
+    # bought sup-norm accuracy no posterior can spend (``[-0.5, 0.95]`` at
+    # 44, ``[-0.99, 0.99]`` at the 96 cap).
     rho_b = bernstein_rho(rho_min, rho_max)
     if not np.isfinite(rho_b) or rho_b <= 1.0:
         _c0 = os.getenv("NEIGHBAYES_LOGDET_NODE_CAP")
         return int(_c0) if _c0 else 96
     _c = os.getenv("NEIGHBAYES_LOGDET_NODE_CAP")
     hi = int(_c) if _c else 96
-    return int(np.clip(int(np.ceil(16.0 / np.log(rho_b))), 8, hi))
+    return int(np.clip(int(np.ceil(3.4 / np.log(rho_b))), 20, hi))
 
 
 def _aaa_algorithm_lazy(
@@ -869,8 +903,8 @@ def aaa_logdet_precompute(
     The number of exact LU factorizations equals ``n_coarse`` — **not** the
     support count ``m`` and **not** ``n_samples`` (the 200-point sample grid is
     only the AAA residual proxy and involves no factorizations).  ``n_coarse``
-    defaults to :func:`_adaptive_n_coarse`: 16 for the narrow default interval,
-    30 for wider or near-singular intervals.
+    defaults to :func:`_adaptive_n_coarse`: 20–24 on every interval type
+    (tilt-targeted; floor 20 / cap 96).
 
     Parameters
     ----------
